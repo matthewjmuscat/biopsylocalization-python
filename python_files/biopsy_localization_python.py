@@ -3,6 +3,7 @@
 # designed to analyse the contour information to localize the biopsy 
 # contours relative to the DIL and prostate contours
 
+from xml.dom.expatbuilder import parseFragmentString
 import numpy as np # imported for math and arrays
 import pydicom # imported for reading dicom files
 #import pathlib # imported for navigating file system
@@ -11,6 +12,7 @@ import pydicom # imported for reading dicom files
 #import time # allows function to tell programme to wait, this was for testing the loading bar 
 import ques_funcs # the libary I made containing question functions directed towards the user
 import data_library_builder
+import fs_check
 
 
 def main():
@@ -25,7 +27,7 @@ def main():
 
     # create the lookup table for the contour structure folder names within the Data folder
     contour_structure_lookup_table_input = ['RTst']
-    
+    Data_folder_name = 'Data'
 
     # checkpoint 1
     print('checkpoint 1')
@@ -34,9 +36,16 @@ def main():
     skip_fsc = ques_funcs.ask_ok('Do you want to skip the file system check?')
 
     if skip_fsc == True:
-        print(skip_fsc)
+        print('FSC skipped.')
+        pass
     elif skip_fsc == False:
-        print(skip_fsc)
+        print('Running file system check...')
+        fsc_output = fs_check.fs_checker(Data_folder_name)
+        if fsc_output[0] == True:
+            print('File system check failed, reason: '+ fsc_output[1])
+            return
+        else:
+            print('File system seems ok.')
     else:
         print('does this execute?')
     
@@ -57,6 +66,6 @@ def main():
 
 if __name__ == '__main__':    
     main()
-    x = 4
+    
 
 
