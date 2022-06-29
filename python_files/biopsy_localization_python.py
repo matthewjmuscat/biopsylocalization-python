@@ -43,6 +43,7 @@ def main():
         fsc_detailed = ques_funcs.ask_ok('Do you want detailed output?')
         print('Running file system check...')
         fsc_output = fs_check.fs_checker(Data_folder_name,fsc_detailed)
+        """
         fail_messages = [x for x in fsc_output[1] if x[0] == 'fail']
         warning_messages = [x for x in fsc_output[1] if x[0] == 'warning']
         info_messages = [x for x in fsc_output[1] if x[0] == 'info']
@@ -58,7 +59,19 @@ def main():
         elif fsc_output[0] == False:
             for m in success_messages:
                 print(colored('Success: ','green'), m[1])
-        
+        """
+    
+        for m in fsc_output[1]:
+            if m[1] == 'warning':
+                print(str(m[0])+'--',colored('Warning: ','yellow'), m[2])
+            elif m[1] == 'info':
+                print(str(m[0])+'--',colored('Info: ','blue'), m[2])
+            elif m[1] == 'fail':
+                print(str(m[0])+'--',colored('Fail: ','red'), m[2])
+            elif m[1] == 'success':
+                print(str(m[0])+'--',colored('Success: ','green'), m[2])
+        if fsc_output[0] == True:
+            return
     else:
         print('does this execute?')
     
