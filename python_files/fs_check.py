@@ -5,7 +5,7 @@ from termcolor import colored
 
 
 
-def fs_checker(Data_name):
+def fs_checker(Data_name,detailed_output):
     """
     The main file system checker function, checks the data directory
     to make sure the data folder is properly structured, checks for existence, emptiness
@@ -36,8 +36,9 @@ def fs_checker(Data_name):
         print('...The Data folder seems to exist in the correct place.')
     else:
         fail_message = 'The Data folder may be misnamed or not exist in the correct location.'
+        messages = [['fail',fail_message]]
         fsc_failed = True
-        return fsc_failed, fail_message
+        return fsc_failed, messages
 
     # Try joining the Data folder, I feel like this may throw an error if permissions are insufficient, but this try catch may be useless...
     try:
@@ -53,14 +54,18 @@ def fs_checker(Data_name):
     # handle the output of the Data directory check
     if int(num_data_directories) == 0:
         fsc_failed = True
-        fail_message = 'Your Data folder contains no patient folders'
-        return fsc_failed, fail_message
+        fail_message = 'Your ..\\Data folder contains no patient folders'
+        messages = [['fail', fail_message]]
+        return fsc_failed, messages
     elif int(num_data_directories) != 0 and int(num_data_files) != 0:
-        print(data_empty_message)
-        print(colored('Warning:','yellow'), 'there are '+str(num_data_files)+' loose files in Data folder, these will be ignored!')
+        data_info_message = data_empty_message
+        data_warning_message = 'There are '+str(num_data_files)+' loose files in the ..\\Data folder, these will be ignored!'
+        messages = [['warning', data_warning_message],['info',data_info_message]]
     elif int(num_data_directories) != 0 and int(num_data_files) == 0:
-        print(data_empty_message)
+        data_info_message = data_empty_message
+        messages = [['info',data_info_message]]
 
+    """
     # check each patient folder under Data, for any patient folders that are empty, stop the programme and tell the user
     patients_total_treatments = 0
     patients_total_loose_files = 0
@@ -81,24 +86,65 @@ def fs_checker(Data_name):
         print('Found '+str(patients_total_treatments)+' treatment subfolders')
         if patients_total_loose_files != 0:
             print(colored('Warning:','yellow'), str(patients_total_loose_files)+ ' loose files found in treatment subfolders, these will be ignored!')
-        
-    # If all other checks passed then return passed
-    fsc_failed = False
-    fail_message = 'FSC passed!'
-    return fsc_failed, fail_message
+    """
+    
+    bool_a_data_folder_empty, data_folder_messages = directory_checker(data_folder,detailed_output)
+
+    if bool_a_data_folder_empty == True:
+        fsc_failed = bool_a_data_folder_empty
+        messages = messages + data_folder_messages
+        return fsc_failed, messages
+    elif bool_a_data_folder_empty == False:
+        # If all other checks passed then return passed
+        fsc_failed = bool_a_data_folder_empty
+        messages = messages + data_folder_messages
+        passed_message = ['success','FSC passed!']
+        messages.append(passed_message)
+        return fsc_failed, messages
 
 
 def test_empty(directory):
     """
     A function to test whether or not a directory is empty, and return 
     whether that directory contains files and/or folders, and how many 
-    of each. This programme assumes that the directory exists.
+    of each. This programme assumes that the directory to be searched exists.
     """
-    directories = [x for x in directory.iterdir() if x.is_dir() == True]
-    files = [x for x in directory.iterdir() if x.is_file() == True]
+    directories = [x for x in directory.iterdir() if x.is_dir()]
+    files = [x for x in directory.iterdir() if x.is_file()]
     num_directories = str(len(directories))
     num_files = str(len(files))
 
    
     empty_message = 'The ..\\'+ directory.name+' directory contains '+num_directories+' directories and '+num_files+' files.'
     return num_directories, num_files, empty_message
+
+
+def directory_checker(directory,detailed_output):
+    total_num_folders = 0
+    total_num_files = 0
+    empty_folders = []
+    test_empty_message_list = []
+    subdirectories_list = [x for x in directory.iterdir() if x.is_dir()]
+    for folder in subdirectories_list:
+        local_num_folders, local_num_files, test_empty_message = test_empty(folder)
+        if int(local_num_folders) == 0:
+            empty_folders.append(folder) 
+        total_num_files = total_num_files + int(local_num_files)
+        total_num_folders = total_num_folders + int(local_num_folders)
+        test_empty_message_list.append(['info',test_empty_message])
+
+    # handle the output of the patient folders check
+    if len(empty_folders) != 0:
+        bool_empty = True
+        message = ['fail','The following directories contain no sub-directories:\n'+'\n'.join([str(x) for x in empty_folders])]
+    elif len(empty_folders) == 0:
+        bool_empty = False
+        message = ['success','Found '+str(total_num_folders)+' sub-directories beneath (..\\'+subdirectories_list[0].name+ ' <---> ..\\'+ subdirectories_list[-1].name+'), all of them are non-empty.']
+        
+    messages_list = [message]
+    if detailed_output == True:
+        messages_list = messages_list + test_empty_message_list
+    if total_num_files != 0:
+        warningmsg = ['warning',str(total_num_files)+ ' loose files found immediately beneath '+str(len(subdirectories_list))+' subdirectories (..\\'+subdirectories_list[0].name+ ' <---> ..\\'+ subdirectories_list[-1].name+') these will be ignored!']
+        messages_list.append(warningmsg)
+    return bool_empty, messages_list
