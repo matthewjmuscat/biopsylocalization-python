@@ -1,0 +1,7 @@
+..\Data should exist at the same level as the project folder, which contains pythopn_files immediately beneath it
+
+..\Data
+..\Data\patients
+..\Data\patients\treatments
+..\Data\patients\treatments\diagnostic_type
+..\Data\patients\treatments\diagnostic_type\dicom files.dcm

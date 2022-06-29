@@ -8,7 +8,9 @@ import textwrap
 def fs_checker(Data_name,detailed_output):
     """
     The main file system checker function, checks the data directory
-    to make sure the data folder is properly structured, checks for existence, emptiness
+    to make sure the data folder is properly structured, checks for existence, emptiness.
+    Note that the messages are accumulated throughout the programme, numbered, labelled and then
+    returned at the end to be printed by the calling programme.
     """
 
     fsc_failed = False # initially set failed variable to false
@@ -51,7 +53,7 @@ def fs_checker(Data_name,detailed_output):
     # check the data folder for its files and directories, the directories should be a list of patients, any loose files are ignored.
     num_data_directories, num_data_files, data_empty_message = test_empty(data_folder)
     
-    # handle the output of the Data directory check
+    # handle the output of the Data directory check, and determine the messages to pass on
     if int(num_data_directories) == 0:
         fsc_failed = True
         fail_message = 'Your ..\\Data folder contains no patient folders'
@@ -89,17 +91,21 @@ def fs_checker(Data_name,detailed_output):
             print(colored('Warning:','yellow'), str(patients_total_loose_files)+ ' loose files found in treatment subfolders, these will be ignored!')
     """
     
+    # check each patient folder for emptiness by passing the data folder to 
+    # the function directory_checker, since this function checks two levels down 
     bool_a_data_folder_empty, messages = directory_checker(data_folder,detailed_output,messages)
     
+    # handle the output of the patient folder check and determine if the overall
+    # file system check has passed or failed
     if bool_a_data_folder_empty == True:
         fsc_failed = bool_a_data_folder_empty
         return fsc_failed, messages
-    elif bool_a_data_folder_empty == False:
-        # If all other checks passed then return passed
-        fsc_failed = bool_a_data_folder_empty
-        passed_message = [len(messages),'success','FSC passed!']
-        messages.append(passed_message)
-        return fsc_failed, messages
+    
+    # pass all patient folders as directorys to the directory_checker function to determine
+    # if all treatment subfolders are empty or not, they should each contain folders of 
+    passed_message = [len(messages),'success','FSC passed!']
+    messages.append(passed_message)
+    return fsc_failed, messages
 
 
 def test_empty(directory):
@@ -120,6 +126,13 @@ def test_empty(directory):
 
 
 def directory_checker(directory,detailed_output,messages_list = []):
+    """
+    A function that checks all subdirectories in the passed directory, for folders and files 
+    and outputs messages accordingly. The number of files and folders that each subdirectory 
+    contains is only output as a message if the detailed_output boolean is True. Note the 
+    function also accepts a messages list as an argument, but has a default value of null
+    if no message list is passed to it.
+    """
     total_num_folders = 0
     total_num_files = 0
     empty_folders = []
@@ -133,7 +146,9 @@ def directory_checker(directory,detailed_output,messages_list = []):
         if detailed_output == True:
             messages_list.append([len(messages_list),'info',test_empty_message])
 
-    # handle the output of the patient folders check
+    # handle the output of the patient folders check, 
+    # fail if some directories under the passed directory contain no subdirectories
+    # pass if they do.
     if len(empty_folders) != 0:
         bool_empty = True
         message = [len(messages_list),'fail','The following directories contain no sub-directories:\n'+'\n'.join([textwrap.indent(str(x),'+   ') for x in empty_folders])]
@@ -142,7 +157,8 @@ def directory_checker(directory,detailed_output,messages_list = []):
         message = [len(messages_list),'success','Found '+str(total_num_folders)+' sub-directories beneath (..\\'+subdirectories_list[0].name+ ' <---> ..\\'+ subdirectories_list[-1].name+'), all of them are non-empty.']
         
     messages_list.append(message)
-     
+    
+    # include a warning message if there are loose files
     if total_num_files != 0:
         warningmsg = [len(messages_list),'warning',str(total_num_files)+ ' loose files found immediately beneath '+str(len(subdirectories_list))+' subdirectories (..\\'+subdirectories_list[0].name+ ' <---> ..\\'+ subdirectories_list[-1].name+') these will be ignored!']
         messages_list.append(warningmsg)
