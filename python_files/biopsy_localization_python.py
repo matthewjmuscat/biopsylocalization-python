@@ -29,6 +29,7 @@ def main():
     # create the lookup table for the contour structure folder names within the Data folder
     contour_structure_lookup_table_input = ['RTst']
     Data_folder_name = 'Data'
+    Data_structure_order = ['Data','Patient','Treatment','Diagnostic','Dicom']
 
     # checkpoint 1
     print('checkpoint 1')
@@ -42,7 +43,7 @@ def main():
     elif skip_fsc == False:
         fsc_detailed = ques_funcs.ask_ok('Do you want detailed output?')
         print('Running file system check...')
-        fsc_output = fs_check.fs_checker(Data_folder_name,fsc_detailed)
+        fsc_output = fs_check.fs_checker(Data_folder_name,fsc_detailed,Data_structure_order)
         """
         fail_messages = [x for x in fsc_output[1] if x[0] == 'fail']
         warning_messages = [x for x in fsc_output[1] if x[0] == 'warning']
