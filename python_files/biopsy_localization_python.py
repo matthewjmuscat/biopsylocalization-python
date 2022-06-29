@@ -13,6 +13,7 @@ import pydicom # imported for reading dicom files
 import ques_funcs # the libary I made containing question functions directed towards the user
 import data_library_builder
 import fs_check
+from termcolor import colored # for colored printed text
 
 
 def main():
@@ -39,13 +40,25 @@ def main():
         print('FSC skipped.')
         pass
     elif skip_fsc == False:
+        fsc_detailed = ques_funcs.ask_ok('Do you want detailed output?')
         print('Running file system check...')
-        fsc_output = fs_check.fs_checker(Data_folder_name)
+        fsc_output = fs_check.fs_checker(Data_folder_name,fsc_detailed)
+        fail_messages = [x for x in fsc_output[1] if x[0] == 'fail']
+        warning_messages = [x for x in fsc_output[1] if x[0] == 'warning']
+        info_messages = [x for x in fsc_output[1] if x[0] == 'info']
+        success_messages = [x for x in fsc_output[1] if x[0] == 'success']
+        for m in warning_messages:
+                print(colored('Warning: ','yellow'), m[1])
+        for m in info_messages:
+                print(colored('Info: ','blue'), m[1])
         if fsc_output[0] == True:
-            print('File system check failed, reason: '+ fsc_output[1])
+            for m in fail_messages:
+                print(colored('Fail: ','red'), m[1])
             return
-        else:
-            print('File system seems ok.')
+        elif fsc_output[0] == False:
+            for m in success_messages:
+                print(colored('Success: ','green'), m[1])
+        
     else:
         print('does this execute?')
     
