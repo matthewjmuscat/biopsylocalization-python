@@ -113,6 +113,19 @@ def fs_checker(Data_name,detailed_output,Data_structure_order):
         fsc_failed = True
         return fsc_failed, messages
 
+
+    # We assume that every folder beneath 'patient' is a treatment folder that 
+    # should contain diagnostic folders, which in turn should contain dicom files
+    diagnostic_folder_paths = []
+    for patient in patient_folders:
+        treatment_folders_local = [x for x in patient.iterdir() if x.is_dir()]
+        for treatment in treatment_folders_local:
+            diagnostic_folders_local = [x for x in treatment.iterdir() if x.is_dir()]
+            diagnostic_folder_paths.append(diagnostic_folders_local)
+
+    for diagnostic_folder in diagnostic_folder_paths:
+        dicom_searcher(diagnostic_folder)
+
     # pass all patient folders as directorys to the directory_checker function to determine
     # if all treatment subfolders are empty or not, they should each contain folders of 
     passed_message = [len(messages),'success','FSC passed!']
@@ -175,6 +188,17 @@ def directory_checker(directory,detailed_output,folder_structure,messages_list =
         warningmsg = [len(messages_list),'warning',str(total_num_files)+ ' loose files found immediately beneath '+str(len(subdirectories_list))+' '+folder_structure[1] + ' subdirectories (..\\'+subdirectories_list[0].name+ ' <---> ..\\'+ subdirectories_list[-1].name+') these will be ignored!']
         messages_list.append(warningmsg)
     return bool_empty, messages_list
+
+
+def dicom_searcher(directory):
+    """
+    A programme to deteremine the existence of dicoms within a folder, and to point out 
+    any other folders and files as warnings
+    """
+    all_files = [x for x in directory if x.is_file()]
+    
+
+
 
 
 
