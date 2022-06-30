@@ -28,12 +28,29 @@ def main():
     dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
     dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
 
-    # The 0x0008,0x0060 dcm tag specifies the modality, here it is used to identify the type
+    # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
     # of dicom file 
     RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
     RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
     RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
+    
+
+
+
+    for RTst_dicom_item in RTst_dcms:
+        biopsy_localizer(RTst_dicom_item)
+        RTst_dicom_item.StructureSetROISequence[0].ROIName
+
+    RTst_dcms[0].StructureSetROISequence[0].ROIName
+    RTst_dcms[0].StructureSetROISequence[0].ROINumber
+    RTst_dcms[0].ROIContourSequence[0].ReferencedROINumber
+    RTst_dcms[0].ROIContourSequence[0].ContourSequence[0].ContourData
+
     pass
+
+    def biopsy_localizer():
+
+
 if __name__ == '__main__':    
     main()
     
