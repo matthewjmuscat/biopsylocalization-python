@@ -8,6 +8,7 @@ numpy = "*"
 pydicom = "*"
 termcolor = "*"
 matplotlib = "*"
+sklearn = "*"
 
 [dev-packages]
 ipykernel = "*"
