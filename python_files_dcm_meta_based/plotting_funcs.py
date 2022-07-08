@@ -30,3 +30,8 @@ def arb_threeD_scatter_plotter(*data_and_color,**text):
         ax.text2D(x_pos, y_pos, "%s: %s" % (key, value), transform=ax.transAxes)
         iterator = iterator + 1
     return fig
+
+def add_line(figure,line):
+    ax = figure.get_axes()
+    ax[0].plot(line[:, 0], line[:, 1], line[:, 2], 'g')
+    return figure

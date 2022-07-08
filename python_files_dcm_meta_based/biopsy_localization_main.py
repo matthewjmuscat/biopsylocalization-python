@@ -4,6 +4,7 @@ import glob
 import plotting_funcs
 import matplotlib.pyplot as plt
 import centroid_finder
+import pca
 
 def main():
     """
@@ -76,6 +77,10 @@ def main():
 
                 print(structure_centroids)
 
+
+                centroid_line = pca.linear_fitter(structure_centroids)
+
+
                 threeDdata = []
                 threeDdata.append([float(x) for y in RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
                 threeDdata.append([float(x) for y in RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
@@ -97,6 +102,7 @@ def main():
                     info["Patient Name"] = pydicom_item["Patient Name"]
                     info["Patient ID"] = pydicom_item["Patient ID"]
                     specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(threeDdata_and_color,structure_centroids_and_color,**info)
+                    specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
                     fig_dict[pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')'+specific_structure["ROI"]] = specific_structure_fig
                     #fig_list.append([pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')'+specific_structure["ROI"], ])
 
