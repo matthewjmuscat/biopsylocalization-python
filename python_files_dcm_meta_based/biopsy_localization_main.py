@@ -5,6 +5,9 @@ import plotting_funcs
 import matplotlib.pyplot as plt
 import centroid_finder
 import pca
+import scipy
+import numpy as np
+import biopsy_creator
 
 def main():
     """
@@ -80,28 +83,55 @@ def main():
 
                 centroid_line = pca.linear_fitter(structure_centroids)
 
+                centroid_line_sample = np.array([centroid_line[0]])
+                # N is the number of sample points to be sampled along the centroid line
+                num_centroid_samples_of_centroid_line = 20
+                travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
+                for i in range(1,num_centroid_samples_of_centroid_line+1):
+                    init_point = centroid_line_sample[-1]
+                    new_point = init_point + travel_vec
+                    centroid_line_sample=np.append(centroid_line_sample,new_point,axis=0)
+
+                centroid_line_sample_transpose = centroid_line_sample.T
+                centroid_line_sample_list = centroid_line_sample_transpose.tolist()
+                centroid_line_sample_list_and_color = centroid_line_sample_list
+                centroid_line_sample_list_and_color.append('y')
+                centroid_line_sample_list_and_color.append('x')
 
                 threeDdata = []
                 threeDdata.append([float(x) for y in RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
                 threeDdata.append([float(x) for y in RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
                 threeDdata.append([float(x) for y in RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[2::3]])
                 
+                #structure_centroids_array = np.array(structure_centroids).T
+                #threeDdataarray = np.array(threeDdata).T
+                #treescipy = scipy.spatial.KDTree(threeDdataarray)
+                #nn = treescipy.query(structure_centroids_array[0])
+                #nearest_neighbour = treescipy.data[nn[1]]
+                #print('hello')
 
-
-                 
+                list_travel_vec = np.squeeze(travel_vec).tolist()
+                list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
+                drawn_biopsy_array = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
+                drawn_biopsy_list = drawn_biopsy_array.tolist()
+                drawn_biopsy_list_and_color = drawn_biopsy_list
+                drawn_biopsy_list_and_color.append('m')
+                drawn_biopsy_list_and_color.append('+')
 
                 # only produces the plots that were specified as True by the fig_dict dictionary
                 if fig_dict[pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')'+specific_structure["ROI"]] == True:
                     #specific_structure_fig = plotting_funcs.threeD_scatter_plotter(threeDdata[0],threeDdata[1],threeDdata[2])
                     threeDdata_and_color = threeDdata
                     threeDdata_and_color.append('r')
+                    threeDdata_and_color.append('o')
                     structure_centroids_and_color = structure_centroids
                     structure_centroids_and_color.append('b')
+                    structure_centroids_and_color.append('o')
                     info = specific_structure
                     #info.update()
                     info["Patient Name"] = pydicom_item["Patient Name"]
                     info["Patient ID"] = pydicom_item["Patient ID"]
-                    specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(threeDdata_and_color,structure_centroids_and_color,**info)
+                    specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(threeDdata_and_color,structure_centroids_and_color,centroid_line_sample_list_and_color,drawn_biopsy_list_and_color,**info)
                     specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
                     fig_dict[pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')'+specific_structure["ROI"]] = specific_structure_fig
                     #fig_list.append([pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')'+specific_structure["ROI"], ])
@@ -116,6 +146,8 @@ def main():
     #RTst_dcms[0].ROIContourSequence[0].ContourSequence[0].ContourData
 
     #biopsy_localizer(RTst_dicom_item)
+    
+
     
     
     
