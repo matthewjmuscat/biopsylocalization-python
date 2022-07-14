@@ -40,11 +40,11 @@ def biopsy_points_creater_ring(list_centroid_line_vector,list_origin_to_first_ce
         ax.set_zlim(-2,2)
 
         
-        print(list_centroid_line_vector)
-        print(unit_centroid_vector)
-        print('azimuth centroid = ',lab_azimuth_centroid)
-        print('polar centroid = ',lab_polar_centroid)
-        print(centroid_x,centroid_y,centroid_z)
+        #print(list_centroid_line_vector)
+        #print(unit_centroid_vector)
+        #print('azimuth centroid = ',lab_azimuth_centroid)
+        #print('polar centroid = ',lab_polar_centroid)
+        #print(centroid_x,centroid_y,centroid_z)
         plt.show()
 
 
@@ -80,7 +80,7 @@ def biopsy_points_creater_ring(list_centroid_line_vector,list_origin_to_first_ce
 
         # create point, transport to first centroid, then go to orthogonal ring
         lab_ring_point = origin_to_first_centroid_vector + lab_vec_to_circle.T
-        print(lab_ring_point)
+        #print(lab_ring_point)
         lab_ring_points[j] = lab_ring_point
 
     
@@ -102,7 +102,7 @@ def biopsy_points_creater_ring(list_centroid_line_vector,list_origin_to_first_ce
     ax.set_zlim(-2,2)
     ax.scatter(lab_ring_points_Transpose[0], lab_ring_points_Transpose[1], lab_ring_points_Transpose[2], c='r', marker='o')
     plt.show()
-    print('done!')
+    #print('done!')
 
 def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_first_centroid_vector,num_centroids,centroid_separation_distance,plot_stuff):
     """
@@ -146,11 +146,11 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_
         ax.set_zlim(-2,2)
 
         
-        print(list_centroid_line_vector)
-        print(unit_centroid_vector)
-        print('azimuth centroid = ',lab_azimuth_centroid)
-        print('polar centroid = ',lab_polar_centroid)
-        print(centroid_x,centroid_y,centroid_z)
+        #print(list_centroid_line_vector)
+        #print(unit_centroid_vector)
+        #print('azimuth centroid = ',lab_azimuth_centroid)
+        #print('polar centroid = ',lab_polar_centroid)
+        #print(centroid_x,centroid_y,centroid_z)
         plt.show()
 
 
@@ -188,7 +188,7 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_
 
             # create point, transport to first centroid, then go to orthogonal ring
             lab_ring_point = origin_to_first_centroid_vector + lab_vec_to_circle.T
-            print(lab_ring_point)
+            #print(lab_ring_point)
             lab_ring_points[j+k*num_ring_points] = lab_ring_point
 
     # now add appropriate multiples of transport vector to each array slice, to make shifted rings
@@ -217,7 +217,7 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_
         ax.set_zlim(-2,2)
         ax.scatter(lab_ring_points_Transpose[0], lab_ring_points_Transpose[1], lab_ring_points_Transpose[2], c='r', marker='o')
         plt.show()
-    print('done!')
+    #print('done!')
 
     return lab_ring_points_Transpose
     """

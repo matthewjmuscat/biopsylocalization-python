@@ -26,7 +26,8 @@ def arb_threeD_scatter_plotter(*data_and_color,**text):
         ax.scatter(data[0], data[1], data[2], c=data[3], marker=data[4])
 
     iterator = 1
-    for key, value in text.items():
+    info_to_print = [x for x in text.items() if type(x[1])==str]
+    for key, value in info_to_print:
         x_pos=1.15
         y_pos=0.5-0.05*iterator
         ax.text2D(x_pos, y_pos, "%s: %s" % (key, value), transform=ax.transAxes)
