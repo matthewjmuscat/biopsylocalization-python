@@ -6,7 +6,7 @@ def linear_fitter(data):
     pca = PCA(n_components=1)
     pca.fit(data)
     direction_vector = pca.components_
-    print(direction_vector)
+    #print(direction_vector)
 
     # create line
     origin = np.mean(data, axis=0)

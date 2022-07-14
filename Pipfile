@@ -9,6 +9,8 @@ pydicom = "*"
 termcolor = "*"
 matplotlib = "*"
 sklearn = "*"
+pandas = "*"
+anytree = "*"
 
 [dev-packages]
 ipykernel = "*"
