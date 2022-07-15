@@ -13,6 +13,7 @@ from decimal import Decimal # for use in the loading bar
 import loading_tools # imported for more sophisticated loading bar
 import time # allows function to tell programme to wait, this was for testing the loading bar 
 import ques_funcs
+import timeit
 
 def main():
     """
@@ -76,7 +77,9 @@ def main():
     num_patients = len(master_structure_reference_dict)
     num_general_structs_per_patient = len(structs_referenced_list)
     num_general_structs = num_patients*num_general_structs_per_patient
-    with loading_tools.Loader(num_general_structs,"Loading with context manager...") as loader:
+
+    st = time.time()
+    with loading_tools.Loader(num_general_structs,"Processing data...") as loader:
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             for structs in structs_referenced_list:
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -86,8 +89,12 @@ def main():
                     #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
                     #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
 
+
+                    # below code is deprecated
+                    """
+                    #st = time.time()
                     structure_centroids = [[],[],[]] # x values, y values, z values
-                    for slice_object in RTst_dcms_dict[pydicom_item['Patient Name']+' ('+pydicom_item['Patient ID']+')'].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]:
+                    for slice_object in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]:
                         contour_slice_points = slice_object.ContourData
                         #print(contour_slice_points)
                         twoDdata = []
@@ -99,12 +106,46 @@ def main():
                         structure_centroids[1].append(structure_slice_centroid[1])
                         structure_centroids[2].append(zslice)
 
-                    #print(structure_centroids)
-                    structure_centroids_array = np.array(structure_centroids).T
+                    #et = time.time()
+                    #elapsed_time = et - st
+                    #print('\n Execution time:', elapsed_time, 'seconds')
+                    structure_centroids_array_transpose = np.array(structure_centroids)
+                    structure_centroids_array = structure_centroids_array_transpose.T
+                    """
+
+                    
+                    # can uncomment surrounding lines to time this particular process
+                    #st = time.time()
+                    
+                    
+                    total_structure_points = sum([len(x.ContourData)/3 for x in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]])
+                    if total_structure_points.is_integer():
+                        total_structure_points = int(total_structure_points)
+                    else: 
+                        raise Exception("Seems the cumulative number of spatial components of contour points is not divisible by three!") 
+                    threeDdata_array = np.empty([total_structure_points,3])
+                    
+                    structure_centroids_array = np.empty([len(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]),3])
+                    lower_bound_index = 0
+                    for index, slice_object in enumerate(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]):
+                        contour_slice_points = slice_object.ContourData                       
+                        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                        
+                        current_zslice_num_points = np.size(threeDdata_zslice,0)
+                        threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                        lower_bound_index = lower_bound_index + current_zslice_num_points 
+                        
+                        structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                        structure_centroids_array[index] = structure_zslice_centroid
+                        
+                    #et = time.time()
+                    #elapsed_time = et - st
+                    #print('\n Execution time:', elapsed_time, 'seconds')
+                    
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
 
 
-                    centroid_line = pca.linear_fitter(structure_centroids)
+                    centroid_line = pca.linear_fitter(structure_centroids_array.T)
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
                     
                     centroid_line_sample = np.array([centroid_line[0]])
@@ -117,11 +158,17 @@ def main():
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
 
 
+                    # below code is deprecated
+                    """
                     threeDdata = []
                     threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
                     threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
                     threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[2::3]])
                     threeDdata_array = np.array(threeDdata).T
+                    """
+
+                    
+
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
 
                     #structure_centroids_array = np.array(structure_centroids).T
@@ -140,8 +187,10 @@ def main():
                         specific_structure["Plot attributes"].plot_bool = True
                     
                 loader.iterator = loader.iterator + 1
-            time.sleep(1)
-
+            
+    et = time.time()
+    elapsed_time = et - st
+    print('\n Execution time:', elapsed_time, 'seconds')
 
 
 
