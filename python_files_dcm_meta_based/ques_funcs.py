@@ -14,3 +14,17 @@ def ask_ok(prompt, retries=4, reminder='Please try again!'):
         if retries < 0:
             raise ValueError('invalid user response')
         print(reminder)
+
+
+def ask_to_continue(prompt, retries=4, reminder='Please try again!'):
+    """
+    This function defines a generic continue confirmation.
+    """
+    while True:
+        ok = input(prompt + ' [enter]\n')
+        if ok in ('\r'):
+            return True
+        retries = retries - 1
+        if retries < 0:
+            raise ValueError('invalid user response')
+        print(reminder)
