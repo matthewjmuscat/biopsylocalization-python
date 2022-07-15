@@ -59,14 +59,18 @@ def main():
 
     # Now, we dont want to add the contour points to the structure list above,
     # because the contour data is already stored in a data tree, which will allow
-    # for faster processing when accessed and iterated. 
+    # for faster processing when accessed and iterated. update: I lied..... I ended up
+    # doing exactly this. I will implement a data tree for the purpose of a search
+    # algorithm when I do a nearest neighbour search
     
 
     # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
-    fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
+    # update: fig_dict ended up being deprecated, put data directly into master_dict instead
+    # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
     
     # build a data dictionary to store the data we extract and build about the patient
-    data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
+    # update: data_dict never ended up being used, put data directly into master_dict
+    # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
 
     # instantiate the variables used for the loading bar
     num_patients = len(master_structure_reference_dict)
@@ -74,7 +78,6 @@ def main():
     num_general_structs = num_patients*num_general_structs_per_patient
     with loading_tools.Loader(num_general_structs,"Loading with context manager...") as loader:
         for patientUID,pydicom_item in master_structure_reference_dict.items():
-            #print(pydicom_item["Patient Name"]+' ('+pydicom_item["Patient ID"]+')')
             for structs in structs_referenced_list:
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                     # The below print lines were just for my own understanding of how to access the data structure
@@ -115,9 +118,9 @@ def main():
 
 
                     threeDdata = []
-                    threeDdata.append([float(x) for y in RTst_dcms_dict[pydicom_item['Patient Name']+' ('+pydicom_item['Patient ID']+')'].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
-                    threeDdata.append([float(x) for y in RTst_dcms_dict[pydicom_item['Patient Name']+' ('+pydicom_item['Patient ID']+')'].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
-                    threeDdata.append([float(x) for y in RTst_dcms_dict[pydicom_item['Patient Name']+' ('+pydicom_item['Patient ID']+')'].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[2::3]])
+                    threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
+                    threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
+                    threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[2::3]])
                     threeDdata_array = np.array(threeDdata).T
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
 
@@ -136,35 +139,6 @@ def main():
                     if structs == structs_referenced_list[0]:
                         specific_structure["Plot attributes"].plot_bool = True
                     
-                    """
-                    # only produces the plots that were specified as True by the fig_dict dictionary
-                    if fig_dict[patientUID][specific_structure["ROI"]] == True:
-                        centroid_line_sample_transpose = centroid_line_sample.T
-                        centroid_line_sample_list = centroid_line_sample_transpose.tolist()
-                        centroid_line_sample_list_and_color = centroid_line_sample_list
-                        centroid_line_sample_list_and_color.append('y')
-                        centroid_line_sample_list_and_color.append('x')
-                        
-                        drawn_biopsy_list = drawn_biopsy_array.tolist()
-                        drawn_biopsy_list_and_color = drawn_biopsy_list
-                        drawn_biopsy_list_and_color.append('m')
-                        drawn_biopsy_list_and_color.append('+')
-                        
-                        threeDdata_and_color = threeDdata
-                        threeDdata_and_color.append('r')
-                        threeDdata_and_color.append('o')
-                        structure_centroids_and_color = structure_centroids
-                        structure_centroids_and_color.append('b')
-                        structure_centroids_and_color.append('o')
-                        info = specific_structure
-                        info["Patient Name"] = pydicom_item["Patient Name"]
-                        info["Patient ID"] = pydicom_item["Patient ID"]
-                        specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(threeDdata_and_color,structure_centroids_and_color,centroid_line_sample_list_and_color,drawn_biopsy_list_and_color,**info)
-                        specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
-                        fig_dict[patientUID][specific_structure["ROI"]] = specific_structure_fig
-                    else:
-                        del fig_dict[patientUID][specific_structure["ROI"]]
-                    """
                 loader.iterator = loader.iterator + 1
             time.sleep(1)
 
@@ -243,7 +217,8 @@ def UID_generator(pydicom_obj):
 
 def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     """
-    A function that builds a reference library of the dicom elements passed to it so that we can match the ROI name to the contour information, since the contour
+    A function that builds a reference library of the dicom elements passed to it so that 
+    we can match the ROI name to the contour information, since the contour
     information is referenced to the name by a number.
     """
     master_st_ref_dict = {}
