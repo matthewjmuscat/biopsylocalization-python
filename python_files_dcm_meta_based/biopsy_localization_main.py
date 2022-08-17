@@ -16,11 +16,16 @@ import time # allows function to tell programme to wait, this was for testing th
 import ques_funcs
 import timeit
 from random import random
+from shapely.geometry import Point, Polygon, MultiPoint # for point in polygon test
+import open3d as o3d # for data visualization and meshing
+
+
+
 
 def main():
     """
     A programme designed to receive dicom data consisting of prostate 
-    ultrasound containing contouring information. The programme is then 
+    ultrasound containing contouring and dosimetry information. The programme is then 
     designed to analyse the contour information to localize the biopsy 
     contours relative to the DIL and prostate contours. This version 
     of the programme does not rely on the structure of the data folder,
@@ -288,7 +293,7 @@ def main():
                         specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(global_data_list_per_patient,**info)
                         specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
                     
-                        specific_structure_fig.show()
+                        #specific_structure_fig.show()
 
 
                         
@@ -310,13 +315,130 @@ def main():
         info = {}
         info["Patient Name"] = pydicom_item["Patient Name"]
         info["Patient ID"] = pydicom_item["Patient ID"]
-        figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_atr=[], **info)
+        figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
         figure_global_per_patient.show()
         print('1')
         x=input()
     
 
+    """
+    # bpa mesh
+    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
+    #points_3D = np.array([[1,1,0],[1,-1,0],[-1,-1,0],[-1,1,0],[0,0,-1],[0,0,2]])
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points_3D)
+    #o3d.visualization.draw_geometries([pcd])
+    distances = pcd.compute_nearest_neighbor_distance()
+    avg_dist = np.mean(distances)
+    radius = avg_dist
+    #radii = [0.005, 0.01, 0.02, 0.04]
+    radii = [radius*x for x in range(3,6)]
+    pcd.estimate_normals(fast_normal_computation=False)
+    bpa_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd,o3d.utility.DoubleVector(radii))
+    dec_mesh = bpa_mesh.simplify_quadric_decimation(100000)
+    dec_mesh.remove_degenerate_triangles()
+    dec_mesh.remove_duplicated_triangles()
+    dec_mesh.remove_duplicated_vertices()
+    dec_mesh.remove_non_manifold_edges()
+    o3d.visualization.draw_geometries([bpa_mesh],point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
+    o3d.visualization.draw_geometries([dec_mesh],point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
+    """
+
+    """
+    # poisson mesh
+    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points_3D)
+    pcd.estimate_normals(fast_normal_computation=False)
+    poisson_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=8, width=0, scale=1.1, linear_fit=False)[0]
+    bbox = pcd.get_axis_aligned_bounding_box()
+    p_mesh_crop = poisson_mesh.crop(bbox)
+    o3d.visualization.draw_geometries([poisson_mesh],point_show_normal=False, mesh_show_wireframe=True, mesh_show_back_face=True)
+    """
+
+    # define point to test
+    test_point = master_structure_reference_dict['DOE^JOHN (ANON181)']['Bx ref'][0]['Centroid line sample pts'][20]
+    test_point_xy_Point = Point(test_point[0:2])
+    test_point_z = test_point[2]
+    slice_z = test_point_z
+    print('test point: ',test_point)
+
+    # alpha convex hull method
+    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points_3D)
     
+    
+    #pcd.estimate_normals(fast_normal_computation=False)
+    alpha=10
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
+    mesh.compute_vertex_normals()
+    o3d.visualization.draw_geometries([mesh], point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
+    
+    """
+    pcd_subsample = mesh.sample_points_uniformly(number_of_points=10000)
+    o3d.visualization.draw_geometries([pcd_subsample])
+    #pcd_subsample_poisson_uniform = mesh.sample_points_poisson_disk(number_of_points=500, pcl=pcd_subsample)
+    #o3d.visualization.draw_geometries([pcd_subsample_poisson_uniform])
+    
+    # want to sample points from a thin strip
+    pcd_subsample_poisson_uniform_array = np.asarray(pcd_subsample.points)
+    pcd_subsample_poisson_uniform_array_z = pcd_subsample_poisson_uniform_array[:,2]
+    tolerance = 0.1
+    #slice_z = -32
+    pcd_subsample_poisson_uniform_array_slice = pcd_subsample_poisson_uniform_array[np.logical_and(pcd_subsample_poisson_uniform_array_z >= slice_z - tolerance, pcd_subsample_poisson_uniform_array_z <= slice_z + tolerance),:]
+    pcd_subsample_slice = o3d.geometry.PointCloud()
+    pcd_subsample_slice.points = o3d.utility.Vector3dVector(pcd_subsample_poisson_uniform_array_slice)
+    o3d.visualization.draw_geometries([pcd_subsample_slice])
+    """
+
+    # another way to sample points from a thin strip, first crop, then sample
+    tolerance = 0.2
+    #slice_z = -32
+    safety_padding = 0.5
+    max_bound = mesh.get_max_bound()
+    min_bound = mesh.get_min_bound()
+    bb = o3d.geometry.AxisAlignedBoundingBox()
+    bbpoints = o3d.geometry.PointCloud()
+    bbpoints.points = o3d.utility.Vector3dVector(np.array([
+    [max_bound[0]+safety_padding,max_bound[1]+safety_padding,slice_z+tolerance],
+    [max_bound[0]+safety_padding,min_bound[1]-safety_padding,slice_z+tolerance],
+    [min_bound[0]-safety_padding,max_bound[1]+safety_padding,slice_z+tolerance],
+    [min_bound[0]-safety_padding,min_bound[1]-safety_padding,slice_z+tolerance],
+    [max_bound[0]+safety_padding,max_bound[1]+safety_padding,slice_z-tolerance],
+    [max_bound[0]+safety_padding,min_bound[1]-safety_padding,slice_z-tolerance],
+    [min_bound[0]-safety_padding,max_bound[1]+safety_padding,slice_z-tolerance],
+    [min_bound[0]-safety_padding,min_bound[1]-safety_padding,slice_z-tolerance],
+    ]))
+    bb_created = bb.create_from_points(points = bbpoints.points)
+    bb_created.color = np.array([0,0,0]) # paint bounding box black
+    mesh_subdivided = mesh.subdivide_midpoint(number_of_iterations=6)
+    o3d.visualization.draw_geometries([bb_created,mesh_subdivided],mesh_show_wireframe=True, mesh_show_back_face=True)
+    cropped_mesh = mesh_subdivided.crop(bounding_box = bb_created)
+    o3d.visualization.draw_geometries([bb_created,cropped_mesh],mesh_show_wireframe=True, mesh_show_back_face=True)
+    pcd_subsample_slice = cropped_mesh.sample_points_uniformly(number_of_points=1000)
+    o3d.visualization.draw_geometries([pcd_subsample_slice])
+
+    """
+    # sort by euclidean distance
+    sorted_pcd_subsample_slice = np.empty_like(pcd_subsample_slice)
+    sorted_pcd_subsample_slice[0] = pcd_subsample_slice[0]
+    for i in range(0,np.size(pcd_subsample_slice,axis=0)):
+        sorted_pcd_subsample_slice[]
+    """
+
+    polygon1 = MultiPoint(np.asarray(pcd_subsample_slice.points)[:,0:2]).convex_hull
+    #polygon1 = Polygon(np.asarray(pcd_subsample_slice.points)[:,0:2])
+    polygon1_x,polygon1_y = polygon1.exterior.xy
+    fig_new = plt.figure()
+    ax = fig_new.add_subplot(111, projection='3d')
+    ax.plot(polygon1_x,polygon1_y)
+    ax.scatter(test_point[0],test_point[1])
+    fig_new.show()
+
+    PIPT_result = test_point_xy_Point.within(polygon1)
+    print("Point in polygon test result: ", PIPT_result)
+
     print('Programme has ended.')
 
 def UID_generator(pydicom_obj):

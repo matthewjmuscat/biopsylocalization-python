@@ -11,6 +11,8 @@ matplotlib = "*"
 sklearn = "*"
 pandas = "*"
 anytree = "*"
+shapely = "*"
+open3d = "*"
 
 [dev-packages]
 ipykernel = "*"
