@@ -5,6 +5,8 @@ from mpl_toolkits import mplot3d
 import numpy as np
 import matplotlib.pyplot as plt
 
+import MC_toy_model_funcs
+
 
 def main():
 
@@ -23,9 +25,15 @@ def main():
     num_radii = 4
     biopsy_samples_num_per_z = biopsy_samples_num_per_z_per_radii*num_radii
 
-    biopsy_points_background_coordinates = np.empty([biopsy_samples_num_per_z*biopsy_length,3], dtype=float) # 20 samples, 3 coordinates
+    num_points_per_radii = np.empty(num_radii,dtype=int)
+    for i in range(1,num_radii+1,1):
+        num_points_per_radii[i-1] = MC_toy_model_funcs.num_points_per_radii(i)
+
+    #biopsy_points_background_coordinates = np.array([biopsy_offset_x,biopsy_offset_y,biopsy_offset_z], dtype=float) 
+    biopsy_points_background_coordinates = np.empty([np.sum(num_points_per_radii)*biopsy_length,3], dtype=float) # 20 samples, 3 coordinates
+
     for z in range(biopsy_length):
-        biopsy_points_background_coordinates[z*biopsy_samples_num_per_z:z*biopsy_samples_num_per_z+biopsy_samples_num_per_z,2] = biopsy_offset_z + z
+        biopsy_points_background_coordinates[0+num_points_per_radii[z]:z*biopsy_samples_num_per_z+biopsy_samples_num_per_z,2] = biopsy_offset_z + z
         for r_iter in range(1,num_radii+1):
             for i in range(biopsy_samples_num_per_z_per_radii):
                 biopsy_points_background_coordinates[z*biopsy_samples_num_per_z+biopsy_samples_num_per_z_per_radii*(r_iter-1)+i,0] = biopsy_offset_x + (r_iter/num_radii)*biopsy_radius*math.cos(2*math.pi*i/biopsy_samples_num_per_z_per_radii)
