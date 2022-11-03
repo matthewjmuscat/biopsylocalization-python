@@ -13,6 +13,9 @@ pandas = "*"
 anytree = "*"
 shapely = "*"
 open3d = "*"
+vtk = "*"
+pyqt5 = "*"
+mayavi = "*"
 
 [dev-packages]
 ipykernel = "*"
