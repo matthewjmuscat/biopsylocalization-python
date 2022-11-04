@@ -96,34 +96,8 @@ def main():
                     #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
                     #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
 
-
-                    # below code is deprecated
-                    """
-                    #st = time.time()
-                    structure_centroids = [[],[],[]] # x values, y values, z values
-                    for slice_object in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]:
-                        contour_slice_points = slice_object.ContourData
-                        #print(contour_slice_points)
-                        twoDdata = []
-                        twoDdata.append([float(y) for y in contour_slice_points[0::3]])
-                        twoDdata.append([float(y) for y in contour_slice_points[1::3]])
-                        zslice = contour_slice_points[2]
-                        structure_slice_centroid = centroid_finder.centroid_finder_mean_based(twoDdata)
-                        structure_centroids[0].append(structure_slice_centroid[0])
-                        structure_centroids[1].append(structure_slice_centroid[1])
-                        structure_centroids[2].append(zslice)
-
-                    #et = time.time()
-                    #elapsed_time = et - st
-                    #print('\n Execution time:', elapsed_time, 'seconds')
-                    structure_centroids_array_transpose = np.array(structure_centroids)
-                    structure_centroids_array = structure_centroids_array_transpose.T
-                    """
-
-                    
                     # can uncomment surrounding lines to time this particular process
                     #st = time.time()
-                    
                     
                     total_structure_points = sum([len(x.ContourData)/3 for x in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]])
                     if total_structure_points.is_integer():
@@ -151,8 +125,6 @@ def main():
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
                     
-                    
-
                     if structs == structs_referenced_list[0]: 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
 
@@ -168,24 +140,12 @@ def main():
                             new_point = init_point + travel_vec
                             centroid_line_sample=np.append(centroid_line_sample,new_point,axis=0)
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
-
-
-                        # below code is deprecated
-                        """
-                        threeDdata = []
-                        threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[0::3]])
-                        threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[1::3]])
-                        threeDdata.append([float(x) for y in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:] for x in y.ContourData[2::3]])
-                        threeDdata_array = np.array(threeDdata).T
-                        """
-
-                        
+  
                         # conduct a nearest neighbour search of biopsy centroids
 
                         #treescipy = scipy.spatial.KDTree(threeDdata_array)
                         #nn = treescipy.query(centroid_line_sample[0])
                         #nearest_neighbour = treescipy.data[nn[1]]
-                        
 
                         list_travel_vec = np.squeeze(travel_vec).tolist()
                         list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
@@ -201,7 +161,6 @@ def main():
     et = time.time()
     elapsed_time = et - st
     print('\n Execution time:', elapsed_time, 'seconds')
-
 
 
     # instantiate the variables used for the loading bar
@@ -227,18 +186,8 @@ def main():
                         
             loader.iterator = loader.iterator + 1
 
-
-
-
-    #RTst_dcms[0].StructureSetROISequence[0].ROIName
-    #RTst_dcms[0].StructureSetROISequence[0].ROINumber
-    #RTst_dcms[0].ROIContourSequence[0].ReferencedROINumber
-    #RTst_dcms[0].ROIContourSequence[0].ContourSequence[0].ContourData
-
-    #biopsy_localizer(RTst_dicom_item)
     
     global_data_list = []
-    
     disp_figs = ques_funcs.ask_ok('Do you want to open all figures now?')
     
     if disp_figs == True:
