@@ -168,7 +168,7 @@
                 "sha256:5a3d016c7c547f69d6f81fb0db9449ce888b418b5b9952cc5e6e66843e9dd845",
                 "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f"
             ],
-            "markers": "python_version >= '3.6'",
+            "markers": "python_full_version >= '3.6.0'",
             "version": "==2.1.1"
         },
         "click": {
@@ -1346,11 +1346,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:512e5536220e38146176efb833d4a62aa726b7bbff82cfbc8ba9eaa3996e0b17",
-                "sha256:f62ea9da9ed6289bfe868cd6845968a2c854d1427f8548d52cae02a42b4f0356"
+                "sha256:d0b9a8433464d5800cbe05094acf5c6d52a91bfac9b52bcfc4d41382be5d5d31",
+                "sha256:e197a19aa8ec9722928f2206f8de752def0e4c9fc6953527360d1c36d94ddb2f"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==65.5.0"
+            "version": "==65.5.1"
         },
         "shapely": {
             "hashes": [
@@ -1535,11 +1535,11 @@
         },
         "traitsui": {
             "hashes": [
-                "sha256:4c5b3d3aaeaabd1ec81a0a8c40f9ccd28fa8cb9d64ed13917c990d174654fa1d",
-                "sha256:e763e696e017b2ccb6bf0ffe56e9db4bf98f8616de36c2766050f585bec5772c"
+                "sha256:20471bf339c3ede77f06b2fa97be90ae3d166ebefccc167bcbda227c75b1663f",
+                "sha256:2eac0e11fac07795c430ad586d0ab8077b557b2495a04921e7cc40f9ba120a20"
             ],
             "markers": "python_version >= '3.6'",
-            "version": "==7.4.1"
+            "version": "==7.4.2"
         },
         "vtk": {
             "hashes": [

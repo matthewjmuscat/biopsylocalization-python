@@ -124,7 +124,49 @@ def main():
                     #print('\n Execution time:', elapsed_time, 'seconds')
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                    point_cloud = o3d.geometry.PointCloud()
+                    point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
+                    #pcd_color = np.ndarray((3,1), dtype=np.float64)
+                    #pcd_color[:] = 0.
+                    pcd_color = np.random.uniform(0, 0.7, size=3)
+                    point_cloud.paint_uniform_color(pcd_color)
+                    #point_cloud.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(len(np.asarray(pcd.points)), 3)))
+
+                    #delaunay_triangulation = scipy.spatial.Delaunay(threeDdata_array)
+                    delaunay_triangulation_obj = delaunay_obj(threeDdata_array, pcd_color)
+                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
+                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation"] = delaunay_triangulation_obj
                     
+                    # test points to test for inclusion
+                    num_pts = 5000
+                    max_bnd = point_cloud.get_max_bound()
+                    min_bnd = point_cloud.get_max_bound()
+                    if np.linalg.norm(max_bnd) >= np.linalg.norm(min_bnd): 
+                        largest_bnd = max_bnd
+                    else:
+                        largest_bnd = min_bnd
+                    bounding_box_size = np.linalg.norm(largest_bnd)
+                    center = point_cloud.get_center()
+                    test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
+                    test_pts_arr = np.array(test_pts) + center
+                    test_pts_point_cloud = o3d.geometry.PointCloud()
+                    test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
+                    test_pt_colors = np.empty([num_pts,3], dtype=float)
+
+                    for ind,pts in enumerate(test_pts_arr):
+                        #print(tri.find_simplex(pts) >= 0)  # True if point lies within poly)
+                        if delaunay_triangulation_obj.delaunay_triangulation.find_simplex(pts) >= 0:
+                            test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
+                        else: 
+                            test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
+                    
+                    test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+
+                    plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud)
+                    
+
+
                     if structs == structs_referenced_list[0]: 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
 
@@ -188,7 +230,7 @@ def main():
 
     
     global_data_list = []
-    disp_figs = ques_funcs.ask_ok('Do you want to open all figures now?')
+    disp_figs = ques_funcs.ask_ok('Do you want to open any figures now?')
     
     if disp_figs == True:
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -254,21 +296,30 @@ def main():
         pass
     
 
-
-    figure_global = plotting_funcs.arb_threeD_scatter_plotter_global(global_data_list[0])
-    figure_global.show()
-    x=input()
+    if disp_figs == True:
+        disp_figs_global = ques_funcs.ask_ok('Do you want to open the global data figure too?')
+        if disp_figs_global == True:
+            figure_global = plotting_funcs.arb_threeD_scatter_plotter_global(global_data_list[0])
+            figure_global.show()
+            close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
+            plt.close('all')
 
     
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
-        info = {}
-        info["Patient Name"] = pydicom_item["Patient Name"]
-        info["Patient ID"] = pydicom_item["Patient ID"]
-        figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
-        figure_global_per_patient.show()
-        print('1')
-        x=input()
+    if disp_figs == True:
+        disp_figs_DIL_NN = ques_funcs.ask_ok('Do you want to show the NN plots?')
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            info = {}
+            info["Patient Name"] = pydicom_item["Patient Name"]
+            info["Patient ID"] = pydicom_item["Patient ID"]
+            figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
+            figure_global_per_patient.show()
+            close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
+            plt.close('all')
     
+
+
+    print(1)
+
 
     """
     # bpa mesh
@@ -404,9 +455,9 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     master_st_ref_dict = {}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
     return master_st_ref_dict, ref_list
 
@@ -443,6 +494,47 @@ class nearest_neighbour_child:
         self.queried_BX_pt = queried_BX_pt
         self.NN_pt_on_comparison_struct = NN_pt_on_comparison_struct
         self.euclidean_dist = euclidean_dist
+
+class delaunay_obj:
+    def __init__(self, np_points, delaunay_tri_color):
+        self.delaunay_triangulation = self.scipy_delaunay_triangulation(np_points)
+        self.delaunay_line_set = self.line_set(np_points, self.delaunay_triangulation, delaunay_tri_color)
+
+    def scipy_delaunay_triangulation(self, numpy_points):
+        delaunay_triang = scipy.spatial.Delaunay(numpy_points)
+        return delaunay_triang
+
+    def collect_edges(self, tri):
+        edges = set()
+
+        def sorted_tuple(a,b):
+            return (a,b) if a < b else (b,a)
+        # Add edges of tetrahedron (sorted so we don't add an edge twice, even if it comes in reverse order).
+        for (i0, i1, i2, i3) in tri.simplices:
+            edges.add(sorted_tuple(i0,i1))
+            edges.add(sorted_tuple(i0,i2))
+            edges.add(sorted_tuple(i0,i3))
+            edges.add(sorted_tuple(i1,i2))
+            edges.add(sorted_tuple(i1,i3))
+            edges.add(sorted_tuple(i2,i3))
+        return edges
+
+    def line_set(self, points, tri, color):
+        edges = self.collect_edges(tri)
+        colors = [[color[0], color[1], color[2]] for i in range(len(edges))]
+        x = np.array([])
+        y = np.array([])
+        z = np.array([])
+        for (i,j) in edges:
+            x = np.append(x, [points[i, 0], points[j, 0], np.nan])      
+            y = np.append(y, [points[i, 1], points[j, 1], np.nan])      
+            z = np.append(z, [points[i, 2], points[j, 2], np.nan])
+
+        line_set = o3d.geometry.LineSet()
+        line_set.points = o3d.utility.Vector3dVector(points)
+        line_set.lines = o3d.utility.Vector2iVector(edges)
+        line_set.colors = o3d.utility.Vector3dVector(colors)
+        return line_set
 
 
 if __name__ == '__main__':    

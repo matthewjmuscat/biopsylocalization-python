@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import open3d as o3d
 
 def num_points_per_radii(n,N):
     # n is the number of radii steps, N is the number of points for the first radii
@@ -52,3 +53,26 @@ def collect_edges(tri):
         edges.add(sorted_tuple(i1,i3))
         edges.add(sorted_tuple(i2,i3))
     return edges
+
+def plot_tri_more_efficient_open3d(points, tri):
+    edges = collect_edges(tri)
+    colors = [[1, 0, 0] for i in range(len(edges))]
+    x = np.array([])
+    y = np.array([])
+    z = np.array([])
+    for (i,j) in edges:
+        x = np.append(x, [points[i, 0], points[j, 0], np.nan])      
+        y = np.append(y, [points[i, 1], points[j, 1], np.nan])      
+        z = np.append(z, [points[i, 2], points[j, 2], np.nan])
+
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(edges)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    o3d.visualization.draw_geometries([line_set,point_cloud])
+    
+
+
+    

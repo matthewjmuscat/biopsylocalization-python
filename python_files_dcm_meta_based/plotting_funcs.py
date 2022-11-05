@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
 import gc
+import open3d as o3d
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -210,3 +211,57 @@ def plot_attributes(structure_type,data_type):
     color_dict = {"Bx ref":'r',"OAR ref":'b',"DIL ref":'m'}
     plot_dict = {"Raw contour pts":'points',"Structure centroid pts":'points',"Centroid line sample pts":'points',"Reconstructed structure pts": 'points',"Nearest neighbours objects": 'line',"Best fit line of centroid pts": 'line'}
     return [color_dict[structure_type],marker_dict[data_type],plot_dict[data_type]]
+
+
+
+
+
+# function used for plotting delaunay triangulization in open3d (can also be used for plotting in matplotlib)
+def collect_edges(tri):
+    edges = set()
+
+    def sorted_tuple(a,b):
+        return (a,b) if a < b else (b,a)
+    # Add edges of tetrahedron (sorted so we don't add an edge twice, even if it comes in reverse order).
+    for (i0, i1, i2, i3) in tri.simplices:
+        edges.add(sorted_tuple(i0,i1))
+        edges.add(sorted_tuple(i0,i2))
+        edges.add(sorted_tuple(i0,i3))
+        edges.add(sorted_tuple(i1,i2))
+        edges.add(sorted_tuple(i1,i3))
+        edges.add(sorted_tuple(i2,i3))
+    return edges
+
+# function used for plotting delaunay triangulization in open3d (a similar function was defined in a test file to plot in matplotlib, open3d is better)
+def plot_tri_more_efficient_open3d(points, tri):
+    edges = collect_edges(tri)
+    colors = [[1, 0, 0] for i in range(len(edges))]
+    x = np.array([])
+    y = np.array([])
+    z = np.array([])
+    for (i,j) in edges:
+        x = np.append(x, [points[i, 0], points[j, 0], np.nan])      
+        y = np.append(y, [points[i, 1], points[j, 1], np.nan])      
+        z = np.append(z, [points[i, 2], points[j, 2], np.nan])
+
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(edges)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    #o3d.visualization.draw_geometries([line_set,point_cloud])
+    return line_set
+
+def plot_tri_immediately_efficient(points, line_set, *other_geometries):
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    geometry_list = [line_set,point_cloud]
+    if len(other_geometries) == 0:
+        o3d.visualization.draw_geometries(geometry_list)
+    else:
+        for i in other_geometries: 
+            geometry_list.append(i)
+        o3d.visualization.draw_geometries(geometry_list)
+
+    

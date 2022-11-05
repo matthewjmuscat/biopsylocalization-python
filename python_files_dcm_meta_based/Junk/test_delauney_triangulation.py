@@ -83,8 +83,11 @@ st = time.time()
 fig = plt.figure()
 ax = plt.axes(projection='3d')
 MC_toy_model_funcs.plot_tri_more_efficient(ax, polygon, tri)
-ax.scatter(test_pts_arr[:,0],test_pts_arr[:,1],test_pts_arr[:,2],c=colors[:])
+#ax.scatter(test_pts_arr[:,0],test_pts_arr[:,1],test_pts_arr[:,2],c=colors[:])
 fig.show()
+
+
+MC_toy_model_funcs.plot_tri_more_efficient_open3d(polygon, tri)
 
 et = time.time()
 elapsed_time = et - st
