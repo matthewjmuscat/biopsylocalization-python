@@ -19,6 +19,7 @@ from random import random
 from shapely.geometry import Point, Polygon, MultiPoint # for point in polygon test
 import open3d as o3d # for data visualization and meshing
 import MC_simulator_convex
+import uncertainty_processor
 import alphashape
 
 
@@ -335,8 +336,9 @@ def main():
     bx_uncertainties_mu_sigma_y_bx_frame = np.concatenate((bx_uncertainties_means_y_bx_frame, bx_uncertainties_sigma_y_bx_frame), axis=1)
     bx_uncertainties_mu_sigma_z_bx_frame = np.concatenate((bx_uncertainties_means_z_bx_frame, bx_uncertainties_sigma_z_bx_frame), axis=1)
 
-    bx_uncertainties_mu_sigma_xy_bx_frame = np.concatenate((bx_uncertainties_mu_sigma_x_bx_frame, bx_uncertainties_mu_sigma_y_bx_frame), axis=1)
-    bx_uncertainties_mu_sigma_xyz_bx_frame = np.concatenate((bx_uncertainties_mu_sigma_xy_bx_frame, bx_uncertainties_mu_sigma_z_bx_frame), axis=1)
+    bx_uncertainties_mu_sigma_xyz_bx_frame = [bx_uncertainties_mu_sigma_x_bx_frame,bx_uncertainties_mu_sigma_y_bx_frame,bx_uncertainties_mu_sigma_z_bx_frame]
+
+    anatomy_uncertainties_mu_sigma_xyz_lab_frame = []
 
     simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
     

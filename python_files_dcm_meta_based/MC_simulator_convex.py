@@ -49,7 +49,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
                     specific_uncertainty_array = np.random.normal(mu, sigma, num_simulations)
 
                     for j in range(0, num_simulations):
-                        
+                        print(1)
                         
     return master_structure_reference_dict
 
