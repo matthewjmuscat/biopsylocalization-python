@@ -16,6 +16,7 @@ open3d = "*"
 vtk = "*"
 pyqt5 = "*"
 mayavi = "*"
+alphashape = "*"
 
 [dev-packages]
 ipykernel = "*"

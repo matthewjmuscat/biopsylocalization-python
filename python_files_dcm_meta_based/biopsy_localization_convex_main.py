@@ -18,7 +18,8 @@ import timeit
 from random import random
 from shapely.geometry import Point, Polygon, MultiPoint # for point in polygon test
 import open3d as o3d # for data visualization and meshing
-
+import MC_simulator_convex
+import alphashape
 
 
 
@@ -141,12 +142,12 @@ def main():
                     num_pts = 5000
                     max_bnd = point_cloud.get_max_bound()
                     min_bnd = point_cloud.get_max_bound()
-                    if np.linalg.norm(max_bnd) >= np.linalg.norm(min_bnd): 
+                    center = point_cloud.get_center()
+                    if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
                         largest_bnd = max_bnd
                     else:
                         largest_bnd = min_bnd
-                    bounding_box_size = np.linalg.norm(largest_bnd)
-                    center = point_cloud.get_center()
+                    bounding_box_size = np.linalg.norm(largest_bnd-center)
                     test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
                     test_pts_arr = np.array(test_pts) + center
                     test_pts_point_cloud = o3d.geometry.PointCloud()
@@ -162,8 +163,8 @@ def main():
                     
                     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
-
-                    plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud)
+                    # plot delaunay in open3d ?
+                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud)
                     
 
 
@@ -317,127 +318,33 @@ def main():
             plt.close('all')
     
 
+    # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
+    # for now I will create some fake ones
+    bx_num_uncertainties_x_bx_frame = 3 
+    bx_num_uncertainties_y_bx_frame = 2 
+    bx_num_uncertainties_z_bx_frame = 2 
+    bx_uncertainties_means_x_bx_frame = np.full((bx_num_uncertainties_x_bx_frame,1), 0)
+    bx_uncertainties_means_y_bx_frame = np.full((bx_num_uncertainties_y_bx_frame,1), 0)
+    bx_uncertainties_means_z_bx_frame = np.full((bx_num_uncertainties_z_bx_frame,1), 0)
 
-    print(1)
+    bx_uncertainties_sigma_x_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_x_bx_frame,1))
+    bx_uncertainties_sigma_y_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_y_bx_frame,1))
+    bx_uncertainties_sigma_z_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_z_bx_frame,1))
 
+    bx_uncertainties_mu_sigma_x_bx_frame = np.concatenate((bx_uncertainties_means_x_bx_frame, bx_uncertainties_sigma_x_bx_frame), axis=1)
+    bx_uncertainties_mu_sigma_y_bx_frame = np.concatenate((bx_uncertainties_means_y_bx_frame, bx_uncertainties_sigma_y_bx_frame), axis=1)
+    bx_uncertainties_mu_sigma_z_bx_frame = np.concatenate((bx_uncertainties_means_z_bx_frame, bx_uncertainties_sigma_z_bx_frame), axis=1)
 
-    """
-    # bpa mesh
-    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
-    #points_3D = np.array([[1,1,0],[1,-1,0],[-1,-1,0],[-1,1,0],[0,0,-1],[0,0,2]])
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points_3D)
-    #o3d.visualization.draw_geometries([pcd])
-    distances = pcd.compute_nearest_neighbor_distance()
-    avg_dist = np.mean(distances)
-    radius = avg_dist
-    #radii = [0.005, 0.01, 0.02, 0.04]
-    radii = [radius*x for x in range(3,6)]
-    pcd.estimate_normals(fast_normal_computation=False)
-    bpa_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd,o3d.utility.DoubleVector(radii))
-    dec_mesh = bpa_mesh.simplify_quadric_decimation(100000)
-    dec_mesh.remove_degenerate_triangles()
-    dec_mesh.remove_duplicated_triangles()
-    dec_mesh.remove_duplicated_vertices()
-    dec_mesh.remove_non_manifold_edges()
-    o3d.visualization.draw_geometries([bpa_mesh],point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
-    o3d.visualization.draw_geometries([dec_mesh],point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
-    """
+    bx_uncertainties_mu_sigma_xy_bx_frame = np.concatenate((bx_uncertainties_mu_sigma_x_bx_frame, bx_uncertainties_mu_sigma_y_bx_frame), axis=1)
+    bx_uncertainties_mu_sigma_xyz_bx_frame = np.concatenate((bx_uncertainties_mu_sigma_xy_bx_frame, bx_uncertainties_mu_sigma_z_bx_frame), axis=1)
 
-    """
-    # poisson mesh
-    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points_3D)
-    pcd.estimate_normals(fast_normal_computation=False)
-    poisson_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=8, width=0, scale=1.1, linear_fit=False)[0]
-    bbox = pcd.get_axis_aligned_bounding_box()
-    p_mesh_crop = poisson_mesh.crop(bbox)
-    o3d.visualization.draw_geometries([poisson_mesh],point_show_normal=False, mesh_show_wireframe=True, mesh_show_back_face=True)
-    """
-
-    # define point to test
-    test_point = master_structure_reference_dict['DOE^JOHN (ANON181)']['Bx ref'][0]['Centroid line sample pts'][20]
-    test_point_xy_Point = Point(test_point[0:2])
-    test_point_z = test_point[2]
-    slice_z = test_point_z
-    print('test point: ',test_point)
-
-    # alpha convex hull method
-    points_3D = master_structure_reference_dict['DOE^JOHN (ANON181)']['DIL ref'][0]['Raw contour pts']
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points_3D)
+    simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
     
-    
-    #pcd.estimate_normals(fast_normal_computation=False)
-    alpha=10
-    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
-    mesh.compute_vertex_normals()
-    o3d.visualization.draw_geometries([mesh], point_show_normal=True, mesh_show_wireframe=True, mesh_show_back_face=True)
-    
-    """
-    pcd_subsample = mesh.sample_points_uniformly(number_of_points=10000)
-    o3d.visualization.draw_geometries([pcd_subsample])
-    #pcd_subsample_poisson_uniform = mesh.sample_points_poisson_disk(number_of_points=500, pcl=pcd_subsample)
-    #o3d.visualization.draw_geometries([pcd_subsample_poisson_uniform])
-    
-    # want to sample points from a thin strip
-    pcd_subsample_poisson_uniform_array = np.asarray(pcd_subsample.points)
-    pcd_subsample_poisson_uniform_array_z = pcd_subsample_poisson_uniform_array[:,2]
-    tolerance = 0.1
-    #slice_z = -32
-    pcd_subsample_poisson_uniform_array_slice = pcd_subsample_poisson_uniform_array[np.logical_and(pcd_subsample_poisson_uniform_array_z >= slice_z - tolerance, pcd_subsample_poisson_uniform_array_z <= slice_z + tolerance),:]
-    pcd_subsample_slice = o3d.geometry.PointCloud()
-    pcd_subsample_slice.points = o3d.utility.Vector3dVector(pcd_subsample_poisson_uniform_array_slice)
-    o3d.visualization.draw_geometries([pcd_subsample_slice])
-    """
-
-    # another way to sample points from a thin strip, first crop, then sample
-    tolerance = 0.2
-    #slice_z = -32
-    safety_padding = 0.5
-    max_bound = mesh.get_max_bound()
-    min_bound = mesh.get_min_bound()
-    bb = o3d.geometry.AxisAlignedBoundingBox()
-    bbpoints = o3d.geometry.PointCloud()
-    bbpoints.points = o3d.utility.Vector3dVector(np.array([
-    [max_bound[0]+safety_padding,max_bound[1]+safety_padding,slice_z+tolerance],
-    [max_bound[0]+safety_padding,min_bound[1]-safety_padding,slice_z+tolerance],
-    [min_bound[0]-safety_padding,max_bound[1]+safety_padding,slice_z+tolerance],
-    [min_bound[0]-safety_padding,min_bound[1]-safety_padding,slice_z+tolerance],
-    [max_bound[0]+safety_padding,max_bound[1]+safety_padding,slice_z-tolerance],
-    [max_bound[0]+safety_padding,min_bound[1]-safety_padding,slice_z-tolerance],
-    [min_bound[0]-safety_padding,max_bound[1]+safety_padding,slice_z-tolerance],
-    [min_bound[0]-safety_padding,min_bound[1]-safety_padding,slice_z-tolerance],
-    ]))
-    bb_created = bb.create_from_points(points = bbpoints.points)
-    bb_created.color = np.array([0,0,0]) # paint bounding box black
-    mesh_subdivided = mesh.subdivide_midpoint(number_of_iterations=6)
-    o3d.visualization.draw_geometries([bb_created,mesh_subdivided],mesh_show_wireframe=True, mesh_show_back_face=True)
-    cropped_mesh = mesh_subdivided.crop(bounding_box = bb_created)
-    o3d.visualization.draw_geometries([bb_created,cropped_mesh],mesh_show_wireframe=True, mesh_show_back_face=True)
-    pcd_subsample_slice = cropped_mesh.sample_points_uniformly(number_of_points=1000)
-    o3d.visualization.draw_geometries([pcd_subsample_slice])
-
-    """
-    # sort by euclidean distance
-    sorted_pcd_subsample_slice = np.empty_like(pcd_subsample_slice)
-    sorted_pcd_subsample_slice[0] = pcd_subsample_slice[0]
-    for i in range(0,np.size(pcd_subsample_slice,axis=0)):
-        sorted_pcd_subsample_slice[]
-    """
-
-    polygon1 = MultiPoint(np.asarray(pcd_subsample_slice.points)[:,0:2]).convex_hull
-    #polygon1 = Polygon(np.asarray(pcd_subsample_slice.points)[:,0:2])
-    polygon1_x,polygon1_y = polygon1.exterior.xy
-    fig_new = plt.figure()
-    ax = fig_new.add_subplot(111, projection='3d')
-    ax.plot(polygon1_x,polygon1_y)
-    ax.scatter(test_point[0],test_point[1])
-    fig_new.show()
-
-    PIPT_result = test_point_xy_Point.within(polygon1)
-    print("Point in polygon test result: ", PIPT_result)
+    if simulation_ans ==  True:
+        print('Beginning simulation')
+        master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list)
+    else: 
+        pass
 
     print('Programme has ended.')
 
@@ -455,7 +362,7 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     master_st_ref_dict = {}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}

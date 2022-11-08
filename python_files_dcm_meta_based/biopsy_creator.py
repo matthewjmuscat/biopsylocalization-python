@@ -269,6 +269,128 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_
     """
 
 
+def biopsy_points_reconstruction_and_uniform_sampler(list_origin_to_first_centroid_vector,centroid_line,biopsy_cyl_outer_radius = 1, plot_stuff = False):
+    """
+    A function that uniformly samples points in a cylinder surrounding the centroid line, 
+    note that the centroid vector that describes the line must point from the 
+    first centroid point towards the rest of them, returns an array of lab frame x, y, z followed by biopsy frame r, theta, z
+    """
+    num_samples = 1000
+    biopsy_cyl_outer_radius = 1 # this should be a measured quantity
+    plot_stuff = True
+    centroid_vector = centroid_line[1]-centroid_line[0]
+    biopsy_cyl_z_length = np.linalg.norm(centroid_vector)
+
+    norm_centroid_vector = biopsy_cyl_z_length
+    lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
+    norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
+    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
+    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
+        lab_azimuth_centroid = 0
+    if centroid_vector[1] < 0:
+        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+    centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
+    centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
+    centroid_z = np.cos(lab_polar_centroid)
+    
+
+    # plot the stuff? if not confident that algo works then change below plot var to True
+    unit_centroid_vector = (1/norm_centroid_vector)*centroid_vector
+
+    
+    if plot_stuff == True:
+        fig=plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(unit_centroid_vector[0], unit_centroid_vector[1], unit_centroid_vector[2], c='r', marker='o')
+        ax.scatter(centroid_x, centroid_y, centroid_z, c='b', marker='x')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        plt.xlim([np.amin(unit_centroid_vector[0]), np.amax(unit_centroid_vector[0])])
+        plt.ylim([np.amin(unit_centroid_vector[1]), np.amax(unit_centroid_vector[1])])
+        ax.set_zlim([np.amin(unit_centroid_vector[2]), np.amax(unit_centroid_vector[2])])
+
+        
+        #print(list_centroid_line_vector)
+        #print(unit_centroid_vector)
+        #print('azimuth centroid = ',lab_azimuth_centroid)
+        #print('polar centroid = ',lab_polar_centroid)
+        #print(centroid_x,centroid_y,centroid_z)
+        plt.show()
+
+
+
+    origin_to_first_centroid_vector = np.array(list_origin_to_first_centroid_vector)
+
+    theta_0 = lab_polar_centroid # polar angle of the incoming photon in the lab frame
+    phi_0 = lab_azimuth_centroid # azimuth angle of the incoming photon in the lab frame
+    chi = np.pi/2 # in-plane scatter angle of the outgoing photon relative to the incoming photon vector
+    
+    
+    biopsy_samples = np.empty(shape=[num_samples,6])
+
+    
+    rotation_matrix_x = np.array([np.cos(theta_0)*np.cos(phi_0),-np.sin(phi_0),np.sin(theta_0)*np.cos(phi_0)])
+    rotation_matrix_y = np.array([np.cos(theta_0)*np.sin(phi_0),np.cos(phi_0),np.sin(theta_0)*np.sin(phi_0)])
+    rotation_matrix_z = np.array([-np.sin(theta_0),0,np.cos(theta_0)])
+    rotation_matrix = rotation_matrix_x
+    rotation_matrix = np.vstack([rotation_matrix,rotation_matrix_y])
+    rotation_matrix = np.vstack([rotation_matrix,rotation_matrix_z])
+
+    # transport and create more rings, first make an appropriately sized array for all points that are values of the first ring
+    
+    
+
+    for j in range(0,num_samples):
+        eta_rand = np.random.uniform(low = 0, high = 2*np.pi)
+        radius_rand = np.random.uniform(low = 0, high = biopsy_cyl_outer_radius)
+        z_rand = np.random.uniform(low = 0,high = biopsy_cyl_z_length)
+        centroid_vec_frame_vec_r_eta_z = np.array([radius_rand, eta_rand, z_rand], dtype=float, ndmin=2)
+
+        centroid_vec_frame_vec_x = np.array([radius_rand*np.sin(chi)*np.cos(eta_rand)])
+        centroid_vec_frame_vec_y = np.array([radius_rand*np.sin(chi)*np.sin(eta_rand)])
+        centroid_vec_frame_vec_z = np.array([z_rand])
+        centroid_vec_frame_vec = centroid_vec_frame_vec_x
+        centroid_vec_frame_vec = np.vstack([centroid_vec_frame_vec,centroid_vec_frame_vec_y])
+        centroid_vec_frame_vec = np.vstack([centroid_vec_frame_vec,centroid_vec_frame_vec_z])
+
+        lab_frame_vec_untranslated = np.dot(rotation_matrix,centroid_vec_frame_vec)
+
+        # create point, transport to first centroid, then go to orthogonal ring
+        lab_frame_vec = origin_to_first_centroid_vector + lab_frame_vec_untranslated.T
+        #print(lab_ring_point)
+        biopsy_samples[j,0:3] = lab_frame_vec
+        biopsy_samples[j,3:6] = centroid_vec_frame_vec_r_eta_z
+
+    
+
+    biopsy_samples_transpose = biopsy_samples.T
+    
+        
+    if plot_stuff == True:
+        fig=plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        
+        ax.scatter(origin_to_first_centroid_vector[0], origin_to_first_centroid_vector[1], origin_to_first_centroid_vector[2], c='g', marker='o')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        plt.xlim([np.amin(biopsy_samples_transpose[0]), np.amax(biopsy_samples_transpose[0])])
+        plt.ylim([np.amin(biopsy_samples_transpose[1]), np.amax(biopsy_samples_transpose[1])])
+        ax.set_zlim([np.amin(biopsy_samples_transpose[2]), np.amax(biopsy_samples_transpose[2])])
+        ax.scatter(biopsy_samples_transpose[0], biopsy_samples_transpose[1], biopsy_samples_transpose[2], c='r', marker='o')
+        plt.show()
+    #print('done!')
+
+    return biopsy_samples
+
+
 def tester():
     #centroid_list = [[1,1,1],[1,1,-1],[1,-1,1],[-1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1],[-1,-1,-1],[0,0,1],[0,0,-1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0]]
     #for centroid in centroid_list:
