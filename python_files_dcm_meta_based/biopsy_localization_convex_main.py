@@ -21,8 +21,14 @@ import open3d as o3d # for data visualization and meshing
 import MC_simulator_convex
 import uncertainty_processor
 import alphashape
-
-
+import uncertainty_file_writer
+import tkinter as tk
+from tkinter import ttk
+from tkinter import filedialog as fd
+from tkinter.messagebox import showinfo
+import csv
+from prettytable import from_csv
+import pandas
 
 def main():
     """
@@ -44,12 +50,15 @@ def main():
     OAROI_contour_names = ['Prostate','Urethra','Rectum','random']
     Biopsy_contour_names = ['Bx']
     DIL_contour_names = ['DIL']
+    Uncertainty_folder_name = 'Uncertainty data'
     
     # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
 
     # First we access the data directory, it must be in a location 
     # two levels up from this file
     data_dir = pathlib.Path(__file__).parents[2].joinpath(Data_folder_name)
+    uncertainty_dir = data_dir.joinpath(Uncertainty_folder_name)
+    uncertainties_file = uncertainty_dir.joinpath("uncertainties_prepared_unfilled.csv")
     dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
     dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
 
@@ -319,6 +328,32 @@ def main():
             plt.close('all')
     
 
+    ## begin simulation section
+    num_simulations = 1000
+
+    uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
+    if uncertainty_template_generate == True:
+        # create a blank uncertainties file filled with the proper patient data
+        uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
+    else:
+        pass
+
+    uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?')
+    if uncertainty_file_ready == True:
+        print('Please select the file with the dialog box')
+        root = tk.Tk() # these two lines are to get rid of errant tkinter window
+        root.withdraw() # these two lines are to get rid of errant tkinter window
+        uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
+        with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
+            #csv_file = csv.reader(uncertainties_file_filled_csv, delimiter=',', quotechar='|')
+            #for row in csv_file:
+            #    print(', '.join(row))
+            x = from_csv(uncertainties_file_filled_csv)
+            result = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])
+        print(x)
+        print(result)
+    else:
+        sys.exit("Fill in the uncertainty template and run the programme again.")
     # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
     # for now I will create some fake ones
     bx_num_uncertainties_x_bx_frame = 3 
@@ -344,7 +379,7 @@ def main():
     
     if simulation_ans ==  True:
         print('Beginning simulation')
-        master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list)
+        master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations)
     else: 
         pass
 

@@ -17,6 +17,7 @@ vtk = "*"
 pyqt5 = "*"
 mayavi = "*"
 alphashape = "*"
+prettytable = "*"
 
 [dev-packages]
 ipykernel = "*"
