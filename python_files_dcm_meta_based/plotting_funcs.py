@@ -4,6 +4,8 @@ from matplotlib import cm
 import numpy as np
 import gc
 import open3d as o3d
+import open3d.visualization.gui as gui
+import open3d.visualization.rendering as rendering
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -253,9 +255,11 @@ def plot_tri_more_efficient_open3d(points, tri):
     #o3d.visualization.draw_geometries([line_set,point_cloud])
     return line_set
 
-def plot_tri_immediately_efficient(points, line_set, *other_geometries):
+def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='Unknown'):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(points)
+    pcd_color = np.random.uniform(0, 0.7, size=3)
+    point_cloud.paint_uniform_color(pcd_color)
     geometry_list = [line_set,point_cloud]
     if len(other_geometries) == 0:
         o3d.visualization.draw_geometries(geometry_list)
@@ -263,5 +267,32 @@ def plot_tri_immediately_efficient(points, line_set, *other_geometries):
         for i in other_geometries: 
             geometry_list.append(i)
         o3d.visualization.draw_geometries(geometry_list)
+        #o3d.visualization.gui.Label3D(label, point_cloud.get_max_bound()+np.array([3,3,3]))
 
     
+
+def gui_maker(points):
+    pointcloud = o3d.geometry.PointCloud()
+    pointcloud.points = o3d.utility.Vector3dVector(points)
+    gui.Application.instance.initialize()
+
+    window = gui.Application.instance.create_window("Mesh-Viewer", 1024, 750)
+
+    scene = gui.SceneWidget()
+    scene.scene = rendering.Open3DScene(window.renderer)
+
+    window.add_child(scene)
+
+    # mesh = o3d.io.read_triangle_mesh('path/to/data', print_progress=True)
+    #mesh = o3d.io.read_point_cloud('path/to/data', print_progress=True)
+
+    scene.scene.add_geometry("mesh_name", pointcloud, rendering.MaterialRecord())
+
+    bounds = pointcloud.get_axis_aligned_bounding_box()
+    scene.setup_camera(60, bounds, bounds.get_center())
+
+    labels = [[0, 0, 0]]
+    for coordinate in labels:
+        scene.add_3d_label(coordinate, "label at origin")
+
+    gui.Application.instance.run()  # Run until user closes window

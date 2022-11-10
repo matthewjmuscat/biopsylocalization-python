@@ -119,11 +119,64 @@ def main():
                     
                     structure_centroids_array = np.empty([len(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]),3])
                     lower_bound_index = 0
+                    interp_lower_bound_index = 0
+                    interpolations = 100
+                    num_z_slices = len(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:])
+                    threeDdata_array_interpolated_size = 0
                     for index, slice_object in enumerate(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]):
                         contour_slice_points = slice_object.ContourData                       
                         threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                        
                         current_zslice_num_points = np.size(threeDdata_zslice,0)
+                        threeDdata_array_interpolated_size = threeDdata_array_interpolated_size + current_zslice_num_points*interpolations + current_zslice_num_points
+
+                    threeDdata_array_interpolated = np.empty([threeDdata_array_interpolated_size,3])
+                    threeDdata_zslice_interpolated = np.empty([interpolations,3])
+                    for index, slice_object in enumerate(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]):
+                        num_z_slices = num_z_slices + 1
+                        contour_slice_points = slice_object.ContourData                       
+                        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                        current_zslice_num_points = np.size(threeDdata_zslice,0)
+                        threeDdata_zslice_interpolated = threeDdata_zslice
+                        #step = 0.1
+                        #for i in range(0,current_zslice_num_points):
+                        #    if i == current_zslice_num_points-1:
+                        #        interp_vec = (threeDdata_zslice[0,:] - threeDdata_zslice[i,:])
+                        #    else:
+                        #        interp_vec = threeDdata_zslice[i+1,:] - threeDdata_zslice[i,:]
+                        #    init_point = threeDdata_zslice[i,:]
+                        #    interp_vec_unit = interp_vec/np.linalg.norm(interp_vec)
+                        #    for j in range(1,20):
+                        #        np.insert(threeDdata_zslice_interpolated, i+j,init_point+interp_vec_unit*step, axis=0)
+                            
+                        
+                        z_vals = np.full((interpolations,1),threeDdata_zslice[0,2])
+                        for j in range(0,current_zslice_num_points):
+                            if j < current_zslice_num_points-1:
+                                x = threeDdata_zslice[j:j+2,0]
+                                y = threeDdata_zslice[j:j+2,1]
+                            else: 
+                                x = np.squeeze(np.array([[threeDdata_zslice[j,0],threeDdata_zslice[0,0]]]).T)
+                                y = np.squeeze(np.array([[threeDdata_zslice[j,1],threeDdata_zslice[0,1]]]).T)
+                            f = scipy.interpolate.interp1d(x, y)
+                            xnew = np.linspace(x[0], x[1], num=interpolations+2)[1:-1]
+                            xnew_new_size = np.expand_dims(xnew,axis=1)
+                            ynew = f(xnew)   # use interpolation function returned by `interp1d`
+                            ynew_new_size = np.expand_dims(ynew,axis=1)
+                            interpolated_segment = np.concatenate((xnew_new_size,ynew_new_size), axis=1)
+                            interpolated_segment = np.concatenate((interpolated_segment,z_vals), axis=1)
+                            threeDdata_zslice_interpolated = np.insert(threeDdata_zslice_interpolated, [j*interpolations+1], interpolated_segment, axis=0)
+                        
+                        num_points_in_z_slize_after_interp = len(threeDdata_zslice_interpolated)
+                        
+                        
+                        #new_x = np.linspace(min(threeDdata_zslice[:,0]), max(threeDdata_zslice[:,0]), num=interpolations)
+                        #new_x_new_size = np.expand_dims(new_x, axis=1)
+                        #new_y = np.interp(new_x, threeDdata_zslice[:,0], threeDdata_zslice[:,1])
+                        #new_y_new_size = np.expand_dims(new_y, axis=1)
+                        #threeDdata_zslice_interpolated = np.concatenate((np.concatenate((new_x_new_size, new_y_new_size), axis=1),z_val), axis=1)
+                        threeDdata_array_interpolated[interp_lower_bound_index:interp_lower_bound_index + num_points_in_z_slize_after_interp] = threeDdata_zslice_interpolated
+                        interp_lower_bound_index = interp_lower_bound_index + num_points_in_z_slize_after_interp
+
                         threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
                         lower_bound_index = lower_bound_index + current_zslice_num_points 
                         
@@ -135,6 +188,7 @@ def main():
                     #print('\n Execution time:', elapsed_time, 'seconds')
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Subsampled contour pts"] = threeDdata_array_interpolated
                     point_cloud = o3d.geometry.PointCloud()
                     point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
                     #pcd_color = np.ndarray((3,1), dtype=np.float64)
@@ -174,8 +228,8 @@ def main():
                     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
                     # plot delaunay in open3d ?
-                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud)
-                    
+                    plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                    #plotting_funcs.gui_maker(threeDdata_array_interpolated)
 
 
                     if structs == structs_referenced_list[0]: 
@@ -343,37 +397,16 @@ def main():
         print('Please select the file with the dialog box')
         root = tk.Tk() # these two lines are to get rid of errant tkinter window
         root.withdraw() # these two lines are to get rid of errant tkinter window
+        # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
         uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
         with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-            #csv_file = csv.reader(uncertainties_file_filled_csv, delimiter=',', quotechar='|')
-            #for row in csv_file:
-            #    print(', '.join(row))
-            x = from_csv(uncertainties_file_filled_csv)
-            result = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])
-        print(x)
-        print(result)
+            uncertainties_filled = uncertainties_file_filled_csv
+        pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+        print(pandas_read_uncertainties)
     else:
         sys.exit("Fill in the uncertainty template and run the programme again.")
-    # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-    # for now I will create some fake ones
-    bx_num_uncertainties_x_bx_frame = 3 
-    bx_num_uncertainties_y_bx_frame = 2 
-    bx_num_uncertainties_z_bx_frame = 2 
-    bx_uncertainties_means_x_bx_frame = np.full((bx_num_uncertainties_x_bx_frame,1), 0)
-    bx_uncertainties_means_y_bx_frame = np.full((bx_num_uncertainties_y_bx_frame,1), 0)
-    bx_uncertainties_means_z_bx_frame = np.full((bx_num_uncertainties_z_bx_frame,1), 0)
+    
 
-    bx_uncertainties_sigma_x_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_x_bx_frame,1))
-    bx_uncertainties_sigma_y_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_y_bx_frame,1))
-    bx_uncertainties_sigma_z_bx_frame = np.random.uniform(low=0.0, high=3.0, size=(bx_num_uncertainties_z_bx_frame,1))
-
-    bx_uncertainties_mu_sigma_x_bx_frame = np.concatenate((bx_uncertainties_means_x_bx_frame, bx_uncertainties_sigma_x_bx_frame), axis=1)
-    bx_uncertainties_mu_sigma_y_bx_frame = np.concatenate((bx_uncertainties_means_y_bx_frame, bx_uncertainties_sigma_y_bx_frame), axis=1)
-    bx_uncertainties_mu_sigma_z_bx_frame = np.concatenate((bx_uncertainties_means_z_bx_frame, bx_uncertainties_sigma_z_bx_frame), axis=1)
-
-    bx_uncertainties_mu_sigma_xyz_bx_frame = [bx_uncertainties_mu_sigma_x_bx_frame,bx_uncertainties_mu_sigma_y_bx_frame,bx_uncertainties_mu_sigma_z_bx_frame]
-
-    anatomy_uncertainties_mu_sigma_xyz_lab_frame = []
 
     simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
     
@@ -399,9 +432,9 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     master_st_ref_dict = {}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Subsampled contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Subsampled contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Subsampled contour pts": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
     return master_st_ref_dict, ref_list
 
