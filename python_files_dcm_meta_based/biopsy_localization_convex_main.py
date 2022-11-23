@@ -29,6 +29,7 @@ from tkinter.messagebox import showinfo
 import csv
 from prettytable import from_csv
 import pandas
+import anatomy_reconstructor_tools
 
 def main():
     """
@@ -109,25 +110,37 @@ def main():
 
                     # can uncomment surrounding lines to time this particular process
                     #st = time.time()
-                    
-                    total_structure_points = sum([len(x.ContourData)/3 for x in RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]])
-                    if total_structure_points.is_integer():
+                    threeDdata_zslice_list = []
+                    structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
+                    for index, slice_object in enumerate(structure_contour_points_raw_sequence):
+                        contour_slice_points = slice_object.ContourData                       
+                        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                        threeDdata_zslice_list.append(threeDdata_zslice)
+
+
+
+                    total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                    if isinstance(total_structure_points, int):
+                        pass
+                    elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
                         total_structure_points = int(total_structure_points)
+                    elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
+                        raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
                     else: 
-                        raise Exception("Seems the cumulative number of spatial components of contour points is not divisible by three!") 
+                        raise Exception("Something went wrong when calculating total number of points in structure!")
+
                     threeDdata_array = np.empty([total_structure_points,3])
+
+                    anatomy_reconstructor_tools.intra_zslice_interpolator(threeDdata_zslice_list)
                     
-                    structure_centroids_array = np.empty([len(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]),3])
+                    structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
                     lower_bound_index = 0
-                    num_z_slices = len(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:])
+                    num_z_slices = len(threeDdata_zslice_list)
                     
                     interp_dist = 0.1 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
                     interpolation_information = interpolation_information_obj(num_z_slices)
                     
-                    for index, slice_object in enumerate(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]):
-                        contour_slice_points = slice_object.ContourData                       
-                        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                        #z_val = threeDdata_zslice[0,2]
+                    for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
                         current_zslice_num_points = np.size(threeDdata_zslice,0)
                         threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
                         lower_bound_index = lower_bound_index + current_zslice_num_points 
@@ -135,7 +148,7 @@ def main():
                         structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
                         structure_centroids_array[index] = structure_zslice_centroid
 
-                        interpolation_information.analyze_structure_slice(slice_object,interp_dist)
+                        interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
                         
                         # interpolation_information.numpoints_raw_per_zslice_dict[z_val] = current_zslice_num_points
                         # threeDdata_array_interpolated_size = threeDdata_array_interpolated_size + current_zslice_num_points*interpolations + current_zslice_num_points
@@ -256,10 +269,17 @@ def main():
                     
                     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
-                    # plot delaunay in open3d ?
+                    
                     threeDdata_array_interpolated = interpolation_information.interpolated_pts_np_arr
-                    plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
-                    #plotting_funcs.gui_maker(threeDdata_array_interpolated)
+                    
+                    # plot delaunay in open3d ?
+                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                    
+                    # plot points with order labels of interpolated intraslice ?
+                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interpolated)
+
+                    # plot points with order labels of raw data ?
+                    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                     centroid_line = pca.linear_fitter(structure_centroids_array.T)
@@ -371,8 +391,8 @@ def main():
                         info = specific_structure
                         info["Patient Name"] = pydicom_item["Patient Name"]
                         info["Patient ID"] = pydicom_item["Patient ID"]
-                        #specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(global_data_list_per_patient,**info)
-                        specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(global_data_list_per_patient,**info)
+                        #specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(*global_data_list_per_patient,**info)
+                        specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(*global_data_list_per_patient, **info)
                         specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
                     
                         #specific_structure_fig.show()
@@ -549,9 +569,7 @@ class interpolation_information_obj:
         self.num_z_slices_raw = num_z_slices_raw
         self.z_slice_seg_obj_list_temp = None
     
-    def analyze_structure_slice(self, slice_object, interp_dist):
-        contour_slice_points = slice_object.ContourData                       
-        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+    def analyze_structure_slice(self, threeDdata_zslice, interp_dist):
         z_val = threeDdata_zslice[0,2] 
         current_zslice_num_points = np.size(threeDdata_zslice,0)
         self.create_zslice(z_val, current_zslice_num_points)

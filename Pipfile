@@ -15,9 +15,9 @@ shapely = "*"
 open3d = "*"
 vtk = "*"
 pyqt5 = "*"
-mayavi = "*"
 alphashape = "*"
 prettytable = "*"
+scikit-learn = "*"
 
 [dev-packages]
 ipykernel = "*"

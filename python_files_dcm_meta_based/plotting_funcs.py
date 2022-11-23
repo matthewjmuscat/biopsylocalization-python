@@ -31,8 +31,8 @@ def arb_threeD_scatter_plotter(*data_and_color,**text):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     for data in data_and_color:
-        ax.scatter(data[0], data[1], data[2], c=data[3], marker=data[4])
-
+        ax.scatter(data[0], data[1], data[2], c=data[3], marker=data[4]) 
+        
     iterator = 1
     info_to_print = [x for x in text.items() if type(x[1])==str]
     for key, value in info_to_print:
@@ -44,7 +44,7 @@ def arb_threeD_scatter_plotter(*data_and_color,**text):
 
     return fig
 
-def arb_threeD_scatter_plotter_list(data_and_color,**text):
+def arb_threeD_scatter_plotter_list(*data_and_color, **text):
     """
     accepts nested list of data
     """
@@ -55,6 +55,18 @@ def arb_threeD_scatter_plotter_list(data_and_color,**text):
     ax.set_zlabel('Z')
     for data in data_and_color:
         ax.scatter(data[0], data[1], data[2], color=data[3], marker=data[4])
+        zslice_prev = data[2][0]
+        j=1
+        for i in range(len(data[0])):
+            zslice = data[2][i]
+            if zslice == zslice_prev:
+                ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
+                j=j+1
+            else:
+                j=1
+                ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
+                j=j+1
+            zslice_prev = zslice
 
     iterator = 1
     info_to_print = [x for x in text.items() if type(x[1])==str]
@@ -269,9 +281,8 @@ def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='U
         o3d.visualization.draw_geometries(geometry_list)
         #o3d.visualization.gui.Label3D(label, point_cloud.get_max_bound()+np.array([3,3,3]))
 
-    
 
-def gui_maker(points):
+def point_cloud_with_order_labels(points):
     pointcloud = o3d.geometry.PointCloud()
     pointcloud.points = o3d.utility.Vector3dVector(points)
     gui.Application.instance.initialize()
@@ -283,16 +294,29 @@ def gui_maker(points):
 
     window.add_child(scene)
 
-    # mesh = o3d.io.read_triangle_mesh('path/to/data', print_progress=True)
-    #mesh = o3d.io.read_point_cloud('path/to/data', print_progress=True)
-
     scene.scene.add_geometry("mesh_name", pointcloud, rendering.MaterialRecord())
 
     bounds = pointcloud.get_axis_aligned_bounding_box()
     scene.setup_camera(60, bounds, bounds.get_center())
 
-    labels = [[0, 0, 0]]
-    for coordinate in labels:
-        scene.add_3d_label(coordinate, "label at origin")
+    zslice_prev = np.asarray(pointcloud.points)[0,2]
+    j=1
+    for i in range(np.shape(np.asarray(pointcloud.points))[0]):
+        zslice = np.asarray(pointcloud.points)[i,2]
+        if zslice == zslice_prev:
+            scene.add_3d_label(np.asarray(pointcloud.points)[i,:], '%s' % (str(j)))
+            #ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
+            j=j+1
+        else:
+            j=1
+            scene.add_3d_label(np.asarray(pointcloud.points)[i,:], '%s' % (str(j)))
+            #ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
+            j=j+1
+        zslice_prev = zslice
 
     gui.Application.instance.run()  # Run until user closes window
+
+
+
+
+
