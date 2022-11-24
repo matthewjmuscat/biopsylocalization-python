@@ -131,7 +131,7 @@ def main():
 
                     threeDdata_array = np.empty([total_structure_points,3])
 
-                    anatomy_reconstructor_tools.intra_zslice_interpolator(threeDdata_zslice_list)
+                    anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list)
                     
                     structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
                     lower_bound_index = 0

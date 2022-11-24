@@ -36,7 +36,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
                 biopsy_raw_point_cloud.paint_uniform_color(pcd_color)
 
                 # plot point clouds?
-                #o3d.visualization.draw_geometries([biopsy_raw_point_cloud,biopsy_samples_point_cloud])
+                o3d.visualization.draw_geometries([biopsy_raw_point_cloud,biopsy_samples_point_cloud])
 
 
 
