@@ -92,14 +92,18 @@ class interslice_interpolation_information_obj:
         self.zslices_index_pairings_dict = None
 
     def analyze_structure(self, threeDdata_zslice_list, zslices_index_pairings_dict, max_interp_dist):
+        self.interpolated_pts_list = threeDdata_zslice_list
         self.zslices_index_pairings_dict = zslices_index_pairings_dict
         self.max_interp_distance = max_interp_dist
         for current_slice_index in range(self.num_z_slices_raw-1): # exclude last slice
             threeDdata_current_slice_arr = threeDdata_zslice_list[current_slice_index]
             adjacent_index = (current_slice_index+1) 
             threeDdata_adjacent_slice_arr = threeDdata_zslice_list[adjacent_index]
-            self.analyze_adjacent_structure_slices(threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist)
-    
+            threeDdata_interpolated_bt_two_zslices_list = self.analyze_adjacent_structure_slices(threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist)
+            for ind,z_slice_arr in enumerate(threeDdata_interpolated_bt_two_zslices_list):
+                self.interpolated_pts_list
+
+
     def analyze_adjacent_structure_slices(self, threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist):
         linesegments_by_point_pairings_keys_dict = {}
         z_val_current = threeDdata_current_slice_arr[0,2] 
@@ -113,23 +117,52 @@ class interslice_interpolation_information_obj:
         caa_ind_p = current_and_adjacent_zslices_index_pairings
         total_num_interpolations_counter = 0
         #insert_index = 1
+        longest_segment_index = None
+        longest_segment_length = 0
         for j in range(0,current_zslice_num_segments):
             point_pairings_key = caa_ind_p[j]
             current_zslice_pt_index = point_pairings_key[0]
             adjacent_zslice_pt_index = point_pairings_key[1]
+            pt_indices_key = (current_zslice_pt_index,adjacent_zslice_pt_index)
             segment_points = np.empty([2,3], dtype=float)
             segment_points[0,:] = threeDdata_current_slice_arr[current_zslice_pt_index]
             segment_points[1,:] = threeDdata_adjacent_slice_arr[adjacent_zslice_pt_index]
             segment_vec = segment_points[1,:] - segment_points[0,:]
             segment_length = np.linalg.norm(segment_vec)
-            segment_obj = line_segment_obj(segment_vec,segment_length,segment_points)
+            segment_obj = line_segment_obj(segment_vec,segment_length,segment_points,zvals_key,pt_indices_key)
+            if segment_length > longest_segment_length:
+                longest_segment_index = j
+                longest_segment_length = segment_length
+                segment_obj.longest_segment_in_adjacent_slices = True
             linesegments_by_point_pairings_keys_dict[point_pairings_key] = segment_obj
-        
+    
         self.scipylinesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key] = linesegments_by_point_pairings_keys_dict
-            
-            num_interpolations_on_seg = int(np.floor(segment_length/interp_dist))
-            
 
+        new_z_slices_vals_list = []
+        new_z_slice = np.empty([current_zslice_num_segments,3], dtype = float)
+        # analyze longest segment
+        longest_segment_point_pairings_key = caa_ind_p[longest_segment_index]
+        longest_segment_obj = linesegments_by_point_pairings_keys_dict[longest_segment_point_pairings_key]
+        longest_segment_obj_length = longest_segment_obj.segment_length
+        num_interpolations_on_longest_segment = int(np.floor(longest_segment_obj_length/max_interp_dist))
+        t_vals_with_end_points = np.linspace(0, 1, num=num_interpolations_on_longest_segment+2) # generate the t values to evaluate along the longest segment 
+        t_vals_without_end_points = t_vals_with_end_points[1:-1]
+        for t_val_ind,t_val in enumerate(t_vals_without_end_points):
+            new_z_slices_vals_list[t_val_ind] = longest_segment_obj.coordinate_val('z',t_val) # calculate new z_vals
+        # loop through all new z vals to be added
+        
+        for z_val in new_z_slices_vals_list:
+            # loop through all segments
+            for j, (segment_key, segment_obj) in enumerate(self.scipylinesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key].items()):
+                new_point = np.empty([1,3],dtype=float)
+                new_point_xy = segment_obj.new_xy_vals_from_z(z_val)
+                new_point[0,0] = new_point_xy[0] # new x val
+                new_point[0,1] = new_point_xy[1] # new y val
+                new_z_slice[j,:] = new_point
+            threeDdata_interpolated_zslices_list_temp.append(new_z_slice)
+        
+        return threeDdata_interpolated_zslices_list_temp
+        """
             z_vals = np.full((num_interpolations_on_seg,1), z_val, dtype = float)
             xnew = np.linspace(x[0], x[1], num=num_interpolations_on_seg+2)[1:-1]
             xnew_new_size = np.expand_dims(xnew,axis=1)
@@ -143,13 +176,13 @@ class interslice_interpolation_information_obj:
             zslice_pt_counter = zslice_pt_counter + num_interpolations_on_seg
             total_num_interpolations_counter = total_num_interpolations_counter + num_interpolations_on_seg
             insert_index = 2*(j+1)+total_num_interpolations_counter
-
+        
         self.numpoints_after_interpolation_per_zslice_dict[z_val] = zslice_pt_counter
         self.insert_zslice(z_val)
         for interpolated_point in threeDdata_zslice_interpolated_list:
             self.interpolated_pts_list.append(interpolated_point)
         self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
-
+        
     
 
        
@@ -157,8 +190,13 @@ class interslice_interpolation_information_obj:
     def insert_zslice(self, zslice_key): # then use this after all iterations are complete
         self.scipylinesegments_by_zslice_keys_dict[zslice_key] = self.z_slice_seg_obj_list_temp
 
+        """
+
+
 class line_segment_obj:
-    def __init__(self,segment_vector,seg_length,seg_end_points):
+    def __init__(self,segment_vector,seg_length,seg_end_points,zvals_key,pt_indices_key):
+        self.segment_zslices = zvals_key
+        self.segment_pt_indices = pt_indices_key
         self.segment_vector = segment_vector
         self.segment_end_points = np.empty([2,3], dtype = float) 
         try:
@@ -169,3 +207,28 @@ class line_segment_obj:
         self.segment_length = seg_length
         self.unit_segment_vector = segment_vector/seg_length
         self.num_interpolations_on_segment = None
+        self.longest_segment_in_adjacent_slices = False
+    def coordinate_val(self,coordinate,t):
+        if isinstance(coordinate, str) == False:
+            raise Exception('Coordinate argument must be a string dtype')
+        elif coordinate == 'x':
+            c = 0
+        elif coordinate == 'y': 
+            c = 1
+        elif coordinate == 'z':
+            c = 2
+        vi=self.segment_end_points[0,:]
+        vi_c=vi[0,c]
+        line_vec = self.segment_vector
+        line_vec_c = line_vec[0,c]
+        c_val = vi_c+line_vec_c*t
+        return c_val
+    def new_xy_vals_from_z(self, z_val):
+        vi=self.segment_end_points[0,:]
+        vi_z=vi[0,2]
+        line_vec = self.segment_vector
+        line_vec_z = line_vec[0,2]
+        t_val = (z_val - vi_z)/line_vec_z
+        x_val = self.coordinate_val('x',t_val)
+        y_val = self.coordinate_val('y',t_val)
+        return x_val, y_val
