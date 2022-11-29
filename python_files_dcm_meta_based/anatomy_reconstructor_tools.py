@@ -4,33 +4,82 @@ import scipy
 
 def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist):
     # check if each slice has the same number of points
-    num_points_zslice0 = np.shape(threeDdata_zslice_list[0])[0]
     
+    
+    max_num_points_on_zslice = np.shape(threeDdata_zslice_list[0])[0]
+    max_pt_zslice_index = 0
+    for index, zslice_array in enumerate(threeDdata_zslice_list):
+        num_points_zslice_j = np.shape(zslice_array)[0]
+        if num_points_zslice_j > max_num_points_on_zslice:
+            max_num_points_on_zslice = num_points_zslice_j
+            max_pt_zslice_index = index
+        else:
+            pass
+
     unequal_slices_indices_num_points_list = []
     for index, zslice_array in enumerate(threeDdata_zslice_list):
         num_points_zslice_j = np.shape(zslice_array)[0]
-        if num_points_zslice_j == num_points_zslice0:
+        if num_points_zslice_j == max_num_points_on_zslice:
             pass
         else:
             unequal_slice = [index, num_points_zslice_j]
             unequal_slices_indices_num_points_list.append(unequal_slice)
             
-    largest_num_points_zslice = num_points_zslice0
-    largest_points_zslice_index = 0
     if len(unequal_slices_indices_num_points_list) != 0:
-        for unequal_slice in unequal_slices_indices_num_points_list:
-            if largest_num_points_zslice < unequal_slice[1]:
-                largest_num_points_zslice = unequal_slice[1]
-                largest_points_zslice_index = unequal_slice[0]
-            else:
-                pass
-        print('\n largest num points: ', largest_num_points_zslice, ' is on index: ', largest_points_zslice_index, '\n')
+        print('\n largest num points: ', max_num_points_on_zslice, ' is on index: ', max_pt_zslice_index, '\n')
+        threeDdata_equal_pt_zslice_list = threeDdata_consistent_num_pts_zslice_completer(threeDdata_zslice_list, unequal_slices_indices_num_points_list, max_num_points_on_zslice, max_pt_zslice_index)
     else:
-        print('\n All slices have equal number of points!\n')
-        zslices_index_pairings_dict = perform_distance_minimization(threeDdata_zslice_list)
-        print(zslices_index_pairings_dict)
-        interslice_interpolation_information = slice_point_pairings_interpolator(max_interpolation_dist, zslices_index_pairings_dict, threeDdata_zslice_list)
-    return interslice_interpolation_information
+        threeDdata_equal_pt_zslice_list = threeDdata_zslice_list.copy()
+    
+    print('\n All slices have equal number of points!\n')
+    zslices_index_pairings_dict = perform_distance_minimization(threeDdata_equal_pt_zslice_list)
+    #print(zslices_index_pairings_dict)
+    interslice_interpolation_information = slice_point_pairings_interpolator(max_interpolation_dist, zslices_index_pairings_dict, threeDdata_equal_pt_zslice_list)
+    return interslice_interpolation_information, threeDdata_equal_pt_zslice_list
+
+
+def threeDdata_consistent_num_pts_zslice_completer(threeDdata_zslice_list, unequal_slices_indices_num_points_list, max_num_points_on_zslice, max_pt_zslice_index):
+    threeDdata_equal_pt_zslice_list = threeDdata_zslice_list.copy()
+    for unequal_slice_info in unequal_slices_indices_num_points_list:
+        unequal_zslice_index = unequal_slice_info[0]
+        original_num_points_on_unequal_zslice = unequal_slice_info[1]
+        num_points_to_add = max_num_points_on_zslice - original_num_points_on_unequal_zslice
+        
+        for k in range(0,num_points_to_add):
+            current_zslice = threeDdata_equal_pt_zslice_list[unequal_zslice_index]
+            current_zslice_num_points = np.shape(current_zslice)[0]
+            current_zslice_list = current_zslice.tolist()
+            z_val =  current_zslice[0,2]
+            longest_segment_length = 0
+            longest_segment_index = 0
+            segment_obj = None
+            for j in range(0,current_zslice_num_points):
+                if j < current_zslice_num_points-1:
+                    segment_points = current_zslice[j:j+2,0:3]
+                else:
+                    segment_points = np.empty([2,3], dtype = float)
+                    segment_points[0,0:3] = current_zslice[j,0:3]
+                    segment_points[1,0:3] = current_zslice[0,0:3]
+
+                x = segment_points[0:2,0]
+                y = segment_points[0:2,1]
+                
+                segment_length = np.linalg.norm(segment_points[0]-segment_points[1])
+                if segment_length > longest_segment_length:
+                    longest_segment_length = segment_length
+                    longest_segment_index = j
+                    f_scipy_seg = scipy.interpolate.interp1d(x, y)
+                    xnew = (x[0]+x[1])/2
+                else: 
+                    pass
+
+            ynew = f_scipy_seg(xnew)   # use interpolation function returned by `interp1d`
+            interpolated_point = [xnew,ynew,z_val]
+            current_zslice_list.insert(longest_segment_index+1, interpolated_point)
+            threeDdata_equal_pt_zslice_list[unequal_zslice_index] = np.asarray(current_zslice_list, dtype = float)
+    
+    return threeDdata_equal_pt_zslice_list         
+
 
 def perform_distance_minimization(threeDdata_zslice_list):
     zslices_index_pairings_dict = {}
@@ -75,7 +124,7 @@ def slice_point_pairings_interpolator(interpolation_dist, zslices_index_pairings
 
 class interslice_interpolation_information_obj:
     def __init__(self, threeDdata_zslice_list):
-        self.scipylinesegments_dict_by_adjacent_zslice_keys_dict = {} 
+        self.linesegments_dict_by_adjacent_zslice_keys_dict = {} 
         #self.numpoints_after_interpolation_per_zslice_dict = {}
         #self.numpoints_raw_per_zslice_dict = {}
         self.interpolated_pts_list = []
@@ -134,7 +183,7 @@ class interslice_interpolation_information_obj:
                 segment_obj.longest_segment_in_adjacent_slices = True
             linesegments_by_point_pairings_keys_dict[point_pairings_key] = segment_obj
     
-        self.scipylinesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key] = linesegments_by_point_pairings_keys_dict
+        self.linesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key] = linesegments_by_point_pairings_keys_dict
 
         new_z_slices_vals_list = []
         # analyze longest segment
@@ -151,7 +200,7 @@ class interslice_interpolation_information_obj:
         for z_val in new_z_slices_vals_list:
             new_z_slice = np.empty([current_zslice_num_segments,3], dtype = float)
             # loop through all segments
-            for j, (segment_key, segment_obj) in enumerate(self.scipylinesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key].items()):
+            for j, (segment_key, segment_obj) in enumerate(self.linesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key].items()):
                 new_point = np.empty([1,3],dtype=float)
                 new_point_xy = segment_obj.new_xy_vals_from_z(z_val)
                 new_point[0,0] = new_point_xy[0] # new x val

@@ -143,8 +143,7 @@ def main():
 
                     # conduct INTER-slice interpolation
                     interp_dist_z_slice = 0.5
-                    interslice_interpolation_information = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
-
+                    interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                     
                     # conduct INTRA-slice interpolation
                     # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
@@ -157,13 +156,20 @@ def main():
                     
                     for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
                         interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
-                                               
-                        
+
+                    interp_dist_caps = 0.5
+                    first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                    last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                    interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                    interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
                     #et = time.time()
                     #elapsed_time = et - st
                     #print('\n Execution time:', elapsed_time, 'seconds')
 
+
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolation information"] = interpolation_information
                     point_cloud = o3d.geometry.PointCloud()
                     point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
@@ -201,10 +207,14 @@ def main():
                         else: 
                             test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
                     
+                    
+                    print(specific_structure["ROI"])
+                    
                     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
                     
                     threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                    threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
                     
                     # plot delaunay in open3d ?
                     #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_fully_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
@@ -227,7 +237,8 @@ def main():
                     
 
                     # plot two point clouds side by side ? 
-                    plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                    #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                    plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
 
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
@@ -427,9 +438,9 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     master_st_ref_dict = {}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
     return master_st_ref_dict, ref_list
 
@@ -517,6 +528,9 @@ class interpolation_information_obj:
         self.interpolated_pts_np_arr = None
         self.num_z_slices_raw = num_z_slices_raw
         self.z_slice_seg_obj_list_temp = None
+        self.endcaps_points = []
+        self.interpolated_pts_with_end_caps_list = None
+        self.interpolated_pts_with_end_caps_np_arr = None 
     
     def analyze_structure_slice(self, threeDdata_zslice, interp_dist):
         z_val = threeDdata_zslice[0,2] 
@@ -574,6 +588,36 @@ class interpolation_information_obj:
         
     def insert_zslice(self, zslice_key): # then use this after all iterations are complete
         self.scipylinesegments_by_zslice_keys_dict[zslice_key] = self.z_slice_seg_obj_list_temp
+
+
+    def create_fill(self, threeDdata_zslice, maximum_point_distance):
+        if self.interpolated_pts_with_end_caps_list == None:
+            self.interpolated_pts_with_end_caps_list = self.interpolated_pts_list.copy()
+        else:
+            pass
+
+        z_val = threeDdata_zslice[0,2]
+        min_x, min_y = np.amin(threeDdata_zslice[:,0:2], axis=0)
+        max_x, max_y = np.amax(threeDdata_zslice[:,0:2], axis=0)
+        grid_spacing = maximum_point_distance/np.sqrt(2)
+        fill_points_xy_grid_arr = np.mgrid[min_x-grid_spacing:max_x+grid_spacing:grid_spacing, min_y-grid_spacing:max_y+grid_spacing:grid_spacing].reshape(2, -1).T
+        fill_points_xyz_grid_arr = np.empty((len(fill_points_xy_grid_arr),3), dtype = float)
+        fill_points_xyz_grid_arr[:,0:2] = fill_points_xy_grid_arr
+        fill_points_xyz_grid_arr[:,2] = z_val
+        fill_points_xyz_grid_list = fill_points_xyz_grid_arr.tolist()
+        twoD_zslice_data_arr = threeDdata_zslice[:,0:2]
+        twoD_zslice_data_list = twoD_zslice_data_arr.tolist()
+        zslice_polygon_shapely = Polygon(twoD_zslice_data_list)
+        threeDdata_zslice_fill_list = []
+        for index, test_point in enumerate(fill_points_xyz_grid_list):
+            test_point_shapely = Point(test_point)
+            if test_point_shapely.within(zslice_polygon_shapely):
+                threeDdata_zslice_fill_list.append(test_point)
+        for fill_point in threeDdata_zslice_fill_list:
+            self.endcaps_points.append(fill_point)
+            self.interpolated_pts_with_end_caps_list.append(fill_point)
+        self.interpolated_pts_with_end_caps_np_arr = np.asarray(self.interpolated_pts_with_end_caps_list)
+
 
 class line_segment_obj:
     def __init__(self,scipy_seg,seg_length,seg_end_points,num_interpolations_on_seg):
