@@ -118,7 +118,6 @@ def main():
                         threeDdata_zslice_list.append(threeDdata_zslice)
 
 
-
                     total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
                     if isinstance(total_structure_points, int):
                         pass
@@ -130,16 +129,9 @@ def main():
                         raise Exception("Something went wrong when calculating total number of points in structure!")
 
                     threeDdata_array = np.empty([total_structure_points,3])
-
-                    anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list)
-                    
                     structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                    lower_bound_index = 0
-                    num_z_slices = len(threeDdata_zslice_list)
-                    
-                    interp_dist = 0.1 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
-                    interpolation_information = interpolation_information_obj(num_z_slices)
-                    
+                    lower_bound_index = 0  
+                    # build raw threeDdata
                     for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
                         current_zslice_num_points = np.size(threeDdata_zslice,0)
                         threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
@@ -148,82 +140,24 @@ def main():
                         structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
                         structure_centroids_array[index] = structure_zslice_centroid
 
+
+                    # conduct INTER-slice interpolation
+                    interp_dist_z_slice = 0.5
+                    interslice_interpolation_information = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
+
+                    
+                    # conduct INTRA-slice interpolation
+                    # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                    threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                    # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                    num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                    interp_dist = 0.5 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                    interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                    
+                    for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
                         interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
-                        
-                        # interpolation_information.numpoints_raw_per_zslice_dict[z_val] = current_zslice_num_points
-                        # threeDdata_array_interpolated_size = threeDdata_array_interpolated_size + current_zslice_num_points*interpolations + current_zslice_num_points
-
-                        # line_segments_in_zslice_list = [None]*(current_zslice_num_points)
-                        # interpolations_for_each_segment_in_zslice 
-                        # for j in range(0,current_zslice_num_points):
-                        #     if j < current_zslice_num_points-1:
-                        #         x = threeDdata_zslice[j:j+2,0]
-                        #         y = threeDdata_zslice[j:j+2,1]
-                        #     else: 
-                        #         x = np.squeeze(np.array([[threeDdata_zslice[j,0],threeDdata_zslice[0,0]]]).T)
-                        #         y = np.squeeze(np.array([[threeDdata_zslice[j,1],threeDdata_zslice[0,1]]]).T)
-                        #     f = scipy.interpolate.interp1d(x, y)
-                        #     segment_length = np.linalg.norm(np.array([x[0],y[0]])-np.array([x[1],y[1]]))
-                        #     interpolations = np.floor(segment_length/interp_dist)
-                        #     xnew = np.linspace(x[0], x[1], num=interpolations+2)[1:-1]
-                        #     xnew_new_size = np.expand_dims(xnew,axis=1)
-                        #     ynew = f(xnew)   # use interpolation function returned by `interp1d`
-                        #     ynew_new_size = np.expand_dims(ynew,axis=1)
-                        #     interpolated_segment = np.concatenate((xnew_new_size,ynew_new_size), axis=1)
-                        #     interpolated_segment = np.concatenate((interpolated_segment,z_val), axis=1)
-                        #     threeDdata_zslice_interpolated = np.insert(threeDdata_zslice_interpolated, [j*interpolations+1], interpolated_segment, axis=0)
-
-                    # threeDdata_array_interpolated = np.empty([threeDdata_array_interpolated_size,3])
-                    # threeDdata_zslice_interpolated = np.empty([interpolations,3])
-                    # for index, slice_object in enumerate(RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]):
-                    #     num_z_slices = num_z_slices + 1
-                    #     contour_slice_points = slice_object.ContourData                       
-                    #     threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                    #     current_zslice_num_points = np.size(threeDdata_zslice,0)
-                    #     threeDdata_zslice_interpolated = threeDdata_zslice
-                    #     #step = 0.1
-                    #     #for i in range(0,current_zslice_num_points):
-                    #     #    if i == current_zslice_num_points-1:
-                    #     #        interp_vec = (threeDdata_zslice[0,:] - threeDdata_zslice[i,:])
-                    #     #    else:
-                    #     #        interp_vec = threeDdata_zslice[i+1,:] - threeDdata_zslice[i,:]
-                    #     #    init_point = threeDdata_zslice[i,:]
-                    #     #    interp_vec_unit = interp_vec/np.linalg.norm(interp_vec)
-                    #     #    for j in range(1,20):
-                    #     #        np.insert(threeDdata_zslice_interpolated, i+j,init_point+interp_vec_unit*step, axis=0)
-                            
-                        
-                    #     z_vals = np.full((interpolations,1),threeDdata_zslice[0,2])
-                    #     for j in range(0,current_zslice_num_points):
-                    #         if j < current_zslice_num_points-1:
-                    #             x = threeDdata_zslice[j:j+2,0]
-                    #             y = threeDdata_zslice[j:j+2,1]
-                    #         else: 
-                    #             x = np.squeeze(np.array([[threeDdata_zslice[j,0],threeDdata_zslice[0,0]]]).T)
-                    #             y = np.squeeze(np.array([[threeDdata_zslice[j,1],threeDdata_zslice[0,1]]]).T)
-                    #         f = scipy.interpolate.interp1d(x, y)
-                    #         segment_length = np.linalg.norm(np.array([x[0],y[0]])-np.array([x[1],y[1]]))
-                    #         interpolations = np.floor(segment_length/interp_dist)
-                    #         xnew = np.linspace(x[0], x[1], num=interpolations+2)[1:-1]
-                    #         xnew_new_size = np.expand_dims(xnew,axis=1)
-                    #         ynew = f(xnew)   # use interpolation function returned by `interp1d`
-                    #         ynew_new_size = np.expand_dims(ynew,axis=1)
-                    #         interpolated_segment = np.concatenate((xnew_new_size,ynew_new_size), axis=1)
-                    #         interpolated_segment = np.concatenate((interpolated_segment,z_vals), axis=1)
-                    #         threeDdata_zslice_interpolated = np.insert(threeDdata_zslice_interpolated, [j*interpolations+1], interpolated_segment, axis=0)
-                        
-                    #     num_points_in_z_slize_after_interp = len(threeDdata_zslice_interpolated)
-                        
-                        
-                        #new_x = np.linspace(min(threeDdata_zslice[:,0]), max(threeDdata_zslice[:,0]), num=interpolations)
-                        #new_x_new_size = np.expand_dims(new_x, axis=1)
-                        #new_y = np.interp(new_x, threeDdata_zslice[:,0], threeDdata_zslice[:,1])
-                        #new_y_new_size = np.expand_dims(new_y, axis=1)
-                        #threeDdata_zslice_interpolated = np.concatenate((np.concatenate((new_x_new_size, new_y_new_size), axis=1),z_val), axis=1)
-                        #threeDdata_array_interpolated[interp_lower_bound_index:interp_lower_bound_index + num_points_in_z_slize_after_interp] = threeDdata_zslice_interpolated
-                        #interp_lower_bound_index = interp_lower_bound_index + num_points_in_z_slize_after_interp
-
-                        
+                                               
                         
                     #et = time.time()
                     #elapsed_time = et - st
@@ -270,16 +204,31 @@ def main():
                     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
                     
-                    threeDdata_array_interpolated = interpolation_information.interpolated_pts_np_arr
+                    threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
                     
                     # plot delaunay in open3d ?
-                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_fully_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
                     
+                    # plot raw points ?
+                    #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
                     # plot points with order labels of interpolated intraslice ?
-                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interpolated)
+                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
 
                     # plot points with order labels of raw data ?
-                    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+
+
+                    threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                    
+                    # plot fully interpolated points of z data ?
+                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                    #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                    
+
+                    # plot two point clouds side by side ? 
+                    plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+
 
                     master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                     centroid_line = pca.linear_fitter(structure_centroids_array.T)

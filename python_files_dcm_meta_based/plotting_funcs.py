@@ -267,6 +267,17 @@ def plot_tri_more_efficient_open3d(points, tri):
     #o3d.visualization.draw_geometries([line_set,point_cloud])
     return line_set
 
+def plot_point_clouds(*points_arr, label='Unknown'):
+    geometry_list = []
+    for points in points_arr:
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(points)
+        pcd_color = np.random.uniform(0, 0.7, size=3)
+        point_cloud.paint_uniform_color(pcd_color)
+        geometry_list.append(point_cloud)
+    o3d.visualization.draw_geometries(geometry_list)
+    
+
 def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='Unknown'):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(points)
@@ -314,9 +325,41 @@ def point_cloud_with_order_labels(points):
             j=j+1
         zslice_prev = zslice
 
+    
     gui.Application.instance.run()  # Run until user closes window
 
 
+def plot_two_point_clouds_side_by_side(points_arr_1, points_arr_2):
+    point_cloud_1 = o3d.geometry.PointCloud()
+    point_cloud_1.points = o3d.utility.Vector3dVector(points_arr_1)
+    pcd_color_1 = np.array([0,1,0], dtype= float)
+    point_cloud_1.paint_uniform_color(pcd_color_1)
 
+    point_cloud_2 = o3d.geometry.PointCloud()
+    point_cloud_2.points = o3d.utility.Vector3dVector(points_arr_2)
+    pcd_color_2 = np.array([1,0,0], dtype= float)
+    point_cloud_2.paint_uniform_color(pcd_color_2)
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name='TopLeft', width=960, height=540, left=0, top=100)
+    vis.add_geometry(point_cloud_1)
+
+    vis2 = o3d.visualization.Visualizer()
+    vis2.create_window(window_name='TopRight', width=960, height=540, left=960, top=100)
+    vis2.add_geometry(point_cloud_2)
+
+    while True:
+        vis.update_geometry(point_cloud_1)
+        if not vis.poll_events():
+            break
+        vis.update_renderer()
+
+        vis2.update_geometry(point_cloud_2)
+        if not vis2.poll_events():
+            break
+        vis2.update_renderer()
+
+    vis.destroy_window()
+    vis2.destroy_window()
 
 
