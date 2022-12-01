@@ -214,7 +214,7 @@ class interslice_interpolation_information_obj:
 
 
 class line_segment_obj:
-    def __init__(self,segment_vector,seg_length,seg_end_points,zvals_key,pt_indices_key):
+    def __init__(self,segment_vector,seg_length,seg_end_points,zvals_key=None,pt_indices_key=None):
         self.segment_zslices = zvals_key
         self.segment_pt_indices = pt_indices_key
         self.segment_vector = segment_vector
@@ -252,3 +252,8 @@ class line_segment_obj:
         x_val = self.coordinate_val('x',t_val)
         y_val = self.coordinate_val('y',t_val)
         return x_val, y_val
+    def new_xyz_via_vector_travel(self, t_val):
+        vi = self.segment_end_points[0,:]
+        travel_vec = self.segment_vector
+        vf = vi + t_val*travel_vec
+        return vf 

@@ -297,36 +297,29 @@ def point_cloud_with_order_labels(points):
     pointcloud = o3d.geometry.PointCloud()
     pointcloud.points = o3d.utility.Vector3dVector(points)
     gui.Application.instance.initialize()
-
     window = gui.Application.instance.create_window("Mesh-Viewer", 1024, 750)
-
     scene = gui.SceneWidget()
     scene.scene = rendering.Open3DScene(window.renderer)
-
     window.add_child(scene)
-
     scene.scene.add_geometry("mesh_name", pointcloud, rendering.MaterialRecord())
-
     bounds = pointcloud.get_axis_aligned_bounding_box()
     scene.setup_camera(60, bounds, bounds.get_center())
-
     zslice_prev = np.asarray(pointcloud.points)[0,2]
     j=1
     for i in range(np.shape(np.asarray(pointcloud.points))[0]):
         zslice = np.asarray(pointcloud.points)[i,2]
         if zslice == zslice_prev:
             scene.add_3d_label(np.asarray(pointcloud.points)[i,:], '%s' % (str(j)))
-            #ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
             j=j+1
         else:
             j=1
             scene.add_3d_label(np.asarray(pointcloud.points)[i,:], '%s' % (str(j)))
-            #ax.text(data[0][i],data[1][i],data[2][i],  '%s' % (str(j)), size=20, zorder=1, color='k')
             j=j+1
         zslice_prev = zslice
 
     
     gui.Application.instance.run()  # Run until user closes window
+    
 
 
 def plot_two_point_clouds_side_by_side(points_arr_1, points_arr_2):
