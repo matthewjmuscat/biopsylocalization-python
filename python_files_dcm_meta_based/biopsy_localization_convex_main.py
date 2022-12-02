@@ -33,6 +33,7 @@ import anatomy_reconstructor_tools
 import open3d.visualization.gui as gui
 import multiprocessing
 import os
+import alphashape
 
 def main():
     """
@@ -247,6 +248,29 @@ def main():
                         # plot two point clouds side by side ? 
                         #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
                         plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                        
+
+                        ball_radii = [x for x in np.arange(0.01,2,0.001)]
+                        structure_trimesh = trimesh_reconstruction_ball_pivot(threeDdata_array_fully_interpolated_with_end_caps, ball_radii)
+                        watertight = structure_trimesh.is_watertight()
+                        print(watertight)
+                        o3d.visualization.draw_geometries([structure_trimesh], mesh_show_back_face=True)
+                        plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh)
+
+                        #trimesh_reconstruction_alphashape(threeDdata_array_fully_interpolated_with_end_caps)
+                        
+                        #structure_trimesh_poisson = trimesh_reconstruction_poisson(threeDdata_array_fully_interpolated_with_end_caps)
+                        #watertight = structure_trimesh.is_watertight()
+                        #print(watertight)
+                        #plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh_poisson)
+
+                        #alpha_shape = alphashape.alphashape(threeDdata_array_fully_interpolated_with_end_caps,1)
+                        #fig = plt.figure()
+                        #ax = plt.axes(projection='3d')
+                        #ax.plot_trisurf(*zip(*alpha_shape.vertices), triangles=alpha_shape.faces)
+                        #plt.show()
+
+
 
 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
@@ -557,6 +581,8 @@ class interpolation_information_obj:
             self.numpoints_after_interpolation_per_zslice_dict[zslice_key] = numpoints_after_interpolation_per_zslice_temp
             for interpolated_point in threeDdata_zslice_interpolated_list:
                 self.interpolated_pts_list.append(interpolated_point)
+        self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
+
                 
     
     def analyze_structure_slice(self, threeDdata_zslice):
@@ -650,12 +676,47 @@ class interpolation_information_obj:
             if test_point_shapely.within(zslice_polygon_shapely):
                 threeDdata_zslice_fill_list.append(test_point)
         for fill_point in threeDdata_zslice_fill_list:
-            self.endcaps_points.append(fill_point)
-            self.interpolated_pts_with_end_caps_list.append(fill_point)
+            fill_point_as_arr = np.asarray(fill_point)
+            self.endcaps_points.append(fill_point_as_arr)
+            self.interpolated_pts_with_end_caps_list.append(fill_point_as_arr)
         self.interpolated_pts_with_end_caps_np_arr = np.asarray(self.interpolated_pts_with_end_caps_list)
 
  
+def trimesh_reconstruction_ball_pivot(threeD_data_arr, ball_radii):
+    num_points = threeD_data_arr.shape[0]
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
+    pcd_color = np.random.uniform(0, 0.7, size=3)
+    point_cloud.paint_uniform_color(pcd_color) 
+    point_cloud.estimate_normals()
+    #point_cloud.orient_normals_consistent_tangent_plane(num_points)
+    point_cloud.orient_normals_to_align_with_direction(np.array([0.0,0.0,0.0],dtype=float))
+    point_cloud.normalize_normals()
+    struct_tri_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+                            point_cloud,  o3d.utility.DoubleVector(ball_radii))
+    return struct_tri_mesh
 
+def trimesh_reconstruction_poisson(threeD_data_arr):
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
+    pcd_color = np.random.uniform(0, 0.7, size=3)
+    point_cloud.paint_uniform_color(pcd_color) 
+    point_cloud.estimate_normals()
+    with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
+        struct_tri_mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(point_cloud, depth=9)
+    return struct_tri_mesh
+
+def trimesh_reconstruction_alphashape(threeD_data_arr):
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
+    pcd_color = np.random.uniform(0, 0.7, size=3)
+    point_cloud.paint_uniform_color(pcd_color) 
+    point_cloud.estimate_normals()
+    alpha = 0.03
+    tetra_mesh, pt_map = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(point_cloud, alpha, tetra_mesh, pt_map)
+    mesh.compute_vertex_normals()
+    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
 
 
 if __name__ == '__main__':    

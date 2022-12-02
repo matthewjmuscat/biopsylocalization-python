@@ -356,3 +356,34 @@ def plot_two_point_clouds_side_by_side(points_arr_1, points_arr_2):
     vis2.destroy_window()
 
 
+
+
+def plot_point_cloud_and_trimesh_side_by_side(points_arr_1, tri_mesh):
+    point_cloud_1 = o3d.geometry.PointCloud()
+    point_cloud_1.points = o3d.utility.Vector3dVector(points_arr_1)
+    pcd_color_1 = np.array([0,1,0], dtype= float)
+    point_cloud_1.paint_uniform_color(pcd_color_1)
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name='TopLeft', width=960, height=540, left=0, top=100)
+    vis.add_geometry(point_cloud_1)
+
+    vis2 = o3d.visualization.Visualizer()
+    vis2.create_window(window_name='TopRight', width=960, height=540, left=960, top=100)
+    vis2.add_geometry(tri_mesh)
+
+    while True:
+        vis.update_geometry(point_cloud_1)
+        if not vis.poll_events():
+            break
+        vis.update_renderer()
+
+        vis2.update_geometry(tri_mesh)
+        if not vis2.poll_events():
+            break
+        vis2.update_renderer()
+
+    vis.destroy_window()
+    vis2.destroy_window()
+
+
