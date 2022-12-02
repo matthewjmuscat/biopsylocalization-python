@@ -34,6 +34,8 @@ import open3d.visualization.gui as gui
 import multiprocessing
 import os
 import alphashape
+import pymeshfix
+import pyvista as pv
 
 def main():
     """
@@ -148,7 +150,7 @@ def main():
 
 
                         # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 0.5
+                        interp_dist_z_slice = 0.1
                         interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
@@ -250,12 +252,34 @@ def main():
                         plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
                         
 
-                        ball_radii = [x for x in np.arange(0.01,2,0.001)]
-                        structure_trimesh = trimesh_reconstruction_ball_pivot(threeDdata_array_fully_interpolated_with_end_caps, ball_radii)
-                        watertight = structure_trimesh.is_watertight()
-                        print(watertight)
-                        o3d.visualization.draw_geometries([structure_trimesh], mesh_show_back_face=True)
-                        plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh)
+                        """
+                        Testing different surface reconstruction techniques
+                        """
+                        # ball pivot mesh reconstruction
+                        #ball_radii = [x for x in np.arange(0.01,2,0.001)]
+                        #structure_trimesh = trimesh_reconstruction_ball_pivot(threeDdata_array_fully_interpolated_with_end_caps, ball_radii)
+                        #watertight = structure_trimesh.is_watertight()
+                        #print(watertight)
+                        #o3d.visualization.draw_geometries([structure_trimesh], mesh_show_back_face=True)
+                        #plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh)
+
+                        # pyvista surface reconstruction
+                        #pyvista_point_cloud = pv.PolyData(threeDdata_array_fully_interpolated_with_end_caps)
+                        #surface = pyvista_point_cloud.reconstruct_surface(sample_spacing = 0.4)
+                        #pl = pv.Plotter()
+                        #pl.add_mesh(pyvista_point_cloud, color='k', point_size=10)
+                        #pl.add_mesh(surface)
+                        #pl.show()
+
+                        #mf = pymeshfix.MeshFix(surface)
+                        #mf.repair
+                        #repaired_surface = mf.mesh
+                        
+                        #pl = pv.Plotter()
+                        #pl.add_mesh(pyvista_point_cloud, color='k', point_size=10)
+                        #pl.add_mesh(repaired_surface)
+                        #pl.show()
+
 
                         #trimesh_reconstruction_alphashape(threeDdata_array_fully_interpolated_with_end_caps)
                         

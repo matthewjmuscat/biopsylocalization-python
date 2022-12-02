@@ -18,6 +18,8 @@ pyqt5 = "*"
 alphashape = "*"
 prettytable = "*"
 scikit-learn = "*"
+pymeshfix = "*"
+pyvista = "*"
 
 [dev-packages]
 ipykernel = "*"
