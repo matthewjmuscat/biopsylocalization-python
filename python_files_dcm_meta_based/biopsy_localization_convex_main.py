@@ -31,6 +31,8 @@ from prettytable import from_csv
 import pandas
 import anatomy_reconstructor_tools
 import open3d.visualization.gui as gui
+import multiprocessing
+import os
 
 def main():
     """
@@ -98,180 +100,184 @@ def main():
     num_general_structs_per_patient = len(structs_referenced_list)
     num_general_structs = num_patients*num_general_structs_per_patient
     test_ind = 0
-    st = time.time()
-    with loading_tools.Loader(num_general_structs,"Processing data...") as loader:
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            for structs in structs_referenced_list:
-                for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                    # The below print lines were just for my own understanding of how to access the data structure
-                    #print(specific_structure["ROI"])
-                    #print(specific_structure["Ref #"])
-                    #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                    #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+    cpu_count = os.cpu_count()
+    with multiprocessing.Pool(cpu_count) as parallel_pool:
+        st = time.time()
+        with loading_tools.Loader(num_general_structs,"Processing data...") as loader:
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                for structs in structs_referenced_list:
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        # The below print lines were just for my own understanding of how to access the data structure
+                        #print(specific_structure["ROI"])
+                        #print(specific_structure["Ref #"])
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
 
-                    # can uncomment surrounding lines to time this particular process
-                    #st = time.time()
-                    threeDdata_zslice_list = []
-                    structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
-                    for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                        contour_slice_points = slice_object.ContourData                       
-                        threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                        threeDdata_zslice_list.append(threeDdata_zslice)
-
-
-                    total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                    if isinstance(total_structure_points, int):
-                        pass
-                    elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
-                        total_structure_points = int(total_structure_points)
-                    elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
-                        raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                    else: 
-                        raise Exception("Something went wrong when calculating total number of points in structure!")
-
-                    threeDdata_array = np.empty([total_structure_points,3])
-                    structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                    lower_bound_index = 0  
-                    # build raw threeDdata
-                    for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                        current_zslice_num_points = np.size(threeDdata_zslice,0)
-                        threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                        lower_bound_index = lower_bound_index + current_zslice_num_points 
-                        
-                        structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                        structure_centroids_array[index] = structure_zslice_centroid
+                        # can uncomment surrounding lines to time this particular process
+                        #st = time.time()
+                        threeDdata_zslice_list = []
+                        structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
+                        for index, slice_object in enumerate(structure_contour_points_raw_sequence):
+                            contour_slice_points = slice_object.ContourData                       
+                            threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                            threeDdata_zslice_list.append(threeDdata_zslice)
 
 
-                    # conduct INTER-slice interpolation
-                    interp_dist_z_slice = 0.5
-                    interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
-                    
-                    # conduct INTRA-slice interpolation
-                    # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                    threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                    # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                    num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                    interp_dist = 0.5 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
-                    interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                    
-                    for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
-
-                    interp_dist_caps = 0.5
-                    first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                    last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                    interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                    interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                    #et = time.time()
-                    #elapsed_time = et - st
-                    #print('\n Execution time:', elapsed_time, 'seconds')
-
-
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolation information"] = interpolation_information
-                    point_cloud = o3d.geometry.PointCloud()
-                    point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
-                    #pcd_color = np.ndarray((3,1), dtype=np.float64)
-                    #pcd_color[:] = 0.
-                    pcd_color = np.random.uniform(0, 0.7, size=3)
-                    point_cloud.paint_uniform_color(pcd_color)
-                    #point_cloud.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(len(np.asarray(pcd.points)), 3)))
-
-                    #delaunay_triangulation = scipy.spatial.Delaunay(threeDdata_array)
-                    delaunay_triangulation_obj = delaunay_obj(threeDdata_array, pcd_color)
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation"] = delaunay_triangulation_obj
-                    
-                    # test points to test for inclusion
-                    num_pts = 5000
-                    max_bnd = point_cloud.get_max_bound()
-                    min_bnd = point_cloud.get_max_bound()
-                    center = point_cloud.get_center()
-                    if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
-                        largest_bnd = max_bnd
-                    else:
-                        largest_bnd = min_bnd
-                    bounding_box_size = np.linalg.norm(largest_bnd-center)
-                    test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
-                    test_pts_arr = np.array(test_pts) + center
-                    test_pts_point_cloud = o3d.geometry.PointCloud()
-                    test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
-                    test_pt_colors = np.empty([num_pts,3], dtype=float)
-
-                    for ind,pts in enumerate(test_pts_arr):
-                        #print(tri.find_simplex(pts) >= 0)  # True if point lies within poly)
-                        if delaunay_triangulation_obj.delaunay_triangulation.find_simplex(pts) >= 0:
-                            test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
+                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                        if isinstance(total_structure_points, int):
+                            pass
+                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
+                            total_structure_points = int(total_structure_points)
+                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
+                            raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
                         else: 
-                            test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
-                    
-                    
-                    print(specific_structure["ROI"])
-                    
-                    test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+                            raise Exception("Something went wrong when calculating total number of points in structure!")
 
-                    
-                    threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                    threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                    
-                    # plot delaunay in open3d ?
-                    #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_fully_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
-                    
-                    # plot raw points ?
-                    #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                    # plot points with order labels of interpolated intraslice ?
-                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                    # plot points with order labels of raw data ?
-                    #if test_ind > 1:
-                    #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                    #test_ind = test_ind + 1
-
-                    threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                    
-                    # plot fully interpolated points of z data ?
-                    #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                    #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                    
-
-                    # plot two point clouds side by side ? 
-                    #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                    plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                        threeDdata_array = np.empty([total_structure_points,3])
+                        structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                        lower_bound_index = 0  
+                        # build raw threeDdata
+                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                            current_zslice_num_points = np.size(threeDdata_zslice,0)
+                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                            lower_bound_index = lower_bound_index + current_zslice_num_points 
+                            
+                            structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                            structure_centroids_array[index] = structure_zslice_centroid
 
 
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                    centroid_line = pca.linear_fitter(structure_centroids_array.T)
-                    master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
-                    if structs == structs_referenced_list[0]:
-                        centroid_line_sample = np.array([centroid_line[0]])
-                        num_centroid_samples_of_centroid_line = 20
-                        travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
-                        for i in range(1,num_centroid_samples_of_centroid_line+1):
-                            init_point = centroid_line_sample[-1]
-                            new_point = init_point + travel_vec
-                            centroid_line_sample=np.append(centroid_line_sample,new_point,axis=0)
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
-  
-                        # conduct a nearest neighbour search of biopsy centroids
+                        # conduct INTER-slice interpolation
+                        interp_dist_z_slice = 0.5
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
+                        
+                        # conduct INTRA-slice interpolation
+                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
-                        #treescipy = scipy.spatial.KDTree(threeDdata_array)
-                        #nn = treescipy.query(centroid_line_sample[0])
-                        #nearest_neighbour = treescipy.data[nn[1]]
+                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                        interp_dist = 0.5 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        
+                        interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
 
-                        list_travel_vec = np.squeeze(travel_vec).tolist()
-                        list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
-                        drawn_biopsy_array = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts"] = drawn_biopsy_array.T
+                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
 
-                    # plot only the biopsies
-                    if structs == structs_referenced_list[0]:
-                        specific_structure["Plot attributes"].plot_bool = True
-                    
-                loader.iterator = loader.iterator + 1
+                        interp_dist_caps = 0.5
+                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        #et = time.time()
+                        #elapsed_time = et - st
+                        #print('\n Execution time:', elapsed_time, 'seconds')
+
+
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolation information"] = interpolation_information
+                        point_cloud = o3d.geometry.PointCloud()
+                        point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
+                        #pcd_color = np.ndarray((3,1), dtype=np.float64)
+                        #pcd_color[:] = 0.
+                        pcd_color = np.random.uniform(0, 0.7, size=3)
+                        point_cloud.paint_uniform_color(pcd_color)
+                        #point_cloud.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(len(np.asarray(pcd.points)), 3)))
+
+                        #delaunay_triangulation = scipy.spatial.Delaunay(threeDdata_array)
+                        delaunay_triangulation_obj = delaunay_obj(threeDdata_array, pcd_color)
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation"] = delaunay_triangulation_obj
+                        
+                        # test points to test for inclusion
+                        num_pts = 5000
+                        max_bnd = point_cloud.get_max_bound()
+                        min_bnd = point_cloud.get_max_bound()
+                        center = point_cloud.get_center()
+                        if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
+                            largest_bnd = max_bnd
+                        else:
+                            largest_bnd = min_bnd
+                        bounding_box_size = np.linalg.norm(largest_bnd-center)
+                        test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
+                        test_pts_arr = np.array(test_pts) + center
+                        test_pts_point_cloud = o3d.geometry.PointCloud()
+                        test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
+                        test_pt_colors = np.empty([num_pts,3], dtype=float)
+
+                        for ind,pts in enumerate(test_pts_arr):
+                            #print(tri.find_simplex(pts) >= 0)  # True if point lies within poly)
+                            if delaunay_triangulation_obj.delaunay_triangulation.find_simplex(pts) >= 0:
+                                test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
+                            else: 
+                                test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
+                        
+                        
+                        print(specific_structure["ROI"])
+                        
+                        test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+                        
+                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                        
+                        # plot delaunay in open3d ?
+                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_fully_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                        
+                        # plot raw points ?
+                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                        # plot points with order labels of interpolated intraslice ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                        # plot points with order labels of raw data ?
+                        #if test_ind > 1:
+                        #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                        #test_ind = test_ind + 1
+
+                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                        
+                        # plot fully interpolated points of z data ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                        
+
+                        # plot two point clouds side by side ? 
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                        plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+
+
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                        centroid_line = pca.linear_fitter(structure_centroids_array.T)
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                        if structs == structs_referenced_list[0]:
+                            centroid_line_sample = np.array([centroid_line[0]])
+                            num_centroid_samples_of_centroid_line = 20
+                            travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
+                            for i in range(1,num_centroid_samples_of_centroid_line+1):
+                                init_point = centroid_line_sample[-1]
+                                new_point = init_point + travel_vec
+                                centroid_line_sample=np.append(centroid_line_sample,new_point,axis=0)
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
+    
+                            # conduct a nearest neighbour search of biopsy centroids
+
+                            #treescipy = scipy.spatial.KDTree(threeDdata_array)
+                            #nn = treescipy.query(centroid_line_sample[0])
+                            #nearest_neighbour = treescipy.data[nn[1]]
+
+                            list_travel_vec = np.squeeze(travel_vec).tolist()
+                            list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
+                            drawn_biopsy_array = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts"] = drawn_biopsy_array.T
+
+                        # plot only the biopsies
+                        if structs == structs_referenced_list[0]:
+                            specific_structure["Plot attributes"].plot_bool = True
+                        
+                    loader.iterator = loader.iterator + 1
             
     et = time.time()
     elapsed_time = et - st
@@ -523,6 +529,7 @@ class delaunay_obj:
 
 class interpolation_information_obj:
     def __init__(self,num_z_slices_raw):
+        self.interpolate_distance = None
         self.scipylinesegments_by_zslice_keys_dict = {}
         self.numpoints_after_interpolation_per_zslice_dict = {}
         self.numpoints_raw_per_zslice_dict = {}
@@ -533,11 +540,39 @@ class interpolation_information_obj:
         self.endcaps_points = []
         self.interpolated_pts_with_end_caps_list = None
         self.interpolated_pts_with_end_caps_np_arr = None 
+
+    def parallel_analyze(self, parallel_pool, three_Ddata_list,interp_dist):
+        pool = parallel_pool
+        self.interpolate_distance = interp_dist
+        parallel_result = pool.map(self.analyze_structure_slice, three_Ddata_list)
+        for result in parallel_result:
+            zslice_key = result[0] 
+            z_slice_seg_obj_list = result[1]
+            numpoints_raw_per_zslice = result[2]
+            numpoints_after_interpolation_per_zslice_temp  = result[3]
+            threeDdata_zslice_interpolated_list = result[4]
+
+            self.scipylinesegments_by_zslice_keys_dict[zslice_key] = z_slice_seg_obj_list
+            self.numpoints_raw_per_zslice_dict[zslice_key] = numpoints_raw_per_zslice
+            self.numpoints_after_interpolation_per_zslice_dict[zslice_key] = numpoints_after_interpolation_per_zslice_temp
+            for interpolated_point in threeDdata_zslice_interpolated_list:
+                self.interpolated_pts_list.append(interpolated_point)
+                
     
-    def analyze_structure_slice(self, threeDdata_zslice, interp_dist):
+    def analyze_structure_slice(self, threeDdata_zslice):
+        interp_dist = self.interpolate_distance
+        numpoints_raw_per_zslice_temp = None
+        numpoints_after_interpolation_per_zslice_temp = None
         z_val = threeDdata_zslice[0,2] 
         current_zslice_num_points = np.size(threeDdata_zslice,0)
-        z_slice_seg_obj_list_temp = self.create_zslice(z_val, current_zslice_num_points)
+        #z_slice_seg_obj_list_temp = self.create_zslice(z_val, current_zslice_num_points)
+        num_segments_in_zslice = current_zslice_num_points
+        zslice_key = z_val
+        z_slice_seg_obj_list_temp = [None]*num_segments_in_zslice
+        #self.numpoints_raw_per_zslice_dict[zslice_key] = num_points_in_zslice_raw
+        numpoints_raw_per_zslice_temp = current_zslice_num_points
+        
+
         threeDdata_zslice_interpolated_list = []
         zslice_pt_counter = current_zslice_num_points
         for j in range(0,current_zslice_num_points):
@@ -567,13 +602,15 @@ class interpolation_information_obj:
                 threeDdata_zslice_interpolated_list.append(interpolated_point)
             zslice_pt_counter = zslice_pt_counter + num_interpolations_on_seg
 
-        self.numpoints_after_interpolation_per_zslice_dict[z_val] = zslice_pt_counter
-        self.insert_zslice(z_val, z_slice_seg_obj_list_temp)
-        for interpolated_point in threeDdata_zslice_interpolated_list:
-            self.interpolated_pts_list.append(interpolated_point)
-        self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
+        #self.numpoints_after_interpolation_per_zslice_dict[z_val] = zslice_pt_counter
+        numpoints_after_interpolation_per_zslice_temp = zslice_pt_counter
+        #self.insert_zslice(z_val, z_slice_seg_obj_list_temp)
+        #for interpolated_point in threeDdata_zslice_interpolated_list:
+        #    interpolated_pts_list.append(interpolated_point)
+        #self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
         # plot slicewise for debugging ?
         #plotting_funcs.plot_point_clouds(self.interpolated_pts_np_arr, label='Unknown')
+        return zslice_key, z_slice_seg_obj_list_temp, numpoints_raw_per_zslice_temp, numpoints_after_interpolation_per_zslice_temp, threeDdata_zslice_interpolated_list
 
     def create_zslice(self, zslice_key, num_points_in_zslice_raw): # call this first
         num_segments_in_zslice = num_points_in_zslice_raw
