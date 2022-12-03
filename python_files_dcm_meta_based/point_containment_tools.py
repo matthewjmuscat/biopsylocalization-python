@@ -13,23 +13,46 @@ def adjacent_slice_delaunay_parallel(parallel_pool, threeD_data_zlsice_list):
 
 def adjacent_zlsice_delaunay_triangulation(adjacent_zslice_threeD_data_list):
     pcd_color = np.random.uniform(0, 0.7, size=3)
-    delaunay_triangulation_obj_temp = delaunay_obj(adjacent_zslice_threeD_data_list, pcd_color)
+    zslice1 = adjacent_zslice_threeD_data_list[0][0,2]
+    zslice2 = adjacent_zslice_threeD_data_list[1][0,2]
+    threeDdata_array_adjacent_slices_arr = np.asarray(adjacent_zslice_threeD_data_list, dtype=float)
+    delaunay_triangulation_obj_temp = delaunay_obj(threeDdata_array_adjacent_slices_arr, pcd_color, zslice1, zslice2)
     return delaunay_triangulation_obj_temp
 
 
 def test_zslice_wise_containment_delaunay_parallel(parallel_pool, delaunay_obj_list, test_points_list):
     pool = parallel_pool
-    for ind,pts in enumerate(test_pts_arr):
-        #print(tri.find_simplex(pts) >= 0)  # True if point lies within poly)
-        if delaunay_triangulation_obj.delaunay_triangulation.find_simplex(pts) >= 0:
-            test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
-        else: 
-            test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
+    test_points_arguments_list = [(delaunay_obj_list,test_points_list[j]) for j in range(len(test_points_list))]
+    test_points_result = pool.starmap(zslice_wise_test_point_containment, test_points_arguments_list)
+    return test_points_result
+    
+    
+def zslice_wise_test_point_containment(delauney_object_list,test_point):
+    pt_contained = False 
+    for delaunay_obj_index, delaunay_obj in enumerate(delauney_object_list):
+        #tri.find_simplex(pts) >= 0  is True if point lies within poly)
+        if delaunay_obj.delaunay_triangulation.find_simplex(test_point) >= 0:
+            zslice1 = delaunay_obj.zslice1
+            zslice2 = delaunay_obj.zslice2
+            test_pt_color = np.array([0,1,0]) # paint green
+            pt_contained = True
+            delaunay_obj_contained_in_index = delaunay_obj_index
+            break
+        else:
+            pass            
+    if pt_contained == False:
+        test_pt_color = np.array([1,0,0]) # paint red
+        zslice1 = None
+        zslice2 = None
+        delaunay_obj_index = None
+    return pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index, test_pt_color, test_point
 
 
 
 class delaunay_obj:
-    def __init__(self, np_points, delaunay_tri_color):
+    def __init__(self, np_points, delaunay_tri_color, zslice1 = None, zslice2 = None):
+        self.zslice1 = zslice1
+        self.zslice2 = zslice2
         self.delaunay_triangulation = self.scipy_delaunay_triangulation(np_points)
         self.delaunay_line_set = self.line_set(np_points, self.delaunay_triangulation, delaunay_tri_color)
 

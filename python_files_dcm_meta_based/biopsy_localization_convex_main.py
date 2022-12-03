@@ -194,6 +194,28 @@ def main():
                         deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
 
+                        # test points to test for inclusion
+                        num_pts = 5000
+                        max_bnd = point_cloud.get_max_bound()
+                        min_bnd = point_cloud.get_max_bound()
+                        center = point_cloud.get_center()
+                        if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
+                            largest_bnd = max_bnd
+                        else:
+                            largest_bnd = min_bnd
+                        bounding_box_size = np.linalg.norm(largest_bnd-center)
+                        test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
+                        test_pts_arr = np.array(test_pts) + center
+                        test_pts_list = test_pts_arr.tolist()
+                        test_pts_point_cloud = o3d.geometry.PointCloud()
+                        test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
+                        test_pt_colors = np.empty([num_pts,3], dtype=float)
+                        
+                        
+                        test_points_results = test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
+
+
+
                         #delaunay_triangulation = scipy.spatial.Delaunay(threeDdata_array)
                         delaunay_triangulation_obj = delaunay_obj(threeDdata_array, pcd_color)
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
