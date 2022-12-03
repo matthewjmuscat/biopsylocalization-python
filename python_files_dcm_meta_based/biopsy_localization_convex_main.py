@@ -31,14 +31,21 @@ from prettytable import from_csv
 import pandas
 import anatomy_reconstructor_tools
 import open3d.visualization.gui as gui
-import multiprocessing
 import os
 import alphashape
 import pymeshfix
 import pyvista as pv
 import point_containment_tools
+import multiprocess
+#import pathos, multiprocess
+#from pathos.multiprocessing import ProcessingPool
+import dill
+
+
+
 
 def main():
+    
     """
     A programme designed to receive dicom data consisting of prostate 
     ultrasound containing contouring and dosimetry information. The programme is then 
@@ -105,7 +112,7 @@ def main():
     num_general_structs = num_patients*num_general_structs_per_patient
     test_ind = 0
     cpu_count = os.cpu_count()
-    with multiprocessing.Pool(cpu_count) as parallel_pool:
+    with multiprocess.Pool(cpu_count) as parallel_pool:
         st = time.time()
         with loading_tools.Loader(num_general_structs,"Processing data...") as loader:
             for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -151,7 +158,7 @@ def main():
 
 
                         # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 0.1
+                        interp_dist_z_slice = 0.5
                         interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
@@ -195,7 +202,7 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
 
                         # test points to test for inclusion
-                        num_pts = 5000
+                        num_pts = 500
                         max_bnd = point_cloud.get_max_bound()
                         min_bnd = point_cloud.get_max_bound()
                         center = point_cloud.get_center()
@@ -212,7 +219,15 @@ def main():
                         test_pt_colors = np.empty([num_pts,3], dtype=float)
                         
                         
-                        test_points_results = test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
+                        test_points_results = point_containment_tools.test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
+                        for index,result in enumerate(test_points_results):
+                            test_pt_colors[index] = result[4]
+                        test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+                        # plot delaunay in open3d ?
+                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+
+
 
 
 

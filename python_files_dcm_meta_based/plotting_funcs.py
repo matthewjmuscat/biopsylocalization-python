@@ -292,6 +292,20 @@ def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='U
         o3d.visualization.draw_geometries(geometry_list)
         #o3d.visualization.gui.Label3D(label, point_cloud.get_max_bound()+np.array([3,3,3]))
 
+def plot_tri_immediately_efficient_multilineset(structure_points_arr, test_pointcloud, delaunay_objs_list, label='Unknown'):
+    structure_point_cloud = o3d.geometry.PointCloud()
+    structure_point_cloud.points = o3d.utility.Vector3dVector(structure_points_arr)
+    pcd_color = np.random.uniform(0, 0.7, size=3)
+    structure_point_cloud.paint_uniform_color(pcd_color)
+    geometry_list = [structure_point_cloud, test_pointcloud]
+    for delaunay_obj in delaunay_objs_list:
+        line_set = delaunay_obj.delaunay_line_set
+        geometry_list.append(line_set)
+    
+    o3d.visualization.draw_geometries(geometry_list)
+    
+
+
 
 def point_cloud_with_order_labels(points):
     pointcloud = o3d.geometry.PointCloud()

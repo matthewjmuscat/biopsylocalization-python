@@ -20,6 +20,9 @@ prettytable = "*"
 scikit-learn = "*"
 pymeshfix = "*"
 pyvista = "*"
+multiprocess = "*"
+dill = "*"
+pathos = "*"
 
 [dev-packages]
 ipykernel = "*"
