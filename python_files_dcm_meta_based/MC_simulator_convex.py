@@ -3,6 +3,7 @@ import biopsy_creator
 import loading_tools # imported for more sophisticated loading bar
 import numpy as np
 import open3d as o3d
+import point_containment_tools
 
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
@@ -54,4 +55,57 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
     return master_structure_reference_dict
 
 
+
+def box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud):
+    # test points to test for inclusion
+    num_pts = num_simulations
+    max_bnd = point_cloud.get_max_bound()
+    min_bnd = point_cloud.get_max_bound()
+    center = point_cloud.get_center()
+    if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
+        largest_bnd = max_bnd
+    else:
+        largest_bnd = min_bnd
+    bounding_box_size = np.linalg.norm(largest_bnd-center)
+    test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
+    test_pts_arr = np.array(test_pts) + center
+    test_pts_list = test_pts_arr.tolist()
+    test_pts_point_cloud = o3d.geometry.PointCloud()
+    test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
+    test_pt_colors = np.empty([num_pts,3], dtype=float)
+    
+    
+    test_points_results = point_containment_tools.test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
+    for index,result in enumerate(test_points_results):
+        test_pt_colors[index] = result[4]
+    test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+    return test_points_results, test_pts_point_cloud
+
+
+def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, deulaunay_obj, point_cloud):
+    # test points to test for inclusion
+    num_pts = num_simulations
+    max_bnd = point_cloud.get_max_bound()
+    min_bnd = point_cloud.get_max_bound()
+    center = point_cloud.get_center()
+    if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
+        largest_bnd = max_bnd
+    else:
+        largest_bnd = min_bnd
+    bounding_box_size = np.linalg.norm(largest_bnd-center)
+    test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
+    test_pts_arr = np.array(test_pts) + center
+    test_pts_list = test_pts_arr.tolist()
+    test_pts_point_cloud = o3d.geometry.PointCloud()
+    test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
+    test_pt_colors = np.empty([num_pts,3], dtype=float)
+    
+    
+    test_points_results = point_containment_tools.test_global_convex_structure_containment_delaunay_parallel(parallel_pool, deulaunay_obj, test_pts_list)
+    for index,result in enumerate(test_points_results):
+        test_pt_colors[index] = result[4]
+    test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+    return test_points_results, test_pts_point_cloud
     

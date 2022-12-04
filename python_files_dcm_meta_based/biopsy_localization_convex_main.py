@@ -189,6 +189,13 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolation information"] = interpolation_information
+                        
+
+
+                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+
+                        """
                         point_cloud = o3d.geometry.PointCloud()
                         point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
                         #pcd_color = np.ndarray((3,1), dtype=np.float64)
@@ -198,11 +205,8 @@ def main():
                         #point_cloud.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(len(np.asarray(pcd.points)), 3)))
 
 
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
-
                         # test points to test for inclusion
-                        num_pts = 500
+                        num_pts = 50000
                         max_bnd = point_cloud.get_max_bound()
                         min_bnd = point_cloud.get_max_bound()
                         center = point_cloud.get_center()
@@ -223,19 +227,31 @@ def main():
                         for index,result in enumerate(test_points_results):
                             test_pt_colors[index] = result[4]
                         test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+                        """
 
-                        # plot delaunay in open3d ?
+                        print(specific_structure["ROI"])
+                        # zslice wise convex structure box simulation
+                        num_simulations = 500000
+                        pcd_color = np.random.uniform(0, 0.7, size=3)
+                        point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
+                        test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud)
+                        # plot zslice wise delaunay in open3d ?
                         plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
 
+                        # global convex structure box simulation
+                        num_simulations = 50000
+                        zslice1 = threeDdata_array[0,2]
+                        zslice2 = threeDdata_array[-1,2]
+                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, pcd_color, zslice1, zslice2)
+                        delaunay_global_convex_structure_obj.generate_lineset()
+                        test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, point_cloud)
+                        # plot delaunay global convex structure in open3d ?
+                        plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
 
-
-
-
-                        #delaunay_triangulation = scipy.spatial.Delaunay(threeDdata_array)
-                        delaunay_triangulation_obj = delaunay_obj(threeDdata_array, pcd_color)
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_triangulation_obj
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
                         
+                        """
                         # test points to test for inclusion
                         num_pts = 5000
                         max_bnd = point_cloud.get_max_bound()
@@ -258,18 +274,15 @@ def main():
                                 test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
                             else: 
                                 test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
+                        """
                         
                         
-                        print(specific_structure["ROI"])
-                        
-                        test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
+        
 
                         
                         threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
                         threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
                         
-                        # plot delaunay in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array_fully_interpolated, delaunay_triangulation_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
                         
                         # plot raw points ?
                         #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
