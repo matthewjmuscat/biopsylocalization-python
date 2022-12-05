@@ -158,7 +158,7 @@ def main():
 
 
                         # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 0.5
+                        interp_dist_z_slice = 2
                         interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
@@ -167,7 +167,7 @@ def main():
                         # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
                         num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        interp_dist = 0.5 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                        interp_dist = 2 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
                         interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
                         
                         interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
@@ -175,7 +175,7 @@ def main():
                         #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
                         #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
 
-                        interp_dist_caps = 0.5
+                        interp_dist_caps = 2
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
                         interpolation_information.create_fill(first_zslice, interp_dist_caps)
@@ -195,94 +195,35 @@ def main():
                         deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
 
-                        """
-                        point_cloud = o3d.geometry.PointCloud()
-                        point_cloud.points = o3d.utility.Vector3dVector(threeDdata_array)
-                        #pcd_color = np.ndarray((3,1), dtype=np.float64)
-                        #pcd_color[:] = 0.
-                        pcd_color = np.random.uniform(0, 0.7, size=3)
-                        point_cloud.paint_uniform_color(pcd_color)
-                        #point_cloud.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(len(np.asarray(pcd.points)), 3)))
-
-
-                        # test points to test for inclusion
-                        num_pts = 50000
-                        max_bnd = point_cloud.get_max_bound()
-                        min_bnd = point_cloud.get_max_bound()
-                        center = point_cloud.get_center()
-                        if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
-                            largest_bnd = max_bnd
-                        else:
-                            largest_bnd = min_bnd
-                        bounding_box_size = np.linalg.norm(largest_bnd-center)
-                        test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
-                        test_pts_arr = np.array(test_pts) + center
-                        test_pts_list = test_pts_arr.tolist()
-                        test_pts_point_cloud = o3d.geometry.PointCloud()
-                        test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
-                        test_pt_colors = np.empty([num_pts,3], dtype=float)
                         
-                        
-                        test_points_results = point_containment_tools.test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
-                        for index,result in enumerate(test_points_results):
-                            test_pt_colors[index] = result[4]
-                        test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
-                        """
 
                         print(specific_structure["ROI"])
                         # zslice wise convex structure box simulation
-                        num_simulations = 500000
+                        num_simulations = 50
                         pcd_color = np.random.uniform(0, 0.7, size=3)
                         point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
                         test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud)
                         # plot zslice wise delaunay in open3d ?
-                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
 
                         # global convex structure box simulation
-                        num_simulations = 50000
+                        num_simulations = 50
                         zslice1 = threeDdata_array[0,2]
                         zslice2 = threeDdata_array[-1,2]
                         delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, pcd_color, zslice1, zslice2)
                         delaunay_global_convex_structure_obj.generate_lineset()
                         test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, point_cloud)
                         # plot delaunay global convex structure in open3d ?
-                        plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                        
-                        """
-                        # test points to test for inclusion
-                        num_pts = 5000
-                        max_bnd = point_cloud.get_max_bound()
-                        min_bnd = point_cloud.get_max_bound()
-                        center = point_cloud.get_center()
-                        if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
-                            largest_bnd = max_bnd
-                        else:
-                            largest_bnd = min_bnd
-                        bounding_box_size = np.linalg.norm(largest_bnd-center)
-                        test_pts = [np.random.uniform(-bounding_box_size,bounding_box_size, size = 3) for i in range(num_pts)]
-                        test_pts_arr = np.array(test_pts) + center
-                        test_pts_point_cloud = o3d.geometry.PointCloud()
-                        test_pts_point_cloud.points = o3d.utility.Vector3dVector(test_pts_arr)
-                        test_pt_colors = np.empty([num_pts,3], dtype=float)
-
-                        for ind,pts in enumerate(test_pts_arr):
-                            #print(tri.find_simplex(pts) >= 0)  # True if point lies within poly)
-                            if delaunay_triangulation_obj.delaunay_triangulation.find_simplex(pts) >= 0:
-                                test_pt_colors[ind,:] = np.array([0,1,0]) # paint green
-                            else: 
-                                test_pt_colors[ind,:] = np.array([1,0,0]) # paint red
-                        """
-                        
-                        
-        
 
                         
                         threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
                         threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        
+                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+
                         
                         # plot raw points ?
                         #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
@@ -295,7 +236,7 @@ def main():
                         #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
                         #test_ind = test_ind + 1
 
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                        
                         
                         # plot fully interpolated points of z data ?
                         #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
@@ -304,52 +245,8 @@ def main():
 
                         # plot two point clouds side by side ? 
                         #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
                         
-
-                        """
-                        Testing different surface reconstruction techniques
-                        """
-                        # ball pivot mesh reconstruction
-                        #ball_radii = [x for x in np.arange(0.01,2,0.001)]
-                        #structure_trimesh = trimesh_reconstruction_ball_pivot(threeDdata_array_fully_interpolated_with_end_caps, ball_radii)
-                        #watertight = structure_trimesh.is_watertight()
-                        #print(watertight)
-                        #o3d.visualization.draw_geometries([structure_trimesh], mesh_show_back_face=True)
-                        #plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh)
-
-                        # pyvista surface reconstruction
-                        #pyvista_point_cloud = pv.PolyData(threeDdata_array_fully_interpolated_with_end_caps)
-                        #surface = pyvista_point_cloud.reconstruct_surface(sample_spacing = 0.4)
-                        #pl = pv.Plotter()
-                        #pl.add_mesh(pyvista_point_cloud, color='k', point_size=10)
-                        #pl.add_mesh(surface)
-                        #pl.show()
-
-                        #mf = pymeshfix.MeshFix(surface)
-                        #mf.repair
-                        #repaired_surface = mf.mesh
-                        
-                        #pl = pv.Plotter()
-                        #pl.add_mesh(pyvista_point_cloud, color='k', point_size=10)
-                        #pl.add_mesh(repaired_surface)
-                        #pl.show()
-
-
-                        #trimesh_reconstruction_alphashape(threeDdata_array_fully_interpolated_with_end_caps)
-                        
-                        #structure_trimesh_poisson = trimesh_reconstruction_poisson(threeDdata_array_fully_interpolated_with_end_caps)
-                        #watertight = structure_trimesh.is_watertight()
-                        #print(watertight)
-                        #plotting_funcs.plot_point_cloud_and_trimesh_side_by_side(threeDdata_array_fully_interpolated_with_end_caps, structure_trimesh_poisson)
-
-                        #alpha_shape = alphashape.alphashape(threeDdata_array_fully_interpolated_with_end_caps,1)
-                        #fig = plt.figure()
-                        #ax = plt.axes(projection='3d')
-                        #ax.plot_trisurf(*zip(*alpha_shape.vertices), triangles=alpha_shape.faces)
-                        #plt.show()
-
-
 
 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
@@ -501,6 +398,25 @@ def main():
 
     ## begin simulation section
     num_simulations = 1000
+    created_dir = False
+    while created_dir == False:
+        uncertainty_dir_generate = ques_funcs.ask_ok('Must create an uncertainties folder at ', uncertainty_dir, ', continue?\
+If the folder already exists it will not be overwritten.' )
+
+        if uncertainty_dir_generate == True:
+            if os.path.isdir(uncertainty_dir) == True:
+                print('Directory already exists')
+                created_dir = True
+            else:
+                os.mkdir(uncertainty_dir)
+                print('Directory: ', uncertainty_dir, ' created.')
+                created_dir = True
+        else:
+            exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
+            if exit_programme == True:
+                sys.exit('Programme exited.')
+            else: 
+                pass
 
     uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
     if uncertainty_template_generate == True:
