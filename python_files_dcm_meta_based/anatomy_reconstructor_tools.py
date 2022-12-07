@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scipy
+import open3d as o3d
 
 def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist):
     # check if each slice has the same number of points
@@ -122,11 +123,33 @@ def slice_point_pairings_interpolator(interpolation_dist, zslices_index_pairings
     return interslice_interpolation_information
 
 
+def create_lineset_all_zslices(threeDdata_zslice_list):
+    lineset_list = []
+    for zslice_arr in threeDdata_zslice_list:
+        line_set = create_zslice_lineset(zslice_arr)
+        lineset_list.append(line_set)
+    return lineset_list
+
+def create_zslice_lineset(threeDdata_zslice_arr):
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(threeDdata_zslice_arr)
+    num_points_in_zslice = np.shape(threeDdata_zslice_arr)[0]
+    slice_line_set_arr = np.empty([num_points_in_zslice,2], dtype=int)
+    for j in range(num_points_in_zslice):
+        slice_line_set_arr[j,0] = j
+        slice_line_set_arr[j,1] = (j+1) % (num_points_in_zslice-1)
+    line_set.lines = o3d.utility.Vector2iVector(slice_line_set_arr)
+    line_set.paint_uniform_color(np.array([0,0,0], dtype=float))
+    return line_set
+
+
+
 class interslice_interpolation_information_obj:
     def __init__(self, threeDdata_zslice_list):
         self.linesegments_dict_by_adjacent_zslice_keys_dict = {} 
         #self.numpoints_after_interpolation_per_zslice_dict = {}
         #self.numpoints_raw_per_zslice_dict = {}
+        self.zslice_vals_after_interpolation_list = []
         self.interpolated_pts_list = []
         self.interpolated_pts_np_arr = None
         self.num_z_slices_raw = len(threeDdata_zslice_list)
@@ -139,6 +162,9 @@ class interslice_interpolation_information_obj:
         self.zslices_index_pairings_dict = zslices_index_pairings_dict
         self.max_interp_distance = max_interp_dist
         insert_index = 1
+        threeDdata_first_slice_arr = threeDdata_zslice_list[0]
+        first_zslice_val = threeDdata_first_slice_arr[0,2]
+        self.zslice_vals_after_interpolation_list.append(first_zslice_val)
         for current_slice_index in range(self.num_z_slices_raw-1): # exclude last slice
             threeDdata_current_slice_arr = threeDdata_zslice_list[current_slice_index]
             adjacent_index = (current_slice_index+1) 
@@ -146,8 +172,14 @@ class interslice_interpolation_information_obj:
             threeDdata_interpolated_bt_two_zslices_list = self.analyze_adjacent_structure_slices(threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist)
             for interpolated_slice_index,z_slice_arr in enumerate(threeDdata_interpolated_bt_two_zslices_list):
                 self.interpolated_pts_list.insert(insert_index,z_slice_arr)
+                interpolated_zslice_val = z_slice_arr[0,2]
+                self.zslice_vals_after_interpolation_list.append(interpolated_zslice_val)
                 insert_index = insert_index + 1 
             insert_index = insert_index + 1
+            threeDdata_next_slice_arr = threeDdata_zslice_list[current_slice_index+1]
+            next_zslice_val = threeDdata_next_slice_arr[0,2]
+            self.zslice_vals_after_interpolation_list.append(next_zslice_val)
+        self.generate_interpolated_pts_np_arr()
 
 
 
@@ -210,6 +242,14 @@ class interslice_interpolation_information_obj:
             threeDdata_interpolated_zslices_list_temp.append(new_z_slice)
         
         return threeDdata_interpolated_zslices_list_temp
+
+    def generate_interpolated_pts_np_arr(self):
+        interpolated_pts_arr = np.empty([0,3])
+        for zslice_arr in self.interpolated_pts_list:
+            interpolated_pts_arr = np.vstack((interpolated_pts_arr,zslice_arr))
+        self.interpolated_pts_np_arr = interpolated_pts_arr
+
+        
         
 
 

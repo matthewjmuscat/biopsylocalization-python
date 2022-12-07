@@ -77,7 +77,7 @@ def box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, 
     
     test_points_results = point_containment_tools.test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
     for index,result in enumerate(test_points_results):
-        test_pt_colors[index] = result[4]
+        test_pt_colors[index] = result[2]
     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
     return test_points_results, test_pts_point_cloud
@@ -104,7 +104,7 @@ def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_s
     
     test_points_results = point_containment_tools.test_global_convex_structure_containment_delaunay_parallel(parallel_pool, deulaunay_obj, test_pts_list)
     for index,result in enumerate(test_points_results):
-        test_pt_colors[index] = result[4]
+        test_pt_colors[index] = result[2]
     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
     return test_points_results, test_pts_point_cloud

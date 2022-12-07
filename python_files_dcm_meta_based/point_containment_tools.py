@@ -1,6 +1,9 @@
 import scipy
 import numpy as np
 import open3d as o3d
+from shapely.geometry import Point, Polygon
+from bisect import bisect_left
+
 #import multiprocess
 #import dill
 #import pathos, multiprocess
@@ -65,7 +68,7 @@ def zslice_wise_test_point_containment(delauney_tri_object_and_zslice_list,test_
         zslice1 = None
         zslice2 = None
         delaunay_obj_contained_in_index = None
-    return pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index, test_pt_color, test_point
+    return [None,(pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index), test_pt_color, test_point]
 
 
 def test_global_convex_structure_containment_delaunay_parallel(parallel_pool, delaunay_obj, test_points_list):
@@ -95,7 +98,76 @@ def convex_structure_global_test_point_containment(delauney_tri_object_and_zslic
         zslice1 = None
         zslice2 = None
         delaunay_obj_contained_in_index = None
-    return pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index, test_pt_color, test_point
+    return [None,(pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index), test_pt_color, test_point]
+
+def plane_point_in_polygon_concave(test_points_results,interslice_interpolation_information, test_pts_point_cloud):
+    test_points_contained_in_delaunay = [(test_result_org_index,test_result) for test_result_org_index,test_result in enumerate(test_points_results) if test_result[1][0]==True]
+    for test_point_info in test_points_contained_in_delaunay:
+        test_point_original_index = test_point_info[0]
+        test_point_data = test_point_info[1]
+        test_point = test_point_data[3]
+        test_point_2d = test_point[0:2]
+        test_point_zval = test_point[2]
+        shapely_test_point = Point(test_point_2d)
+        interpolated_zvlas_list = interslice_interpolation_information.zslice_vals_after_interpolation_list    
+        nearest_interpolated_zslice_index, nearest_interpolated_zslice_val = take_closest(interpolated_zvlas_list, test_point_zval)
+        nearest_zslice = interslice_interpolation_information.interpolated_pts_list[nearest_interpolated_zslice_index]
+        nearest_zslice_2d = nearest_zslice[:,0:2]
+        nearest_zslice_shapely_polygon = Polygon(nearest_zslice_2d)
+        point_contained_in_nearest_zslice_bool = shapely_test_point.within(nearest_zslice_shapely_polygon)
+        test_point_concave_zslice_data = (point_contained_in_nearest_zslice_bool,
+            nearest_interpolated_zslice_val, nearest_interpolated_zslice_index)
+        if point_contained_in_nearest_zslice_bool == True:
+            pass
+        else:
+            test_points_results[test_point_original_index][2] = np.array([1,0,0],dtype=float)
+        test_points_results[test_point_original_index][0] = test_point_concave_zslice_data
+    
+    test_pts_point_cloud_concave_zlsice_updated = o3d.geometry.PointCloud()
+    test_pts_point_cloud_concave_zlsice_updated.points = test_pts_point_cloud.points 
+    num_points = len(test_pts_point_cloud_concave_zlsice_updated.points)
+    test_pts_colors_zslice_concave_updated = np.empty([num_points,3], dtype=float)
+    
+    for index,result in enumerate(test_points_results):
+        test_pts_colors_zslice_concave_updated[index] = result[2]
+    test_pts_point_cloud_concave_zlsice_updated.colors = o3d.utility.Vector3dVector(test_pts_colors_zslice_concave_updated)
+    return test_points_results, test_pts_point_cloud_concave_zlsice_updated
+
+
+def take_closest(myList_org, myNumber):
+    """
+    Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    myList = myList_org.copy()
+    if myList[0] > myList[1]:
+        myList.reverse()
+        list_reversed = True
+    if list_reversed == False:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return 0, myList[0]
+        if pos == len(myList):
+            return pos-1, myList[-1]
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return pos, after
+        else:
+            return pos - 1, before
+    elif list_reversed == True:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return len(myList)-1, myList[0]
+        if pos == len(myList):
+            return 0, myList[-1]
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return len(myList) - 1 - pos, after
+        else:
+            return len(myList) - pos, before
 
 class delaunay_obj:
     def __init__(self, np_points, delaunay_tri_color, zslice1 = None, zslice2 = None):

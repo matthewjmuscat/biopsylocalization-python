@@ -158,7 +158,7 @@ def main():
 
 
                         # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 2
+                        interp_dist_z_slice = 0.5
                         interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
@@ -199,22 +199,29 @@ def main():
 
                         print(specific_structure["ROI"])
                         # zslice wise convex structure box simulation
-                        num_simulations = 50
+                        num_simulations = 500
                         pcd_color = np.random.uniform(0, 0.7, size=3)
                         point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud)
+                        test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud)
+                        test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
                         # plot zslice wise delaunay in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        
+                        line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
+                        inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
 
+                        
+                        plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
                         # global convex structure box simulation
                         num_simulations = 50
                         zslice1 = threeDdata_array[0,2]
                         zslice2 = threeDdata_array[-1,2]
                         delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, pcd_color, zslice1, zslice2)
                         delaunay_global_convex_structure_obj.generate_lineset()
-                        test_points_results, test_pts_point_cloud = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, point_cloud)
+                        test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, point_cloud)
                         # plot delaunay global convex structure in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud, label = specific_structure["ROI"])
+                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
 
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj

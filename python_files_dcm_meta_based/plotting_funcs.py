@@ -276,6 +276,9 @@ def plot_point_clouds(*points_arr, label='Unknown'):
         point_cloud.paint_uniform_color(pcd_color)
         geometry_list.append(point_cloud)
     o3d.visualization.draw_geometries(geometry_list)
+
+def plot_geometries(*geometries, label='Unknown'):
+    o3d.visualization.draw_geometries(geometries)
     
 
 def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='Unknown'):
