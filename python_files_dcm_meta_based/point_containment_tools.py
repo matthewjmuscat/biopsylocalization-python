@@ -169,6 +169,16 @@ def take_closest(myList_org, myNumber):
         else:
             return len(myList) - pos, before
 
+
+def convex_bx_structure_global_test_point_containment(global_delaunay_obj,test_point):
+    if global_delaunay_obj.delaunay_triangulation.find_simplex(test_point) >= 0:
+        pt_contained = True
+    else:
+        pt_contained = False            
+    return pt_contained
+
+
+
 class delaunay_obj:
     def __init__(self, np_points, delaunay_tri_color, zslice1 = None, zslice2 = None):
         self.zslice1 = zslice1

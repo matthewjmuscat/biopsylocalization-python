@@ -40,6 +40,7 @@ import multiprocess
 #import pathos, multiprocess
 #from pathos.multiprocessing import ProcessingPool
 import dill
+import math
 
 
 
@@ -145,7 +146,9 @@ def main():
                             raise Exception("Something went wrong when calculating total number of points in structure!")
 
                         threeDdata_array = np.empty([total_structure_points,3])
-                        structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                        # for biopsy only
+                        if structs == structs_referenced_list[0]:
+                            structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
                         lower_bound_index = 0  
                         # build raw threeDdata
                         for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
@@ -153,8 +156,9 @@ def main():
                             threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
                             lower_bound_index = lower_bound_index + current_zslice_num_points 
                             
-                            structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                            structure_centroids_array[index] = structure_zslice_centroid
+                            if structs == structs_referenced_list[0]:
+                                structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                                structure_centroids_array[index] = structure_zslice_centroid
 
 
                         # conduct INTER-slice interpolation
@@ -175,6 +179,7 @@ def main():
                         #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
                         #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
 
+                        # fill in the end caps
                         interp_dist_caps = 2
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
@@ -185,48 +190,46 @@ def main():
                         #elapsed_time = et - st
                         #print('\n Execution time:', elapsed_time, 'seconds')
 
-
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolation information"] = interpolation_information
+                        # generate point cloud of raw threeDdata
+                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                        
                         
 
-
+                        # generate delaunay triangulations 
                         deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+
+                        zslice1 = threeDdata_array[0,2]
+                        zslice2 = threeDdata_array[-1,2]
+                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                        delaunay_global_convex_structure_obj.generate_lineset()
 
                         
-
+                        # Below is a sample simulation to test the containment algorithm:
+                        """
                         print(specific_structure["ROI"])
                         # zslice wise convex structure box simulation
                         num_simulations = 500
-                        pcd_color = np.random.uniform(0, 0.7, size=3)
-                        point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud)
+                        
+                        test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, threeDdata_point_cloud)
                         test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
                         # plot zslice wise delaunay in open3d ?
-                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
-                        plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
                         
                         line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
                         inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
 
                         
-                        plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
+                        #plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
                         # global convex structure box simulation
                         num_simulations = 50
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, pcd_color, zslice1, zslice2)
-                        delaunay_global_convex_structure_obj.generate_lineset()
-                        test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, point_cloud)
+                        test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, threeDdata_point_cloud)
                         # plot delaunay global convex structure in open3d ?
                         #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
 
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud"] = point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                        """
 
-                        
                         threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
                         threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
                         threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
@@ -256,18 +259,19 @@ def main():
                         
 
 
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                        centroid_line = pca.linear_fitter(structure_centroids_array.T)
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                        # for biopsies only
                         if structs == structs_referenced_list[0]:
-                            centroid_line_sample = np.array([centroid_line[0]])
-                            num_centroid_samples_of_centroid_line = 20
+                            centroid_line = pca.linear_fitter(structure_centroids_array.T)
+                            centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
+                            slice_reconstruction_max_distance = 0.1
+                            num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length/slice_reconstruction_max_distance))
+                            centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line,3), dtype=float)
+                            centroid_line_sample[0,:] = centroid_line[0,:]
                             travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
-                            for i in range(1,num_centroid_samples_of_centroid_line+1):
+                            for i in range(1,num_centroid_samples_of_centroid_line):
                                 init_point = centroid_line_sample[-1]
                                 new_point = init_point + travel_vec
-                                centroid_line_sample=np.append(centroid_line_sample,new_point,axis=0)
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
+                                centroid_line_sample[i] = new_point
     
                             # conduct a nearest neighbour search of biopsy centroids
 
@@ -277,184 +281,231 @@ def main():
 
                             list_travel_vec = np.squeeze(travel_vec).tolist()
                             list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
-                            drawn_biopsy_array = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts"] = drawn_biopsy_array.T
+                            drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
+                            drawn_biopsy_array = drawn_biopsy_array_transpose.T
+                            reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
+                            reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                            reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                            reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
+                            #plot reconstructions?
+                            #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud)
+                            #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
+
 
                         # plot only the biopsies
                         if structs == structs_referenced_list[0]:
                             specific_structure["Plot attributes"].plot_bool = True
-                        
+
+
+
+                        # store all calculated quantities
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                        if structs == structs_referenced_list[0]:
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
+
+
                     loader.iterator = loader.iterator + 1
             
-    et = time.time()
-    elapsed_time = et - st
-    print('\n Execution time:', elapsed_time, 'seconds')
+        et = time.time()
+        elapsed_time = et - st
+        print('\n Execution time:', elapsed_time, 'seconds')
+
+        """
 
 
-    # instantiate the variables used for the loading bar
-    num_patients = len(master_structure_reference_dict)
-    
-    with loading_tools.Loader(num_patients,"Generating KD trees and conducting nearest neighbour searches...") as loader:
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            Bx_structs = structs_referenced_list[0]
-            for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]): 
-                BX_centroid_line_sample = specific_BX_structure["Centroid line sample pts"]
-                for non_BX_structs in structs_referenced_list[1:]:
-                    for specific_non_BX_structs_index, specific_non_BX_structs in enumerate(pydicom_item[non_BX_structs]):
-                        
-                        # create a KDtree for all non BX structures
-                        non_BX_struct_threeDdata_array = specific_non_BX_structs["Raw contour pts"]
-                        non_BX_struct_KDtree = scipy.spatial.KDTree(non_BX_struct_threeDdata_array)
-                        master_structure_reference_dict[patientUID][non_BX_structs][specific_non_BX_structs_index]["KDtree"] = non_BX_struct_KDtree
-                        
-                        # conduct NN search
-                        nearest_neighbours = non_BX_struct_KDtree.query(BX_centroid_line_sample)
-                        
-                        master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Nearest neighbours objects"].append(nearest_neighbour_parent(specific_BX_structure["ROI"],specific_non_BX_structs["ROI"],non_BX_structs,non_BX_struct_threeDdata_array,BX_centroid_line_sample,nearest_neighbours))
-                        
-            loader.iterator = loader.iterator + 1
-
-    
-    global_data_list = []
-    disp_figs = ques_funcs.ask_ok('Do you want to open any figures now?')
-    
-    if disp_figs == True:
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            global_data_list_per_patient = []
-            global_patient_info = {}
-            for structs in structs_referenced_list:
-                for specific_structure in pydicom_item[structs]:
-                    plot_fig_bool = specific_structure["Plot attributes"].plot_bool
-                    if plot_fig_bool == True:
-                        threeDdata_array = specific_structure["Raw contour pts"]
-                        threeDdata_array_transpose = threeDdata_array.T
-                        threeDdata_list = threeDdata_array_transpose.tolist()
-                        threeDdata_list_and_color = threeDdata_list
-                        threeDdata_list_and_color.append((random(), random(), random()))
-                        threeDdata_list_and_color.append('o')
-                        global_data_list_per_patient.append(threeDdata_list_and_color)
-
-                        if structs == structs_referenced_list[0]:
-                            centroid_line_sample = specific_structure["Centroid line sample pts"] 
-                            structure_centroids_array = specific_structure["Structure centroid pts"]
-                            centroid_line = specific_structure["Best fit line of centroid pts"] 
-                            drawn_biopsy_array = specific_structure["Reconstructed structure pts"] 
-
-                            centroid_line_sample_transpose = centroid_line_sample.T
-                            centroid_line_sample_list = centroid_line_sample_transpose.tolist()
-                            centroid_line_sample_list_and_color = centroid_line_sample_list
-                            centroid_line_sample_list_and_color.append('y')
-                            centroid_line_sample_list_and_color.append('x')
+        # instantiate the variables used for the loading bar
+        num_patients = len(master_structure_reference_dict)
+        
+        with loading_tools.Loader(num_patients,"Generating KD trees and conducting nearest neighbour searches...") as loader:
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                Bx_structs = structs_referenced_list[0]
+                for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]): 
+                    BX_centroid_line_sample = specific_BX_structure["Centroid line sample pts"]
+                    for non_BX_structs in structs_referenced_list[1:]:
+                        for specific_non_BX_structs_index, specific_non_BX_structs in enumerate(pydicom_item[non_BX_structs]):
                             
-                            drawn_biopsy_array_transpose = drawn_biopsy_array.T
-                            drawn_biopsy_list = drawn_biopsy_array_transpose.tolist()
-                            drawn_biopsy_list_and_color = drawn_biopsy_list
-                            drawn_biopsy_list_and_color.append('m')
-                            drawn_biopsy_list_and_color.append('+')
+                            # create a KDtree for all non BX structures
+                            non_BX_struct_threeDdata_array = specific_non_BX_structs["Raw contour pts"]
+                            non_BX_struct_KDtree = scipy.spatial.KDTree(non_BX_struct_threeDdata_array)
+                            master_structure_reference_dict[patientUID][non_BX_structs][specific_non_BX_structs_index]["KDtree"] = non_BX_struct_KDtree
                             
-                            structure_centroids_array_transpose = structure_centroids_array.T
-                            structure_centroids_list = structure_centroids_array_transpose.tolist()
-                            structure_centroids_list_and_color = structure_centroids_list
-                            structure_centroids_list_and_color.append('b')
-                            structure_centroids_list_and_color.append('o')
+                            # conduct NN search
+                            nearest_neighbours = non_BX_struct_KDtree.query(BX_centroid_line_sample)
+                            
+                            master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Nearest neighbours objects"].append(nearest_neighbour_parent(specific_BX_structure["ROI"],specific_non_BX_structs["ROI"],non_BX_structs,non_BX_struct_threeDdata_array,BX_centroid_line_sample,nearest_neighbours))
+                            
+                loader.iterator = loader.iterator + 1
 
-                            global_data_list_per_patient.append(centroid_line_sample_list_and_color)
-                            global_data_list_per_patient.append(drawn_biopsy_list_and_color)
-                            global_data_list_per_patient.append(structure_centroids_list_and_color)
+        
+        global_data_list = []
+        disp_figs = ques_funcs.ask_ok('Do you want to open any figures now?')
+        
+        if disp_figs == True:
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                global_data_list_per_patient = []
+                global_patient_info = {}
+                for structs in structs_referenced_list:
+                    for specific_structure in pydicom_item[structs]:
+                        plot_fig_bool = specific_structure["Plot attributes"].plot_bool
+                        if plot_fig_bool == True:
+                            threeDdata_array = specific_structure["Raw contour pts"]
+                            threeDdata_array_transpose = threeDdata_array.T
+                            threeDdata_list = threeDdata_array_transpose.tolist()
+                            threeDdata_list_and_color = threeDdata_list
+                            threeDdata_list_and_color.append((random(), random(), random()))
+                            threeDdata_list_and_color.append('o')
+                            global_data_list_per_patient.append(threeDdata_list_and_color)
+
+                            if structs == structs_referenced_list[0]:
+                                centroid_line_sample = specific_structure["Centroid line sample pts"] 
+                                structure_centroids_array = specific_structure["Structure centroid pts"]
+                                centroid_line = specific_structure["Best fit line of centroid pts"] 
+                                drawn_biopsy_array = specific_structure["Reconstructed structure pts"] 
+
+                                centroid_line_sample_transpose = centroid_line_sample.T
+                                centroid_line_sample_list = centroid_line_sample_transpose.tolist()
+                                centroid_line_sample_list_and_color = centroid_line_sample_list
+                                centroid_line_sample_list_and_color.append('y')
+                                centroid_line_sample_list_and_color.append('x')
+                                
+                                drawn_biopsy_array_transpose = drawn_biopsy_array.T
+                                drawn_biopsy_list = drawn_biopsy_array_transpose.tolist()
+                                drawn_biopsy_list_and_color = drawn_biopsy_list
+                                drawn_biopsy_list_and_color.append('m')
+                                drawn_biopsy_list_and_color.append('+')
+                                
+                                structure_centroids_array_transpose = structure_centroids_array.T
+                                structure_centroids_list = structure_centroids_array_transpose.tolist()
+                                structure_centroids_list_and_color = structure_centroids_list
+                                structure_centroids_list_and_color.append('b')
+                                structure_centroids_list_and_color.append('o')
+
+                                global_data_list_per_patient.append(centroid_line_sample_list_and_color)
+                                global_data_list_per_patient.append(drawn_biopsy_list_and_color)
+                                global_data_list_per_patient.append(structure_centroids_list_and_color)
 
 
-                        info = specific_structure
-                        info["Patient Name"] = pydicom_item["Patient Name"]
-                        info["Patient ID"] = pydicom_item["Patient ID"]
-                        #specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(*global_data_list_per_patient,**info)
-                        specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(*global_data_list_per_patient, **info)
-                        specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
-                    
-                        #specific_structure_fig.show()
-
-
+                            info = specific_structure
+                            info["Patient Name"] = pydicom_item["Patient Name"]
+                            info["Patient ID"] = pydicom_item["Patient ID"]
+                            #specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(*global_data_list_per_patient,**info)
+                            specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(*global_data_list_per_patient, **info)
+                            specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
                         
-            global_data_list.append(global_data_list_per_patient)
+                            #specific_structure_fig.show()
 
-        close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close all figures")
-        plt.close('all')
-    else:
-        pass
-    
 
-    if disp_figs == True:
-        disp_figs_global = ques_funcs.ask_ok('Do you want to open the global data figure too?')
-        if disp_figs_global == True:
-            figure_global = plotting_funcs.arb_threeD_scatter_plotter_global(global_data_list[0])
-            figure_global.show()
-            close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
+                            
+                global_data_list.append(global_data_list_per_patient)
+
+            close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close all figures")
             plt.close('all')
-
-    
-    if disp_figs == True:
-        disp_figs_DIL_NN = ques_funcs.ask_ok('Do you want to show the NN plots?')
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            info = {}
-            info["Patient Name"] = pydicom_item["Patient Name"]
-            info["Patient ID"] = pydicom_item["Patient ID"]
-            figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
-            figure_global_per_patient.show()
-            close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
-            plt.close('all')
-    
-
-    ## begin simulation section
-    num_simulations = 1000
-    created_dir = False
-    while created_dir == False:
-        uncertainty_dir_generate = ques_funcs.ask_ok('Must create an uncertainties folder at ', uncertainty_dir, ', continue?\
-If the folder already exists it will not be overwritten.' )
-
-        if uncertainty_dir_generate == True:
-            if os.path.isdir(uncertainty_dir) == True:
-                print('Directory already exists')
-                created_dir = True
-            else:
-                os.mkdir(uncertainty_dir)
-                print('Directory: ', uncertainty_dir, ' created.')
-                created_dir = True
         else:
-            exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
-            if exit_programme == True:
-                sys.exit('Programme exited.')
-            else: 
-                pass
+            pass
+        
 
-    uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
-    if uncertainty_template_generate == True:
-        # create a blank uncertainties file filled with the proper patient data
-        uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
-    else:
-        pass
+        if disp_figs == True:
+            disp_figs_global = ques_funcs.ask_ok('Do you want to open the global data figure too?')
+            if disp_figs_global == True:
+                figure_global = plotting_funcs.arb_threeD_scatter_plotter_global(global_data_list[0])
+                figure_global.show()
+                close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
+                plt.close('all')
 
-    uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?')
-    if uncertainty_file_ready == True:
-        print('Please select the file with the dialog box')
-        root = tk.Tk() # these two lines are to get rid of errant tkinter window
-        root.withdraw() # these two lines are to get rid of errant tkinter window
-        # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-        uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
-        with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-            uncertainties_filled = uncertainties_file_filled_csv
-        pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
-        print(pandas_read_uncertainties)
-    else:
-        sys.exit("Fill in the uncertainty template and run the programme again.")
-    
+        
+        if disp_figs == True:
+            disp_figs_DIL_NN = ques_funcs.ask_ok('Do you want to show the NN plots?')
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                info = {}
+                info["Patient Name"] = pydicom_item["Patient Name"]
+                info["Patient ID"] = pydicom_item["Patient ID"]
+                figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
+                figure_global_per_patient.show()
+                close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
+                plt.close('all')
+        
+
+        """
 
 
-    simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
-    
-    if simulation_ans ==  True:
-        print('Beginning simulation')
-        master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations)
-    else: 
-        pass
+        ## uniformly sample points from biopsies
+
+        with loading_tools.Loader(num_general_structs,"Sampling points from biopsies...") as loader:
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                structs = structs_referenced_list[0]
+                for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                    num_samples = 1000
+                    reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"]
+                    reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
+                    sampled_bx_points_from_global_delaunay_arr, sampled_bx_points_from_global_delaunay_point_cloud = MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure(num_samples, reconstructed_delaunay_global_convex_structure_obj, reconstructed_biopsy_point_cloud)
+                    plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud)
+
+
+
+
+        ## begin simulation section
+        num_simulations = 1000
+        created_dir = False
+        while created_dir == False:
+            print('Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
+            uncertainty_dir_generate = ques_funcs.ask_ok('Continue?')
+
+            if uncertainty_dir_generate == True:
+                if os.path.isdir(uncertainty_dir) == True:
+                    print('Directory already exists')
+                    created_dir = True
+                else:
+                    os.mkdir(uncertainty_dir)
+                    print('Directory: ', uncertainty_dir, ' created.')
+                    created_dir = True
+            else:
+                exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
+                if exit_programme == True:
+                    sys.exit('Programme exited.')
+                else: 
+                    pass
+
+        uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
+        if uncertainty_template_generate == True:
+            # create a blank uncertainties file filled with the proper patient data
+            uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
+        else:
+            pass
+
+        uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?')
+        if uncertainty_file_ready == True:
+            print('Please select the file with the dialog box')
+            root = tk.Tk() # these two lines are to get rid of errant tkinter window
+            root.withdraw() # these two lines are to get rid of errant tkinter window
+            # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
+            uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
+            with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
+                uncertainties_filled = uncertainties_file_filled_csv
+            pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+            print(pandas_read_uncertainties)
+        else:
+            sys.exit("Fill in the uncertainty template and run the programme again.")
+        
+
+
+        simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
+        
+        if simulation_ans ==  True:
+            print('Beginning simulation')
+            master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations)
+        else: 
+            pass
 
     print('Programme has ended.')
 
@@ -472,9 +523,9 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     master_st_ref_dict = {}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Interpolation information": None, "Point cloud": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
     return master_st_ref_dict, ref_list
 

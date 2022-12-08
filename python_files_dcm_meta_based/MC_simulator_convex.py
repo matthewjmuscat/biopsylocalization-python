@@ -4,7 +4,7 @@ import loading_tools # imported for more sophisticated loading bar
 import numpy as np
 import open3d as o3d
 import point_containment_tools
-
+import plotting_funcs
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -32,7 +32,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
                 pcd_color = np.random.uniform(0, 0.7, size=3)
                 biopsy_samples_point_cloud.paint_uniform_color(pcd_color)
                 master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Random uniformly sampled volume pts"] = biopsy_samples
-                biopsy_raw_point_cloud = master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Point cloud"]
+                biopsy_raw_point_cloud = master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Point cloud raw"]
                 pcd_color = np.random.uniform(0, 0.7, size=3)
                 biopsy_raw_point_cloud.paint_uniform_color(pcd_color)
 
@@ -60,7 +60,7 @@ def box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, 
     # test points to test for inclusion
     num_pts = num_simulations
     max_bnd = point_cloud.get_max_bound()
-    min_bnd = point_cloud.get_max_bound()
+    min_bnd = point_cloud.get_min_bound()
     center = point_cloud.get_center()
     if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
         largest_bnd = max_bnd
@@ -87,7 +87,7 @@ def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_s
     # test points to test for inclusion
     num_pts = num_simulations
     max_bnd = point_cloud.get_max_bound()
-    min_bnd = point_cloud.get_max_bound()
+    min_bnd = point_cloud.get_min_bound()
     center = point_cloud.get_center()
     if np.linalg.norm(max_bnd-center) >= np.linalg.norm(min_bnd-center): 
         largest_bnd = max_bnd
@@ -108,4 +108,46 @@ def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_s
     test_pts_point_cloud.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
     return test_points_results, test_pts_point_cloud
+
+
+
+
+
+def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_global_convex_structure_obj, reconstructed_bx_point_cloud):
+    insert_index = 0
+    reconstructed_bx_point_cloud_color = np.array([0,0,1])
+    reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
+
+    bx_samples_arr = np.empty((num_samples,3),dtype=float)
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
+    min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
+
+    
+    while insert_index < num_samples:
+        x_val = np.random.uniform(min_bounds[0], max_bounds[0])
+        y_val = np.random.uniform(min_bounds[1], max_bounds[1])
+        z_val = np.random.uniform(min_bounds[2], max_bounds[2])
+        random_point_within_bounding_box = np.array([x_val,y_val,z_val],dtype=float)
+        
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_obj,random_point_within_bounding_box)
+        
+        
+        random_point_pcd = o3d.geometry.PointCloud()
+        random_point_pcd.points = o3d.utility.Vector3dVector(np.array([random_point_within_bounding_box]))
+        random_point_pcd_color = np.array([0,1,0])
+        random_point_pcd.paint_uniform_color(random_point_pcd_color)
+        #plotting_funcs.plot_geometries(reconstructed_bx_point_cloud,random_point_pcd)
+        print(containment_result_bool)
+        if containment_result_bool == True:
+            bx_samples_arr[insert_index] = random_point_within_bounding_box
+            insert_index = insert_index + 1
+        else:
+            pass
+    
+    bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+    bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
+    
+    return bx_samples_arr, bx_samples_arr_point_cloud
     
