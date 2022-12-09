@@ -113,7 +113,7 @@ def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_s
 
 
 
-def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_point_cloud):
+def point_sampler_from_global_delaunay_convex_structure_for_sequential(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_point_cloud):
     insert_index = 0
     reconstructed_bx_point_cloud_color = np.array([0,0,1])
     reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
@@ -154,7 +154,7 @@ def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_gl
     return bx_samples_arr, bx_samples_arr_point_cloud, axis_aligned_bounding_box
 
 
-def point_sampler_from_global_delaunay_convex_structure_ver2(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr):
+def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr):
     insert_index = 0
     reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
     reconstructed_bx_point_cloud_color = np.array([0,0,1])

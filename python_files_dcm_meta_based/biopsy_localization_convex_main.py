@@ -459,18 +459,18 @@ def main():
         
         st = time.time()
 
-        parallel_sampled_bx_points_from_global_delaunay_arr, axis_aligned_bounding_box_points_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_ver2, args_list)
-
+        parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+        
         et = time.time()
         elapsed_time = et - st
         print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
 
-        for sampled_bx_pts_arr in parallel_sampled_bx_points_from_global_delaunay_arr:
+        for sampled_bx_pts_arr, axis_aligned_bounding_box_arr in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
             sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
-            sampled_bx_points_from_global_delaunay_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_points_from_global_delaunay_arr, sampled_bx_points_from_global_delaunay_point_cloud_color)
+            sampled_bx_points_from_global_delaunay_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_pts_arr, sampled_bx_points_from_global_delaunay_point_cloud_color)
             axis_aligned_bounding_box = o3d.geometry.AxisAlignedBoundingBox()
-            axis_aligned_bounding_box_03d3dvector_points = o3d.utility.Vector3dVector(axis_aligned_bounding_box_points_arr)
-            axis_aligned_bounding_box.create_from_points(axis_aligned_bounding_box_03d3dvector_points)
+            axis_aligned_bounding_box_o3d3dvector_points = o3d.utility.Vector3dVector(axis_aligned_bounding_box_arr)
+            axis_aligned_bounding_box.create_from_points(axis_aligned_bounding_box_o3d3dvector_points)
             #axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
             bounding_box_color = np.array([0,0,0], dtype=float)
             axis_aligned_bounding_box.color = bounding_box_color
