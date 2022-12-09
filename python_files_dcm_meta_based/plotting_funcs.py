@@ -278,7 +278,10 @@ def plot_point_clouds(*points_arr, label='Unknown'):
     o3d.visualization.draw_geometries(geometry_list)
 
 def plot_geometries(*geometries, label='Unknown'):
-    o3d.visualization.draw_geometries(geometries)
+    geom_list = []
+    for geom_item in geometries:
+        geom_list.append(geom_item)
+    o3d.visualization.draw_geometries(geom_list)
     
 
 def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='Unknown'):

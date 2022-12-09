@@ -440,18 +440,43 @@ def main():
 
 
         ## uniformly sample points from biopsies
-
+        st = time.time()
+        args_list = []
         with loading_tools.Loader(num_general_structs,"Sampling points from biopsies...") as loader:
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 structs = structs_referenced_list[0]
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                     num_samples = 1000
                     reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"]
+                    reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                    sampled_bx_points_from_global_delaunay_arr, sampled_bx_points_from_global_delaunay_point_cloud = MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure(num_samples, reconstructed_delaunay_global_convex_structure_obj, reconstructed_biopsy_point_cloud)
-                    plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud)
+                    args_list.append((num_samples, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr))
+        
+        et = time.time()
+        elapsed_time = et - st
+        print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
+        
+        
+        st = time.time()
 
+        parallel_sampled_bx_points_from_global_delaunay_arr, axis_aligned_bounding_box_points_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_ver2, args_list)
 
+        et = time.time()
+        elapsed_time = et - st
+        print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
+
+        for sampled_bx_pts_arr in parallel_sampled_bx_points_from_global_delaunay_arr:
+            sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+            sampled_bx_points_from_global_delaunay_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_points_from_global_delaunay_arr, sampled_bx_points_from_global_delaunay_point_cloud_color)
+            axis_aligned_bounding_box = o3d.geometry.AxisAlignedBoundingBox()
+            axis_aligned_bounding_box_03d3dvector_points = o3d.utility.Vector3dVector(axis_aligned_bounding_box_points_arr)
+            axis_aligned_bounding_box.create_from_points(axis_aligned_bounding_box_03d3dvector_points)
+            #axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+            bounding_box_color = np.array([0,0,0], dtype=float)
+            axis_aligned_bounding_box.color = bounding_box_color
+            
+            
+            plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud,axis_aligned_bounding_box)
 
 
         ## begin simulation section

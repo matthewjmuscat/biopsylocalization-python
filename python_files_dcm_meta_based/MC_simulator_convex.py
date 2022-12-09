@@ -113,7 +113,7 @@ def box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_s
 
 
 
-def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_global_convex_structure_obj, reconstructed_bx_point_cloud):
+def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_point_cloud):
     insert_index = 0
     reconstructed_bx_point_cloud_color = np.array([0,0,1])
     reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
@@ -121,6 +121,8 @@ def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_gl
     bx_samples_arr = np.empty((num_samples,3),dtype=float)
     axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
     axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    bounding_box_color = np.array([0,0,0], dtype=float)
+    axis_aligned_bounding_box.color = bounding_box_color
     max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
     min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
 
@@ -131,7 +133,7 @@ def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_gl
         z_val = np.random.uniform(min_bounds[2], max_bounds[2])
         random_point_within_bounding_box = np.array([x_val,y_val,z_val],dtype=float)
         
-        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_obj,random_point_within_bounding_box)
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,random_point_within_bounding_box)
         
         
         random_point_pcd = o3d.geometry.PointCloud()
@@ -139,7 +141,7 @@ def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_gl
         random_point_pcd_color = np.array([0,1,0])
         random_point_pcd.paint_uniform_color(random_point_pcd_color)
         #plotting_funcs.plot_geometries(reconstructed_bx_point_cloud,random_point_pcd)
-        print(containment_result_bool)
+        #print(containment_result_bool)
         if containment_result_bool == True:
             bx_samples_arr[insert_index] = random_point_within_bounding_box
             insert_index = insert_index + 1
@@ -149,5 +151,47 @@ def point_sampler_from_global_delaunay_convex_structure(num_samples, delaunay_gl
     bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
     bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
     
-    return bx_samples_arr, bx_samples_arr_point_cloud
+    return bx_samples_arr, bx_samples_arr_point_cloud, axis_aligned_bounding_box
+
+
+def point_sampler_from_global_delaunay_convex_structure_ver2(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr):
+    insert_index = 0
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    reconstructed_bx_point_cloud_color = np.array([0,0,1])
+    reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
+
+    bx_samples_arr = np.empty((num_samples,3),dtype=float)
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    bounding_box_color = np.array([0,0,0], dtype=float)
+    axis_aligned_bounding_box.color = bounding_box_color
+    max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
+    min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
+
+    
+    while insert_index < num_samples:
+        x_val = np.random.uniform(min_bounds[0], max_bounds[0])
+        y_val = np.random.uniform(min_bounds[1], max_bounds[1])
+        z_val = np.random.uniform(min_bounds[2], max_bounds[2])
+        random_point_within_bounding_box = np.array([x_val,y_val,z_val],dtype=float)
+        
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,random_point_within_bounding_box)
+        
+        
+        random_point_pcd = o3d.geometry.PointCloud()
+        random_point_pcd.points = o3d.utility.Vector3dVector(np.array([random_point_within_bounding_box]))
+        random_point_pcd_color = np.array([0,1,0])
+        random_point_pcd.paint_uniform_color(random_point_pcd_color)
+        #plotting_funcs.plot_geometries(reconstructed_bx_point_cloud,random_point_pcd)
+        #print(containment_result_bool)
+        if containment_result_bool == True:
+            bx_samples_arr[insert_index] = random_point_within_bounding_box
+            insert_index = insert_index + 1
+        else:
+            pass
+    
+    bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+    bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
+    
+    return bx_samples_arr, axis_aligned_bounding_box_points_arr
     
