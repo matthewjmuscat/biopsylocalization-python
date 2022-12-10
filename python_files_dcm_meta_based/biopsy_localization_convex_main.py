@@ -41,6 +41,8 @@ import multiprocess
 #from pathos.multiprocessing import ProcessingPool
 import dill
 import math
+from datetime import date, datetime
+
 
 
 
@@ -61,20 +63,21 @@ def main():
     """
     # The following could be user input, for now they are defined here, and used throughout 
     # the programme for generality
-    Data_folder_name = 'Data'
+    data_folder_name = 'Data'
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
-    OAROI_contour_names = ['Prostate','Urethra','Rectum','random']
-    Biopsy_contour_names = ['Bx']
-    DIL_contour_names = ['DIL']
-    Uncertainty_folder_name = 'Uncertainty data'
+    oaroi_contour_names = ['Prostate','Urethra','Rectum','random']
+    biopsy_contour_names = ['Bx']
+    dil_contour_names = ['DIL']
+    uncertainty_folder_name = 'Uncertainty data'
+    uncertainty_file_name = "uncertainties_prepared_unfilled"
+    uncertainty_file_extension = ".csv"
     
     # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
 
     # First we access the data directory, it must be in a location 
     # two levels up from this file
-    data_dir = pathlib.Path(__file__).parents[2].joinpath(Data_folder_name)
-    uncertainty_dir = data_dir.joinpath(Uncertainty_folder_name)
-    uncertainties_file = uncertainty_dir.joinpath("uncertainties_prepared_unfilled.csv")
+    data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
+    uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
     dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
     dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
 
@@ -90,7 +93,8 @@ def main():
     RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
 
     
-    master_structure_reference_dict, structs_referenced_list = structure_referencer(RTst_dcms_dict, OAROI_contour_names,DIL_contour_names,Biopsy_contour_names)
+    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list = structure_referencer(RTst_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
+
 
     # Now, we dont want to add the contour points to the structure list above,
     # because the contour data is already stored in a data tree, which will allow
@@ -108,9 +112,8 @@ def main():
     # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
 
     # instantiate the variables used for the loading bar
-    num_patients = len(master_structure_reference_dict)
-    num_general_structs_per_patient = len(structs_referenced_list)
-    num_general_structs = num_patients*num_general_structs_per_patient
+    num_patients = master_structure_info_dict["Global"]["Num patients"]
+    num_general_structs = master_structure_info_dict["Global"]["Num structures"]
     test_ind = 0
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -315,7 +318,7 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
 
-                    loader.iterator = loader.iterator + 1
+                        loader.iterator = loader.iterator + 1
             
         et = time.time()
         elapsed_time = et - st
@@ -323,9 +326,6 @@ def main():
 
         """
 
-
-        # instantiate the variables used for the loading bar
-        num_patients = len(master_structure_reference_dict)
         
         with loading_tools.Loader(num_patients,"Generating KD trees and conducting nearest neighbour searches...") as loader:
             for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -451,7 +451,9 @@ def main():
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
                     args_list.append((num_samples, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr))
-        
+                    loader.iterator = loader.iterator + 1
+
+
         et = time.time()
         elapsed_time = et - st
         print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
@@ -480,7 +482,6 @@ def main():
 
 
         ## begin simulation section
-        num_simulations = 1000
         created_dir = False
         while created_dir == False:
             print('Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
@@ -503,32 +504,71 @@ def main():
 
         uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
         if uncertainty_template_generate == True:
-            # create a blank uncertainties file filled with the proper patient data
+            # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
+            #today = date.today()
+            #date_file_name_format = today.strftime("%b-%d-%Y")
+
+            date_time_now = datetime.now()
+            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+            uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
+
             uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
         else:
             pass
 
-        uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?')
-        if uncertainty_file_ready == True:
-            print('Please select the file with the dialog box')
-            root = tk.Tk() # these two lines are to get rid of errant tkinter window
-            root.withdraw() # these two lines are to get rid of errant tkinter window
-            # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-            uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
-            with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-                uncertainties_filled = uncertainties_file_filled_csv
-            pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
-            print(pandas_read_uncertainties)
-        else:
-            sys.exit("Fill in the uncertainty template and run the programme again.")
-        
+        uncertainty_file_ready = False
+        while uncertainty_file_ready == False:
+            uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?') 
+            if uncertainty_file_ready == True:
+                print('Please select the file with the dialog box')
+                root = tk.Tk() # these two lines are to get rid of errant tkinter window
+                root.withdraw() # these two lines are to get rid of errant tkinter window
+                # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
+                uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
+                with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
+                    uncertainties_filled = uncertainties_file_filled_csv
+                pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+                print(pandas_read_uncertainties)
+            else:
+                print('Please fill out the generated uncertainties file generated at ', uncertainties_file)
+                ask_to_quit = ques_funcs.ask_ok('Would you like to quit the programme instead?')
+                if ask_to_quit == True:
+                    sys.exit("You have quit the programme.")
+                else:
+                    pass
+
+        # Transfer read uncertainty data to master_reference
+        num_general_structs = int(pandas_read_uncertainties.values[1][0])
+        for specific_structure_index in range(num_general_structs):
+            structure_row_num_start = specific_structure_index*5+3
+            patientUID = pandas_read_uncertainties.values[structure_row_num_start+1][0]
+            structure_type = pandas_read_uncertainties.values[structure_row_num_start+1][1]
+            structure_ROI = pandas_read_uncertainties.values[structure_row_num_start+1][2]
+            structure_ref_num = pandas_read_uncertainties.values[structure_row_num_start+1][3]
+            master_ref_dict_specific_structure_index = int(pandas_read_uncertainties.values[structure_row_num_start+1][4])
+            frame_of_reference = pandas_read_uncertainties.values[structure_row_num_start+1][5]
+            means_arr = np.empty([3], dtype=float)
+            sigmas_arr = np.empty([3], dtype=float)
+
+            means_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][0] # X
+            means_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][2] # Y
+            means_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][4] # Z
+
+            sigmas_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][1] # X
+            sigmas_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][3] # Y
+            sigmas_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][5] # Z
 
 
-        simulation_ans = ques_funcs.ask_ok('Everything is ready. Begin simulation?')
+            uncertainty_data_obj = uncertainty_data(patientUID, structure_type, structure_ROI, structure_ref_num, master_ref_dict_specific_structure_index, frame_of_reference)
+            uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
+            master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
+
+        simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
         
+        num_simulations = 1000
         if simulation_ans ==  True:
             print('Beginning simulation')
-            master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations)
+            #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
         else: 
             pass
 
@@ -546,13 +586,51 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     information is referenced to the name by a number.
     """
     master_st_ref_dict = {}
+    master_st_info_dict = {}
+    master_st_info_global_dict = {"Global": None, "By patient": None}
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
+    global_num_biopsies = 0
+    global_num_OAR = 0
+    global_num_DIL = 0
+    global_total_num_structs = 0
+    global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts": None, "Uncertainty data": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
+        
+        bpsy_info = {"Num structs": len(bpsy_ref)}
+        OAR_info = {"Num structs": len(OAR_ref)}
+        DIL_info = {"Num structs": len(DIL_ref)}
+        patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
+        all_structs_info = {"Total num structs": patient_total_num_structs}
+        
+        global_num_OAR = global_num_OAR + OAR_info["Num structs"]
+        global_num_DIL = global_num_DIL + DIL_info["Num structs"] 
+        global_num_biopsies = global_num_biopsies + bpsy_info["Num structs"]
+        global_total_num_structs = global_total_num_structs + patient_total_num_structs
+        global_num_patients = global_num_patients + 1
+
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
-    return master_st_ref_dict, ref_list
+        master_st_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_info, ref_list[1]:OAR_info, ref_list[2]:DIL_info, "All ref":all_structs_info}
+    master_st_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR}
+    master_st_info_global_dict["By patient"] = master_st_info_dict
+    return master_st_ref_dict, master_st_info_global_dict, ref_list
+
+class uncertainty_data:
+    def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):
+        self.patientUID = patientUID
+        self.struct_type = struct_type
+        self.structure_roi = structure_roi
+        self.struct_ref_num = struct_ref_num
+        self.master_ref_dict_specific_structure_index = master_ref_dict_specific_structure_index
+        self.uncertainty_data_mean_arr = None
+        self.uncertainty_data_sigma_arr = None
+        self.uncertainty_data_mean_dict = {"Frame of reference": frame_of_reference, "Distribution": 'Normal', "Means": None, "Sigmas": None} 
+    def fill_means_and_sigmas(self, means_arr, sigmas_arr):
+        self.uncertainty_data_mean_arr = means_arr
+        self.uncertainty_data_sigma_arr = sigmas_arr
+
 
 
 class plot_attributes:

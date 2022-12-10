@@ -56,6 +56,30 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
+def simulator_parallel(master_structure_reference_dict, structs_referenced_list, num_simulations):
+    
+    # build args list for parallel computing
+    args_list_forstructure_shift = []
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        for structure_type in structs_referenced_list:        
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structure_type]):
+                uncertainty_data_obj = specific_structure["Uncertainty data"]
+                if structure_type == structs_referenced_list[0]:
+                    randomly_sampled_bx_pts = specific_structure["Random uniformly sampled volume pts"]
+                    structure_to_shift = randomly_sampled_bx_pts
+                else:
+                    structure_pts = specific_structure["Random uniformly sampled volume pts"]
+                    structure_to_shift = randomly_sampled_bx_pts
+            
+                
+
+
+def MC_simulator_shift_structure(specific_structure_dict, structs_referenced_list, num_simulations):
+
+    normal_simulations = np.random.normal(loc=0.0, scale=1.0, size=None)
+    pass
+
+
 def box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, point_cloud):
     # test points to test for inclusion
     num_pts = num_simulations
