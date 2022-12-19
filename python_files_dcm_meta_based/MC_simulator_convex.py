@@ -56,42 +56,50 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
-def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations):
+def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict):
     
-    # simulate all structure shifts in parallel and update the master reference dict
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
-        patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, num_simulations)
-        master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
-
-    # simulate every biopsy sequentially
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
-        # create a dictionary of all non bx structures
-        structure_shifted_bx_data_dict = {}
-        for non_bx_struct_type in structs_referenced_list[1:]:
-            for specific_non_bx_structure_index, specific_non_bx_structure in enumerate(pydicom_item[non_bx_struct_type]):
-                specific_non_bx_struct_roi = specific_non_bx_structure["ROI"]
-                specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
-                structure_shifted_bx_data_dict[specific_non_bx_struct_roi+specific_non_bx_struct_refnum] = None
-        
-        # set structure type to BX 
-        structure_type = structs_referenced_list[0]
+    num_patients = master_structure_info_dict["Global"]["Num patients"]
+    with loading_tools.Loader(num_patients,"Generating samples...") as loader:
+        # simulate all structure shifts in parallel and update the master reference dict
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, num_simulations)
+            master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
+            loader.iterator = loader.iterator + 1
+    
+    num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    with loading_tools.Loader(num_biopsies,"MC simulating biopsy and anatomy translation...") as loader:
+        # simulate every biopsy sequentially
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            # create a dictionary of all non bx structures
+            structure_shifted_bx_data_dict = {}
+            for non_bx_struct_type in structs_referenced_list[1:]:
+                for specific_non_bx_structure_index, specific_non_bx_structure in enumerate(pydicom_item[non_bx_struct_type]):
+                    specific_non_bx_struct_roi = specific_non_bx_structure["ROI"]
+                    specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
+                    structure_shifted_bx_data_dict[specific_non_bx_struct_roi,specific_non_bx_struct_refnum] = None
+            
+            # set structure type to BX 
+            structure_type = structs_referenced_list[0]
+                    
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[structure_type]):
+                # Do all trials in parallel
+                bx_only_shifted_randomly_sampled_bx_pts_3Darr = MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure)
+                # THIS SHOULD BE SAVED AT THE END. Save the 3d array of the bx only shifted data containing all MC trials as slices to the master reference dictionary
+                master_structure_reference_dict[patientUID][structure_type][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
                 
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[structure_type]):
-            # Do all trials in parallel
-            bx_only_shifted_randomly_sampled_bx_pts_3Darr = MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure)
-            # THIS SHOULD BE SAVED AT THE END. Save the 3d array of the bx only shifted data containing all MC trials as slices to the master reference dictionary
-            master_structure_reference_dict[patientUID][structure_type][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
-            # THIS IS WHERE WE STOPPED, WE NEED TO NOW SHIFT THE BX DATA FOR EVERY STRUCTURE THAT WE ARE TESTING CONTAINMENT IN, MAY GOD HAVE MERCY
-            
-            
-            parallel_result_non_bx_and_bx_structures_shifted = MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_parallel(parallel_pool, pydicom_item, structs_referenced_list, bx_only_shifted_randomly_sampled_bx_pts_3Darr, structure_shifted_bx_data_dict)
-            # add to the dictionary, for every bx 3d array of all slice trials, we need the bx data to be shifted for every structure shift appropriately
+                
+                structure_shifted_bx_data_dict = MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_parallel(parallel_pool, pydicom_item, structs_referenced_list, bx_only_shifted_randomly_sampled_bx_pts_3Darr, structure_shifted_bx_data_dict)
+                master_structure_reference_dict[patientUID][structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] = structure_shifted_bx_data_dict
+                loader.iterator = loader.iterator + 1
+
+        return master_structure_reference_dict
+
 
 def MC_simulator_shift_all_structures_generator_parallel(parallel_pool, patient_dict, structs_referenced_list, num_simulations):
 
     # build args list for parallel computing
     args_list = []
-    patient_dict_updated_with_generated_samples = patient_dict.copy
+    patient_dict_updated_with_generated_samples = patient_dict.copy()
     for structure_type in structs_referenced_list:
         for specific_structure_index, specific_structure in enumerate(patient_dict[structure_type]):
             #spec_structure_zslice_wise_delaunay_obj_list = specific_structure["Delaunay triangulation zslice-wise list"]
@@ -178,7 +186,7 @@ def MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_parallel
             
             bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr = np.asarray(parallel_results_bx_shift_of_non_bx_structure_translation)
 
-            structure_shifted_bx_data_dict[specific_non_bx_struct_roi+specific_non_bx_struct_refnum] = bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr
+            structure_shifted_bx_data_dict[specific_non_bx_struct_roi,specific_non_bx_struct_refnum] = bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr
 
     return structure_shifted_bx_data_dict
 
@@ -293,7 +301,7 @@ def point_sampler_from_global_delaunay_convex_structure_for_sequential(num_sampl
     return bx_samples_arr, bx_samples_arr_point_cloud, axis_aligned_bounding_box
 
 
-def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr):
+def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr, patientUID, structure_type, specific_structure_index):
     insert_index = 0
     reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
     reconstructed_bx_point_cloud_color = np.array([0,0,1])
@@ -332,5 +340,5 @@ def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, de
     bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
     bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
     
-    return bx_samples_arr, axis_aligned_bounding_box_points_arr
+    return bx_samples_arr, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
     
