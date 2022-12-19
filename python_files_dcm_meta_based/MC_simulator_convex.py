@@ -31,7 +31,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
                 biopsy_samples_point_cloud.points = o3d.utility.Vector3dVector(biopsy_samples[:,0:3])
                 pcd_color = np.random.uniform(0, 0.7, size=3)
                 biopsy_samples_point_cloud.paint_uniform_color(pcd_color)
-                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Random uniformly sampled volume pts"] = biopsy_samples
+                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Random uniformly sampled volume pts arr"] = biopsy_samples
                 biopsy_raw_point_cloud = master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Point cloud raw"]
                 pcd_color = np.random.uniform(0, 0.7, size=3)
                 biopsy_raw_point_cloud.paint_uniform_color(pcd_color)
@@ -65,10 +65,27 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
 
     # simulate every biopsy sequentially
     for patientUID,pydicom_item in master_structure_reference_dict.items():
-        structure_type = structs_referenced_list[0]        
+        # create a dictionary of all non bx structures
+        structure_shifted_bx_data_dict = {}
+        for non_bx_struct_type in structs_referenced_list[1:]:
+            for specific_non_bx_structure_index, specific_non_bx_structure in enumerate(pydicom_item[non_bx_struct_type]):
+                specific_non_bx_struct_roi = specific_non_bx_structure["ROI"]
+                specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
+                structure_shifted_bx_data_dict[specific_non_bx_struct_roi+specific_non_bx_struct_refnum] = None
+        
+        # set structure type to BX 
+        structure_type = structs_referenced_list[0]
+                
         for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[structure_type]):
+            # Do all trials in parallel
             bx_only_shifted_randomly_sampled_bx_pts_3Darr = MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure)
+            # THIS SHOULD BE SAVED AT THE END. Save the 3d array of the bx only shifted data containing all MC trials as slices to the master reference dictionary
+            master_structure_reference_dict[patientUID][structure_type][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
             # THIS IS WHERE WE STOPPED, WE NEED TO NOW SHIFT THE BX DATA FOR EVERY STRUCTURE THAT WE ARE TESTING CONTAINMENT IN, MAY GOD HAVE MERCY
+            
+            
+            parallel_result_non_bx_and_bx_structures_shifted = MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_parallel(parallel_pool, pydicom_item, structs_referenced_list, bx_only_shifted_randomly_sampled_bx_pts_3Darr, structure_shifted_bx_data_dict)
+            # add to the dictionary, for every bx 3d array of all slice trials, we need the bx data to be shifted for every structure shift appropriately
 
 def MC_simulator_shift_all_structures_generator_parallel(parallel_pool, patient_dict, structs_referenced_list, num_simulations):
 
@@ -93,7 +110,7 @@ def MC_simulator_shift_all_structures_generator_parallel(parallel_pool, patient_
         structure_type = generated_shifts_info_list[0]
         specific_structure_index = generated_shifts_info_list[1]
         specific_structure_structure_normal_dist_shift_samples_arr = generated_shifts_info_list[2]
-        patient_dict_updated_with_generated_samples[structure_type][specific_structure_index]["Generated normal dist random samples arr"] = specific_structure_structure_normal_dist_shift_samples_arr
+        patient_dict_updated_with_generated_samples[structure_type][specific_structure_index]["MC data: Generated normal dist random samples arr"] = specific_structure_structure_normal_dist_shift_samples_arr
 
     return patient_dict_updated_with_generated_samples
 
@@ -109,8 +126,8 @@ def MC_simulator_shift_structure_generator(structure_type, specific_structure_in
 
 
 def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure):
-    randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts"]
-    randomly_sampled_bx_shifts_arr = specific_bx_structure["Generated normal dist random samples arr"]
+    randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+    randomly_sampled_bx_shifts_arr = specific_bx_structure["MC data: Generated normal dist random samples arr"]
 
     args_list = []
     for bx_shift_ind in range(randomly_sampled_bx_shifts_arr.shape[0]):
@@ -135,8 +152,43 @@ def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel
 
 
 def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift(randomly_sampled_bx_pts_arr, bx_shift_vector):
+    # For a single trial, all BX points are shifted by the same vector!
     randomly_sampled_bx_pts_arr_bx_only_shift_arr = randomly_sampled_bx_pts_arr + bx_shift_vector
     return randomly_sampled_bx_pts_arr_bx_only_shift_arr
+
+
+def MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_parallel(parallel_pool, pydicom_item, structs_referenced_list, bx_only_shifted_randomly_sampled_bx_pts_3Darr, structure_shifted_bx_data_dict):
+    # do each non bx structure sequentially
+    for non_bx_struct_type in structs_referenced_list[1:]:
+        for specific_non_bx_struct in pydicom_item[non_bx_struct_type]:
+            # build args list for parallel computing
+            specific_non_bx_struct_roi = specific_non_bx_struct["ROI"]
+            specific_non_bx_struct_refnum = specific_non_bx_struct["Ref #"]
+
+            args_list_non_bx_struct_shift = []
+            num_2dslices_in_bx_3darr = bx_only_shifted_randomly_sampled_bx_pts_3Darr.shape[0]
+            for slice_index in range(num_2dslices_in_bx_3darr): 
+                bx_data_only_bx_shifted_2dslice_from_3d_arr = bx_only_shifted_randomly_sampled_bx_pts_3Darr[slice_index]
+                non_bx_structure_shift_vector = specific_non_bx_struct["MC data: Generated normal dist random samples arr"][slice_index]
+                bx_shift_vector = -non_bx_structure_shift_vector
+                arg = (bx_data_only_bx_shifted_2dslice_from_3d_arr,bx_shift_vector)
+                args_list_non_bx_struct_shift.append(arg)
+
+            parallel_results_bx_shift_of_non_bx_structure_translation = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_structure_only_shift, args_list_non_bx_struct_shift)
+            
+            bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr = np.asarray(parallel_results_bx_shift_of_non_bx_structure_translation)
+
+            structure_shifted_bx_data_dict[specific_non_bx_struct_roi+specific_non_bx_struct_refnum] = bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr
+
+    return structure_shifted_bx_data_dict
+
+
+def MC_simulator_translate_sampled_bx_points_arr_structure_only_shift(randomly_sampled_bx_pts_arr, bx_shift_vector):
+    # For a single trial, all BX points are shifted by the same vector!
+    randomly_sampled_bx_pts_arr_struct_only_shift_arr = randomly_sampled_bx_pts_arr + bx_shift_vector
+    return randomly_sampled_bx_pts_arr_struct_only_shift_arr
+
+
 
 
 
