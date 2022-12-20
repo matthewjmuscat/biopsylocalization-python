@@ -462,7 +462,7 @@ def main():
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 structs = structs_referenced_list[0]
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                    num_samples = 1000
+                    num_samples = 100
                     reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
@@ -593,7 +593,7 @@ def main():
 
         simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
         
-        num_simulations = 1000
+        num_simulations = 100
         if simulation_ans ==  True:
             print('Beginning simulation')
             master_structure_reference_dict_simulated = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict, spinner_type)
