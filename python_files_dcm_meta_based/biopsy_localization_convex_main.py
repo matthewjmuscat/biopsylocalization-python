@@ -598,6 +598,7 @@ def main():
             print('Beginning simulation')
             master_structure_reference_dict_simulated = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict, spinner_type)
             #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
+            print('test')
         else: 
             pass
 
