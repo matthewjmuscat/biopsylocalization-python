@@ -15,10 +15,12 @@ class Loader:
             timeout (float, optional): Sleep time between prints. Defaults to 0.1.
         """
         self.desc = desc
-        self.end = end
+        self.end = desc +"***"+end
         self.max_iterator = max_iterator
         self.timeout = timeout
         self.iterator = 0
+        self.message = ''
+        self.msg_changed = False
 
         self._thread = Thread(target=self._animate, daemon=True)
         self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
@@ -28,13 +30,21 @@ class Loader:
         self._thread.start()
         return self
 
+    def change_msg(self, msg):
+        self.message = msg
+        self.msg_changed = True
+        return self
+
     def _animate(self):
         for c in cycle(self.steps):
             if self.done:
                 break
             percent_complete = (self.iterator/self.max_iterator)*100
             rounded_percent_complete = round(Decimal(percent_complete),1)
-            print(f"\r{self.desc} {rounded_percent_complete} % complete, {c} ", flush=True, end="")
+            if self.msg_changed == True:
+                print('\r'+' '*100, flush = True, end='')
+                self.msg_changed = False
+            print(f"\r{self.desc} {rounded_percent_complete} % complete, {c} | {self.message}", flush=True, end='')
             sleep(self.timeout)
 
     def __enter__(self):
@@ -53,11 +63,11 @@ class Loader:
 
 
 if __name__ == "__main__":
-    with Loader("Loading with context manager..."):
+    with Loader(1,"Loading with context manager..."):
         for i in range(10):
             sleep(0.25)
 
-    loader = Loader("Loading with object...", "That was fast!", 0.05).start()
+    loader = Loader(1,"Loading with object...", "That was fast!", 0.05).start()
     for i in range(10):
         sleep(0.25)
     loader.stop()

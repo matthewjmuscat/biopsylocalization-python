@@ -61,6 +61,10 @@ def main():
     it only requires that there exist a folder called Data, located two levels 
     above this file.
     """
+
+
+    global loader
+
     # The following could be user input, for now they are defined here, and used throughout 
     # the programme for generality
     data_folder_name = 'Data'
@@ -166,7 +170,7 @@ def main():
 
                         # conduct INTER-slice interpolation
                         interp_dist_z_slice = 0.5
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list, loader = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice, loader)
                         
                         # conduct INTRA-slice interpolation
                         # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
@@ -442,7 +446,8 @@ def main():
         ## uniformly sample points from biopsies
         st = time.time()
         args_list = []
-        with loading_tools.Loader(num_general_structs,"Sampling points from biopsies...") as loader:
+        num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+        with loading_tools.Loader(num_biopsies,"Sampling points from " + str(num_biopsies) +" biopsies...") as loader:
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 structs = structs_referenced_list[0]
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -882,6 +887,8 @@ def trimesh_reconstruction_alphashape(threeD_data_arr):
     mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(point_cloud, alpha, tetra_mesh, pt_map)
     mesh.compute_vertex_normals()
     o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+
+
 
 
 if __name__ == '__main__':    

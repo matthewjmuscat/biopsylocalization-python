@@ -23,6 +23,7 @@ pyvista = "*"
 multiprocess = "*"
 dill = "*"
 pathos = "*"
+rich = "*"
 
 [dev-packages]
 ipykernel = "*"

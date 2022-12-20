@@ -59,7 +59,8 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict):
     
     num_patients = master_structure_info_dict["Global"]["Num patients"]
-    with loading_tools.Loader(num_patients,"Generating samples...") as loader:
+    num_structures = master_structure_info_dict["Global"]["Num structures"]
+    with loading_tools.Loader(num_patients,"Generating " + str(num_simulations) + " samples for " + str(num_structures) + " structures...") as loader:
         # simulate all structure shifts in parallel and update the master reference dict
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, num_simulations)
@@ -67,6 +68,10 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
             loader.iterator = loader.iterator + 1
     
     num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    num_OARs = master_structure_info_dict["Global"]["Num OARs"]
+    num_DILs = master_structure_info_dict["Global"]["Num DILs"]
+    
+    print("Simulation data: # MC samples =",str(num_simulations),"| # biopsies =",str(num_biopsies),"| # anatomical structures =",str(num_structures-num_biopsies),"| # patients =",str(num_patients),".")
     with loading_tools.Loader(num_biopsies,"MC simulating biopsy and anatomy translation...") as loader:
         # simulate every biopsy sequentially
         for patientUID,pydicom_item in master_structure_reference_dict.items():
