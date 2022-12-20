@@ -5,7 +5,7 @@ import open3d as o3d
 import biopsy_localization_convex_main as main
 
 
-def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist, loader):
+def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist):
     # check if each slice has the same number of points
     
     
@@ -30,21 +30,23 @@ def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist, lo
     fixing_zslices = False       
     if len(unequal_slices_indices_num_points_list) != 0:
         #print('\n largest num points: ', max_num_points_on_zslice, ' is on index: ', max_pt_zslice_index, '\n')
-        loader.change_msg("Unequal points on z-slices detected, repairing...")
+        #loader.change_msg("Unequal points on z-slices detected, repairing...")
         threeDdata_equal_pt_zslice_list = threeDdata_consistent_num_pts_zslice_completer(threeDdata_zslice_list, unequal_slices_indices_num_points_list, max_num_points_on_zslice, max_pt_zslice_index)
         fixing_zslices = True
     else:
         threeDdata_equal_pt_zslice_list = threeDdata_zslice_list.copy()
     
     if fixing_zslices == False:
-        loader.change_msg("All z-slices have equal number of points.")
+        pass
+        #loader.change_msg("All z-slices have equal number of points.")
     else:
-        loader.change_msg("Slices repaired, all z-slices now have equal number of points.")
+        pass
+        #loader.change_msg("Slices repaired, all z-slices now have equal number of points.")
     zslices_index_pairings_dict = perform_distance_minimization(threeDdata_equal_pt_zslice_list)
     #print(zslices_index_pairings_dict)
     interslice_interpolation_information = slice_point_pairings_interpolator(max_interpolation_dist, zslices_index_pairings_dict, threeDdata_equal_pt_zslice_list)
-    loader.change_msg("Z-slice point pairings determined.")
-    return interslice_interpolation_information, threeDdata_equal_pt_zslice_list, loader
+    #loader.change_msg("Z-slice point pairings determined.")
+    return interslice_interpolation_information, threeDdata_equal_pt_zslice_list
 
 
 def threeDdata_consistent_num_pts_zslice_completer(threeDdata_zslice_list, unequal_slices_indices_num_points_list, max_num_points_on_zslice, max_pt_zslice_index):

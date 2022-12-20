@@ -42,7 +42,8 @@ import multiprocess
 import dill
 import math
 from datetime import date, datetime
-
+import rich
+from rich.progress import Progress, track
 
 
 
@@ -75,6 +76,7 @@ def main():
     uncertainty_folder_name = 'Uncertainty data'
     uncertainty_file_name = "uncertainties_prepared_unfilled"
     uncertainty_file_extension = ".csv"
+    spinner_type = 'christmas'
     
     # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
 
@@ -121,8 +123,12 @@ def main():
     test_ind = 0
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
-        st = time.time()
-        with loading_tools.Loader(num_general_structs,"Processing data...") as loader:
+        #st = time.time()
+        with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+            processing_patients_task = progress.add_task("[red]Processing patients...", total=num_patients)
+            processing_structures_task = progress.add_task("[green]Processing structures...", total=num_general_structs)
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -170,7 +176,7 @@ def main():
 
                         # conduct INTER-slice interpolation
                         interp_dist_z_slice = 0.5
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list, loader = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice, loader)
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
                         # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
@@ -322,11 +328,13 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
 
-                        loader.iterator = loader.iterator + 1
+                        progress.update(processing_structures_task, advance=1)
+                progress.update(processing_patients_task, advance=1)
+
             
-        et = time.time()
-        elapsed_time = et - st
-        print('\n Execution time:', elapsed_time, 'seconds')
+        #et = time.time()
+        #elapsed_time = et - st
+        #print('\n Execution time:', elapsed_time, 'seconds')
 
         """
 
@@ -444,10 +452,13 @@ def main():
 
 
         ## uniformly sample points from biopsies
-        st = time.time()
+        #st = time.time()
         args_list = []
         num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-        with loading_tools.Loader(num_biopsies,"Sampling points from " + str(num_biopsies) +" biopsies...") as loader:
+        with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+            processing_biopsies_task = progress.add_task("[red]Preparing for parallel computing...", total=num_biopsies)
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 structs = structs_referenced_list[0]
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -456,21 +467,25 @@ def main():
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
                     args_list.append((num_samples, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, structs, specific_structure_index))
-                    loader.iterator = loader.iterator + 1
+                    progress.update(processing_biopsies_task, advance=1)
 
 
-        et = time.time()
-        elapsed_time = et - st
-        print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
+        #et = time.time()
+        #elapsed_time = et - st
+        #print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
         
         
-        st = time.time()
-
-        parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+        #st = time.time()
         
-        et = time.time()
-        elapsed_time = et - st
-        print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
+        with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+            sampling_points_task = progress.add_task("[green]Sampling biopsy points (parallel)...", total=None)
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+        
+        #et = time.time()
+        #elapsed_time = et - st
+        #print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
 
         for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
             sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
@@ -581,7 +596,7 @@ def main():
         num_simulations = 1000
         if simulation_ans ==  True:
             print('Beginning simulation')
-            master_structure_reference_dict_simulated = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict)
+            master_structure_reference_dict_simulated = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict, spinner_type)
             #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
         else: 
             pass
