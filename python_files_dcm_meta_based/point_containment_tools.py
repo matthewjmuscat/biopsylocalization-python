@@ -3,6 +3,7 @@ import numpy as np
 import open3d as o3d
 from shapely.geometry import Point, Polygon
 from bisect import bisect_left
+import time
 
 #import multiprocess
 #import dill
@@ -45,12 +46,26 @@ def test_zslice_wise_containment_delaunay_parallel(parallel_pool, delaunay_obj_l
     pool = parallel_pool
     delaunay_triangle_obj_and_zslice_list = [(x.delaunay_triangulation,x.zslice1,x.zslice2) for x in delaunay_obj_list]
     test_points_arguments_list = [(delaunay_triangle_obj_and_zslice_list,test_points_list[j]) for j in range(len(test_points_list))]
+    
+    #st = time.time()
+    
     test_points_result = pool.starmap(zslice_wise_test_point_containment, test_points_arguments_list)
+    
+    
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (delaunay starmap):', elapsed_time, 'seconds')
+    #print('___')
+    
     return test_points_result
     
     
 def zslice_wise_test_point_containment(delauney_tri_object_and_zslice_list,test_point):
     pt_contained = False 
+    
+    #st = time.time()
+    
     for delaunay_obj_index, delaunay_info in enumerate(delauney_tri_object_and_zslice_list):
         #tri.find_simplex(pts) >= 0  is True if point lies within poly)
         delaunay_tri = delaunay_info[0]
@@ -68,6 +83,13 @@ def zslice_wise_test_point_containment(delauney_tri_object_and_zslice_list,test_
         zslice1 = None
         zslice2 = None
         delaunay_obj_contained_in_index = None
+   
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (delaunay zslice wise single point):', elapsed_time, 'seconds')
+    #print('___')
+
     return [None,(pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index), test_pt_color, test_point]
 
 
