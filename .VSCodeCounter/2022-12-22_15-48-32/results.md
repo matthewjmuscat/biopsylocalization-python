@@ -1,24 +1,24 @@
 # Summary
 
-Date : 2022-12-03 11:53:11
+Date : 2022-12-22 15:48:32
 
-Directory h:\\UBC\\Research\\Biopsy localisation\\biopsy-localization-python\\python_files_dcm_meta_based
+Directory c:\\Users\\musca\\Documents\\UBC\\Research\\Biopsy localization\\biopsylocalization-python\\python_files_dcm_meta_based
 
-Total : 22 files,  2399 codes, 489 comments, 634 blanks, all 3522 lines
+Total : 23 files,  2901 codes, 677 comments, 744 blanks, all 4322 lines
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
 
 ## Languages
 | language | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| Python | 21 | 2,065 | 489 | 633 | 3,187 |
-| JSON | 1 | 334 | 0 | 1 | 335 |
+| Python | 22 | 2,488 | 677 | 743 | 3,908 |
+| JSON | 1 | 413 | 0 | 1 | 414 |
 
 ## Directories
 | path | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| . | 22 | 2,399 | 489 | 634 | 3,522 |
-| Junk | 7 | 604 | 33 | 77 | 714 |
+| . | 23 | 2,901 | 677 | 744 | 4,322 |
+| Junk | 8 | 683 | 67 | 84 | 834 |
 | my-lib | 1 | 0 | 0 | 1 | 1 |
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
