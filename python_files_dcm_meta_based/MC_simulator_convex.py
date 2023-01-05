@@ -125,11 +125,12 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
                     structure_refnum = structure_info[2]
                     structure_index = structure_info[3]
                     non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
+                    non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"] 
                     testing_each_trial_task = progress.add_task("[blue]Testing each MC trial (points within trial in parallel)...", total=num_simulations)
                     all_trials_POP_test_results_and_point_clouds_tuple = []
                     for single_trial_shifted_bx_data_arr in shifted_bx_data_3darr:
-                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_objs_zslice_wise_list, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
+                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
                         all_trials_POP_test_results_and_point_clouds_tuple.append(single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple)
                         progress.update(testing_each_trial_task, advance=1)
                     
@@ -257,15 +258,28 @@ def point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simu
     test_pts_point_cloud_zslice_delaunay.points = o3d.utility.Vector3dVector(test_pts_arr)
     test_pt_colors = np.empty([num_pts,3], dtype=float)
     
-    
-    test_points_results_zslice_delaunay = point_containment_tools.test_zslice_wise_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
+    #st = time.time() # THIS IS THE SLOW SECTION!! 2 ORDERS OF MAGNTIUDE SLOWER THAN THE LOWER SECTION
+
+    test_points_results_zslice_delaunay = point_containment_tools.test_global_convex_structure_containment_delaunay_parallel(parallel_pool, deulaunay_objs_zslice_wise_list, test_pts_list)
     for index,result in enumerate(test_points_results_zslice_delaunay):
         test_pt_colors[index] = result[2]
     test_pts_point_cloud_zslice_delaunay.colors = o3d.utility.Vector3dVector(test_pt_colors)
 
-
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (delaunay parallel):', elapsed_time, 'seconds')
+    #print('___')
+    #st = time.time()
 
     test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information_of_containment_structure, test_pts_point_cloud_zslice_delaunay)
+
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (concave test):', elapsed_time, 'seconds')
+    #print('___')
+
 
     return test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated
 
