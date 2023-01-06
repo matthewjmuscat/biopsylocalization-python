@@ -455,6 +455,8 @@ def main():
         #st = time.time()
         args_list = []
         num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+        num_sample_pts_per_bx = 99
+        master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
         with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
@@ -462,11 +464,10 @@ def main():
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 structs = structs_referenced_list[0]
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                    num_samples = 100
                     reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                    args_list.append((num_samples, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, structs, specific_structure_index))
+                    args_list.append((num_sample_pts_per_bx, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, structs, specific_structure_index))
                     progress.update(processing_biopsies_task, advance=1)
 
 
@@ -593,10 +594,11 @@ def main():
 
         simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
         
-        num_simulations = 100
+        num_simulations = 101
+        master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
         if simulation_ans ==  True:
             print('Beginning simulation')
-            master_structure_reference_dict_simulated = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict, spinner_type)
+            master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, master_structure_info_dict, spinner_type)
             #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
             print('test')
         else: 
@@ -625,7 +627,7 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
         
@@ -643,7 +645,8 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
 
         master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
         master_st_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_info, ref_list[1]:OAR_info, ref_list[2]:DIL_info, "All ref":all_structs_info}
-    master_st_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR}
+    mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
+    master_st_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
     master_st_info_global_dict["By patient"] = master_st_info_dict
     return master_st_ref_dict, master_st_info_global_dict, ref_list
 

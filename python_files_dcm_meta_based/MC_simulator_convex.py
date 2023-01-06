@@ -8,6 +8,7 @@ import plotting_funcs
 import rich
 from rich.progress import Progress, track
 import time 
+import sys
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -59,10 +60,12 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
-def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, num_simulations, master_structure_info_dict, spinner_type):
+def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, master_structure_info_dict, spinner_type):
     
     num_patients = master_structure_info_dict["Global"]["Num patients"]
     num_structures = master_structure_info_dict["Global"]["Num structures"]
+    num_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC simulations"]
+    num_sample_pts_per_bx = master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"]
     with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
@@ -77,7 +80,7 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
     num_OARs = master_structure_info_dict["Global"]["Num OARs"]
     num_DILs = master_structure_info_dict["Global"]["Num DILs"]
     
-    print("Simulation data: # MC samples =",str(num_simulations),"| # biopsies =",str(num_biopsies),"| # anatomical structures =",str(num_structures-num_biopsies),"| # patients =",str(num_patients),".")
+    print("Simulation data: # MC samples =",str(num_simulations), "| # sample pts per BX core =", str(num_sample_pts_per_bx),"| # biopsies =",str(num_biopsies),"| # anatomical structures =",str(num_structures-num_biopsies),"| # patients =",str(num_patients),".")
     with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
@@ -92,6 +95,7 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
                     specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
                     structure_shifted_bx_data_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_structure_index] = None
             MC_translation_results_for_fixed_bx_dict = structure_shifted_bx_data_dict.copy()
+            MC_compiled_results_for_fixed_bx_dict = structure_shifted_bx_data_dict.copy()
             # set structure type to BX 
             structure_type = structs_referenced_list[0]
                     
@@ -148,6 +152,38 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
 
 
                 progress.update(testing_biopsy_containment_task, advance=1)
+
+    with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+        testing_biopsy_containment_task = progress.add_task("[red] Compiling MC results (overall progress)...", total=num_biopsies)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            bx_structure_type = structs_referenced_list[0]           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                MC_translation_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] 
+                for structureID,structure_MC_results in MC_translation_results_for_fixed_bx_dict.items():
+                    # counter list needs to be reset for every structure 
+                    bx_containment_counter_by_org_pt_ind_list = [0]*num_sample_pts_per_bx    
+                    for MC_trial in structure_MC_results:
+                        MC_trial_BX_pts_result_list = MC_trial[0]
+                        for bx_pt_index, bx_point_result in enumerate(MC_trial_BX_pts_result_list):
+                            pt_contained = None
+                            if bx_point_result[0] == None:
+                                pt_contained = False
+                            elif bx_point_result[0][0] == False:
+                                pt_contained = False
+                            elif bx_point_result[0][0] == True:
+                                pt_contained = True
+                            else:
+                                print('Something went wrong!')
+                                sys.exit('Programme exited.')
+                            if pt_contained == True:
+                                bx_containment_counter_by_org_pt_ind_list[bx_pt_index] = bx_containment_counter_by_org_pt_ind_list[bx_pt_index] + 1
+                            else: 
+                                pass 
+                    MC_compiled_results_for_fixed_bx_dict[structureID] = bx_containment_counter_by_org_pt_ind_list
+                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict    
+
     return master_structure_reference_dict
 
 
