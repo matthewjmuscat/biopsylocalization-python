@@ -5,6 +5,7 @@ from shapely.geometry import Point, Polygon
 from bisect import bisect_left
 import time
 
+
 #import multiprocess
 #import dill
 #import pathos, multiprocess
@@ -14,10 +15,10 @@ import time
 def create_point_cloud(data_arr, color = np.array([0,0,0])):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(data_arr)
-    if np.array_equal(color, np.array([0,0,0])):
-        pcd_color = color
-    else:
+    if color == 'random':
         pcd_color = np.random.uniform(0, 0.7, size=3)
+    else:
+        pcd_color = color
     point_cloud.paint_uniform_color(pcd_color)
     return point_cloud
 
@@ -40,6 +41,11 @@ def adjacent_zslice_delaunay_triangulation(adjacent_zslice_threeD_data_list):
     threeDdata_array_adjacent_slices_arr = np.vstack((adjacent_zslice_threeD_data_list[0],adjacent_zslice_threeD_data_list[1]))
     delaunay_triangulation_obj_temp = delaunay_obj(threeDdata_array_adjacent_slices_arr, pcd_color, zslice1, zslice2)
     return delaunay_triangulation_obj_temp
+
+
+
+## preliminary test by adjacent zslice delaunay objects
+
 
 
 def test_zslice_wise_containment_delaunay_parallel(parallel_pool, delaunay_obj_list, test_points_list):
@@ -93,6 +99,11 @@ def zslice_wise_test_point_containment(delauney_tri_object_and_zslice_list,test_
     return [None,(pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index), test_pt_color, test_point]
 
 
+
+## preliminary test by global delaunay object
+
+
+
 def test_global_convex_structure_containment_delaunay_parallel(parallel_pool, delaunay_obj, test_points_list):
     pool = parallel_pool
     delaunay_triangle_obj_and_zslice_list = [(delaunay_obj.delaunay_triangulation,delaunay_obj.zslice1,delaunay_obj.zslice2)]
@@ -121,6 +132,52 @@ def convex_structure_global_test_point_containment(delauney_tri_object_and_zslic
         zslice2 = None
         delaunay_obj_contained_in_index = None
     return [None,(pt_contained, zslice1, zslice2, delaunay_obj_contained_in_index), test_pt_color, test_point]
+
+
+
+## preliminary test by axis aligned bounding box
+
+def test_global_axis_aligned_box_containment_parallel(parallel_pool, containment_structure_pts_arr, test_points_list):
+    pool = parallel_pool
+    test_points_arguments_list = [(containment_structure_pts_arr,test_points_list[j]) for j in range(len(test_points_list))]
+    test_points_result = pool.starmap(axis_aligned_bounding_box_test_point_containment, test_points_arguments_list)
+    return test_points_result
+
+
+def axis_aligned_bounding_box_test_point_containment(containment_structure_pts_arr,test_point):
+    containment_structure_pcd = create_point_cloud(containment_structure_pts_arr)
+    axis_aligned_bounding_box = containment_structure_pcd.get_axis_aligned_bounding_box()
+
+    pt_contained = None 
+    max_XYZ_bound = axis_aligned_bounding_box.get_max_bound()
+    min_XYZ_bound = axis_aligned_bounding_box.get_min_bound()
+
+    max_X = max_XYZ_bound[0]
+    max_Y = max_XYZ_bound[1]
+    max_Z = max_XYZ_bound[2]
+
+    min_X = min_XYZ_bound[0]
+    min_Y = min_XYZ_bound[1]
+    min_Z = min_XYZ_bound[2]
+
+    tp_X = test_point[0]
+    tp_Y = test_point[1]
+    tp_Z = test_point[2]
+    
+    # test containment
+    if (min_X <= tp_X and tp_X <= max_X) and (min_Y <= tp_Y and tp_Y <= max_Y) and (min_Z <= tp_Z and tp_Z <= max_Z):
+        test_pt_color = np.array([0,1,0]) # paint green
+        pt_contained = True
+    else:
+        test_pt_color = np.array([1,0,0]) # paint red 
+        pt_contained = False         
+       
+    return [None,(pt_contained,), test_pt_color, test_point]
+
+
+
+
+
 
 def plane_point_in_polygon_concave(test_points_results,interslice_interpolation_information, test_pts_point_cloud):
     test_points_contained_in_delaunay = [(test_result_org_index,test_result) for test_result_org_index,test_result in enumerate(test_points_results) if test_result[1][0]==True]
@@ -166,6 +223,8 @@ def take_closest(myList_org, myNumber):
     if myList[0] > myList[1]:
         myList.reverse()
         list_reversed = True
+    else:
+        list_reversed = False
     if list_reversed == False:
         pos = bisect_left(myList, myNumber)
         if pos == 0:

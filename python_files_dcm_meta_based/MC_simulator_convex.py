@@ -126,11 +126,14 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
                     structure_index = structure_info[3]
                     non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
                     non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
-                    non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"] 
+                    non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                    non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                    #non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr)
                     testing_each_trial_task = progress.add_task("[blue]Testing each MC trial (points within trial in parallel)...", total=num_simulations)
                     all_trials_POP_test_results_and_point_clouds_tuple = []
                     for single_trial_shifted_bx_data_arr in shifted_bx_data_3darr:
-                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
+                        #single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
+                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, num_simulations, non_bx_struct_interpolated_pts_np_arr, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
                         all_trials_POP_test_results_and_point_clouds_tuple.append(single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple)
                         progress.update(testing_each_trial_task, advance=1)
                     
@@ -273,6 +276,40 @@ def point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simu
     #st = time.time()
 
     test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information_of_containment_structure, test_pts_point_cloud_zslice_delaunay)
+
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (concave test):', elapsed_time, 'seconds')
+    #print('___')
+
+
+    return test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated
+
+
+
+def point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, num_simulations, containment_structure_pts_arr, interslice_interpolation_information_of_containment_structure, test_pts_arr):
+    num_pts = test_pts_arr.shape[0]
+    test_pts_list = test_pts_arr.tolist()
+    test_pts_point_cloud_after_axis_aligned_bounding_box_test = o3d.geometry.PointCloud()
+    test_pts_point_cloud_after_axis_aligned_bounding_box_test.points = o3d.utility.Vector3dVector(test_pts_arr)
+    test_pt_colors = np.empty([num_pts,3], dtype=float)
+    
+    #st = time.time() 
+
+    test_points_results_axis_aligned_bounding_box = point_containment_tools.test_global_axis_aligned_box_containment_parallel(parallel_pool, containment_structure_pts_arr, test_pts_list)
+    for index,result in enumerate(test_points_results_axis_aligned_bounding_box):
+        test_pt_colors[index] = result[2]
+    test_pts_point_cloud_after_axis_aligned_bounding_box_test.colors = o3d.utility.Vector3dVector(test_pt_colors)
+
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('___')
+    #print('\n Execution time (axis aligned bounding box):', elapsed_time, 'seconds')
+    #print('___')
+    #st = time.time()
+
+    test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_axis_aligned_bounding_box, interslice_interpolation_information_of_containment_structure, test_pts_point_cloud_after_axis_aligned_bounding_box_test)
 
     #et = time.time()
     #elapsed_time = et - st
