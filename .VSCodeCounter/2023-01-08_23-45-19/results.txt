@@ -1,21 +1,22 @@
-Date : 2022-12-04 20:19:35
+Date : 2023-01-08 23:45:19
 Directory : h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based
-Total : 23 files,  2443 codes, 486 comments, 635 blanks, all 3564 lines
+Total : 24 files,  3222 codes, 723 comments, 793 blanks, all 4738 lines
 
 Languages
 +----------+------------+------------+------------+------------+------------+
 | language | files      | code       | comment    | blank      | total      |
 +----------+------------+------------+------------+------------+------------+
-| Python   |         22 |      2,109 |        486 |        634 |      3,229 |
-| JSON     |          1 |        334 |          0 |          1 |        335 |
+| Python   |         23 |      2,586 |        723 |        792 |      4,101 |
+| JSON     |          1 |        636 |          0 |          1 |        637 |
 +----------+------------+------------+------------+------------+------------+
 
 Directories
 +----------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 | path                                                                                                                             | files      | code       | comment    | blank      | total      |
 +----------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
-| .                                                                                                                                |         23 |      2,443 |        486 |        635 |      3,564 |
-| Junk                                                                                                                             |          8 |        604 |         67 |         84 |        755 |
+| .                                                                                                                                |         24 |      3,222 |        723 |        793 |      4,738 |
+| . (Files)                                                                                                                        |         15 |      2,316 |        656 |        708 |      3,680 |
+| Junk                                                                                                                             |          8 |        906 |         67 |         84 |      1,057 |
 | my-lib                                                                                                                           |          1 |          0 |          0 |          1 |          1 |
 +----------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 
@@ -28,23 +29,24 @@ Files
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\equi_dist_point_cyl_generator.py | Python   |         65 |         10 |         19 |         94 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\open3d_voxelization_test.py      | Python   |         13 |          1 |          2 |         16 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\surface_reconstruction.py        | Python   |          0 |         34 |          7 |         41 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\test_book.ipynb                  | JSON     |        334 |          0 |          1 |        335 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\test_book.ipynb                  | JSON     |        636 |          0 |          1 |        637 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\test_delauney_triangulation.py   | Python   |         60 |         19 |         19 |         98 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\test_write.py                    | Python   |         19 |          0 |          7 |         26 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\MC_simulator_convex.py                | Python   |         83 |          3 |         25 |        111 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\anatomy_reconstructor_tools.py        | Python   |        221 |          8 |         31 |        260 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\MC_simulator_convex.py                | Python   |        346 |         53 |        119 |        518 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\anatomy_reconstructor_tools.py        | Python   |        259 |         13 |         38 |        310 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\biopsy_creator.py                     | Python   |        210 |         98 |        100 |        408 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\biopsy_localization_convex_main.py    | Python   |        463 |        102 |        135 |        700 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\biopsy_localization_convex_main.py    | Python   |        515 |        259 |        141 |        915 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\biopsy_localization_prototyping.py    | Python   |        250 |        157 |        106 |        513 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\centroid_finder.py                    | Python   |         16 |          0 |         10 |         26 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\kD_data_tree_class.py                 | Python   |         65 |          4 |         14 |         83 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\loading_tools.py                      | Python   |         44 |          9 |         10 |         63 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\loading_tools.py                      | Python   |         53 |          9 |         11 |         73 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\math_funcs.py                         | Python   |          5 |          1 |          1 |          7 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\my-lib\__init__.py                    | Python   |          0 |          0 |          1 |          1 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\pca.py                                | Python   |         13 |          2 |          4 |         19 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\plotting_funcs.py                     | Python   |        302 |         17 |         85 |        404 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\point_containment_tools.py            | Python   |        116 |         12 |         18 |        146 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\plotting_funcs.py                     | Python   |        307 |         17 |         86 |        410 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\point_containment_tools.py            | Python   |        213 |         33 |         63 |        309 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\ques_funcs.py                         | Python   |         20 |          7 |          3 |         30 |
-| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\uncertainty_file_writer.py            | Python   |         34 |          0 |          8 |         42 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\uncertainty_file_writer.py            | Python   |         42 |          3 |         11 |         56 |
 | h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\uncertainty_processor.py              | Python   |          2 |          0 |          1 |          3 |
-| Total                                                                                                                            |          |      2,443 |        486 |        635 |      3,564 |
+| Total                                                                                                                            |          |      3,222 |        723 |        793 |      4,738 |
 +----------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

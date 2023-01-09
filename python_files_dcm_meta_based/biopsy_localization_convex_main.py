@@ -455,7 +455,7 @@ def main():
         #st = time.time()
         args_list = []
         num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-        num_sample_pts_per_bx = 99
+        num_sample_pts_per_bx = 9
         master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
         with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
@@ -594,7 +594,7 @@ def main():
 
         simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
         
-        num_simulations = 101
+        num_simulations = 11
         master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
         if simulation_ans ==  True:
             print('Beginning simulation')
