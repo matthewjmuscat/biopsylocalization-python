@@ -97,9 +97,9 @@ def main():
     # creation of the PatientUID, that is generally created from or referenced from here 
     # throughout the programme, it is formed as "patientname (patientID)"
     RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
-
+    RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
     
-    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list = structure_referencer(RTst_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
+    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
 
 
     # Now, we dont want to add the contour points to the structure list above,
@@ -611,16 +611,16 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
+def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
     we can match the ROI name to the contour information, since the contour
     information is referenced to the name by a number.
     """
-    master_st_ref_dict = {}
-    master_st_info_dict = {}
-    master_st_info_global_dict = {"Global": None, "By patient": None}
-    ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
+    master_st_ds_ref_dict = {}
+    master_st_ds_info_dict = {}
+    master_st_ds_info_global_dict = {"Global": None, "By patient": None}
+    st_ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
     global_num_biopsies = 0
     global_num_OAR = 0
     global_num_DIL = 0
@@ -629,8 +629,8 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
     for UID, structure_item in structure_dcm_dict.items():
         bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)]
-        
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
+
         bpsy_info = {"Num structs": len(bpsy_ref)}
         OAR_info = {"Num structs": len(OAR_ref)}
         DIL_info = {"Num structs": len(DIL_ref)}
@@ -643,12 +643,17 @@ def structure_referencer(structure_dcm_dict, OAR_list,DIL_list,Bx_list):
         global_total_num_structs = global_total_num_structs + patient_total_num_structs
         global_num_patients = global_num_patients + 1
 
-        master_st_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_ref, ref_list[1]:OAR_ref, ref_list[2]:DIL_ref,"Ready to plot data list": None}
-        master_st_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),ref_list[0]:bpsy_info, ref_list[1]:OAR_info, ref_list[2]:DIL_info, "All ref":all_structs_info}
+        master_st_ds_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_ref, st_ref_list[1]:OAR_ref, st_ref_list[2]:DIL_ref,"Ready to plot data list": None}
+        master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
+    
+    for UID, dose_item in dose_dcm_dict.items():
+        dose_ref_dict = {"Pixel Data": dose_item.PixelData, "Pixel arr": dose_item.pixel_array, "Dose grid scaling": dose_item.DoseGridScaling, "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType}
+        master_st_ds_ref_dict[UID]["Dose ref"] = dose_ref_dict
+
     mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
-    master_st_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
-    master_st_info_global_dict["By patient"] = master_st_info_dict
-    return master_st_ref_dict, master_st_info_global_dict, ref_list
+    master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
+    master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
+    return master_st_ds_ref_dict, master_st_ds_info_global_dict, st_ref_list
 
 class uncertainty_data:
     def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):
