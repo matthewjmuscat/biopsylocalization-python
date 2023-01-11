@@ -89,9 +89,9 @@ def main():
 
     # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
     # of dicom file 
-    RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
-    RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
-    RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
+    #RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
+    #RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
+    #RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
     
     # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
     # creation of the PatientUID, that is generally created from or referenced from here 
@@ -99,7 +99,7 @@ def main():
     RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
     RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
     
-    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
+    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list, dose_ref = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
 
 
     # Now, we dont want to add the contour points to the structure list above,
@@ -127,7 +127,75 @@ def main():
         with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
-            processing_patients_task = progress.add_task("[red]Processing patients...", total=num_patients)
+            processing_patients_dose_task = progress.add_task("[red]Building dose grids...", total=num_patients)
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
+                dose_pixel_slice_list = dose_ref_dict["Dose pixel arr"]
+                grid_frame_offset_vec_list = dose_ref_dict["Grid frame offset vector"]
+                num_dose_grid_slices = len(grid_frame_offset_vec_list)
+
+                image_orientation_patient = dose_ref_dict["Image orientation patient"]
+                Xx, Xy, Xz = image_orientation_patient[0:3]
+                Yx, Yy, Yz = image_orientation_patient[3:]
+
+                image_position_patient = dose_ref_dict["Image position patient"]
+                Sx, Sy, Sz = image_position_patient
+
+                dose_grid_scaling = dose_ref_dict["Dose grid scaling"]
+
+                pixel_spacing = dose_ref_dict["Pixel spacing"]
+                row_spacing_del_j = pixel_spacing[0]
+                column_spacing_del_i = pixel_spacing[1]
+
+                dose_first_slice_2darr = dose_pixel_slice_list[0]
+
+                conversion_matrix_pixel_2_physical = np.array([[Xx*column_spacing_del_i, Yx*row_spacing_del_j,0,Sx],
+                [Xy*column_spacing_del_i, Yy*row_spacing_del_j,0,Sy],
+                [Xz*column_spacing_del_i, Yz*row_spacing_del_j,0,Sz],
+                [0,0,0,1]])
+
+                pixel_ds_grid_num_rows = dose_first_slice_2darr.shape[0]
+                pixel_ds_grid_num_cols = dose_first_slice_2darr.shape[1]
+
+                phys_space_pixel_mapping_arr_ji_XY = np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,7), dtype=float)
+                # only need to do pixel to location conversion for one slice
+                for row_index_j in range(pixel_ds_grid_num_rows):
+                    for col_index_i in range(pixel_ds_grid_num_cols):
+                        pixel_vec = np.array([[col_index_i], [row_index_j], [0], [1]])
+                        phys_vec = np.matmul(conversion_matrix_pixel_2_physical,pixel_vec)
+                        current_index = row_index_j*pixel_ds_grid_num_cols + col_index_i
+                        # the entries below are as follows: slice, row index, col index, xval, yval, zval, dose, the first and last entry are populated later
+                        # and so are set to 0 for now
+                        current_pixel_map_entry = [0, row_index_j, col_index_i, phys_vec[0][0], phys_vec[1][0], phys_vec[2][0], 0]
+                        phys_space_pixel_mapping_arr_ji_XY[current_index] = current_pixel_map_entry
+                        
+
+                phys_space_dose_map_2d_arr_slice_wise_list = [np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,4), dtype=float)]*num_dose_grid_slices
+                for grid_frame_offset_cur_slice_index, grid_frame_offset_cur_slice in enumerate(grid_frame_offset_vec_list):
+                    phys_space_dose_map_current_slice_2d_arr = phys_space_pixel_mapping_arr_ji_XY.copy()
+                    phys_space_dose_map_current_slice_2d_arr[:,0] = grid_frame_offset_cur_slice_index
+                    phys_space_dose_map_current_slice_2d_arr[:,5] = phys_space_dose_map_current_slice_2d_arr[:,5] + grid_frame_offset_cur_slice
+                    current_slice_properly_scaled_dose_2d_arr = dose_pixel_slice_list[grid_frame_offset_cur_slice_index]*dose_grid_scaling
+                    current_slice_properly_scaled_dose_2d_arr_flattened = current_slice_properly_scaled_dose_2d_arr.flatten(order='C')
+                    phys_space_dose_map_current_slice_2d_arr[:,6] = current_slice_properly_scaled_dose_2d_arr_flattened
+                    phys_space_dose_map_2d_arr_slice_wise_list[grid_frame_offset_cur_slice_index] = phys_space_dose_map_current_slice_2d_arr
+                    
+                phys_space_dose_map_3d_arr = np.asarray(phys_space_dose_map_2d_arr_slice_wise_list)
+                dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
+
+                dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True)
+                plotting_funcs.plot_geometries(dose_point_cloud)
+                progress.update(processing_patients_dose_task, advance=1)
+                #for dose_slice_2darr in dose_pixel_slice_list:
+                    
+
+
+
+
+        with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+            processing_patients_task = progress.add_task("[red]Processing patient structure data...", total=num_patients)
             processing_structures_task = progress.add_task("[green]Processing structures...", total=num_general_structs)
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 for structs in structs_referenced_list:
@@ -621,6 +689,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     master_st_ds_info_dict = {}
     master_st_ds_info_global_dict = {"Global": None, "By patient": None}
     st_ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
+    ds_ref = "Dose ref"
     global_num_biopsies = 0
     global_num_OAR = 0
     global_num_DIL = 0
@@ -647,13 +716,13 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
         master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
     
     for UID, dose_item in dose_dcm_dict.items():
-        dose_ref_dict = {"Pixel Data": dose_item.PixelData, "Pixel arr": dose_item.pixel_array, "Dose grid scaling": dose_item.DoseGridScaling, "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType}
-        master_st_ds_ref_dict[UID]["Dose ref"] = dose_ref_dict
+        dose_ref_dict = {"Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None}
+        master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
     mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
-    return master_st_ds_ref_dict, master_st_ds_info_global_dict, st_ref_list
+    return master_st_ds_ref_dict, master_st_ds_info_global_dict, st_ref_list, ds_ref
 
 class uncertainty_data:
     def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):

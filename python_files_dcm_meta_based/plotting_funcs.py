@@ -407,3 +407,26 @@ def plot_point_cloud_and_trimesh_side_by_side(points_arr_1, tri_mesh):
     vis2.destroy_window()
 
 
+
+def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
+    point_cloud = o3d.geometry.PointCloud()
+    data_all_slices_2d_arr = np.reshape(data_3d_arr, (-1,7))
+    num_points = data_all_slices_2d_arr.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr[:,3:6]
+    dose_data_all_slices_2d_arr = data_all_slices_2d_arr[:,6]
+    max_dose = np.amax(dose_data_all_slices_2d_arr)
+    min_dose = np.amin(dose_data_all_slices_2d_arr)
+    point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
+    if paint_dose_color == True:
+        pcd_color_arr = np.zeros((num_points,3))
+        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr
+        pcd_color_arr = pcd_color_arr/max_dose
+        #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+        print('test1')
+    else:
+        pcd_color = np.array([0,0,0]) # paint everything black
+        point_cloud.paint_uniform_color(pcd_color)
+
+    print('test2')
+    return point_cloud
