@@ -10,6 +10,7 @@ from rich.progress import Progress, track
 import time 
 import sys
 import math_funcs as mf
+import scipy
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -61,7 +62,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
-def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, master_structure_info_dict, spinner_type):
+def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type):
     
     num_patients = master_structure_info_dict["Global"]["Num patients"]
     num_structures = master_structure_info_dict["Global"]["Num structures"]
@@ -228,6 +229,34 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
                 progress.remove_task(calc_MC_stat_each_non_bx_structure_containment_task)
                 progress.update(calc_MC_stat_biopsy_containment_task, advance=1)
 
+    with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+        calc_dose_NN_biopsy_containment_task = progress.add_task("[red] Calculating dosimetric localization (overall progress)...", total=num_biopsies)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            # creat KDtree for dose data
+            dose_ref_dict = pydicom_item[dose_ref]
+            phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+            phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
+            phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
+            dose_data_KDtree = scipy.spatial.KDTree(phys_space_dose_map_phys_coords_2d_arr)
+            dose_ref_dict["KDtree"] = dose_data_KDtree
+            
+            bx_structure_type = structs_referenced_list[0]           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                bx_only_shifted_3darr = specific_bx_structure["MC data: bx only shifted 3darr"] # note that the 3rd dimension slices are each MC trial
+                for bx_only_shifted_single_MC_trial_slice in bx_only_shifted_3darr:
+                    nearest_neighbours = dose_data_KDtree.query(bx_only_shifted_single_MC_trial_slice)
+                    print('test')
+            #non_BX_struct_threeDdata_array = specific_non_BX_structs["Raw contour pts"]
+            #                non_BX_struct_KDtree = scipy.spatial.KDTree(non_BX_struct_threeDdata_array)
+            #                master_structure_reference_dict[patientUID][non_BX_structs][specific_non_BX_structs_index]["KDtree"] = non_BX_struct_KDtree
+                            
+                            # conduct NN search
+            #                nearest_neighbours = non_BX_struct_KDtree.query(BX_centroid_line_sample)
+                            
+            #                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Nearest neighbours objects"].append(nearest_neighbour_parent(specific_BX_structure["ROI"],specific_non_BX_structs["ROI"],non_BX_structs,non_BX_struct_threeDdata_array,BX_centroid_line_sample,nearest_neighbours))
+    print('test')
     return master_structure_reference_dict
 
 
