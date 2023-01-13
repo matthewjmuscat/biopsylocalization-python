@@ -423,10 +423,8 @@ def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
         pcd_color_arr = pcd_color_arr/max_dose
         #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
         point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
-        print('test1')
     else:
         pcd_color = np.array([0,0,0]) # paint everything black
         point_cloud.paint_uniform_color(pcd_color)
 
-    print('test2')
     return point_cloud

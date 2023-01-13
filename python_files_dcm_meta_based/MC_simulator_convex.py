@@ -159,7 +159,7 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
     with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
-        compiling_resluts_biopsy_containment_task = progress.add_task("[red] Compiling MC results (overall progress)...", total=num_biopsies)
+        compiling_resluts_biopsy_containment_task = progress.add_task("[red]Compiling MC results (overall progress)...", total=num_biopsies)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             bx_structure_type = structs_referenced_list[0]           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
@@ -207,7 +207,7 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
     with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
                 rich.progress.TimeElapsedColumn()) as progress:
-        calc_MC_stat_biopsy_containment_task = progress.add_task("[red] Calculating MC statistics (overall progress)...", total=num_biopsies)
+        calc_MC_stat_biopsy_containment_task = progress.add_task("[red]Calculating MC statistics (overall progress)...", total=num_biopsies)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             bx_structure_type = structs_referenced_list[0]           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
@@ -231,34 +231,72 @@ def simulator_parallel(parallel_pool, master_structure_reference_dict, structs_r
 
     with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
+                rich.progressTextColumn("[progress.description]{task.description}"),
+                rich.progress.MofNCompleteColumn(),
                 rich.progress.TimeElapsedColumn()) as progress:
-        calc_dose_NN_biopsy_containment_task = progress.add_task("[red] Calculating dosimetric localization (overall progress)...", total=num_biopsies)
+        calc_dose_NN_biopsy_containment_task = progress.add_task("[red]Calculating dosimetric localization (overall progress)...", total=num_biopsies)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
-            # creat KDtree for dose data
+            # create KDtree for dose data
             dose_ref_dict = pydicom_item[dose_ref]
             phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
             phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
             phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
+            phys_space_dose_map_dose_2d_arr = phys_space_dose_map_3d_arr_flattened[:,6] 
             dose_data_KDtree = scipy.spatial.KDTree(phys_space_dose_map_phys_coords_2d_arr)
             dose_ref_dict["KDtree"] = dose_data_KDtree
             
             bx_structure_type = structs_referenced_list[0]           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
                 bx_only_shifted_3darr = specific_bx_structure["MC data: bx only shifted 3darr"] # note that the 3rd dimension slices are each MC trial
-                for bx_only_shifted_single_MC_trial_slice in bx_only_shifted_3darr:
-                    nearest_neighbours = dose_data_KDtree.query(bx_only_shifted_single_MC_trial_slice)
-                    print('test')
-            #non_BX_struct_threeDdata_array = specific_non_BX_structs["Raw contour pts"]
-            #                non_BX_struct_KDtree = scipy.spatial.KDTree(non_BX_struct_threeDdata_array)
-            #                master_structure_reference_dict[patientUID][non_BX_structs][specific_non_BX_structs_index]["KDtree"] = non_BX_struct_KDtree
-                            
-                            # conduct NN search
-            #                nearest_neighbours = non_BX_struct_KDtree.query(BX_centroid_line_sample)
-                            
-            #                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Nearest neighbours objects"].append(nearest_neighbour_parent(specific_BX_structure["ROI"],specific_non_BX_structs["ROI"],non_BX_structs,non_BX_struct_threeDdata_array,BX_centroid_line_sample,nearest_neighbours))
-    print('test')
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                dosimetric_calc_parallel_task = progress.add_task("[green]Calculating dosimetric localization of: "+patientUID+" "+specific_bx_structure_roi+" [parallel]...", total=None)
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr)
+
+                specific_bx_structure['MC data: bx to dose NN search objects list'] = dosimetric_localization_all_MC_trials_list
+                
+                progress.remove_task(dosimetric_calc_parallel_task)
+                progress.update(calc_dose_NN_biopsy_containment_task, advance=1)
+                
+
+    with Progress(rich.progress.SpinnerColumn(spinner_type),
+                *Progress.get_default_columns(),
+                rich.progress.TimeElapsedColumn()) as progress:
+        compile_results_dose_NN_biopsy_containment_task = progress.add_task("[red]Compiling dosimetric localization results (overall progress)...", total=num_biopsies)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                dosimetric_localization_all_MC_trials_list = specific_bx_structure['MC data: bx to dose NN search objects list']
+                dosimetric_localization_all_MC_trials_list_NN_lists_only = [NN_parent_obj.NN_data_list for NN_parent_obj in dosimetric_localization_all_MC_trials_list]
+                dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list = list(zip(*dosimetric_localization_all_MC_trials_list_NN_lists_only))
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = [[NN_child_obj.nearest_dose for NN_child_obj in fixed_bx_pt_NN_objs_list] for fixed_bx_pt_NN_objs_list in dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list]
+
+                specific_bx_structure["MC data: Dose NN child obj for each sampled bx pt list"] = dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list
+                specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] = dosimetric_localization_dose_vals_by_bx_point_all_trials_list
+                
+                progress.update(compile_results_dose_NN_biopsy_containment_task, advance=1)
+
     return master_structure_reference_dict
 
+
+def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr):
+    # build args list
+    args_list = [None]*bx_only_shifted_3darr.shape[0]
+    dose_ref_dict_roi = dose_ref_dict["Dose ID"]
+    specific_bx_structure_roi = specific_bx_structure["ROI"]
+    dose_data_KDtree = dose_ref_dict["KDtree"]
+    for single_MC_trial_slice_index, bx_only_shifted_single_MC_trial_slice in enumerate(bx_only_shifted_3darr):
+        single_MC_trial_arg = (dose_data_KDtree, bx_only_shifted_single_MC_trial_slice, specific_bx_structure_roi, dose_ref_dict_roi, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr)
+        args_list[single_MC_trial_slice_index] = single_MC_trial_arg
+    
+    # conduct the dosimetric localization in parallel. The MC trials are done in parallel.
+    dosimetric_localiation_all_MC_trials_list = parallel_pool.starmap(dosimetric_localization_single_MC_trial, args_list)
+
+    return dosimetric_localiation_all_MC_trials_list
+
+
+def dosimetric_localization_single_MC_trial(dose_data_KDtree, bx_only_shifted_single_MC_trial_slice, specific_bx_structure_roi,dose_ref_dose_id,dose_ref,phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr):   
+    nearest_neighbours_single_MC_trial_output = dose_data_KDtree.query(bx_only_shifted_single_MC_trial_slice)
+    nearest_neighbours_single_MC_trial_NN_parent_obj = nearest_neighbour_parent_dose(specific_bx_structure_roi,dose_ref_dose_id,dose_ref,phys_space_dose_map_phys_coords_2d_arr,bx_only_shifted_single_MC_trial_slice, phys_space_dose_map_dose_2d_arr, nearest_neighbours_single_MC_trial_output)
+    return nearest_neighbours_single_MC_trial_NN_parent_obj
 
 def calculate_binomial_containment_conf_intervals_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials):
     args_list = [(probability_estimator_list[j], num_trials, num_successes_list[j]) for j in range(len(probability_estimator_list))]
@@ -540,44 +578,74 @@ def point_sampler_from_global_delaunay_convex_structure_for_sequential(num_sampl
 
 
 def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr, patientUID, structure_type, specific_structure_index):
-        insert_index = 0
-        reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
-        reconstructed_bx_point_cloud_color = np.array([0,0,1])
-        reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
+    insert_index = 0
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    reconstructed_bx_point_cloud_color = np.array([0,0,1])
+    reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
 
-        bx_samples_arr = np.empty((num_samples,3),dtype=float)
-        axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
-        axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
-        bounding_box_color = np.array([0,0,0], dtype=float)
-        axis_aligned_bounding_box.color = bounding_box_color
-        max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
-        min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
+    bx_samples_arr = np.empty((num_samples,3),dtype=float)
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    bounding_box_color = np.array([0,0,0], dtype=float)
+    axis_aligned_bounding_box.color = bounding_box_color
+    max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
+    min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
 
-        
-        while insert_index < num_samples:
-            x_val = np.random.uniform(min_bounds[0], max_bounds[0])
-            y_val = np.random.uniform(min_bounds[1], max_bounds[1])
-            z_val = np.random.uniform(min_bounds[2], max_bounds[2])
-            random_point_within_bounding_box = np.array([x_val,y_val,z_val],dtype=float)
-            
-            containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,random_point_within_bounding_box)
-            
-            
-            random_point_pcd = o3d.geometry.PointCloud()
-            random_point_pcd.points = o3d.utility.Vector3dVector(np.array([random_point_within_bounding_box]))
-            random_point_pcd_color = np.array([0,1,0])
-            random_point_pcd.paint_uniform_color(random_point_pcd_color)
-            #plotting_funcs.plot_geometries(reconstructed_bx_point_cloud,random_point_pcd)
-            #print(containment_result_bool)
-            if containment_result_bool == True:
-                bx_samples_arr[insert_index] = random_point_within_bounding_box
-                insert_index = insert_index + 1
-            else:
-                pass
-            
-        
-        bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
-        bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
-        
-        return bx_samples_arr, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
     
+    while insert_index < num_samples:
+        x_val = np.random.uniform(min_bounds[0], max_bounds[0])
+        y_val = np.random.uniform(min_bounds[1], max_bounds[1])
+        z_val = np.random.uniform(min_bounds[2], max_bounds[2])
+        random_point_within_bounding_box = np.array([x_val,y_val,z_val],dtype=float)
+        
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,random_point_within_bounding_box)
+        
+        
+        random_point_pcd = o3d.geometry.PointCloud()
+        random_point_pcd.points = o3d.utility.Vector3dVector(np.array([random_point_within_bounding_box]))
+        random_point_pcd_color = np.array([0,1,0])
+        random_point_pcd.paint_uniform_color(random_point_pcd_color)
+        #plotting_funcs.plot_geometries(reconstructed_bx_point_cloud,random_point_pcd)
+        #print(containment_result_bool)
+        if containment_result_bool == True:
+            bx_samples_arr[insert_index] = random_point_within_bounding_box
+            insert_index = insert_index + 1
+        else:
+            pass
+        
+    
+    bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+    bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr, bx_samples_arr_point_cloud_color)
+    
+    return bx_samples_arr, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
+
+
+class nearest_neighbour_parent_dose:
+    def __init__(self,BX_struct_name,comparison_struct_name,comparison_struct_type,comparison_structure_points_that_made_KDtree,queried_BX_points, dose_2d_arr, NN_search_output):
+        self.BX_structure_name = BX_struct_name
+        self.comparison_structure_name = comparison_struct_name
+        self.comparison_structure_type = comparison_struct_type
+        #self.comparison_structure_points = comparison_structure_points_that_made_KDtree
+        self.queried_Bx_points = queried_BX_points
+        self.NN_search_output = NN_search_output
+        self.dose_arr = dose_2d_arr
+        self.NN_data_list = self.NN_list_builder(comparison_structure_points_that_made_KDtree)
+        
+
+    def NN_list_builder(self,comparison_structure_points_that_made_KDtree):
+        comparison_structure_NN_distances = self.NN_search_output[0]
+        comparison_structure_NN_indices = self.NN_search_output[1]
+        nearest_points_on_comparison_struct = comparison_structure_points_that_made_KDtree[comparison_structure_NN_indices]
+        nearest_doses_list = self.dose_arr[comparison_structure_NN_indices]
+        
+        NN_data_list = [nearest_neighbour_child_dose(self.queried_Bx_points[index], nearest_points_on_comparison_struct[index], comparison_structure_NN_distances[index], nearest_doses_list[index]) for index in range(0,len(self.queried_Bx_points))]
+        #NN_data_list = [{"Queried BX pt": self.queried_Bx_points[index], "NN pt on comparison struct": nearest_points_on_comparison_struct[index], "Euclidean distance": comparison_structure_NN_distances[index]} for index in range(0,len(self.queried_Bx_points))]
+        return NN_data_list
+
+
+class nearest_neighbour_child_dose:
+    def __init__(self, queried_BX_pt, NN_pt_on_comparison_struct, euclidean_dist, nearest_dose):
+        self.queried_BX_pt = queried_BX_pt
+        self.NN_pt_on_comparison_struct = NN_pt_on_comparison_struct
+        self.euclidean_dist = euclidean_dist
+        self.nearest_dose = nearest_dose

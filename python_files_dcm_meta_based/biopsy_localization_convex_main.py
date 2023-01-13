@@ -47,7 +47,6 @@ from rich.progress import Progress, track
 
 
 
-
 def main():
     
     """
@@ -124,11 +123,20 @@ def main():
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
         #st = time.time()
+        
+        
         with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
+                rich.progress.TextColumn("[green]Patient:"),
+                rich.progress.MofNCompleteColumn(),
                 rich.progress.TimeElapsedColumn()) as progress:
-            processing_patients_dose_task = progress.add_task("[red]Building dose grids...", total=num_patients)
+            patientUID_default = "Initializing"
+            processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
+            processing_patients_dose_task = progress.add_task(processing_patients_dose_task_main_description, total=num_patients)
             for patientUID,pydicom_item in master_structure_reference_dict.items():
+                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
+                progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
+
                 dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
                 dose_pixel_slice_list = dose_ref_dict["Dose pixel arr"]
                 grid_frame_offset_vec_list = dose_ref_dict["Grid frame offset vector"]
@@ -188,8 +196,9 @@ def main():
                 dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
 
                 plotting_funcs.plot_geometries(dose_point_cloud)
+
                 progress.update(processing_patients_dose_task, advance=1)
-                #for dose_slice_2darr in dose_pixel_slice_list:
+                
                     
 
 
@@ -197,210 +206,229 @@ def main():
 
         with Progress(rich.progress.SpinnerColumn(spinner_type),
                 *Progress.get_default_columns(),
-                rich.progress.TimeElapsedColumn()) as progress:
-            processing_patients_task = progress.add_task("[red]Processing patient structure data...", total=num_patients)
-            processing_structures_task = progress.add_task("[green]Processing structures...", total=num_general_structs)
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                for structs in structs_referenced_list:
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(specific_structure["ROI"])
-                        #print(specific_structure["Ref #"])
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+                rich.progress.TextColumn("[green]Patient:"),
+                rich.progress.MofNCompleteColumn(),
+                rich.progress.TimeElapsedColumn()) as progress_patient:
+            with Progress(rich.progress.SpinnerColumn(spinner_type),
+            *Progress.get_default_columns(),
+            rich.progress.TextColumn("[green]Structure:"),
+            rich.progress.MofNCompleteColumn(),
+            rich.progress.TimeElapsedColumn()) as progress_structure:
 
-                        # can uncomment surrounding lines to time this particular process
-                        #st = time.time()
-                        threeDdata_zslice_list = []
-                        structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
-                        for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                            contour_slice_points = slice_object.ContourData                       
-                            threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                            threeDdata_zslice_list.append(threeDdata_zslice)
+                patientUID_default = "Initializing"
+                processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
+                processing_patients_task = progress.add_task(processing_patients_task_main_description, total=num_patients)
+
+                structureID_default = "Initializing"
+                processing_structures_task_main_description = "[green]Processing structures [{}]...".format(structureID_default)
+                processing_structures_task = progress.add_task(processing_structures_task_main_description, total=num_general_structs)
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                    progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                    for structs in structs_referenced_list:
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            processing_structures_task_main_description = "[green]Processing structures [{}]...".format(structureID)
+                            progress.update(processing_structures_task_main_description, description = processing_structures_task_main_description)
+
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(specific_structure["ROI"])
+                            #print(specific_structure["Ref #"])
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                            # can uncomment surrounding lines to time this particular process
+                            #st = time.time()
+                            threeDdata_zslice_list = []
+                            structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
+                            for index, slice_object in enumerate(structure_contour_points_raw_sequence):
+                                contour_slice_points = slice_object.ContourData                       
+                                threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                                threeDdata_zslice_list.append(threeDdata_zslice)
 
 
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        if isinstance(total_structure_points, int):
-                            pass
-                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
-                            total_structure_points = int(total_structure_points)
-                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
-                            raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                        else: 
-                            raise Exception("Something went wrong when calculating total number of points in structure!")
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            if isinstance(total_structure_points, int):
+                                pass
+                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
+                                total_structure_points = int(total_structure_points)
+                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
+                                raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
+                            else: 
+                                raise Exception("Something went wrong when calculating total number of points in structure!")
 
-                        threeDdata_array = np.empty([total_structure_points,3])
-                        # for biopsy only
-                        if structs == structs_referenced_list[0]:
-                            structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                        lower_bound_index = 0  
-                        # build raw threeDdata
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
-                            
+                            threeDdata_array = np.empty([total_structure_points,3])
+                            # for biopsy only
                             if structs == structs_referenced_list[0]:
-                                structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                                structure_centroids_array[index] = structure_zslice_centroid
+                                structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                            lower_bound_index = 0  
+                            # build raw threeDdata
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points 
+                                
+                                if structs == structs_referenced_list[0]:
+                                    structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                                    structure_centroids_array[index] = structure_zslice_centroid
 
 
-                        # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 0.5
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+                            # conduct INTER-slice interpolation
+                            interp_dist_z_slice = 0.5
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
+                            
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        interp_dist = 2 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        
-                        interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                            interp_dist = 2 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            
+                            interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
 
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
 
-                        # fill in the end caps
-                        interp_dist_caps = 2
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+                            # fill in the end caps
+                            interp_dist_caps = 2
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                            interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
-                        #et = time.time()
-                        #elapsed_time = et - st
-                        #print('\n Execution time:', elapsed_time, 'seconds')
+                            #et = time.time()
+                            #elapsed_time = et - st
+                            #print('\n Execution time:', elapsed_time, 'seconds')
 
-                        # generate point cloud of raw threeDdata
-                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
-                        
-                        
+                            # generate point cloud of raw threeDdata
+                            threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                            
+                            
 
-                        # generate delaunay triangulations 
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+                            # generate delaunay triangulations 
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
 
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        delaunay_global_convex_structure_obj.generate_lineset()
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            delaunay_global_convex_structure_obj.generate_lineset()
 
-                        
-                        # Below is a sample simulation to test the containment algorithm:
-                        """
-                        print(specific_structure["ROI"])
-                        # zslice wise convex structure box simulation
-                        num_simulations = 500
-                        
-                        test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, threeDdata_point_cloud)
-                        test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
-                        # plot zslice wise delaunay in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
-                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
-                        
-                        line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
-                        inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
+                            
+                            # Below is a sample simulation to test the containment algorithm:
+                            """
+                            print(specific_structure["ROI"])
+                            # zslice wise convex structure box simulation
+                            num_simulations = 500
+                            
+                            test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, threeDdata_point_cloud)
+                            test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
+                            # plot zslice wise delaunay in open3d ?
+                            #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                            #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                            
+                            line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
+                            inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
 
-                        
-                        #plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
-                        # global convex structure box simulation
-                        num_simulations = 50
-                        test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, threeDdata_point_cloud)
-                        # plot delaunay global convex structure in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
+                            
+                            #plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
+                            # global convex structure box simulation
+                            num_simulations = 50
+                            test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, threeDdata_point_cloud)
+                            # plot delaunay global convex structure in open3d ?
+                            #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
 
-                        """
+                            """
 
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
 
-                        
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+                            
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
 
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
 
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
 
-                        
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        
+                            
+                            
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            
 
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
-
-
-                        # for biopsies only
-                        if structs == structs_referenced_list[0]:
-                            centroid_line = pca.linear_fitter(structure_centroids_array.T)
-                            centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
-                            slice_reconstruction_max_distance = 0.1
-                            num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length/slice_reconstruction_max_distance))
-                            centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line,3), dtype=float)
-                            centroid_line_sample[0,:] = centroid_line[0,:]
-                            travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
-                            for i in range(1,num_centroid_samples_of_centroid_line):
-                                init_point = centroid_line_sample[-1]
-                                new_point = init_point + travel_vec
-                                centroid_line_sample[i] = new_point
-    
-                            # conduct a nearest neighbour search of biopsy centroids
-
-                            #treescipy = scipy.spatial.KDTree(threeDdata_array)
-                            #nn = treescipy.query(centroid_line_sample[0])
-                            #nearest_neighbour = treescipy.data[nn[1]]
-
-                            list_travel_vec = np.squeeze(travel_vec).tolist()
-                            list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
-                            drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
-                            drawn_biopsy_array = drawn_biopsy_array_transpose.T
-                            reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
-                            reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
-                            reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
-                            reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
-                            #plot reconstructions?
-                            #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud)
-                            #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
+                            # plot two point clouds side by side ? 
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                            
 
 
-                        # plot only the biopsies
-                        if structs == structs_referenced_list[0]:
-                            specific_structure["Plot attributes"].plot_bool = True
+                            # for biopsies only
+                            if structs == structs_referenced_list[0]:
+                                centroid_line = pca.linear_fitter(structure_centroids_array.T)
+                                centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
+                                slice_reconstruction_max_distance = 0.1
+                                num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length/slice_reconstruction_max_distance))
+                                centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line,3), dtype=float)
+                                centroid_line_sample[0,:] = centroid_line[0,:]
+                                travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
+                                for i in range(1,num_centroid_samples_of_centroid_line):
+                                    init_point = centroid_line_sample[-1]
+                                    new_point = init_point + travel_vec
+                                    centroid_line_sample[i] = new_point
+        
+                                # conduct a nearest neighbour search of biopsy centroids
+
+                                #treescipy = scipy.spatial.KDTree(threeDdata_array)
+                                #nn = treescipy.query(centroid_line_sample[0])
+                                #nearest_neighbour = treescipy.data[nn[1]]
+
+                                list_travel_vec = np.squeeze(travel_vec).tolist()
+                                list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
+                                drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
+                                drawn_biopsy_array = drawn_biopsy_array_transpose.T
+                                reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
+                                reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                                reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                                reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
+                                #plot reconstructions?
+                                #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud)
+                                #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
+
+
+                            # plot only the biopsies
+                            if structs == structs_referenced_list[0]:
+                                specific_structure["Plot attributes"].plot_bool = True
 
 
 
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                        if structs == structs_referenced_list[0]:
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                            if structs == structs_referenced_list[0]:
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
 
-                        progress.update(processing_structures_task, advance=1)
-                progress.update(processing_patients_task, advance=1)
+                            progress.update(processing_structures_task, advance=1)
+                    progress.update(processing_patients_task, advance=1)
 
 
         
@@ -715,7 +743,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: bx to dose NN search objects list": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
@@ -735,7 +763,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
         master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
     
     for UID, dose_item in dose_dcm_dict.items():
-        dose_ref_dict = {"Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "KDtree": None}
+        dose_ID = UID + dose_item.StudyDate
+        dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "KDtree": None}
         master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
     mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
