@@ -481,8 +481,7 @@ def main():
                 patients_progress.update(processing_patients_task, advance=1)
                 completed_patients_progress.update(processing_patients_task_completed, advance=1)
             patients_progress.update(processing_patients_task, visible=False)
-            completed_patients_progress.update(processing_patients_task_completed,  visible=True)
-                
+            completed_patients_progress.update(processing_patients_task_completed,  visible=True)                
 
             
 
