@@ -428,3 +428,28 @@ def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
         point_cloud.paint_uniform_color(pcd_color)
 
     return point_cloud
+
+
+
+def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lower_bound_percent = 10):
+    point_cloud = o3d.geometry.PointCloud()
+    data_all_slices_2d_arr = np.reshape(data_3d_arr, (-1,7))
+    dose_data_all_slices_2d_arr = data_all_slices_2d_arr[:,6]
+    max_dose_og = np.amax(dose_data_all_slices_2d_arr)
+    data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr[data_all_slices_2d_arr[:, 6]  > float(max_dose_og*lower_bound_percent/100)]
+    num_points = data_all_slices_2d_arr_thresholded.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr_thresholded[:,3:6]
+    dose_data_all_slices_2d_arr = data_all_slices_2d_arr_thresholded[:,6]
+    min_dose = np.amin(dose_data_all_slices_2d_arr)
+    point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
+    if paint_dose_color == True:
+        pcd_color_arr = np.zeros((num_points,3))
+        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr
+        pcd_color_arr = pcd_color_arr/max_dose_og
+        #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+    else:
+        pcd_color = np.array([0,0,0]) # paint everything black
+        point_cloud.paint_uniform_color(pcd_color)
+
+    return point_cloud

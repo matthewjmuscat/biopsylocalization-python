@@ -160,6 +160,14 @@ def main():
             TimeElapsedColumn(),
         )
 
+        completed_biopsies_progress = Progress(
+            TextColumn(':heavy_check_mark:'),
+            *Progress.get_default_columns(),
+            TextColumn("[green]Biopsy:"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+        )
+
         biopsies_progress = Progress(
             SpinnerColumn(spinner_type),
             *Progress.get_default_columns(),
@@ -168,17 +176,29 @@ def main():
             TimeElapsedColumn(),
         )
 
+        indeterminate_progress_main = Progress(
+            SpinnerColumn(spinner_type),
+            *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+        )
+
+        completed_indeterminate_progress_main = Progress(
+            TextColumn(':heavy_check_mark:'),
+            *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+        )
+
         progress_group = Panel(
             Group(
-                Panel(Group(completed_patients_progress), title="Completed main tasks", title_align='left'),
-                Panel(Group(patients_progress), title="In progress main tasks", title_align='left'),
+                Panel(Group(completed_patients_progress, completed_indeterminate_progress_main, completed_biopsies_progress), title="Completed main tasks", title_align='left'),
+                Panel(Group(patients_progress,indeterminate_progress_main), title="In progress main tasks", title_align='left'),
                 Panel(Group(structures_progress, biopsies_progress), title="In progress subtasks", title_align='left')
             ), 
             title="Algorithm Progress", title_align='left', width = 200
         )
 
 
-        with Live(progress_group, refresh_per_second = 8):
+        with Live(progress_group, refresh_per_second = 8) as live_display:
 
             patientUID_default = "Initializing"
             processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
@@ -250,6 +270,10 @@ def main():
                 dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
 
                 plotting_funcs.plot_geometries(dose_point_cloud)
+                lower_bound_dose_percent = 5
+                thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+                plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
 
                 patients_progress.update(processing_patients_dose_task, advance=1)
                 completed_patients_progress.update(processing_patients_dose_task_completed, advance=1)
@@ -483,13 +507,13 @@ def main():
             patients_progress.update(processing_patients_task, visible=False)
             completed_patients_progress.update(processing_patients_task_completed,  visible=True)                
 
-            
+            live_display.refresh()
 
 
-        
+
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 dose_ref_dict = pydicom_item[dose_ref]
-                dose_grid_pcd = dose_ref_dict["Dose grid point cloud"]
+                dose_grid_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
                 pcd_list = [dose_grid_pcd]
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -625,160 +649,207 @@ def main():
             #st = time.time()
             args_list = []
             num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-            num_sample_pts_per_bx = 9
+            num_sample_pts_per_bx = 100
             master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
-        
-            processing_biopsies_task = biopsies_progress.add_task("[red]Preparing biopsy information for parallel computing...", total=num_biopsies)
-            processing_biopsies_completed_task = completed_biopsies_progress.add_task("[green]Preparing biopsy information for parallel computing", total=num_biopsies, visible=False)
+
+            patientUID_default = "Initializing"
+            processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID_default)
+            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_parallel_computing_main_description, total = num_patients)
+            processing_patient_parallel_computing_main_description_completed = "Preparing patient for parallel processing"
+            processing_patients_completed_task = completed_patients_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=num_patients, visible=False)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
-                structs = structs_referenced_list[0]
-                for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                    reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"]
-                    reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"]
-                    reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                    args_list.append((num_sample_pts_per_bx, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, structs, specific_structure_index))
+                bx_structs = structs_referenced_list[0]
+
+                processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID)
+                patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_parallel_computing_main_description)
+                
+                num_biopsies_per_patient = master_structure_info_dict["By patient"][patientUID][bx_structs]["Num structs"]
+                biopsyID_default = "Initializing"
+                processing_biopsies_main_description = "[blue]Preparing biopsy data for parallel processing [{},{}]...".format(patientUID,biopsyID_default)
+                processing_biopsies_task = biopsies_progress.add_task(processing_biopsies_main_description, total=num_biopsies_per_patient)
+
+                for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_structs]):
+                    reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure point cloud"]
+                    reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure pts arr"]
+                    reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure delaunay global"]
+                    args_list.append((num_sample_pts_per_bx, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, bx_structs, specific_structure_index))
                     biopsies_progress.update(processing_biopsies_task, advance=1)
-                    completed_biopsies_progress.update(processing_biopsies_completed_task, advance=1)
+                
+                patients_progress.update(processing_patients_task, advance = 1)
+                completed_patients_progress.update(processing_patients_completed_task, advance = 1)
 
-            biopsies_progress.update(processing_biopsies_task, visible=False)
-            completed_biopsies_progress.update(processing_biopsies_completed_task, visible=True)
+            biopsies_progress.update(processing_biopsies_task, visible = False)
+            patients_progress.update(processing_patients_task, visible = False)
+            completed_patients_progress.update(processing_patients_completed_task, visible = True)
 
 
-        #et = time.time()
-        #elapsed_time = et - st
-        #print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
+            #et = time.time()
+            #elapsed_time = et - st
+            #print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
+            
+            
+            #st = time.time()
         
         
-        #st = time.time()
-        
-        with Progress(rich.progress.SpinnerColumn(spinner_type),
-                *Progress.get_default_columns(),
-                rich.progress.TimeElapsedColumn()) as progress:
-            sampling_points_task = progress.add_task("[green]Sampling biopsy points (parallel)...", total=None)
+            sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
+            sampling_points_task_indeterminate_completed = completed_indeterminate_progress_main.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = 1)
             parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
-        
-        #et = time.time()
-        #elapsed_time = et - st
-        #print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
 
-        for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
-            sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
-            sampled_bx_points_from_global_delaunay_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_pts_arr, sampled_bx_points_from_global_delaunay_point_cloud_color)
-            axis_aligned_bounding_box = o3d.geometry.AxisAlignedBoundingBox()
-            axis_aligned_bounding_box_o3d3dvector_points = o3d.utility.Vector3dVector(axis_aligned_bounding_box_arr)
-            axis_aligned_bounding_box.create_from_points(axis_aligned_bounding_box_o3d3dvector_points)
-            #axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
-            bounding_box_color = np.array([0,0,0], dtype=float)
-            axis_aligned_bounding_box.color = bounding_box_color
+            indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
+            completed_indeterminate_progress_main.update(sampling_points_task_indeterminate_completed, advance = 1, visible = True, refresh = True)
+            live_display.refresh()
 
-            # update master dict 
-            temp_patient_UID = structure_info_dict["Patient UID"]
-            temp_structure_type = structure_info_dict["Structure type"]
-            temp_specific_structure_index = structure_info_dict["Specific structure index"]
-            master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts arr"] = sampled_bx_pts_arr
-            master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts pcd"] = sampled_bx_points_from_global_delaunay_point_cloud
-            master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Bounding box for random uniformly sampled volume pts"] = axis_aligned_bounding_box
-
-             
-            plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud,axis_aligned_bounding_box)
+            
 
 
-        ## begin simulation section
-        created_dir = False
-        while created_dir == False:
-            print('Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
-            uncertainty_dir_generate = ques_funcs.ask_ok('Continue?')
+            #et = time.time()
+            #elapsed_time = et - st
+            #print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
 
-            if uncertainty_dir_generate == True:
-                if os.path.isdir(uncertainty_dir) == True:
-                    print('Directory already exists')
-                    created_dir = True
+            global_num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+            patientUID_default = "Initializing"
+            bx_ID_default = "Initializing"
+            parsing_sampled_biopsy_data_task_main_description = "Parsing sampled biopsy information [{},{}]".format(patientUID_default,bx_ID_default)
+            parsing_sampled_biopsy_data_task_main_description_completed = "Parsing sampled biopsy information"
+            parsing_sampled_biopsy_data_task = biopsies_progress.add_task("[red]"+parsing_sampled_biopsy_data_task_main_description, total = global_num_biopsies)
+            parsing_sampled_biopsy_data_task_completed = completed_biopsies_progress.add_task("[green]"+parsing_sampled_biopsy_data_task_main_description_completed, total = global_num_biopsies)
+
+            for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
+                temp_patient_UID = structure_info_dict["Patient UID"]
+                temp_structure_type = structure_info_dict["Structure type"]
+                temp_specific_structure_index = structure_info_dict["Specific structure index"]
+                temp_structure_ID = master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["ROI"]
+                
+                parsing_sampled_biopsy_data_task_main_description = "Parsing sampled biopsy information [{},{}]".format(temp_patient_UID,temp_structure_ID)
+                biopsies_progress.update(parsing_sampled_biopsy_data_task, description="[red]"+parsing_sampled_biopsy_data_task_main_description)
+                
+                
+                sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+                sampled_bx_points_from_global_delaunay_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_pts_arr, sampled_bx_points_from_global_delaunay_point_cloud_color)
+                axis_aligned_bounding_box = o3d.geometry.AxisAlignedBoundingBox()
+                axis_aligned_bounding_box_o3d3dvector_points = o3d.utility.Vector3dVector(axis_aligned_bounding_box_arr)
+                axis_aligned_bounding_box = axis_aligned_bounding_box.create_from_points(axis_aligned_bounding_box_o3d3dvector_points)
+                #axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+                bounding_box_color_arr = np.array([0,0,0], dtype=float)
+                axis_aligned_bounding_box.color = bounding_box_color_arr
+
+                # update master dict 
+                
+                master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts arr"] = sampled_bx_pts_arr
+                master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts pcd"] = sampled_bx_points_from_global_delaunay_point_cloud
+                master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Bounding box for random uniformly sampled volume pts"] = axis_aligned_bounding_box
+                reconstructed_bx_pcd = master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Reconstructed structure point cloud"] 
+
+                
+                plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd, axis_aligned_bounding_box)
+
+                biopsies_progress.update(parsing_sampled_biopsy_data_task, advance = 1, refresh = True)
+                completed_biopsies_progress.update(parsing_sampled_biopsy_data_task_completed, advance = 1, refresh = True)
+                live_display.refresh()
+                
+            biopsies_progress.update(parsing_sampled_biopsy_data_task, visible = False, refresh = True)
+            completed_biopsies_progress.update(parsing_sampled_biopsy_data_task_completed, visible = True, refresh = True)
+            live_display.refresh()
+
+
+
+
+            ## begin simulation section
+            created_dir = False
+            while created_dir == False:
+                print('Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
+                uncertainty_dir_generate = ques_funcs.ask_ok('Continue?')
+
+                if uncertainty_dir_generate == True:
+                    if os.path.isdir(uncertainty_dir) == True:
+                        print('Directory already exists')
+                        created_dir = True
+                    else:
+                        os.mkdir(uncertainty_dir)
+                        print('Directory: ', uncertainty_dir, ' created.')
+                        created_dir = True
                 else:
-                    os.mkdir(uncertainty_dir)
-                    print('Directory: ', uncertainty_dir, ' created.')
-                    created_dir = True
+                    exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
+                    if exit_programme == True:
+                        sys.exit('Programme exited.')
+                    else: 
+                        pass
+
+            uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
+            if uncertainty_template_generate == True:
+                # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
+                #today = date.today()
+                #date_file_name_format = today.strftime("%b-%d-%Y")
+
+                date_time_now = datetime.now()
+                date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
+
+                uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
             else:
-                exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
-                if exit_programme == True:
-                    sys.exit('Programme exited.')
-                else: 
-                    pass
+                pass
 
-        uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
-        if uncertainty_template_generate == True:
-            # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
-            #today = date.today()
-            #date_file_name_format = today.strftime("%b-%d-%Y")
-
-            date_time_now = datetime.now()
-            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-            uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
-
-            uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
-        else:
-            pass
-
-        uncertainty_file_ready = False
-        while uncertainty_file_ready == False:
-            uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?') 
-            if uncertainty_file_ready == True:
-                print('Please select the file with the dialog box')
-                root = tk.Tk() # these two lines are to get rid of errant tkinter window
-                root.withdraw() # these two lines are to get rid of errant tkinter window
-                # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-                uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
-                with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-                    uncertainties_filled = uncertainties_file_filled_csv
-                pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
-                print(pandas_read_uncertainties)
-            else:
-                print('Please fill out the generated uncertainties file generated at ', uncertainties_file)
-                ask_to_quit = ques_funcs.ask_ok('Would you like to quit the programme instead?')
-                if ask_to_quit == True:
-                    sys.exit("You have quit the programme.")
+            uncertainty_file_ready = False
+            while uncertainty_file_ready == False:
+                uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?') 
+                if uncertainty_file_ready == True:
+                    print('Please select the file with the dialog box')
+                    root = tk.Tk() # these two lines are to get rid of errant tkinter window
+                    root.withdraw() # these two lines are to get rid of errant tkinter window
+                    # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
+                    uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
+                    with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
+                        uncertainties_filled = uncertainties_file_filled_csv
+                    pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+                    print(pandas_read_uncertainties)
                 else:
-                    pass
+                    print('Please fill out the generated uncertainties file generated at ', uncertainties_file)
+                    ask_to_quit = ques_funcs.ask_ok('Would you like to quit the programme instead?')
+                    if ask_to_quit == True:
+                        sys.exit("You have quit the programme.")
+                    else:
+                        pass
 
-        # Transfer read uncertainty data to master_reference
-        num_general_structs = int(pandas_read_uncertainties.values[1][0])
-        for specific_structure_index in range(num_general_structs):
-            structure_row_num_start = specific_structure_index*5+3
-            patientUID = pandas_read_uncertainties.values[structure_row_num_start+1][0]
-            structure_type = pandas_read_uncertainties.values[structure_row_num_start+1][1]
-            structure_ROI = pandas_read_uncertainties.values[structure_row_num_start+1][2]
-            structure_ref_num = pandas_read_uncertainties.values[structure_row_num_start+1][3]
-            master_ref_dict_specific_structure_index = int(pandas_read_uncertainties.values[structure_row_num_start+1][4])
-            frame_of_reference = pandas_read_uncertainties.values[structure_row_num_start+1][5]
-            means_arr = np.empty([3], dtype=float)
-            sigmas_arr = np.empty([3], dtype=float)
+            # Transfer read uncertainty data to master_reference
+            num_general_structs = int(pandas_read_uncertainties.values[1][0])
+            for specific_structure_index in range(num_general_structs):
+                structure_row_num_start = specific_structure_index*5+3
+                patientUID = pandas_read_uncertainties.values[structure_row_num_start+1][0]
+                structure_type = pandas_read_uncertainties.values[structure_row_num_start+1][1]
+                structure_ROI = pandas_read_uncertainties.values[structure_row_num_start+1][2]
+                structure_ref_num = pandas_read_uncertainties.values[structure_row_num_start+1][3]
+                master_ref_dict_specific_structure_index = int(pandas_read_uncertainties.values[structure_row_num_start+1][4])
+                frame_of_reference = pandas_read_uncertainties.values[structure_row_num_start+1][5]
+                means_arr = np.empty([3], dtype=float)
+                sigmas_arr = np.empty([3], dtype=float)
 
-            means_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][0] # X
-            means_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][2] # Y
-            means_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][4] # Z
+                means_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][0] # X
+                means_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][2] # Y
+                means_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][4] # Z
 
-            sigmas_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][1] # X
-            sigmas_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][3] # Y
-            sigmas_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][5] # Z
+                sigmas_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][1] # X
+                sigmas_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][3] # Y
+                sigmas_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][5] # Z
 
 
-            uncertainty_data_obj = uncertainty_data(patientUID, structure_type, structure_ROI, structure_ref_num, master_ref_dict_specific_structure_index, frame_of_reference)
-            uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
-            master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
+                uncertainty_data_obj = uncertainty_data(patientUID, structure_type, structure_ROI, structure_ref_num, master_ref_dict_specific_structure_index, frame_of_reference)
+                uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
+                master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
-        simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
-        
-        num_simulations = 11
-        master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
-        if simulation_ans ==  True:
-            print('Beginning simulation')
-            master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
-            #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
-            print('test')
-        else: 
-            pass
+            simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
+            
+            num_simulations = 11
+            master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
+            if simulation_ans ==  True:
+                print('Beginning simulation')
+                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
+                #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
+                print('test')
+            else: 
+                pass
 
-    print('Programme has ended.')
+        print('Programme has ended.')
 
 def UID_generator(pydicom_obj):
     UID_def = f"{str(pydicom_obj[0x0010,0x0010].value)} ({str(pydicom_obj[0x0010,0x0020].value)})"
@@ -823,7 +894,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     
     for UID, dose_item in dose_dcm_dict.items():
         dose_ID = UID + dose_item.StudyDate
-        dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "KDtree": None}
+        dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "Dose grid point cloud thresholded": None, "KDtree": None}
         master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
     mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
