@@ -265,17 +265,19 @@ def main():
             processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
             processing_patients_task_completed = completed_patients_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
 
-            structureID_default = "Initializing"
-            processing_structures_task_main_description = "[blue]Processing structures [{}]...".format(structureID_default)
-            processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                
+                structureID_default = "Initializing"
+                num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                processing_structures_task_main_description = "[blue]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                         structureID = specific_structure["ROI"]
-                        processing_structures_task_main_description = "[blue]Processing structures [{}]...".format(structureID)
+                        processing_structures_task_main_description = "[blue]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -475,12 +477,11 @@ def main():
 
 
                         structures_progress.update(processing_structures_task, advance=1)
+                structures_progress.remove_task(processing_structures_task)
                 patients_progress.update(processing_patients_task, advance=1)
                 completed_patients_progress.update(processing_patients_task_completed, advance=1)
-            structures_progress.update(processing_structures_task, visible=False)
             patients_progress.update(processing_patients_task, visible=False)
             completed_patients_progress.update(processing_patients_task_completed,  visible=True)
-            print('test')
                 
 
             
