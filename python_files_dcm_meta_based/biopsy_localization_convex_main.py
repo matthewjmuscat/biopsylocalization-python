@@ -55,6 +55,10 @@ from rich.progress import (
     TimeElapsedColumn,
     MofNCompleteColumn,
 )
+from rich.table import Table
+from rich.layout import Layout
+from rich.console import Console
+import rich_preambles
 
 
 
@@ -73,6 +77,7 @@ def main():
     above this file.
     """
 
+    algo_global_start = time.time()
 
     global loader
 
@@ -135,77 +140,32 @@ def main():
     with multiprocess.Pool(cpu_count) as parallel_pool:
         #st = time.time()
 
-        completed_patients_progress = Progress(
-            TextColumn(':heavy_check_mark:'),
-            *Progress.get_default_columns(),
-            TextColumn("[green]Patient:"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-        )
+        progress_group_info_list = rich_preambles.get_progress_all(spinner_type)
+        completed_progress, patients_progress, structures_progress, biopsies_progress, indeterminate_progress_main, progress_group = progress_group_info_list
 
 
-        patients_progress = Progress(
-            SpinnerColumn(spinner_type),
-            *Progress.get_default_columns(),
-            TextColumn("[green]Patient:"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-        )
+        rich_layout = rich_preambles.make_layout()
+        
+               
+        with Live(rich_layout, refresh_per_second = 8) as live_display:
+            important_info = rich_preambles.info_output()
+            rich_layout["header"].update(rich_preambles.Header())
+            rich_layout["main-left"].update(progress_group)
+            #rich_layout["box2"].update(Panel(make_syntax(), border_style="green"))
+            rich_layout["main-right"].update(important_info)
+            rich_layout["footer"].update(rich_preambles.Footer(algo_global_start))
 
-        structures_progress = Progress(
-            SpinnerColumn(spinner_type),
-            *Progress.get_default_columns(),
-            TextColumn("[green]Structure:"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-        )
-
-        completed_biopsies_progress = Progress(
-            TextColumn(':heavy_check_mark:'),
-            *Progress.get_default_columns(),
-            TextColumn("[green]Biopsy:"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-        )
-
-        biopsies_progress = Progress(
-            SpinnerColumn(spinner_type),
-            *Progress.get_default_columns(),
-            TextColumn("[green]Biopsy:"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-        )
-
-        indeterminate_progress_main = Progress(
-            SpinnerColumn(spinner_type),
-            *Progress.get_default_columns(),
-            TimeElapsedColumn(),
-        )
-
-        completed_indeterminate_progress_main = Progress(
-            TextColumn(':heavy_check_mark:'),
-            *Progress.get_default_columns(),
-            TimeElapsedColumn(),
-        )
-
-        progress_group = Panel(
-            Group(
-                Panel(Group(completed_patients_progress, completed_indeterminate_progress_main, completed_biopsies_progress), title="Completed main tasks", title_align='left'),
-                Panel(Group(patients_progress,indeterminate_progress_main), title="In progress main tasks", title_align='left'),
-                Panel(Group(structures_progress, biopsies_progress), title="In progress subtasks", title_align='left')
-            ), 
-            title="Algorithm Progress", title_align='left', width = 200
-        )
-
-
-        with Live(progress_group, refresh_per_second = 8) as live_display:
+            important_info.add_text_line("important info will appear here1")
+            important_info.add_text_line("important info will appear here2")
+            #rich_layout["main-right"].update(important_info_Text)
+           
 
             patientUID_default = "Initializing"
             processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
             processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
             
             processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=num_patients)
-            processing_patients_dose_task_completed = completed_patients_progress.add_task(processing_patients_dose_task_completed_main_description, total=num_patients, visible=False)
+            processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=num_patients, visible=False)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
@@ -269,17 +229,28 @@ def main():
                 dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True)
                 dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
 
+                patients_progress.stop_task(processing_patients_dose_task)
+                completed_progress.stop_task(processing_patients_dose_task_completed)
                 plotting_funcs.plot_geometries(dose_point_cloud)
+                patients_progress.start_task(processing_patients_dose_task)
+                completed_progress.start_task(processing_patients_dose_task_completed)
+
+                # user defined quantity!
                 lower_bound_dose_percent = 5
                 thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
                 dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+
+                patients_progress.stop_task(processing_patients_dose_task)
+                completed_progress.stop_task(processing_patients_dose_task_completed)
                 plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                patients_progress.start_task(processing_patients_dose_task)
+                completed_progress.start_task(processing_patients_dose_task_completed)
 
                 patients_progress.update(processing_patients_dose_task, advance=1)
-                completed_patients_progress.update(processing_patients_dose_task_completed, advance=1)
+                completed_progress.update(processing_patients_dose_task_completed, advance=1)
             
             patients_progress.update(processing_patients_dose_task, visible=False)
-            completed_patients_progress.update(processing_patients_dose_task_completed, visible=True)
+            completed_progress.update(processing_patients_dose_task_completed, visible=True)
                     
         
 
@@ -287,7 +258,7 @@ def main():
             processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
             processing_patients_task_completed_main_description = "[green]Processing patient structure data"
             processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
-            processing_patients_task_completed = completed_patients_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
+            processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
 
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -503,9 +474,9 @@ def main():
                         structures_progress.update(processing_structures_task, advance=1)
                 structures_progress.remove_task(processing_structures_task)
                 patients_progress.update(processing_patients_task, advance=1)
-                completed_patients_progress.update(processing_patients_task_completed, advance=1)
+                completed_progress.update(processing_patients_task_completed, advance=1)
             patients_progress.update(processing_patients_task, visible=False)
-            completed_patients_progress.update(processing_patients_task_completed,  visible=True)                
+            completed_progress.update(processing_patients_task_completed,  visible=True)                
 
             live_display.refresh()
 
@@ -656,7 +627,7 @@ def main():
             processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID_default)
             processing_patients_task = patients_progress.add_task("[red]"+processing_patient_parallel_computing_main_description, total = num_patients)
             processing_patient_parallel_computing_main_description_completed = "Preparing patient for parallel processing"
-            processing_patients_completed_task = completed_patients_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=num_patients, visible=False)
+            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=num_patients, visible=False)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 bx_structs = structs_referenced_list[0]
@@ -677,11 +648,11 @@ def main():
                     biopsies_progress.update(processing_biopsies_task, advance=1)
                 
                 patients_progress.update(processing_patients_task, advance = 1)
-                completed_patients_progress.update(processing_patients_completed_task, advance = 1)
+                completed_progress.update(processing_patients_completed_task, advance = 1)
 
             biopsies_progress.update(processing_biopsies_task, visible = False)
             patients_progress.update(processing_patients_task, visible = False)
-            completed_patients_progress.update(processing_patients_completed_task, visible = True)
+            completed_progress.update(processing_patients_completed_task, visible = True)
 
 
             #et = time.time()
@@ -693,11 +664,11 @@ def main():
         
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
-            sampling_points_task_indeterminate_completed = completed_indeterminate_progress_main.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = 1)
+            sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = 1)
             parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
-            completed_indeterminate_progress_main.update(sampling_points_task_indeterminate_completed, advance = 1, visible = True, refresh = True)
+            completed_progress.update(sampling_points_task_indeterminate_completed, advance = 1, visible = True, refresh = True)
             live_display.refresh()
 
             
@@ -713,7 +684,7 @@ def main():
             parsing_sampled_biopsy_data_task_main_description = "Parsing sampled biopsy information [{},{}]".format(patientUID_default,bx_ID_default)
             parsing_sampled_biopsy_data_task_main_description_completed = "Parsing sampled biopsy information"
             parsing_sampled_biopsy_data_task = biopsies_progress.add_task("[red]"+parsing_sampled_biopsy_data_task_main_description, total = global_num_biopsies)
-            parsing_sampled_biopsy_data_task_completed = completed_biopsies_progress.add_task("[green]"+parsing_sampled_biopsy_data_task_main_description_completed, total = global_num_biopsies)
+            parsing_sampled_biopsy_data_task_completed = completed_progress.add_task("[green]"+parsing_sampled_biopsy_data_task_main_description_completed, total = global_num_biopsies, visible = False)
 
             for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
                 temp_patient_UID = structure_info_dict["Patient UID"]
@@ -722,7 +693,8 @@ def main():
                 temp_structure_ID = master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["ROI"]
                 
                 parsing_sampled_biopsy_data_task_main_description = "Parsing sampled biopsy information [{},{}]".format(temp_patient_UID,temp_structure_ID)
-                biopsies_progress.update(parsing_sampled_biopsy_data_task, description="[red]"+parsing_sampled_biopsy_data_task_main_description)
+                biopsies_progress.update(parsing_sampled_biopsy_data_task, description="[red]"+parsing_sampled_biopsy_data_task_main_description, refresh=True)
+                live_display.refresh()
                 
                 
                 sampled_bx_points_from_global_delaunay_point_cloud_color = np.random.uniform(0, 0.7, size=3)
@@ -741,42 +713,46 @@ def main():
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Bounding box for random uniformly sampled volume pts"] = axis_aligned_bounding_box
                 reconstructed_bx_pcd = master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Reconstructed structure point cloud"] 
 
-                
+                biopsies_progress.stop_task(parsing_sampled_biopsy_data_task)
+                completed_progress.stop_task(parsing_sampled_biopsy_data_task_completed)
                 plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd, axis_aligned_bounding_box)
+                biopsies_progress.start_task(parsing_sampled_biopsy_data_task)
+                completed_progress.start_task(parsing_sampled_biopsy_data_task_completed)
 
                 biopsies_progress.update(parsing_sampled_biopsy_data_task, advance = 1, refresh = True)
-                completed_biopsies_progress.update(parsing_sampled_biopsy_data_task_completed, advance = 1, refresh = True)
+                completed_progress.update(parsing_sampled_biopsy_data_task_completed, advance = 1, refresh = True)
                 live_display.refresh()
                 
             biopsies_progress.update(parsing_sampled_biopsy_data_task, visible = False, refresh = True)
-            completed_biopsies_progress.update(parsing_sampled_biopsy_data_task_completed, visible = True, refresh = True)
+            completed_progress.update(parsing_sampled_biopsy_data_task_completed, visible = True, refresh = True)
             live_display.refresh()
 
 
 
-
+            live_display.stop()
             ## begin simulation section
             created_dir = False
             while created_dir == False:
-                print('Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
-                uncertainty_dir_generate = ques_funcs.ask_ok('Continue?')
+                live_display.console.print("[bold red]User input required:")
+                print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
+                uncertainty_dir_generate = ques_funcs.ask_ok('>Continue?')
 
                 if uncertainty_dir_generate == True:
                     if os.path.isdir(uncertainty_dir) == True:
-                        print('Directory already exists')
+                        print('>Directory already exists')
                         created_dir = True
                     else:
                         os.mkdir(uncertainty_dir)
-                        print('Directory: ', uncertainty_dir, ' created.')
+                        print('>Directory: ', uncertainty_dir, ' created.')
                         created_dir = True
                 else:
-                    exit_programme = ques_funcs.ask_ok('This directory must be created. Do you want to exit the programme?' )
+                    exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
                     if exit_programme == True:
-                        sys.exit('Programme exited.')
+                        sys.exit('>Programme exited.')
                     else: 
                         pass
 
-            uncertainty_template_generate = ques_funcs.ask_ok('Do you want to generate an uncertainty file template for this patient data repo?')
+            uncertainty_template_generate = ques_funcs.ask_ok('>Do you want to generate an uncertainty file template for this patient data repo?')
             if uncertainty_template_generate == True:
                 # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
                 #today = date.today()
@@ -792,9 +768,9 @@ def main():
 
             uncertainty_file_ready = False
             while uncertainty_file_ready == False:
-                uncertainty_file_ready = ques_funcs.ask_ok('Is the uncertainty file prepared/filled out?') 
+                uncertainty_file_ready = ques_funcs.ask_ok('>Is the uncertainty file prepared/filled out?') 
                 if uncertainty_file_ready == True:
-                    print('Please select the file with the dialog box')
+                    print('>Please select the file with the dialog box')
                     root = tk.Tk() # these two lines are to get rid of errant tkinter window
                     root.withdraw() # these two lines are to get rid of errant tkinter window
                     # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
@@ -804,10 +780,10 @@ def main():
                     pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
                     print(pandas_read_uncertainties)
                 else:
-                    print('Please fill out the generated uncertainties file generated at ', uncertainties_file)
-                    ask_to_quit = ques_funcs.ask_ok('Would you like to quit the programme instead?')
+                    print('>Please fill out the generated uncertainties file generated at ', uncertainties_file)
+                    ask_to_quit = ques_funcs.ask_ok('>Would you like to quit the programme instead?')
                     if ask_to_quit == True:
-                        sys.exit("You have quit the programme.")
+                        sys.exit(">You have quit the programme.")
                     else:
                         pass
 
@@ -837,19 +813,19 @@ def main():
                 uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
                 master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
-            simulation_ans = ques_funcs.ask_ok('Uncertainty data collected. Begin Monte Carlo simulation?')
+            simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             
             num_simulations = 11
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
-                print('Beginning simulation')
-                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
+                print('>Beginning simulation')
+                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, progress_group_info_list, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
                 print('test')
             else: 
                 pass
 
-        print('Programme has ended.')
+        print('>Programme has ended.')
 
 def UID_generator(pydicom_obj):
     UID_def = f"{str(pydicom_obj[0x0010,0x0010].value)} ({str(pydicom_obj[0x0010,0x0020].value)})"
