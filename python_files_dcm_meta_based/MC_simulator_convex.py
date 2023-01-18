@@ -348,9 +348,10 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                     
 
         
-        compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format(), total=num_patients)
+        compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(compile_results_dose_NN_biopsy_containment_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[blue]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
@@ -371,6 +372,9 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         patients_progress.update(compile_results_dose_NN_biopsy_containment_task, visible = False)
         completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, visible = True)
         live_display.refresh()
+
+        print('test1')
+        print('test2')
 
         return master_structure_reference_dict
 

@@ -738,7 +738,9 @@ def main():
 
                 biopsies_progress.stop_task(parsing_sampled_biopsy_data_task)
                 completed_progress.stop_task(parsing_sampled_biopsy_data_task_completed)
+                stopwatch.stop()
                 plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd, axis_aligned_bounding_box)
+                stopwatch.start()
                 biopsies_progress.start_task(parsing_sampled_biopsy_data_task)
                 completed_progress.start_task(parsing_sampled_biopsy_data_task_completed)
 
@@ -838,7 +840,7 @@ def main():
 
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             
-            num_simulations = 100
+            num_simulations = 10
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')
