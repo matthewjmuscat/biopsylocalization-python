@@ -59,7 +59,7 @@ from rich.table import Table
 from rich.layout import Layout
 from rich.console import Console
 import rich_preambles
-
+from stopwatch import Stopwatch
 
 
 def main():
@@ -78,6 +78,7 @@ def main():
     """
 
     algo_global_start = time.time()
+    stopwatch = Stopwatch(1)
 
     global loader
 
@@ -93,77 +94,95 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'christmas'
     
-    # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
-
-    # First we access the data directory, it must be in a location 
-    # two levels up from this file
-    data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
-    uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
-    dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
-    dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
-
-    # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
-    # of dicom file 
-    #RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
-    #RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
-    #RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
     
-    # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
-    # creation of the PatientUID, that is generally created from or referenced from here 
-    # throughout the programme, it is formed as "patientname (patientID)"
-    RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
-    RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
-    
-    master_structure_reference_dict, master_structure_info_dict, structs_referenced_list, dose_ref = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
-
-
-    # Now, we dont want to add the contour points to the structure list above,
-    # because the contour data is already stored in a data tree, which will allow
-    # for faster processing when accessed and iterated. update: I lied..... I ended up
-    # doing exactly this. I will implement a data tree for the purpose of a search
-    # algorithm when I do a nearest neighbour search
-    
-
-    # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
-    # update: fig_dict ended up being deprecated, put data directly into master_dict instead
-    # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
-    
-    # build a data dictionary to store the data we extract and build about the patient
-    # update: data_dict never ended up being used, put data directly into master_dict
-    # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
-
-    # instantiate the variables used for the loading bar
-    num_patients = master_structure_info_dict["Global"]["Num patients"]
-    num_general_structs = master_structure_info_dict["Global"]["Num structures"]
-    test_ind = 0
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
+
         #st = time.time()
 
         progress_group_info_list = rich_preambles.get_progress_all(spinner_type)
-        completed_progress, patients_progress, structures_progress, biopsies_progress, indeterminate_progress_main, progress_group = progress_group_info_list
-
+        completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
 
         rich_layout = rich_preambles.make_layout()
+
+        important_info = rich_preambles.info_output()
+        app_header = rich_preambles.Header()
+        app_footer = rich_preambles.Footer(algo_global_start, stopwatch)
+
+        layout_groups = (app_header,progress_group_info_list,important_info,app_footer)
         
                
         with Live(rich_layout, refresh_per_second = 8) as live_display:
-            important_info = rich_preambles.info_output()
-            rich_layout["header"].update(rich_preambles.Header())
+            rich_layout["header"].update(app_header)
             rich_layout["main-left"].update(progress_group)
             #rich_layout["box2"].update(Panel(make_syntax(), border_style="green"))
             rich_layout["main-right"].update(important_info)
-            rich_layout["footer"].update(rich_preambles.Footer(algo_global_start))
+            rich_layout["footer"].update(app_footer)
 
-            important_info.add_text_line("important info will appear here1")
-            important_info.add_text_line("important info will appear here2")
+            # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
+            # First we access the data directory, it must be in a location 
+            # two levels up from this file
+            data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
+            uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
+            dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
+
+            num_dicoms = len(dicom_paths_list)
+            reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
+            reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
+            dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
+            indeterminate_progress_main.update(reading_dicoms_task_indeterminate, visible = False)
+            completed_progress.update(reading_dicoms_task_indeterminate_completed, advance = num_dicoms,visible = True)
+            live_display.refresh()
+
+            # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
+            # of dicom file 
+            #RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
+            #RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
+            #RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
+            
+            # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
+            # creation of the PatientUID, that is generally created from or referenced from here 
+            # throughout the programme, it is formed as "patientname (patientID)"
+            RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
+            RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
+            
+            num_RTst_dcms_entries = len(RTst_dcms_dict)
+            building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
+            building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
+            master_structure_reference_dict, master_structure_info_dict, structs_referenced_list, dose_ref = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
+            indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
+            completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
+            live_display.refresh()
+
+            # Now, we dont want to add the contour points to the structure list above,
+            # because the contour data is already stored in a data tree, which will allow
+            # for faster processing when accessed and iterated. update: I lied..... I ended up
+            # doing exactly this. I will implement a data tree for the purpose of a search
+            # algorithm when I do a nearest neighbour search
+            
+
+            # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
+            # update: fig_dict ended up being deprecated, put data directly into master_dict instead
+            # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
+            
+            # build a data dictionary to store the data we extract and build about the patient
+            # update: data_dict never ended up being used, put data directly into master_dict
+            # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
+
+            # instantiate the variables used for the loading bar
+            num_patients = master_structure_info_dict["Global"]["Num patients"]
+            num_general_structs = master_structure_info_dict["Global"]["Num structures"]
+
+
+            important_info.add_text_line("important info will appear here1", live_display)
+            important_info.add_text_line("important info will appear here2", live_display)
             #rich_layout["main-right"].update(important_info_Text)
            
 
             patientUID_default = "Initializing"
             processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
             processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
-            
+
             processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=num_patients)
             processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=num_patients, visible=False)
 
@@ -231,7 +250,9 @@ def main():
 
                 patients_progress.stop_task(processing_patients_dose_task)
                 completed_progress.stop_task(processing_patients_dose_task_completed)
+                stopwatch.stop()
                 plotting_funcs.plot_geometries(dose_point_cloud)
+                stopwatch.start()
                 patients_progress.start_task(processing_patients_dose_task)
                 completed_progress.start_task(processing_patients_dose_task_completed)
 
@@ -242,7 +263,9 @@ def main():
 
                 patients_progress.stop_task(processing_patients_dose_task)
                 completed_progress.stop_task(processing_patients_dose_task_completed)
+                stopwatch.stop()
                 plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                stopwatch.start()
                 patients_progress.start_task(processing_patients_dose_task)
                 completed_progress.start_task(processing_patients_dose_task_completed)
 
@@ -664,11 +687,11 @@ def main():
         
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
-            sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = 1)
+            sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = num_patients)
             parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
-            completed_progress.update(sampling_points_task_indeterminate_completed, advance = 1, visible = True, refresh = True)
+            completed_progress.update(sampling_points_task_indeterminate_completed, advance = num_patients, visible = True, refresh = True)
             live_display.refresh()
 
             
@@ -815,11 +838,11 @@ def main():
 
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             
-            num_simulations = 11
+            num_simulations = 100
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')
-                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, progress_group_info_list, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
+                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
                 print('test')
             else: 
