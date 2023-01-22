@@ -159,7 +159,7 @@ class info_output:
         return Panel(self.text_important_Text, title="Important information", title_align='left')
 
     def add_text_line(self,text_str, live_display_obj):
-        self.text_important_Text.append("[{}]".format(self.line_num), style = 'blue')
+        self.text_important_Text.append("[{}]".format(self.line_num), style = 'cyan')
         self.text_important_Text.append("[{}]".format(datetime.now().strftime("%H:%M:%S")), style = 'magenta')
         self.text_important_Text.append("> "+text_str+"\n")
         self.line_num = self.line_num + 1
@@ -168,7 +168,7 @@ class info_output:
 
 
 class Footer:
-    """Display header with clock."""
+    """Display footer with elapsed and calculation time."""
     def __init__(self,algo_global_start_time, stopwatch):
         self.algo_global_start_time = algo_global_start_time
         self.stopwatch = stopwatch
@@ -192,16 +192,16 @@ class Footer:
 
 def make_layout() -> Layout:
     """Define the layout."""
-    layout = Layout(name="root", size = 5)
+    layout = Layout(name="root")
 
     layout.split(
         Layout(name="header", minimum_size=3, size=3),
-        Layout(name="main", minimum_size=13),
+        Layout(name="main"),
         Layout(name="footer", minimum_size=3, size=3),
     )
     layout["main"].split_row(
-        Layout(name="main-left", minimum_size=60),
-        Layout(name="main-right", minimum_size=60),
+        Layout(name="main-left"),
+        Layout(name="main-right"),
     )
     #layout["side"].split(Layout(name="box1"), Layout(name="box2"))
     return layout

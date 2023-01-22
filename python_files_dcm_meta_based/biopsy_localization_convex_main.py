@@ -92,7 +92,7 @@ def main():
     uncertainty_folder_name = 'Uncertainty data'
     uncertainty_file_name = "uncertainties_prepared_unfilled"
     uncertainty_file_extension = ".csv"
-    spinner_type = 'christmas'
+    spinner_type = 'line'
     
     
     cpu_count = os.cpu_count()
@@ -112,7 +112,7 @@ def main():
         layout_groups = (app_header,progress_group_info_list,important_info,app_footer)
         
                
-        with Live(rich_layout, refresh_per_second = 8) as live_display:
+        with Live(rich_layout, refresh_per_second = 8, screen = True) as live_display:
             rich_layout["header"].update(app_header)
             rich_layout["main-left"].update(progress_group)
             #rich_layout["box2"].update(Panel(make_syntax(), border_style="green"))
@@ -125,8 +125,11 @@ def main():
             data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
             uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
             dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
+            important_info.add_text_line("Reading dicom data from: "+ str(data_dir), live_display)
+            important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
 
             num_dicoms = len(dicom_paths_list)
+            important_info.add_text_line("Found "+str(num_dicoms)+" dicom files.", live_display)
             reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
             reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
             dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
@@ -147,12 +150,40 @@ def main():
             RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
             
             num_RTst_dcms_entries = len(RTst_dcms_dict)
+            num_RTdose_dcms_entries = len(RTdose_dcms_dict)
+            important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
+            important_info.add_text_line("Found "+str(num_RTdose_dcms_entries)+" unique patients with RT dose files.", live_display)
+
+            if num_RTst_dcms_entries != num_RTdose_dcms_entries:
+                live_display.stop()
+                stopwatch.stop()
+                exit_programme = ques_funcs.ask_ok('>Unequal number of structure files vs dose files, will encounter error later in the programme. Continue anyway?' )
+                stopwatch.start()
+                if exit_programme == True:
+                    sys.exit('>Programme exited.')
+                else:
+                    pass
+
+            if RTst_dcms_dict.keys() != RTdose_dcms_dict.keys():
+                live_display.stop()
+                stopwatch.stop()
+                exit_programme = ques_funcs.ask_ok('>Same number of structure files vs dose files but there is an incongruency between them (file pairs do not match patients), will encounter error later in the programme. Continue anyway?' )
+                stopwatch.start()
+                if exit_programme == True:
+                    sys.exit('>Programme exited.')
+                else:
+                    pass
+            important_info.add_text_line("Each patient contains a structure and dose file.", live_display)    
+            
+            
             building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
             building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
             master_structure_reference_dict, master_structure_info_dict, structs_referenced_list, dose_ref = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
             indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
             completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
+            important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
             live_display.refresh()
+
 
             # Now, we dont want to add the contour points to the structure list above,
             # because the contour data is already stored in a data tree, which will allow
@@ -174,8 +205,7 @@ def main():
             num_general_structs = master_structure_info_dict["Global"]["Num structures"]
 
 
-            important_info.add_text_line("important info will appear here1", live_display)
-            important_info.add_text_line("important info will appear here2", live_display)
+            #important_info.add_text_line("important info will appear here1", live_display)
             #rich_layout["main-right"].update(important_info_Text)
            
 
@@ -290,12 +320,12 @@ def main():
                 
                 structureID_default = "Initializing"
                 num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                processing_structures_task_main_description = "[blue]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
                 processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                         structureID = specific_structure["ROI"]
-                        processing_structures_task_main_description = "[blue]Processing structures [{},{}]...".format(patientUID,structureID)
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -660,7 +690,7 @@ def main():
                 
                 num_biopsies_per_patient = master_structure_info_dict["By patient"][patientUID][bx_structs]["Num structs"]
                 biopsyID_default = "Initializing"
-                processing_biopsies_main_description = "[blue]Preparing biopsy data for parallel processing [{},{}]...".format(patientUID,biopsyID_default)
+                processing_biopsies_main_description = "[cyan]Preparing biopsy data for parallel processing [{},{}]...".format(patientUID,biopsyID_default)
                 processing_biopsies_task = biopsies_progress.add_task(processing_biopsies_main_description, total=num_biopsies_per_patient)
 
                 for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_structs]):
@@ -755,12 +785,15 @@ def main():
 
 
             live_display.stop()
+            
             ## begin simulation section
             created_dir = False
             while created_dir == False:
                 live_display.console.print("[bold red]User input required:")
                 print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
+                stopwatch.stop()
                 uncertainty_dir_generate = ques_funcs.ask_ok('>Continue?')
+                stopwatch.start()
 
                 if uncertainty_dir_generate == True:
                     if os.path.isdir(uncertainty_dir) == True:
@@ -771,13 +804,17 @@ def main():
                         print('>Directory: ', uncertainty_dir, ' created.')
                         created_dir = True
                 else:
+                    stopwatch.stop()
                     exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
+                    stopwatch.start()
                     if exit_programme == True:
                         sys.exit('>Programme exited.')
                     else: 
                         pass
-
+            
+            stopwatch.stop()
             uncertainty_template_generate = ques_funcs.ask_ok('>Do you want to generate an uncertainty file template for this patient data repo?')
+            stopwatch.start()
             if uncertainty_template_generate == True:
                 # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
                 #today = date.today()
@@ -793,7 +830,9 @@ def main():
 
             uncertainty_file_ready = False
             while uncertainty_file_ready == False:
+                stopwatch.stop()
                 uncertainty_file_ready = ques_funcs.ask_ok('>Is the uncertainty file prepared/filled out?') 
+                stopwatch.start()
                 if uncertainty_file_ready == True:
                     print('>Please select the file with the dialog box')
                     root = tk.Tk() # these two lines are to get rid of errant tkinter window
@@ -806,7 +845,9 @@ def main():
                     print(pandas_read_uncertainties)
                 else:
                     print('>Please fill out the generated uncertainties file generated at ', uncertainties_file)
+                    stopwatch.stop()
                     ask_to_quit = ques_funcs.ask_ok('>Would you like to quit the programme instead?')
+                    stopwatch.start()
                     if ask_to_quit == True:
                         sys.exit(">You have quit the programme.")
                     else:
@@ -838,8 +879,10 @@ def main():
                 uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
                 master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
+            stopwatch.stop()
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
-            
+            stopwatch.start()
+
             num_simulations = 10
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:

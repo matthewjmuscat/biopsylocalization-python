@@ -25,6 +25,7 @@ dill = "*"
 pathos = "*"
 rich = "*"
 "stopwatch.py" = "*"
+textual = {extras = ["dev"], version = "*"}
 
 [dev-packages]
 ipykernel = "*"
