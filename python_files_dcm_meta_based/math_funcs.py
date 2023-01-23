@@ -56,3 +56,5 @@ def binomial_CI_estimator(probability_estimator, num_trials, num_successes):
     p_hat_CI_tuple = (p_hat_CI_lower,p_hat_CI_upper)
     return p_hat_CI_tuple
 
+
+def normal_

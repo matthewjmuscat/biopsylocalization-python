@@ -13,7 +13,6 @@ import math_funcs as mf
 import scipy
 
 
-
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
     ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
@@ -347,7 +346,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         live_display.refresh()
                     
 
-        
+        bx_structure_type = structs_referenced_list[0]
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -373,10 +372,47 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, visible = True)
         live_display.refresh()
 
+
+
+
+        bx_structure_type = structs_referenced_list[0]
+        computing_MLE_statistics_dose_task = patients_progress.add_task("[red]Computing dosimetric localization statistics (MLE) [{}]...".format("initializing"), total=num_patients)
+        computing_MLE_statistics_dose_task_complete = completed_progress.add_task("[green]Computing dosimetric localization statistics (MLE)", total=num_patients)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(computing_MLE_statistics_dose_task, description = "[red]Computing dosimetric localization statistics (MLE) [{}]...".format(patientUID))
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] 
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = np.asarray(dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_arr = np.mean(dosimetric_localization_dose_vals_by_bx_point_all_trials_arr,axis=1)
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_list = dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_arr.tolist()
+                specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_list
+        
         print('test1')
         print('test2')
 
         return master_structure_reference_dict
+
+
+def normal_distribution_MLE_parallel(parallel_pool, data_2d_list):
+    data_2d_arr = np.asarray(data_2d_list)
+    num_rows = data_2d_arr.shape[0] # number of bx sampled pts
+    args_list = [None]*num_rows
+    for row_index, data_row in enumerate(data_2d_arr):
+        args_list[row_index] = data_row # each row is a list of dose values, each row should have length equal to number of MC simulations and the number of rows should be equal to the number of sampled BX points
+
+    dosimetric_MLE_statistics_all_bx_pts_list = parallel_pool.map(normal_distribution_MLE,args_list)
+
+    return STD 
+
+
+def normal_distribution_MLE(data_1d_arr):
+    mean = np.mean(data_1d_arr)
+    
+
 
 
 def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr):
