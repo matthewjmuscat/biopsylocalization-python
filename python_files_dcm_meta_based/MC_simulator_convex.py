@@ -386,10 +386,20 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
                 dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] 
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = np.asarray(dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_arr = np.mean(dosimetric_localization_dose_vals_by_bx_point_all_trials_arr,axis=1)
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_list = dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_arr.tolist()
-                specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = dosimetric_localization_dose_vals_by_bx_point_all_trials_mean_list
+                dosimetric_MLE_statistics_all_bx_pts_list = normal_distribution_MLE_parallel(parallel_pool, dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
+                mu_se_var_all_bx_pts_list = [bx_point_stats[0] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
+                confidence_intervals_all_bx_pts_list = [bx_point_stats[1] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
+                MC_dose_stats_dict = {"Dose statistics by bx pt (mean,se,var)": mu_se_var_all_bx_pts_list, "Confidence intervals (95%) by bx pt": confidence_intervals_all_bx_pts_list}
+                specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = MC_dose_stats_dict
+
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
+            
+            biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, visible = False)
+            patients_progress.update(computing_MLE_statistics_dose_task, advance = 1)
+            completed_progress.update(computing_MLE_statistics_dose_task_complete, advance = 1)
+
+        patients_progress.update(computing_MLE_statistics_dose_task, visible = False)
+        completed_progress.update(computing_MLE_statistics_dose_task_complete, visible = True)    
         
         print('test1')
         print('test2')
@@ -402,15 +412,20 @@ def normal_distribution_MLE_parallel(parallel_pool, data_2d_list):
     num_rows = data_2d_arr.shape[0] # number of bx sampled pts
     args_list = [None]*num_rows
     for row_index, data_row in enumerate(data_2d_arr):
-        args_list[row_index] = data_row # each row is a list of dose values, each row should have length equal to number of MC simulations and the number of rows should be equal to the number of sampled BX points
+        args_list[row_index] = data_row # each row is a 1d array of dose values, each row should have length equal to number of MC simulations and the number of rows should be equal to the number of sampled BX points
 
-    dosimetric_MLE_statistics_all_bx_pts_list = parallel_pool.map(normal_distribution_MLE,args_list)
+    dosimetric_MLE_statistics_all_bx_pts_list = parallel_pool.map(normal_distribution_MLE,args_list) # each entry in the outer list corresponds to a bx point, each entry contains the following tuple: ((mu,se,var),(CI_lower,CI_upper))
 
-    return STD 
+    return dosimetric_MLE_statistics_all_bx_pts_list
 
 
 def normal_distribution_MLE(data_1d_arr):
-    mean = np.mean(data_1d_arr)
+    estimators_mean_se_var = mf.normal_mean_se_var_estimatation(data_1d_arr)
+    mu_estimator = estimators_mean_se_var[0]
+    se_estimator = estimators_mean_se_var[1]
+    mu_CI_estimation_tuple = mf.normal_CI_estimator(mu_estimator, se_estimator)
+    stats_and_CI_tuple = (estimators_mean_se_var,mu_CI_estimation_tuple)
+    return stats_and_CI_tuple
     
 
 

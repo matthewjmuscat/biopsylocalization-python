@@ -887,7 +887,7 @@ def main():
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             stopwatch.start()
 
-            num_simulations = 10
+            num_simulations = 1000
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')

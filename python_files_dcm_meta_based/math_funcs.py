@@ -57,4 +57,28 @@ def binomial_CI_estimator(probability_estimator, num_trials, num_successes):
     return p_hat_CI_tuple
 
 
-def normal_
+def normal_mean_se_var_estimatation(data_1d_arr):
+    mean_estimator = np.mean(data_1d_arr)
+    mu = mean_estimator
+    num_trials = data_1d_arr.shape[0]
+    n = num_trials
+
+    sum_terms_arr = (data_1d_arr - mean_estimator)**2
+    sum_terms_arr_summed = np.sum(sum_terms_arr)
+    mle_se = math.sqrt((1/n)*sum_terms_arr_summed)
+    mle_var = mle_se**2
+    mu_se_var_tuple = (mu,mle_se,mle_var)
+
+    return mu_se_var_tuple
+
+
+def normal_CI_estimator(mu_estimator, se_estimator):
+    mu_hat = mu_estimator
+    se_hat = se_estimator
+    z0975=1.96
+    mu_hat_CI_lower = mu_hat - z0975*se_hat
+    mu_hat_CI_upper = mu_hat + z0975*se_hat
+    mu_hat_CI_tuple = (mu_hat_CI_lower,mu_hat_CI_upper)
+    return mu_hat_CI_tuple
+
+
