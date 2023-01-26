@@ -93,7 +93,7 @@ def main():
     uncertainty_file_name = "uncertainties_prepared_unfilled"
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
-    
+    output_folder_name = 'Output data'
     
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -124,6 +124,7 @@ def main():
             # two levels up from this file
             data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
             uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
+            output_dir = data_dir.joinpath(output_folder_name)
             dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
             important_info.add_text_line("Reading dicom data from: "+ str(data_dir), live_display)
             important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
@@ -794,7 +795,7 @@ def main():
             created_dir = False
             while created_dir == False:
                 live_display.console.print("[bold red]User input required:")
-                print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will not be overwritten.')
+                print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will NOT be overwritten.')
                 stopwatch.stop()
                 uncertainty_dir_generate = ques_funcs.ask_ok('>Continue?')
                 stopwatch.start()
@@ -887,17 +888,78 @@ def main():
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             stopwatch.start()
 
-            num_simulations = 1000
+            num_simulations = 10
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')
                 master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
-                print('test')
+                #print('test')
             else: 
                 pass
 
-        print('>Programme has ended.')
+            live_display.stop()
+            live_display.console.print("[bold red]User input required:")
+            stopwatch.stop()
+            write_dose_to_file_ans = ques_funcs.ask_ok('>Simulation complete. Save dose output to file?')
+            stopwatch.start()
+
+            if write_dose_to_file_ans ==  True:
+                created_output_dir = False
+                while created_output_dir == False:
+                    
+                    print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
+                    stopwatch.stop()
+                    output_dir_generate = ques_funcs.ask_ok('>Continue?')
+                    stopwatch.start()
+
+                    if output_dir_generate == True:
+                        if os.path.isdir(output_dir) == True:
+                            print('>Directory already exists')
+                            created_output_dir = True
+                        else:
+                            os.mkdir(output_dir)
+                            print('>Directory: ', output_dir, ' created.')
+                            created_output_dir = True
+                    else:
+                        stopwatch.stop()
+                        exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
+                        stopwatch.start()
+                        if exit_programme == True:
+                            sys.exit('>Programme exited.')
+                        else: 
+                            pass
+
+                date_time_now = datetime.now()
+                date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
+                specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+
+                print('>Creating specific output directory.')
+                if os.path.isdir(specific_output_dir) == True:
+                    print('>Directory already exists.')
+                else:
+                    os.mkdir(specific_output_dir)
+                    print('>Directory: ', specific_output_dir, ' created.')
+
+                
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    bx_structs = structs_referenced_list[0]
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
+                        dose_output_csv_file_path = specific_output_dir.joinpath(dose_output_file_name)
+                        with open(dose_output_csv_file_path, 'w', newline='') as f:
+                            write = csv.writer(f)
+                            write.writerow(['Patient ID ->',patientUID])
+                            write.writerow(['BX ID ->',specific_bx_structure['ROI']])
+                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            write.writerow(['Row ->','Fixed bx pt'])
+                            write.writerow(['Col ->','Fixed MC trial'])
+                            write.writerows(specific_bx_structure['MC data: Dose vals for each sampled bx pt list'])
+            else:
+                pass
+            print('>Programme has ended.')
 
 def UID_generator(pydicom_obj):
     UID_def = f"{str(pydicom_obj[0x0010,0x0010].value)} ({str(pydicom_obj[0x0010,0x0020].value)})"
