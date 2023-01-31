@@ -60,7 +60,8 @@ from rich.layout import Layout
 from rich.console import Console
 import rich_preambles
 from stopwatch import Stopwatch
-
+import copy
+import math_funcs as mf
 
 def main():
     
@@ -534,7 +535,7 @@ def main():
 
             live_display.refresh()
 
-
+            print('test')
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 dose_ref_dict = pydicom_item[dose_ref]
@@ -788,6 +789,103 @@ def main():
             live_display.refresh()
 
 
+            patientUID_default = "Initializing"
+            processing_patient_rotating_bx_main_description = "Creating biopsy oriented coordinate system [{}]...".format(patientUID_default)
+            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_rotating_bx_main_description, total = num_patients)
+            processing_patient_rotating_bx_main_description_completed = "Creating biopsy oriented coordinate system"
+            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_rotating_bx_main_description_completed, total=num_patients, visible=False)
+
+            # rotating pointclouds to create bx oriented frame of reference
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                bx_structs = structs_referenced_list[0]
+
+                processing_patient_rotating_bx_main_description = "Creating biopsy oriented coordinate system [{}]...".format(patientUID)
+                patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_rotating_bx_main_description)
+                
+                num_biopsies_per_patient = master_structure_info_dict["By patient"][patientUID][bx_structs]["Num structs"]
+                biopsyID_default = "Initializing"
+                
+
+                for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_structs]):
+                    specific_bx_structure_roi = specific_structure["ROI"]
+
+                    bx_best_fit_line_of_reconstructed_centroids = specific_structure['Best fit line of centroid pts']
+                    vec_with_largest_z_val_index = bx_best_fit_line_of_reconstructed_centroids[:,2].argmax()
+                    vec_with_largest_z_val = bx_best_fit_line_of_reconstructed_centroids[vec_with_largest_z_val_index,:]
+                    base_sup_vec_bx_centroid_arr = vec_with_largest_z_val
+
+                    vec_with_smallest_z_val_index = bx_best_fit_line_of_reconstructed_centroids[:,2].argmin()
+                    vec_with_smallest_z_val = bx_best_fit_line_of_reconstructed_centroids[vec_with_smallest_z_val_index,:]
+                    apex_inf_vec_bx_centroid_arr = vec_with_smallest_z_val
+
+                    translation_vec_bx_coord_sys_origin = -apex_inf_vec_bx_centroid_arr
+                    apex_to_base_bx_best_fit_vec = base_sup_vec_bx_centroid_arr - apex_inf_vec_bx_centroid_arr
+
+                    reconstructed_biopsy_point_cloud = specific_structure["Reconstructed structure point cloud"]
+                    reconstructed_biopsy_arr = specific_structure["Reconstructed structure pts arr"]
+                    sampled_bx_points_pcd = specific_structure["Random uniformly sampled volume pts pcd"]
+                    axis_aligned_bounding_box = specific_structure["Bounding box for random uniformly sampled volume pts"]
+                    
+                    reconstructed_biopsy_bx_coord_sys_tr_arr = reconstructed_biopsy_arr + translation_vec_bx_coord_sys_origin
+                    reconstructed_biopsy_bx_coord_sys_tr_point_cloud = copy.copy(reconstructed_biopsy_point_cloud)
+                    reconstructed_biopsy_bx_coord_sys_tr_from_arr_point_cloud = point_containment_tools.create_point_cloud(reconstructed_biopsy_bx_coord_sys_tr_arr)
+                    sampled_bx_points_bx_coord_sys_tr_pcd = copy.copy(sampled_bx_points_pcd)
+                    
+                    reconstructed_biopsy_bx_coord_sys_tr_point_cloud.translate(translation_vec_bx_coord_sys_origin)
+                    sampled_bx_points_bx_coord_sys_tr_pcd.translate(translation_vec_bx_coord_sys_origin)
+
+                    patients_progress.stop_task(processing_patients_task)
+                    completed_progress.stop_task(processing_patients_completed_task)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_task)
+                    completed_progress.start_task(processing_patients_completed_task)
+
+                    z_axis_np_vec = np.array([0,0,1],dtype=float)
+
+                    z_rot_angle = mf.angle_between(z_axis_np_vec, apex_to_base_bx_best_fit_vec)
+                    xyz_rotation_arr = np.array([0,0,z_rot_angle], dtype=float)
+                    centroid_line_to_z_axis_rotation_matrix = o3d.geometry.get_rotation_matrix_from_xyz(xyz_rotation_arr)
+
+                    reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud = copy.copy(reconstructed_biopsy_bx_coord_sys_tr_point_cloud)
+                    sampled_bx_points_bx_coord_sys_tr_and_rot_pcd = copy.copy(sampled_bx_points_bx_coord_sys_tr_pcd)
+                    
+                    #reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud.rotate(centroid_line_to_z_axis_rotation_matrix, center=(0, 0, 0))
+                    #sampled_bx_points_bx_coord_sys_tr_and_rot_pcd.rotate(centroid_line_to_z_axis_rotation_matrix, center=(0, 0, 0))
+                    
+                    centroid_line_to_z_axis_rotation_matrix_other = mf.rotation_matrix_from_vectors(apex_to_base_bx_best_fit_vec, z_axis_np_vec)
+                    reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud.rotate(centroid_line_to_z_axis_rotation_matrix_other, center=(0, 0, 0))
+                    sampled_bx_points_bx_coord_sys_tr_and_rot_pcd.rotate(centroid_line_to_z_axis_rotation_matrix_other, center=(0, 0, 0))
+
+                    reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr = (centroid_line_to_z_axis_rotation_matrix_other @ reconstructed_biopsy_bx_coord_sys_tr_arr.T).T
+                    reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud = point_containment_tools.create_point_cloud(reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr)
+
+                    #coord_frame = o3d.geometry.create_mesh_coordinate_frame()
+                    patients_progress.stop_task(processing_patients_task)
+                    completed_progress.stop_task(processing_patients_completed_task)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                    plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)                    
+                    plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                    plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                    plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_from_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                    plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_task)
+                    completed_progress.start_task(processing_patients_completed_task)
+
+
+                    
+
+                patients_progress.update(processing_patients_task, advance = 1)
+                completed_progress.update(processing_patients_completed_task, advance = 1)
+
+            
+            patients_progress.update(processing_patients_task, visible = False)
+            completed_progress.update(processing_patients_completed_task, visible = True)
+
+
 
             live_display.stop()
             
@@ -894,18 +992,20 @@ def main():
                 print('>Beginning simulation')
                 master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
-                #print('test')
+                print('test')
             else: 
                 pass
 
             live_display.stop()
+            live_display.console.print("[bold green]Simulation complete.")
             live_display.console.print("[bold red]User input required:")
-            stopwatch.stop()
-            write_dose_to_file_ans = ques_funcs.ask_ok('>Simulation complete. Save dose output to file?')
-            stopwatch.start()
 
-            if write_dose_to_file_ans ==  True:
-                created_output_dir = False
+            stopwatch.stop()
+            write_containment_to_file_ans = ques_funcs.ask_ok('>Save containment output to file?')
+            stopwatch.start()
+            created_output_dir = False
+            specific_output_dir_exists = False
+            if write_containment_to_file_ans ==  True:
                 while created_output_dir == False:
                     
                     print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
@@ -938,9 +1038,82 @@ def main():
                 print('>Creating specific output directory.')
                 if os.path.isdir(specific_output_dir) == True:
                     print('>Directory already exists.')
+                    specific_output_dir_exists = True
                 else:
                     os.mkdir(specific_output_dir)
                     print('>Directory: ', specific_output_dir, ' created.')
+                    specific_output_dir_exists = True
+
+                
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    bx_structs = structs_referenced_list[0]
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
+                        dose_output_csv_file_path = specific_output_dir.joinpath(containment_output_file_name)
+                        with open(dose_output_csv_file_path, 'w', newline='') as f:
+                            write = csv.writer(f)
+                            write.writerow(['Patient ID ->',patientUID])
+                            write.writerow(['BX ID ->',specific_bx_structure['ROI']])
+                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            write.writerow(['Row ->','Fixed containment structure'])
+                            write.writerow(['Col ->','Fixed bx point'])
+                            for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+                                containment_structure_list = containment_structure_dict['Total successes (containment) list']
+                                containment_structure_ROI = containment_structure_key_tuple[0]
+                                containment_structure_list_with_cont_anat_ROI = [containment_structure_ROI]+containment_structure_list
+                                write.writerow(containment_structure_list_with_cont_anat_ROI)
+            else:
+                pass
+
+
+            stopwatch.stop()
+            write_dose_to_file_ans = ques_funcs.ask_ok('>Save dose output to file?')
+            stopwatch.start()
+
+            if write_dose_to_file_ans ==  True:
+                if created_output_dir == False:
+                    while created_output_dir == False:
+                        
+                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
+                        stopwatch.stop()
+                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
+                        stopwatch.start()
+
+                        if output_dir_generate == True:
+                            if os.path.isdir(output_dir) == True:
+                                print('>Directory already exists')
+                                created_output_dir = True
+                            else:
+                                os.mkdir(output_dir)
+                                print('>Directory: ', output_dir, ' created.')
+                                created_output_dir = True
+                        else:
+                            stopwatch.stop()
+                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
+                            stopwatch.start()
+                            if exit_programme == True:
+                                sys.exit('>Programme exited.')
+                            else: 
+                                pass
+                else:
+                    pass
+                if specific_output_dir_exists == False:
+                    date_time_now = datetime.now()
+                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
+                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+
+                    print('>Creating specific output directory.')
+                    if os.path.isdir(specific_output_dir) == True:
+                        print('>Directory already exists.')
+                        specific_output_dir_exists = True
+                    else:
+                        os.mkdir(specific_output_dir)
+                        print('>Directory: ', specific_output_dir, ' created.')
+                        specific_output_dir_exists = True
+                else:
+                    pass
 
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():

@@ -282,6 +282,17 @@ def plot_geometries(*geometries, label='Unknown'):
     for geom_item in geometries:
         geom_list.append(geom_item)
     o3d.visualization.draw_geometries(geom_list)
+
+def plot_geometries_with_axes(*geometries, label='Unknown'):
+    viewer = o3d.visualization.Visualizer()
+    viewer.create_window()
+    for geometry in geometries:
+        viewer.add_geometry(geometry)
+    opt = viewer.get_render_option()
+    opt.show_coordinate_frame = True
+    opt.background_color = np.asarray([0.5, 0.5, 0.5])
+    viewer.run()
+    viewer.destroy_window()
     
 
 def plot_tri_immediately_efficient(points, line_set, *other_geometries, label='Unknown'):
