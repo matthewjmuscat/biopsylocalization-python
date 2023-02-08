@@ -104,7 +104,7 @@ def biopsy_points_creater_ring(list_centroid_line_vector,list_origin_to_first_ce
     plt.show()
     #print('done!')
 
-def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_first_centroid_vector,num_centroids,centroid_separation_distance,plot_stuff):
+def biopsy_points_creater_by_transport(list_centroid_line_vector, list_origin_to_first_centroid_vector, num_centroids, centroid_separation_distance, biopsy_radius_input, plot_stuff):
     """
     A function that creates points in a cylinder surrounding the centroid line, 
     note that the centroid vector that describes the line must point from the 
@@ -173,13 +173,14 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector,list_origin_to_
     rotation_matrix = np.vstack([rotation_matrix,rotation_matrix_z])
 
     # transport and create more rings, first make an appropriately sized array for all points that are values of the first ring
+    radius = biopsy_radius_input
     for k in range(0,num_centroids):
         for j in range(0,num_ring_points):
             eta = 0+j*2*np.pi/num_ring_points # out of plane scatter angle of the outgoing photon relative to the incoming photon vector
 
-            centroid_vec_frame_vec_to_circ_x = np.array([np.sin(chi)*np.cos(eta)])
-            centroid_vec_frame_vec_to_circ_y = np.array([np.sin(chi)*np.sin(eta)])
-            centroid_vec_frame_vec_to_circ_z = np.array([np.cos(chi)])
+            centroid_vec_frame_vec_to_circ_x = np.array([radius*np.sin(chi)*np.cos(eta)])
+            centroid_vec_frame_vec_to_circ_y = np.array([radius*np.sin(chi)*np.sin(eta)])
+            centroid_vec_frame_vec_to_circ_z = np.array([radius*np.cos(chi)])
             centroid_vec_frame_vec_to_circ = centroid_vec_frame_vec_to_circ_x
             centroid_vec_frame_vec_to_circ = np.vstack([centroid_vec_frame_vec_to_circ,centroid_vec_frame_vec_to_circ_y])
             centroid_vec_frame_vec_to_circ = np.vstack([centroid_vec_frame_vec_to_circ,centroid_vec_frame_vec_to_circ_z])

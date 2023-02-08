@@ -327,8 +327,9 @@ def plot_tri_immediately_efficient_multilineset(structure_points_arr, test_point
 def point_cloud_with_order_labels(points):
     pointcloud = o3d.geometry.PointCloud()
     pointcloud.points = o3d.utility.Vector3dVector(points)
-    gui.Application.instance.initialize()
-    window = gui.Application.instance.create_window("Mesh-Viewer", 1024, 750)
+    gui_instance = gui.Application.instance
+    gui_instance.initialize()
+    window = gui_instance.create_window("Mesh-Viewer", 1024, 750)
     scene = gui.SceneWidget()
     scene.scene = rendering.Open3DScene(window.renderer)
     window.add_child(scene)
@@ -349,7 +350,11 @@ def point_cloud_with_order_labels(points):
         zslice_prev = zslice
 
     
-    gui.Application.instance.run()  # Run until user closes window
+    gui_instance.run()  # Run until user closes window
+    gui_instance.quit()
+    window.close()
+    del window
+    del gui_instance
     
 
 
@@ -464,3 +469,5 @@ def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lo
         point_cloud.paint_uniform_color(pcd_color)
 
     return point_cloud
+
+

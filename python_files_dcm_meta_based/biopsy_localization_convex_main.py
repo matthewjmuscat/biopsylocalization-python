@@ -95,7 +95,10 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
-    
+    biopsy_radius = 0.6
+    num_sample_pts_per_bx_input = 1000
+    num_MC_simulations_input = 100
+
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
 
@@ -449,12 +452,13 @@ def main():
                         # plot raw points ?
                         #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
 
+                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
                         # plot points with order labels of interpolated intraslice ?
                         #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
 
                         # plot points with order labels of raw data ?
                         #if test_ind > 1:
-                        #    plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
                         #test_ind = test_ind + 1
 
                         
@@ -462,7 +466,9 @@ def main():
                         # plot fully interpolated points of z data ?
                         #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
                         #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
 
                         # plot two point clouds side by side ? 
                         #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
@@ -492,14 +498,14 @@ def main():
 
                             list_travel_vec = np.squeeze(travel_vec).tolist()
                             list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
-                            drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec),False)
+                            drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec), biopsy_radius, False)
                             drawn_biopsy_array = drawn_biopsy_array_transpose.T
                             reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
                             reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
                             reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
                             reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
                             #plot reconstructions?
-                            #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud)
+                            #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud, threeDdata_point_cloud)
                             #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
 
 
@@ -675,7 +681,7 @@ def main():
             #st = time.time()
             args_list = []
             num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-            num_sample_pts_per_bx = 100
+            num_sample_pts_per_bx = num_sample_pts_per_bx_input
             master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
 
             patientUID_default = "Initializing"
@@ -986,7 +992,7 @@ def main():
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             stopwatch.start()
 
-            num_simulations = 10
+            num_simulations = num_MC_simulations_input
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')
