@@ -1141,6 +1141,8 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                        bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
                         dose_output_csv_file_path = specific_output_dir.joinpath(dose_output_file_name)
                         with open(dose_output_csv_file_path, 'w', newline='') as f:
@@ -1151,7 +1153,10 @@ def main():
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed bx pt'])
                             write.writerow(['Col ->','Fixed MC trial'])
-                            write.writerows(specific_bx_structure['MC data: Dose vals for each sampled bx pt list'])
+                            for pt_index, dose_vals_row in enumerate(specific_bx_structure['MC data: Dose vals for each sampled bx pt list']):
+                                dose_vals_row_with_point = dose_vals_row.copy()
+                                dose_vals_row_with_point.insert(0,bx_points_bx_coords_sys_arr_list[pt_index])
+                                write.writerow(dose_vals_row_with_point)
             else:
                 pass
             print('>Programme has ended.')
