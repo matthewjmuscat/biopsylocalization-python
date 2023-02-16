@@ -363,7 +363,10 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
 
                         total_successes_in_voxel = sum(total_success_in_voxel_list)
                         total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_simulations
-                        arithmetic_mean_binomial_estimators_in_voxel = statistics.mean(binomial_estimator_in_voxel_list)
+                        if num_sample_pts_in_voxel < 1:
+                            arithmetic_mean_binomial_estimators_in_voxel = 'No data'
+                        else:
+                            arithmetic_mean_binomial_estimators_in_voxel = statistics.mean(binomial_estimator_in_voxel_list)
                         if num_sample_pts_in_voxel <= 1:
                             std_dev_binomial_estimators_in_voxel = 0
                         else:
@@ -513,8 +516,108 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
             completed_progress.update(computing_MLE_statistics_dose_task_complete, advance = 1)
 
         patients_progress.update(computing_MLE_statistics_dose_task, visible = False)
-        completed_progress.update(computing_MLE_statistics_dose_task_complete, visible = True)    
-        
+        completed_progress.update(computing_MLE_statistics_dose_task_complete, visible = True)
+
+
+
+        # voxelize dose results
+        live_display.stop()
+        biopsy_voxelize_dose_task = patients_progress.add_task("[red]Voxelizing dose results [{}]...".format("initializing"), total=num_patients)
+        biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
+            bx_structure_type = structs_referenced_list[0]           
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+            biopsy_voxelize_each_bx_structure_dose_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                specific_bx_dose_results_list = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]['MC data: Dose vals for each sampled bx pt list'] 
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
+                
+                randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
+                biopsy_cyl_z_length = specific_bx_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                num_z_voxels = float(math.floor(float(biopsy_cyl_z_length/biopsy_z_voxel_length)))
+                constant_voxel_biopsy_cyl_z_length = num_z_voxels*biopsy_z_voxel_length
+                biopsy_z_length_difference = biopsy_cyl_z_length - constant_voxel_biopsy_cyl_z_length
+                extra_length_for_biopsy_end_cap_voxels = biopsy_z_length_difference/2
+                
+                voxel_z_begin = 0.
+                voxelized_biopsy_dose_results_list = [None]*int(num_z_voxels)
+                voxel_dose_dict_empty = {"Voxel z begin": None, "Voxel z end": None, "Indices from all sample pts that are within voxel arr": None, "Num sample pts in voxel": None, "Sample pts in voxel arr (bx coord sys)": None, "All dose vals in voxel list": None, "Total num MC trials in voxel": None, "Arithmetic mean of dose in voxel": None, "Std dev of dose in voxel": None}
+                for voxel_index in range(int(num_z_voxels)):
+                    if voxel_index == 0 or voxel_index == range(int(num_z_voxels))[-1]:
+                        voxel_z_end = voxel_z_begin + biopsy_z_voxel_length + extra_length_for_biopsy_end_cap_voxels
+                    else:
+                        voxel_z_end = voxel_z_begin + biopsy_z_voxel_length
+                        
+                    # find indices of the points in the biopsy that fall between the voxel bounds
+                    sample_pts_indices_in_voxel_arr = np.asarray(np.logical_and(randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] >= voxel_z_begin , randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] <= voxel_z_end)).nonzero()
+                    num_sample_pts_in_voxel = sample_pts_indices_in_voxel_arr[0].shape[0]
+                    samples_pts_in_voxel_arr = np.take(randomly_sampled_bx_pts_bx_coord_sys_arr, sample_pts_indices_in_voxel_arr, axis=0)[0]
+                    dose_vals_in_voxel_by_sampled_pt_index_arr = np.take(specific_bx_dose_results_list, sample_pts_indices_in_voxel_arr, axis = 0)[0]
+                    dose_vals_in_voxel_list = dose_vals_in_voxel_by_sampled_pt_index_arr.flatten(order='C').tolist()
+                    
+                    total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_simulations
+                    if total_num_MC_trials_in_voxel < 1:
+                        arithmetic_mean_dose_in_voxel = 'No data'
+                    else:
+                        arithmetic_mean_dose_in_voxel = statistics.mean(dose_vals_in_voxel_list)
+                    if total_num_MC_trials_in_voxel <= 1:
+                        std_dev_dose_in_voxel = 0
+                    else:
+                        std_dev_dose_in_voxel = statistics.stdev(dose_vals_in_voxel_list)
+
+                    voxel_dose_dict = voxel_dose_dict_empty.copy()
+                    voxel_dose_dict["Voxel z begin"] = voxel_z_begin
+                    voxel_dose_dict["Voxel z end"] = voxel_z_end
+                    voxel_dose_dict["Indices from all sample pts that are within voxel arr"] = sample_pts_indices_in_voxel_arr
+                    voxel_dose_dict["Num sample pts in voxel"] = num_sample_pts_in_voxel
+                    voxel_dose_dict["Sample pts in voxel arr (bx coord sys)"] = samples_pts_in_voxel_arr
+                    voxel_dose_dict["Total num MC trials in voxel"] = total_num_MC_trials_in_voxel
+                    voxel_dose_dict["All dose vals in voxel list"] = dose_vals_in_voxel_list
+                    voxel_dose_dict["Arithmetic mean of dose in voxel"] = arithmetic_mean_dose_in_voxel
+                    voxel_dose_dict["Std dev of dose in voxel"] = std_dev_dose_in_voxel
+                    
+                    voxelized_biopsy_dose_results_list[voxel_index] = voxel_dose_dict
+
+                    voxel_z_begin = voxel_z_end
+                
+                # reorganize this data in a better way (didnt want to delete/change above code), but better to have a dictionary of lists rather than a list of dictionaries
+                voxel_dose_dict_of_lists = voxel_dose_dict_empty.copy()
+                #voxel_dict_of_lists = dict.fromkeys(voxel_dict_of_lists,[])
+                for key,value in voxel_dose_dict_of_lists.items():
+                    voxel_dose_dict_of_lists[key] = []
+                voxel_dose_dict_of_lists["Voxel z range"] = []
+                for voxel_index in range(int(num_z_voxels)):
+                    voxel_dose_dict = voxelized_biopsy_dose_results_list[voxel_index]
+                    voxel_dose_dict_of_lists["Voxel z begin"].append(voxel_dose_dict["Voxel z begin"])
+                    voxel_dose_dict_of_lists["Voxel z end"].append(voxel_dose_dict["Voxel z end"])
+                    voxel_dose_dict_of_lists["Voxel z range"].append([voxel_dose_dict["Voxel z begin"],voxel_dose_dict["Voxel z end"]])
+                    voxel_dose_dict_of_lists["Indices from all sample pts that are within voxel arr"].append(voxel_dose_dict["Indices from all sample pts that are within voxel arr"])
+                    voxel_dose_dict_of_lists["Num sample pts in voxel"].append(voxel_dose_dict["Num sample pts in voxel"])
+                    voxel_dose_dict_of_lists["Sample pts in voxel arr (bx coord sys)"].append(voxel_dose_dict["Sample pts in voxel arr (bx coord sys)"])
+                    voxel_dose_dict_of_lists["Total num MC trials in voxel"].append(voxel_dose_dict["Total num MC trials in voxel"])
+                    voxel_dose_dict_of_lists["All dose vals in voxel list"].append(voxel_dose_dict["All dose vals in voxel list"])
+                    voxel_dose_dict_of_lists["Arithmetic mean of dose in voxel"].append(voxel_dose_dict["Arithmetic mean of dose in voxel"])
+                    voxel_dose_dict_of_lists["Std dev of dose in voxel"].append(voxel_dose_dict["Std dev of dose in voxel"])
+                    
+                voxel_dose_dict_of_lists["Num voxels"] = int(num_z_voxels)
+                voxelized_biopsy_dose_results_dict = voxel_dose_dict_of_lists
+                
+                specific_bx_structure["MC data: voxelized dose results list"] = voxelized_biopsy_dose_results_list
+                specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"] = voxelized_biopsy_dose_results_dict
+                 
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, advance = 1)
+            biopsies_progress.remove_task(biopsy_voxelize_each_bx_structure_dose_task)
+            patients_progress.update(biopsy_voxelize_dose_task, advance = 1)
+            completed_progress.update(biopsy_voxelize_dose_task_complete, advance = 1)
+        patients_progress.update(biopsy_voxelize_dose_task, visible = False)
+        completed_progress.update(biopsy_voxelize_dose_task_complete,visible = True)
+        live_display.refresh()
         
 
         return master_structure_reference_dict
