@@ -95,9 +95,9 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
-    biopsy_radius = 0.1
-    num_sample_pts_per_bx_input = 100
-    num_MC_simulations_input = 10
+    biopsy_radius = 0.6
+    num_sample_pts_per_bx_input = 1000
+    num_MC_simulations_input = 100
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
 
     cpu_count = os.cpu_count()
@@ -1014,7 +1014,7 @@ def main():
                 print('>Beginning simulation')
                 master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
-                print('test')
+                #print('test')
             else: 
                 pass
 
@@ -1089,6 +1089,44 @@ def main():
                                 containment_structure_ROI = containment_structure_key_tuple[0]
                                 containment_structure_list_with_cont_anat_ROI = [containment_structure_ROI]+containment_structure_list
                                 write.writerow(containment_structure_list_with_cont_anat_ROI)
+
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    bx_structs = structs_referenced_list[0]
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
+                        dose_output_csv_file_path = specific_output_dir.joinpath(containment_output_file_name)
+                        with open(dose_output_csv_file_path, 'w', newline='') as f:
+                            write = csv.writer(f)
+                            write.writerow(['Patient ID ->',patientUID])
+                            write.writerow(['BX ID ->',specific_bx_structure['ROI']])
+                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            write.writerow(['Row ->','Fixed containment structure'])
+                            write.writerow(['Col ->','Fixed voxel'])
+                                                        
+                            for containment_structure_key_tuple, voxelized_containment_structure_dict in specific_bx_structure["MC data: voxelized containment results dict (dict of lists)"].items():
+                                containment_structure_ROI = containment_structure_key_tuple[0]
+                                num_voxels = voxelized_containment_structure_dict["Num voxels"]
+                                voxel_index_row = list(range(num_voxels))
+                                voxel_index_row.insert(0,'Voxel index')
+                                biopsy_z_voxel_range_row = voxelized_containment_structure_dict["Voxel z range"]
+                                biopsy_z_voxel_range_row.insert(0,'Voxel z range (mm)')
+                                num_sample_pts_in_voxel_row = voxelized_containment_structure_dict["Num sample pts in voxel"]
+                                num_sample_pts_in_voxel_row.insert(0, 'Num sample pts in vxl')
+                                arth_mean_binomial_estimator_row = voxelized_containment_structure_dict["Arithmetic mean of binomial estimators in voxel"]
+                                arth_mean_binomial_estimator_row.insert(0, 'Arth mean (binomial estimator)')
+                                std_dev_binomial_estimator_row = voxelized_containment_structure_dict["Std dev of binomial estimators in voxel"]
+                                std_dev_binomial_estimator_row.insert(0, 'Std dev (binomial estimator)')
+
+                                write.writerow([containment_structure_ROI])
+                                write.writerow(voxel_index_row)
+                                write.writerow(biopsy_z_voxel_range_row)
+                                write.writerow(num_sample_pts_in_voxel_row)
+                                write.writerow(arth_mean_binomial_estimator_row)
+                                write.writerow(std_dev_binomial_estimator_row)
+                                write.writerow([''])
+
             else:
                 pass
 
@@ -1187,7 +1225,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 

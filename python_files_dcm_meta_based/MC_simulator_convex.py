@@ -12,6 +12,7 @@ import sys
 import math_funcs as mf
 import scipy
 import math
+import statistics
 
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
@@ -328,6 +329,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
                 
                 voxelized_containment_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                voxelized_containment_results_for_fixed_bx_dict_alt = structure_organized_for_bx_data_blank_dict.copy()
                 randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
                 biopsy_cyl_z_length = specific_bx_structure["Reconstructed biopsy cylinder length (from contour data)"]
                 #rounded_down_biopsy_cyl_z_length = float(math.floor(biopsy_cyl_z_length))
@@ -344,7 +346,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                     
                     voxel_z_begin = 0.
                     voxelized_biopsy_containment_results_list = [None]*int(num_z_voxels)
-                    voxel_dict_empty = {"Voxel z begin": None, "Voxel z end": None, "Indices from all sample pts that are within voxel arr": None, "Num sample pts in voxel": None, "Sample pts in voxel arr (bx coord sys)": None, "Total successes in voxel list": None, "Binomial estimators in voxel list": None, "Conf interval in voxel list": None}
+                    voxel_dict_empty = {"Voxel z begin": None, "Voxel z end": None, "Indices from all sample pts that are within voxel arr": None, "Num sample pts in voxel": None, "Sample pts in voxel arr (bx coord sys)": None, "Total successes in voxel list": None, "Total successes in voxel": None, "Total num MC trials in voxel": None, "Binomial estimators in voxel list": None, "Arithmetic mean of binomial estimators in voxel": None, "Std dev of binomial estimators in voxel": None, "Conf interval in voxel list": None}
                     for voxel_index in range(int(num_z_voxels)):
                         if voxel_index == 0 or voxel_index == range(int(num_z_voxels))[-1]:
                             voxel_z_end = voxel_z_begin + biopsy_z_voxel_length + extra_length_for_biopsy_end_cap_voxels
@@ -359,6 +361,14 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                         total_success_in_voxel_list = np.take(total_success_list, sample_pts_indices_in_voxel_arr)[0].tolist()
                         conf_interval_in_voxel_list = np.take(conf_interval_list, sample_pts_indices_in_voxel_arr, axis = 0)[0].tolist()
 
+                        total_successes_in_voxel = sum(total_success_in_voxel_list)
+                        total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_simulations
+                        arithmetic_mean_binomial_estimators_in_voxel = statistics.mean(binomial_estimator_in_voxel_list)
+                        if num_sample_pts_in_voxel <= 1:
+                            std_dev_binomial_estimators_in_voxel = 0
+                        else:
+                            std_dev_binomial_estimators_in_voxel = statistics.stdev(binomial_estimator_in_voxel_list)
+
                         voxel_dict = voxel_dict_empty.copy()
                         voxel_dict["Voxel z begin"] = voxel_z_begin
                         voxel_dict["Voxel z end"] = voxel_z_end
@@ -366,7 +376,11 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                         voxel_dict["Num sample pts in voxel"] = num_sample_pts_in_voxel
                         voxel_dict["Sample pts in voxel arr (bx coord sys)"] = samples_pts_in_voxel_arr
                         voxel_dict["Total successes in voxel list"] = total_success_in_voxel_list
+                        voxel_dict["Total successes in voxel"] = total_successes_in_voxel
+                        voxel_dict["Total num MC trials in voxel"] = total_num_MC_trials_in_voxel
                         voxel_dict["Binomial estimators in voxel list"] = binomial_estimator_in_voxel_list
+                        voxel_dict["Arithmetic mean of binomial estimators in voxel"] = arithmetic_mean_binomial_estimators_in_voxel
+                        voxel_dict["Std dev of binomial estimators in voxel"] = std_dev_binomial_estimators_in_voxel
                         voxel_dict["Conf interval in voxel list"] = conf_interval_in_voxel_list
 
                         voxelized_biopsy_containment_results_list[voxel_index] = voxel_dict
@@ -374,8 +388,34 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                         voxel_z_begin = voxel_z_end
                     
                     voxelized_containment_results_for_fixed_bx_dict[structureID] = voxelized_biopsy_containment_results_list
-                specific_bx_structure["MC data: voxelized containment results dict"] = voxelized_containment_results_for_fixed_bx_dict
+                    
+                    # reorganize this data in a better way (didnt want to delete/change above code), but better to have a dictionary of lists rather than a list of dictionaries
+                    voxel_dict_of_lists = voxel_dict_empty.copy()
+                    #voxel_dict_of_lists = dict.fromkeys(voxel_dict_of_lists,[])
+                    for key,value in voxel_dict_of_lists.items():
+                        voxel_dict_of_lists[key] = []
+                    voxel_dict_of_lists["Voxel z range"] = []
+                    for voxel_index in range(int(num_z_voxels)):
+                        voxel_dict = voxelized_biopsy_containment_results_list[voxel_index]
+                        voxel_dict_of_lists["Voxel z begin"].append(voxel_dict["Voxel z begin"])
+                        voxel_dict_of_lists["Voxel z end"].append(voxel_dict["Voxel z end"])
+                        voxel_dict_of_lists["Voxel z range"].append([voxel_dict["Voxel z begin"],voxel_dict["Voxel z end"]])
+                        voxel_dict_of_lists["Indices from all sample pts that are within voxel arr"].append(voxel_dict["Indices from all sample pts that are within voxel arr"])
+                        voxel_dict_of_lists["Num sample pts in voxel"].append(voxel_dict["Num sample pts in voxel"])
+                        voxel_dict_of_lists["Sample pts in voxel arr (bx coord sys)"].append(voxel_dict["Sample pts in voxel arr (bx coord sys)"])
+                        voxel_dict_of_lists["Total successes in voxel list"].append(voxel_dict["Total successes in voxel list"])
+                        voxel_dict_of_lists["Total successes in voxel"].append(voxel_dict["Total successes in voxel"])
+                        voxel_dict_of_lists["Total num MC trials in voxel"].append(voxel_dict["Total num MC trials in voxel"])
+                        voxel_dict_of_lists["Binomial estimators in voxel list"].append(voxel_dict["Binomial estimators in voxel list"])
+                        voxel_dict_of_lists["Arithmetic mean of binomial estimators in voxel"].append(voxel_dict["Arithmetic mean of binomial estimators in voxel"])
+                        voxel_dict_of_lists["Std dev of binomial estimators in voxel"].append(voxel_dict["Std dev of binomial estimators in voxel"])
+                        voxel_dict_of_lists["Conf interval in voxel list"].append(voxel_dict["Conf interval in voxel list"])
+                        
+                    voxel_dict_of_lists["Num voxels"] = int(num_z_voxels)
+                    voxelized_containment_results_for_fixed_bx_dict_alt[structureID] = voxel_dict_of_lists
 
+                specific_bx_structure["MC data: voxelized containment results dict"] = voxelized_containment_results_for_fixed_bx_dict
+                specific_bx_structure["MC data: voxelized containment results dict (dict of lists)"] = voxelized_containment_results_for_fixed_bx_dict_alt
                 biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(biopsy_voxelize_each_bx_structure_containment_task)
             patients_progress.update(biopsy_voxelize_containment_task, advance = 1)
@@ -475,8 +515,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         patients_progress.update(computing_MLE_statistics_dose_task, visible = False)
         completed_progress.update(computing_MLE_statistics_dose_task_complete, visible = True)    
         
-        print('test1')
-        print('test2')
+        
 
         return master_structure_reference_dict
 
