@@ -11,6 +11,7 @@ import time
 import sys
 import math_funcs as mf
 import scipy
+import math
 
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
@@ -63,7 +64,7 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
-def simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, spinner_type):
+def simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
@@ -308,7 +309,80 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         completed_progress.update(calc_MC_stat_biopsy_containment_task_complete,visible = True)
         live_display.refresh()
 
+        
+        # voxelize containment results
+        biopsy_voxelize_containment_task = patients_progress.add_task("[red]Voxelizing containment results [{}]...".format("initializing"), total=num_patients)
+        biopsy_voxelize_containment_task_complete = completed_progress.add_task("[green]Voxelizing containment results", total=num_patients)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing containment results [{}]...".format(patientUID))
+            bx_structure_type = structs_referenced_list[0]           
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
+            biopsy_voxelize_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: compiled sim results"] 
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
+                
+                voxelized_containment_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
+                biopsy_cyl_z_length = specific_bx_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                #rounded_down_biopsy_cyl_z_length = float(math.floor(biopsy_cyl_z_length))
+                num_z_voxels = float(math.floor(float(biopsy_cyl_z_length/biopsy_z_voxel_length)))
+                constant_voxel_biopsy_cyl_z_length = num_z_voxels*biopsy_z_voxel_length
+                biopsy_z_length_difference = biopsy_cyl_z_length - constant_voxel_biopsy_cyl_z_length
+                extra_length_for_biopsy_end_cap_voxels = biopsy_z_length_difference/2
+                
+
+                for structureID,structure_specific_results_dict in specific_bx_results_dict.items():
+                    binomial_estimator_list = structure_specific_results_dict["Binomial estimator list"]
+                    total_success_list = structure_specific_results_dict["Total successes (containment) list"]
+                    conf_interval_list = structure_specific_results_dict["Confidence interval 95 (containment) list"]
+                    
+                    voxel_z_begin = 0.
+                    voxelized_biopsy_containment_results_list = [None]*int(num_z_voxels)
+                    voxel_dict_empty = {"Voxel z begin": None, "Voxel z end": None, "Indices from all sample pts that are within voxel arr": None, "Num sample pts in voxel": None, "Sample pts in voxel arr (bx coord sys)": None, "Total successes in voxel list": None, "Binomial estimators in voxel list": None, "Conf interval in voxel list": None}
+                    for voxel_index in range(int(num_z_voxels)):
+                        if voxel_index == 0 or voxel_index == range(int(num_z_voxels))[-1]:
+                            voxel_z_end = voxel_z_begin + biopsy_z_voxel_length + extra_length_for_biopsy_end_cap_voxels
+                        else:
+                            voxel_z_end = voxel_z_begin + biopsy_z_voxel_length
+                            
+                        # find indices of the points in the biopsy that fall between the voxel bounds
+                        sample_pts_indices_in_voxel_arr = np.asarray(np.logical_and(randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] >= voxel_z_begin , randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] <= voxel_z_end)).nonzero()
+                        num_sample_pts_in_voxel = sample_pts_indices_in_voxel_arr[0].shape[0]
+                        samples_pts_in_voxel_arr = np.take(randomly_sampled_bx_pts_bx_coord_sys_arr, sample_pts_indices_in_voxel_arr, axis=0)[0]
+                        binomial_estimator_in_voxel_list = np.take(binomial_estimator_list, sample_pts_indices_in_voxel_arr)[0].tolist()
+                        total_success_in_voxel_list = np.take(total_success_list, sample_pts_indices_in_voxel_arr)[0].tolist()
+                        conf_interval_in_voxel_list = np.take(conf_interval_list, sample_pts_indices_in_voxel_arr, axis = 0)[0].tolist()
+
+                        voxel_dict = voxel_dict_empty.copy()
+                        voxel_dict["Voxel z begin"] = voxel_z_begin
+                        voxel_dict["Voxel z end"] = voxel_z_end
+                        voxel_dict["Indices from all sample pts that are within voxel arr"] = sample_pts_indices_in_voxel_arr
+                        voxel_dict["Num sample pts in voxel"] = num_sample_pts_in_voxel
+                        voxel_dict["Sample pts in voxel arr (bx coord sys)"] = samples_pts_in_voxel_arr
+                        voxel_dict["Total successes in voxel list"] = total_success_in_voxel_list
+                        voxel_dict["Binomial estimators in voxel list"] = binomial_estimator_in_voxel_list
+                        voxel_dict["Conf interval in voxel list"] = conf_interval_in_voxel_list
+
+                        voxelized_biopsy_containment_results_list[voxel_index] = voxel_dict
+
+                        voxel_z_begin = voxel_z_end
+                    
+                    voxelized_containment_results_for_fixed_bx_dict[structureID] = voxelized_biopsy_containment_results_list
+                specific_bx_structure["MC data: voxelized containment results dict"] = voxelized_containment_results_for_fixed_bx_dict
+
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, advance = 1)
+            biopsies_progress.remove_task(biopsy_voxelize_each_bx_structure_containment_task)
+            patients_progress.update(biopsy_voxelize_containment_task, advance = 1)
+            completed_progress.update(biopsy_voxelize_containment_task_complete, advance = 1)
+        patients_progress.update(biopsy_voxelize_containment_task, visible = False)
+        completed_progress.update(biopsy_voxelize_containment_task_complete,visible = True)
+        live_display.refresh()
 
         
         calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Calculating NN dosimetric localization [{}]...".format("initializing"), total=num_patients)
