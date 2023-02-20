@@ -96,8 +96,8 @@ def main():
     spinner_type = 'line'
     output_folder_name = 'Output data'
     biopsy_radius = 0.6
-    num_sample_pts_per_bx_input = 10
-    num_MC_simulations_input = 9
+    num_sample_pts_per_bx_input = 1000
+    num_MC_simulations_input = 10
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
 
     cpu_count = os.cpu_count()

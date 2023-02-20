@@ -277,7 +277,7 @@ def plot_point_clouds(*points_arr, label='Unknown'):
         geometry_list.append(point_cloud)
     o3d.visualization.draw_geometries(geometry_list)
 
-def plot_geometries(*geometries, label='Unknown'):
+def plot_geometries(*geometries, label='Unknown', lookat_inp=None, up_inp=None, front_inp=None, zoom_inp=None):
     geom_list = []
     for geom_item in geometries:
         geom_list.append(geom_item)

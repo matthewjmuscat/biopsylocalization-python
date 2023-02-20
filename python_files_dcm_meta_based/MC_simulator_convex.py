@@ -13,6 +13,7 @@ import math_funcs as mf
 import scipy
 import math
 import statistics
+import copy
 
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
@@ -159,7 +160,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         live_display.refresh()
 
 
-        
+        live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -174,7 +175,10 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
                 biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
-
+                
+                # paint the unshifted bx sampled points purple for later viewing
+                unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
                 testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
                 structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
                 MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
@@ -190,13 +194,27 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                     non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
-                    #non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr)
+                    non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+                    prostate_interslice_interpolation_information = master_structure_reference_dict[patientUID]['OAR ref'][0]["Inter-slice interpolation information"]
+                    prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
+                    prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
+                    
                     testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_simulations)
                     all_trials_POP_test_results_and_point_clouds_tuple = []
                     for single_trial_shifted_bx_data_arr in shifted_bx_data_3darr:
                         #single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
                         single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, num_simulations, non_bx_struct_interpolated_pts_np_arr, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
                         all_trials_POP_test_results_and_point_clouds_tuple.append(single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple)
+                        
+                        # plot results to make sure everything is working properly, containment structure is blue, shifted and tested pcd should be red and green
+                        if non_bx_structure_type == 'DIL ref':
+                            bx_test_pts_results = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
+                            bx_test_pts_results_pcd = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
+                            structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud(single_trial_shifted_bx_data_arr)
+                            plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                            plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
+
+                        
                         MC_trial_progress.update(testing_each_trial_task, advance=1)
                     
                     MC_trial_progress.remove_task(testing_each_trial_task)
@@ -839,6 +857,12 @@ def point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_para
     #print('___')
     #print('\n Execution time (concave test):', elapsed_time, 'seconds')
     #print('___')
+
+    # Lets plot everything to make sure everything is correct
+    #test_pts_shifted_pcd = point_containment_tools.create_point_cloud(test_pts_arr)
+    #plotting_funcs.plot_point_clouds(test_pts_shifted_pcd, label='Unknown')
+    #plotting_funcs.plot_two_point_clouds_side_by_side(test_pts_point_cloud_after_axis_aligned_bounding_box_test, test_pts_point_cloud_concave_zslice_updated)
+
 
 
     return test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated
