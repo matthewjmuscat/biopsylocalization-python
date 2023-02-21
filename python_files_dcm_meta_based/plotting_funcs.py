@@ -6,6 +6,7 @@ import gc
 import open3d as o3d
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
+import json
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -471,3 +472,46 @@ def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lo
     return point_cloud
 
 
+
+
+def plot_two_views_side_by_side(points_pcd_1_list, view_1_json_path, points_pcd_2_list, view_2_json_path):
+    vis_1 = o3d.visualization.Visualizer()
+    with open(view_1_json_path) as json_file_1:
+        params_dict_1 = json.load(json_file_1)
+        height_1 = params_dict_1["intrinsic"]["height"]
+        width_1 = params_dict_1["intrinsic"]["width"]
+    vis_1.create_window(window_name='TopLeft', width=width_1, height=height_1, left=0, top=100)
+    for pcd_1_item in points_pcd_1_list:
+        vis_1.add_geometry(pcd_1_item)
+    ctr_1 = vis_1.get_view_control()
+    parameters_1 = o3d.io.read_pinhole_camera_parameters(view_1_json_path)
+    ctr_1.convert_from_pinhole_camera_parameters(parameters_1)
+
+    vis_2 = o3d.visualization.Visualizer()
+    with open(view_2_json_path) as json_file_2:
+        params_dict_2 = json.load(json_file_2)
+        height_2 = params_dict_2["intrinsic"]["height"]
+        width_2 = params_dict_2["intrinsic"]["width"]
+    vis_2.create_window(window_name='TopRight', width=width_2, height=height_2, left=960, top=100)
+    for pcd_2_item in points_pcd_2_list:
+        vis_2.add_geometry(pcd_2_item)
+    ctr_2 = vis_2.get_view_control()
+    parameters_2 = o3d.io.read_pinhole_camera_parameters(view_2_json_path)
+    ctr_2.convert_from_pinhole_camera_parameters(parameters_2)
+
+    print('pause')
+    while True:
+        for pcd_1_item in points_pcd_1_list:
+            vis_1.update_geometry(pcd_1_item)
+        if not vis_1.poll_events():
+            break
+        vis_1.update_renderer()
+        for pcd_2_item in points_pcd_2_list:
+            vis_2.update_geometry(pcd_2_item)
+        if not vis_2.poll_events():
+            break
+        vis_2.update_renderer()
+    
+
+    vis_1.destroy_window()
+    vis_2.destroy_window()

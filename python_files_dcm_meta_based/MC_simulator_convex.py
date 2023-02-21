@@ -213,7 +213,8 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                             structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud(single_trial_shifted_bx_data_arr)
                             plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
                             plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
-
+                            plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-14-47.json", [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-27-46.json")
+                            plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-14-47.json", [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-29-43.json")
                         
                         MC_trial_progress.update(testing_each_trial_task, advance=1)
                     
