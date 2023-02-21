@@ -99,6 +99,7 @@ def main():
     num_sample_pts_per_bx_input = 1000
     num_MC_simulations_input = 10
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
+    num_dose_calc_NN = 8
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -1012,7 +1013,7 @@ def main():
             master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
             if simulation_ans ==  True:
                 print('>Beginning simulation')
-                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, spinner_type)
+                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, num_dose_calc_NN, spinner_type)
                 #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
                 print('test')
             else: 
