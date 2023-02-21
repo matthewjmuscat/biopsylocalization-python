@@ -527,12 +527,18 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
                 dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] 
+                
                 dosimetric_MLE_statistics_all_bx_pts_list = normal_distribution_MLE_parallel(parallel_pool, dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
                 mu_se_var_all_bx_pts_list = [bx_point_stats[0] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
                 confidence_intervals_all_bx_pts_list = [bx_point_stats[1] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
+                
+                mu_all_bx_pts_list = np.mean(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1).tolist()
+                std_all_bx_pts_list = np.std(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1).tolist()
+                
                 MC_dose_stats_dict = {"Dose statistics by bx pt (mean,se,var)": mu_se_var_all_bx_pts_list, "Confidence intervals (95%) by bx pt": confidence_intervals_all_bx_pts_list}
+                MC_dose_stats_basic_dict = {"Mean dose by bx pt": mu_all_bx_pts_list, "STD by bx pt": std_all_bx_pts_list}
                 specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = MC_dose_stats_dict
-
+                specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"] = MC_dose_stats_basic_dict
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
             
             biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, visible = False)
