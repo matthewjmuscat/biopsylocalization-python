@@ -533,7 +533,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 confidence_intervals_all_bx_pts_list = [bx_point_stats[1] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
                 
                 mu_all_bx_pts_list = np.mean(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1).tolist()
-                std_all_bx_pts_list = np.std(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1).tolist()
+                std_all_bx_pts_list = np.std(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1, ddof=1).tolist()
                 
                 MC_dose_stats_dict = {"Dose statistics by bx pt (mean,se,var)": mu_se_var_all_bx_pts_list, "Confidence intervals (95%) by bx pt": confidence_intervals_all_bx_pts_list}
                 MC_dose_stats_basic_dict = {"Mean dose by bx pt": mu_all_bx_pts_list, "STD by bx pt": std_all_bx_pts_list}
