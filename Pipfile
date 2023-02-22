@@ -26,6 +26,7 @@ pathos = "*"
 rich = "*"
 "stopwatch.py" = "*"
 textual = {extras = ["dev"], version = "*"}
+plotly = "*"
 
 [dev-packages]
 ipykernel = "*"

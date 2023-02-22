@@ -240,7 +240,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
 
-
+        structure_specific_results_dict_empty = {"Total successes (containment) list": None, "Binomial estimator list": None, "Confidence interval 95 (containment) list": None, "Standard error (containment) list": None}
         compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)
         compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -260,7 +260,7 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
                 for structureID,structure_MC_results in MC_translation_results_for_fixed_bx_dict.items():
                     structures_progress.update(compiling_results_each_non_bx_structure_containment_task, description = "[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structureID), total=sp_patient_total_num_non_BXs)
-                    structure_specific_results_dict = {"Total successes (containment) list": None, "Binomial estimator list": None}
+                    structure_specific_results_dict = structure_specific_results_dict_empty.copy()
                     # counter list needs to be reset for every structure 
                     bx_containment_counter_by_org_pt_ind_list = [0]*num_sample_pts_per_bx    
                     compiling_results_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial...", total=num_simulations)
@@ -322,7 +322,10 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                     num_successes_list = bx_containment_counter_by_org_pt_ind_list
                     num_trials = num_simulations
                     confidence_interval_list = calculate_binomial_containment_conf_intervals_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
+                    standard_err_list = calculate_binomial_containment_stand_err_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
                     structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
+                    structure_specific_results_dict["Standard error (containment) list"] = standard_err_list
+
                     
                 biopsies_progress.update(calc_MC_stat_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(calc_MC_stat_each_bx_structure_containment_task)
@@ -700,6 +703,14 @@ def calculate_binomial_containment_conf_intervals_parallel(parallel_pool, probab
     args_list = [(probability_estimator_list[j], num_trials, num_successes_list[j]) for j in range(len(probability_estimator_list))]
     confidence_interval_list = parallel_pool.starmap(mf.binomial_CI_estimator,args_list)
     return confidence_interval_list
+
+def calculate_binomial_containment_stand_err_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials):
+    args_list = [(probability_estimator_list[j], num_trials, num_successes_list[j]) for j in range(len(probability_estimator_list))]
+    standard_err_list = parallel_pool.starmap(mf.binomial_se_estimator,args_list)
+    return standard_err_list
+
+
+
 
 
 def MC_simulator_shift_all_structures_generator_parallel(parallel_pool, patient_dict, structs_referenced_list, num_simulations):

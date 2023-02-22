@@ -1073,7 +1073,8 @@ def main():
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
-                        bx_points_bx_coords_sys_arr_list.insert(0,'')
+                        bx_points_bx_coords_sys_arr_row = bx_points_bx_coords_sys_arr_list.copy()
+                        bx_points_bx_coords_sys_arr_row.insert(0,'')
                         containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
                         containment_output_csv_file_path = specific_output_dir.joinpath(containment_output_file_name)
                         with open(containment_output_csv_file_path, 'w', newline='') as f:
@@ -1085,12 +1086,41 @@ def main():
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed containment structure'])
                             write.writerow(['Col ->','Fixed bx point'])
-                            write.writerow(bx_points_bx_coords_sys_arr_list)
+                            write.writerow(bx_points_bx_coords_sys_arr_row)
+                            x_vals_row = [point_vec[0] for point_vec in bx_points_bx_coords_sys_arr_list]
+                            x_vals_row.insert(0,'')
+                            y_vals_row = [point_vec[1] for point_vec in bx_points_bx_coords_sys_arr_list]
+                            y_vals_row.insert(0,'')
+                            z_vals_row = [point_vec[2] for point_vec in bx_points_bx_coords_sys_arr_list]
+                            z_vals_row.insert(0,'')
+                            pt_radius_bx_coord_sys_row = [np.linalg.norm(point_vec[0:2]) for point_vec in bx_points_bx_coords_sys_arr_list]
+                            pt_radius_bx_coord_sys_row.insert(0,'')
+                            write.writerow(x_vals_row)
+                            write.writerow(y_vals_row)
+                            write.writerow(z_vals_row)
+                            write.writerow(pt_radius_bx_coord_sys_row)
+                            
                             for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
-                                containment_structure_list = containment_structure_dict['Total successes (containment) list']
                                 containment_structure_ROI = containment_structure_key_tuple[0]
-                                containment_structure_list_with_cont_anat_ROI = [containment_structure_ROI]+containment_structure_list
-                                write.writerow(containment_structure_list_with_cont_anat_ROI)
+                                
+                                containment_structure_successes_list = containment_structure_dict['Total successes (containment) list']
+                                containment_structure_successes_with_cont_anat_ROI_row = [containment_structure_ROI + ' Total successes']+containment_structure_successes_list
+
+                                containment_structure_binom_est_list = containment_structure_dict["Binomial estimator list"]
+                                containment_structure_binom_est_with_cont_anat_ROI_row = [containment_structure_ROI + ' Mean probability']+containment_structure_binom_est_list
+                                
+                                containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
+                                containment_structure_stand_err_with_cont_anat_ROI_row = [containment_structure_ROI + ' STD']+containment_structure_stand_err_list
+
+                                containment_structure_conf_int_list = containment_structure_dict["Confidence interval 95 (containment) list"]
+                                containment_structure_conf_int_with_cont_anat_ROI_row = [containment_structure_ROI + ' 95% CI']+containment_structure_conf_int_list
+                                
+                                write.writerow(containment_structure_successes_with_cont_anat_ROI_row)
+                                write.writerow(containment_structure_binom_est_with_cont_anat_ROI_row)
+                                write.writerow(containment_structure_stand_err_with_cont_anat_ROI_row)
+                                write.writerow(containment_structure_conf_int_with_cont_anat_ROI_row)
+
+                                
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
