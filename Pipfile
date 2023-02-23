@@ -27,6 +27,7 @@ rich = "*"
 "stopwatch.py" = "*"
 textual = {extras = ["dev"], version = "*"}
 plotly = "*"
+kaleido = "*"
 
 [dev-packages]
 ipykernel = "*"

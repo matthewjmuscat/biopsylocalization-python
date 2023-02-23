@@ -7,6 +7,7 @@ import open3d as o3d
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import json
+import plotly.express as px
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -515,3 +516,7 @@ def plot_two_views_side_by_side(points_pcd_1_list, view_1_json_path, points_pcd_
 
     vis_1.destroy_window()
     vis_2.destroy_window()
+
+
+
+

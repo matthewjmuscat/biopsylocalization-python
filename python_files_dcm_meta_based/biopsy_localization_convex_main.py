@@ -62,6 +62,8 @@ import rich_preambles
 from stopwatch import Stopwatch
 import copy
 import math_funcs as mf
+import plotly.express as px
+
 
 def main():
     
@@ -1223,6 +1225,7 @@ def main():
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
                         dose_output_csv_file_path = specific_output_dir.joinpath(dose_output_file_name)
+                        specific_bx_structure["Output csv file paths dict"]["Dose output point-wise csv"] = dose_output_csv_file_path
                         with open(dose_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
@@ -1297,6 +1300,140 @@ def main():
                                 write.writerow(dose_vals_in_voxel_row)
             else:
                 pass
+            
+            
+            stopwatch.stop()
+            create_dose_probability_plots_ans = ques_funcs.ask_ok('>Generate dose plots?')
+            stopwatch.start()
+
+            if create_dose_probability_plots_ans ==  True:
+                if created_output_dir == False:
+                    while created_output_dir == False:
+                        
+                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
+                        stopwatch.stop()
+                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
+                        stopwatch.start()
+
+                        if output_dir_generate == True:
+                            if os.path.isdir(output_dir) == True:
+                                print('>Directory already exists')
+                                created_output_dir = True
+                            else:
+                                os.mkdir(output_dir)
+                                print('>Directory: ', output_dir, ' created.')
+                                created_output_dir = True
+                        else:
+                            stopwatch.stop()
+                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
+                            stopwatch.start()
+                            if exit_programme == True:
+                                sys.exit('>Programme exited.')
+                            else: 
+                                pass
+                else:
+                    pass
+                if specific_output_dir_exists == False:
+                    date_time_now = datetime.now()
+                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
+                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+
+                    print('>Creating specific output directory.')
+                    if os.path.isdir(specific_output_dir) == True:
+                        print('>Directory already exists.')
+                        specific_output_dir_exists = True
+                    else:
+                        os.mkdir(specific_output_dir)
+                        print('>Directory: ', specific_output_dir, ' created.')
+                        specific_output_dir_exists = True
+                else:
+                    pass
+
+                # make output figures directory
+                figures_output_dir_name = 'Output figures'
+                output_figures_dir = specific_output_dir.joinpath(figures_output_dir_name)
+                os.mkdir(output_figures_dir)
+                print('>Directory: ', output_figures_dir, ' created.')
+
+            
+                # generate pandas data frame by reading dose output from file 
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    bx_structs = structs_referenced_list[0]
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"]
+                        mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
+                        std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+                        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+                        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+                        
+                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+                        dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
+                        specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
+                        
+                        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)")
+                        bx_struct_roi = specific_bx_structure["ROI"]
+                        
+                        svg_dose_fig_name = bx_struct_roi + ' - surface_dose_output.svg'
+                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig.write_image(svg_dose_fig_file_path)
+
+                        html_dose_fig_name = bx_struct_roi + ' - surface_dose_output.html'
+                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        fig.write_html(html_dose_fig_file_path)
+
+            """
+            stopwatch.stop()
+            save_containment_probability_plots_ans = ques_funcs.ask_ok('>Save all containment probability plots?')
+            stopwatch.start()
+
+            if write_dose_to_file_ans ==  True:
+                if created_output_dir == False:
+                    while created_output_dir == False:
+                        
+                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
+                        stopwatch.stop()
+                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
+                        stopwatch.start()
+
+                        if output_dir_generate == True:
+                            if os.path.isdir(output_dir) == True:
+                                print('>Directory already exists')
+                                created_output_dir = True
+                            else:
+                                os.mkdir(output_dir)
+                                print('>Directory: ', output_dir, ' created.')
+                                created_output_dir = True
+                        else:
+                            stopwatch.stop()
+                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
+                            stopwatch.start()
+                            if exit_programme == True:
+                                sys.exit('>Programme exited.')
+                            else: 
+                                pass
+                else:
+                    pass
+                if specific_output_dir_exists == False:
+                    date_time_now = datetime.now()
+                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
+                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+
+                    print('>Creating specific output directory.')
+                    if os.path.isdir(specific_output_dir) == True:
+                        print('>Directory already exists.')
+                        specific_output_dir_exists = True
+                    else:
+                        os.mkdir(specific_output_dir)
+                        print('>Directory: ', specific_output_dir, ' created.')
+                        specific_output_dir_exists = True
+                else:
+                    pass
+            
+            """
+            
             print('>Programme has ended.')
 
 def UID_generator(pydicom_obj):
@@ -1321,7 +1458,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 

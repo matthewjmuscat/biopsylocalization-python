@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "309a0ad07a8c9361cf888f435a649c421315f4d9d5ba08cf317c93d5fe749b97"
+            "sha256": "49c7d37862547a3f63e35b9cf54db74aeb058f6533442d0e73787935d96f0985"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -684,6 +684,18 @@
             ],
             "markers": "python_version >= '3.7'",
             "version": "==3.0.5"
+        },
+        "kaleido": {
+            "hashes": [
+                "sha256:4670985f28913c2d063c5734d125ecc28e40810141bdb0a46f15b76c1d45f23c",
+                "sha256:845819844c8082c9469d9c17e42621fbf85c2b237ef8a86ec8a8527f98b6512a",
+                "sha256:aa21cf1bf1c78f8fa50a9f7d45e1003c387bd3d6fe0a767cfbbf344b95bdc3a8",
+                "sha256:bb9a5d1f710357d5d432ee240ef6658a6d124c3e610935817b4b42da9c787c05",
+                "sha256:ca6f73e7ff00aaebf2843f73f1d3bacde1930ef5041093fe76b83a15785049a7",
+                "sha256:ecc72635860be616c6b7161807a65c0dbd9b90c6437ac96965831e2e24066552"
+            ],
+            "index": "pypi",
+            "version": "==0.2.1"
         },
         "kiwisolver": {
             "hashes": [
@@ -1549,11 +1561,11 @@
         },
         "pyvista": {
             "hashes": [
-                "sha256:870a39449979f96a81432f02e1e4c5aa63274114e9d98808d1c059569a7c522e",
-                "sha256:9e1c44d3fb626b182509079e910b57475a55a29479d3e36b3931b5e99696fec9"
+                "sha256:67f9611c357b8d1ad3e7dfecba57ae549e1c22a966df0a9e1f387570b88a5a60",
+                "sha256:bbe6eaf673c2afe5b8c05be394f98b78397521f851c0c204dead3d9514b635f7"
             ],
             "index": "pypi",
-            "version": "==0.38.2"
+            "version": "==0.38.3"
         },
         "pywin32": {
             "hashes": [
