@@ -423,11 +423,13 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                     for key,value in voxel_dict_of_lists.items():
                         voxel_dict_of_lists[key] = []
                     voxel_dict_of_lists["Voxel z range"] = []
+                    voxel_dict_of_lists["Voxel z range rounded"] = []
                     for voxel_index in range(int(num_z_voxels)):
                         voxel_dict = voxelized_biopsy_containment_results_list[voxel_index]
                         voxel_dict_of_lists["Voxel z begin"].append(voxel_dict["Voxel z begin"])
                         voxel_dict_of_lists["Voxel z end"].append(voxel_dict["Voxel z end"])
                         voxel_dict_of_lists["Voxel z range"].append([voxel_dict["Voxel z begin"],voxel_dict["Voxel z end"]])
+                        voxel_dict_of_lists["Voxel z range rounded"].append([round(voxel_dict["Voxel z begin"],2),round(voxel_dict["Voxel z end"],2)])
                         voxel_dict_of_lists["Indices from all sample pts that are within voxel arr"].append(voxel_dict["Indices from all sample pts that are within voxel arr"])
                         voxel_dict_of_lists["Num sample pts in voxel"].append(voxel_dict["Num sample pts in voxel"])
                         voxel_dict_of_lists["Sample pts in voxel arr (bx coord sys)"].append(voxel_dict["Sample pts in voxel arr (bx coord sys)"])
@@ -624,11 +626,13 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 for key,value in voxel_dose_dict_of_lists.items():
                     voxel_dose_dict_of_lists[key] = []
                 voxel_dose_dict_of_lists["Voxel z range"] = []
+                voxel_dose_dict_of_lists["Voxel z range rounded"] = []
                 for voxel_index in range(int(num_z_voxels)):
                     voxel_dose_dict = voxelized_biopsy_dose_results_list[voxel_index]
                     voxel_dose_dict_of_lists["Voxel z begin"].append(voxel_dose_dict["Voxel z begin"])
                     voxel_dose_dict_of_lists["Voxel z end"].append(voxel_dose_dict["Voxel z end"])
                     voxel_dose_dict_of_lists["Voxel z range"].append([voxel_dose_dict["Voxel z begin"],voxel_dose_dict["Voxel z end"]])
+                    voxel_dose_dict_of_lists["Voxel z range rounded"].append([round(voxel_dose_dict["Voxel z begin"],2),round(voxel_dose_dict["Voxel z end"],2)])
                     voxel_dose_dict_of_lists["Indices from all sample pts that are within voxel arr"].append(voxel_dose_dict["Indices from all sample pts that are within voxel arr"])
                     voxel_dose_dict_of_lists["Num sample pts in voxel"].append(voxel_dose_dict["Num sample pts in voxel"])
                     voxel_dose_dict_of_lists["Sample pts in voxel arr (bx coord sys)"].append(voxel_dose_dict["Sample pts in voxel arr (bx coord sys)"])

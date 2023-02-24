@@ -63,6 +63,7 @@ from stopwatch import Stopwatch
 import copy
 import math_funcs as mf
 import plotly.express as px
+import shutil
 
 
 def main():
@@ -97,10 +98,10 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
-    biopsy_radius = 0.6
+    biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
     num_MC_simulations_input = 10
-    biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
+    biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
 
     cpu_count = os.cpu_count()
@@ -1164,6 +1165,12 @@ def main():
                                 write.writerow(arth_mean_binomial_estimator_row)
                                 write.writerow(std_dev_binomial_estimator_row)
                                 write.writerow([''])
+                
+                # copy uncertainty file used for simulation to output folder
+                uncertainties_file_filled_output_folder = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
+                containment_voxelized_output_csv_file_path = specific_output_dir.joinpath(containment_voxelized_output_file_name) 
+                shutil.copy(uncertainties_file_filled, specific_output_dir)
+
 
             else:
                 pass
@@ -1361,25 +1368,101 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        bx_struct_roi = specific_bx_structure["ROI"]
                         stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"]
                         mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
                         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
                         pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+
+                        # create a 2d scatter plot with all MC trials on plot
+                        dose_vals_all_MC_trials_by_sampled_bx_pt_list = specific_bx_structure['MC data: Dose vals for each sampled bx pt list']
+                        pt_radius_point_wise_for_pd_data_frame_list = []
+                        axial_Z_point_wise_for_pd_data_frame_list = []
+                        dose_vals_point_wise_for_pd_data_frame_list = []
+                        MC_trial_index_point_wise_for_pd_data_frame_list = []
+                        for pt_index, specific_pt_all_MC_dose_vals in enumerate(dose_vals_all_MC_trials_by_sampled_bx_pt_list):
+                            pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + [pt_radius_bx_coord_sys]*len(specific_pt_all_MC_dose_vals)
+                            axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + [bx_points_bx_coords_sys_arr[pt_index,2]]*len(specific_pt_all_MC_dose_vals)
+                            dose_vals_point_wise_for_pd_data_frame_list = dose_vals_point_wise_for_pd_data_frame_list + specific_pt_all_MC_dose_vals
+                            MC_trial_index_point_wise_for_pd_data_frame_list = MC_trial_index_point_wise_for_pd_data_frame_list + list(range(1,len(specific_pt_all_MC_dose_vals) + 1))
+                        dose_output_dict_by_MC_trial_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, "Dose (Gy)": dose_vals_point_wise_for_pd_data_frame_list, "MC trial num": MC_trial_index_point_wise_for_pd_data_frame_list}
+                        #dose_vals_all_MC_trials_by_sampled_bx_pt_arr = np.asarray(dose_vals_all_MC_trials_by_sampled_bx_pt_list)
+                        #dose_output_dict_by_MC_trial_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+                        #for MC_trial in range(num_simulations):
+                        #    dose_output_dict_by_MC_trial_for_pandas_data_frame["MC Trial "+ str(MC_trial+1)] = dose_vals_all_MC_trials_by_sampled_bx_pt_arr[:,MC_trial]
+                        dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=dose_output_dict_by_MC_trial_for_pandas_data_frame)
+
+                        # create 2d scatter dose plot axial (z) vs all doses from all MC trials
+                        fig = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
+                                                
+                        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.svg'
+                        svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
+                        fig.write_image(svg_all_MC_trials_dose_fig_file_path)
+
+                        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.html'
+                        html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
+                        fig.write_html(html_all_MC_trials_dose_fig_file_path)
                         
+                        
+                        
+                        # create 3d scatter dose plot axial (z) vs radial (r) vs mean dose
                         dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
                         dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
                         specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
                         
-                        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)")
-                        bx_struct_roi = specific_bx_structure["ROI"]
                         
-                        svg_dose_fig_name = bx_struct_roi + ' - surface_dose_output.svg'
+                         
+                        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose")
+                                                
+                        svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose_output.svg'
                         svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
                         fig.write_image(svg_dose_fig_file_path)
 
-                        html_dose_fig_name = bx_struct_roi + ' - surface_dose_output.html'
+                        html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose_output.html'
+                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        fig.write_html(html_dose_fig_file_path)
+
+                        
+                        
+                        # create 2d scatter dose plot axial (z) vs mean dose 
+                        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
+                                                
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.svg'
+                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig.write_image(svg_dose_fig_file_path)
+
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.html'
+                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        fig.write_html(html_dose_fig_file_path)
+
+
+
+                        # create box plots of voxelized data
+                        stats_dose_val_all_MC_trials_voxelized = specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"]
+                        dose_vals_in_voxel = stats_dose_val_all_MC_trials_voxelized["All dose vals in voxel list"]
+                        z_range_of_voxel = stats_dose_val_all_MC_trials_voxelized["Voxel z range rounded"]
+
+                        max_points_in_voxel = max(len(x) for x in dose_vals_in_voxel)
+
+                        dose_output_voxelized_dict_for_pandas_data_frame = {str(z_range_of_voxel[i]): pad_or_truncate(dose_vals_in_voxel[i], max_points_in_voxel) for i in range(len(z_range_of_voxel))}
+                        dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
+                        
+                        
+                        #dose_output_voxelized_dict_for_pandas_data_frame = {str(z_range_of_voxel[i]): dose_vals_in_voxel[i] for i in range(len(z_range_of_voxel))}
+                        #dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
+                        #specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
+                        
+                        
+                        fig = px.box(dose_output_voxelized_pandas_data_frame)
+                        
+                        svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose_output.svg'
+                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig.write_image(svg_dose_fig_file_path)
+
+                        html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose_output.html'
                         html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
 
@@ -1435,6 +1518,9 @@ def main():
             """
             
             print('>Programme has ended.')
+
+def pad_or_truncate(some_list, target_len):
+    return some_list[:target_len] + [float('NaN')]*(target_len - len(some_list))
 
 def UID_generator(pydicom_obj):
     UID_def = f"{str(pydicom_obj[0x0010,0x0010].value)} ({str(pydicom_obj[0x0010,0x0020].value)})"
