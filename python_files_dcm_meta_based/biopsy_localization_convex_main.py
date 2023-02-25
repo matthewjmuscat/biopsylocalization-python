@@ -64,7 +64,9 @@ import copy
 import math_funcs as mf
 import plotly.express as px
 import shutil
-
+import statsmodels.api as sm
+import plotly.graph_objects as go
+from statsmodels.nonparametric import kernel_regression
 
 def main():
     
@@ -1395,8 +1397,20 @@ def main():
                         #    dose_output_dict_by_MC_trial_for_pandas_data_frame["MC Trial "+ str(MC_trial+1)] = dose_vals_all_MC_trials_by_sampled_bx_pt_arr[:,MC_trial]
                         dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=dose_output_dict_by_MC_trial_for_pandas_data_frame)
 
+                        # do non parametric kernel regression (local linear)
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression = kernel_regression.KernelReg(dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], var_type='c')
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit = all_MC_trials_dose_vs_axial_Z_non_parametric_regression.fit(np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000))
+
                         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
                         fig = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
+                        fig.add_trace(
+                            go.Scatter(
+                                x=np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000),
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit[0],
+                                mode="lines",
+                                line=go.scatter.Line(color="black"),
+                                showlegend=False)
+                        )
                                                 
                         svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.svg'
                         svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)

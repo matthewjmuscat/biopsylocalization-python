@@ -28,6 +28,7 @@ rich = "*"
 textual = {extras = ["dev"], version = "*"}
 plotly = "*"
 kaleido = "*"
+statsmodels = "*"
 
 [dev-packages]
 ipykernel = "*"
