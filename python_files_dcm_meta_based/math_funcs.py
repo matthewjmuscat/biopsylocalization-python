@@ -1,5 +1,7 @@
 import numpy as np
 import math 
+from statsmodels.nonparametric import kernel_regression
+import statsmodels.api as sm
 
 def binomial_likelihood(p, num_trials, num_successes):
     # note that we omit the factor out front as it does not depend on the probability estimator p
@@ -116,3 +118,146 @@ def angle_between(v1, v2):
     v1_u = unit_vector(v1)
     v2_u = unit_vector(v2)
     return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+
+
+def lowess_with_confidence_bounds(
+    x, y, eval_x, N=200, conf_interval=0.95, lowess_kw=None
+):
+    """
+    Perform Lowess regression and determine a confidence interval by bootstrap resampling
+    """
+    # Lowess smoothing
+    smoothed = sm.nonparametric.lowess(exog=x, endog=y, xvals=eval_x, **lowess_kw)
+
+    # Perform bootstrap resamplings of the data
+    # and  evaluate the smoothing at a fixed set of points
+    smoothed_values = np.empty((N, len(eval_x)))
+    for i in range(N):
+        sample = np.random.choice(len(x), len(x), replace=True)
+        sampled_x = x[sample]
+        sampled_y = y[sample]
+
+        smoothed_values[i] = sm.nonparametric.lowess(
+            exog=sampled_x, endog=sampled_y, xvals=eval_x, **lowess_kw
+        )
+
+    # Get the confidence interval
+    sorted_values = np.sort(smoothed_values, axis=0)
+    bound = int(N * (1 - conf_interval) / 2)
+    bottom = sorted_values[bound - 1]
+    top = sorted_values[-bound]
+
+    return smoothed, bottom, top
+
+
+
+def non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+    parallel_pool,
+    x, y, eval_x, 
+    N=200, conf_interval=0.95
+):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    args_list = [float('Nan')]*(N+1)
+    args_list[0] = (x, y, eval_x)
+    for i in range(1,N+1):
+        sample = np.random.choice(len(x), len(x), replace=True)
+        sampled_x = x[sample]
+        sampled_y = y[sample]
+        args_list[i] = (sampled_x, sampled_y, eval_x)
+    
+    all_NPKR_fit_vals_list = parallel_pool.starmap(non_param_kernel_regression, args_list)
+    NPKR_fit_vals = all_NPKR_fit_vals_list[0]
+    bootstrapped_NPKR_fit_vals_list = all_NPKR_fit_vals_list[1:]
+    bootstrapped_NPKR_fit_vals_arr = np.asarray(bootstrapped_NPKR_fit_vals_list)
+
+    # Get the confidence interval
+    sorted_values = np.sort(bootstrapped_NPKR_fit_vals_arr, axis=0)
+    bound = int(N * (1 - conf_interval) / 2)
+    if bound == 0:
+        bottom = sorted_values[0]
+        top = sorted_values[-1]
+    else:
+        bottom = sorted_values[bound - 1]
+        top = sorted_values[-bound]
+
+    return NPKR_fit_vals, bottom, top
+    
+
+def non_param_kernel_regression(x, y, eval_x, NPKR_type='ll'):
+    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type)
+    NPKR_fit_vals, NPKR_partial_derivatives_vals = NPKR_class_obj.fit(eval_x)
+    # Note that I do not return the partial derivatives as they do not seem important here
+    return NPKR_fit_vals
+
+
+def non_param_kernel_regression_with_confidence_bounds_bootstrap(
+    x, y, eval_x, N=200, conf_interval=0.95, NPKR_type='ll'
+):
+    """
+    Perform NPKR (LL) regression and determine a confidence interval by bootstrap resampling
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    # NPKR smoothing
+    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type)
+    NPKR_fit_vals = NPKR_class_obj.fit(eval_x)
+
+    # Perform bootstrap resamplings of the data
+    # and  evaluate the smoothing at a fixed set of points
+    NPKR_bootstrapped_fits = np.empty((N, len(eval_x)))
+    for i in range(N):
+        sample = np.random.choice(len(x), len(x), replace=True)
+        sampled_x = x[sample]
+        sampled_y = y[sample]
+
+        NPKR_bootstrapped_class_obj = kernel_regression.KernelReg(exog=sampled_x, endog=sampled_y, var_type='c', reg_type = NPKR_type)
+        NPKR_bootstrapped_fits[i] = NPKR_bootstrapped_class_obj.fit(eval_x)
+
+    # Get the confidence interval
+    sorted_values = np.sort(NPKR_bootstrapped_fits, axis=0)
+    bound = int(N * (1 - conf_interval) / 2)
+    bottom = sorted_values[bound - 1]
+    top = sorted_values[-bound]
+
+    return NPKR_fit_vals, bottom, top
+
+
+
+def non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+    parallel_pool,
+    x, y, eval_x, 
+    N=200, conf_interval=0.95
+):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    args_list = [float('Nan')]*(N+1)
+    args_list[0] = (x, y, eval_x)
+    for i in range(1,N+1):
+        sample = np.random.choice(len(x), len(x), replace=True)
+        sampled_x = x[sample]
+        sampled_y = y[sample]
+        args_list[i] = (sampled_x, sampled_y, eval_x)
+    
+    all_NPLR_fit_vals_list = parallel_pool.starmap(non_param_LOWESS_regression, args_list)
+    NPKR_fit_vals = all_NPLR_fit_vals_list[0]
+    bootstrapped_NPKR_fit_vals_list = all_NPLR_fit_vals_list[1:]
+    bootstrapped_NPKR_fit_vals_arr = np.asarray(bootstrapped_NPKR_fit_vals_list)
+
+    # Get the confidence interval
+    sorted_values = np.sort(bootstrapped_NPKR_fit_vals_arr, axis=0)
+    bound = int(N * (1 - conf_interval) / 2)
+    if bound == 0:
+        bottom = sorted_values[0]
+        top = sorted_values[-1]
+    else:
+        bottom = sorted_values[bound - 1]
+        top = sorted_values[-bound]
+
+    return NPKR_fit_vals, bottom, top
+    
+
+def non_param_LOWESS_regression(x, y, eval_x):
+    NPLR_fit_vals = sm.nonparametric.lowess(exog=x, endog=y, xvals=eval_x)
+    return NPLR_fit_vals

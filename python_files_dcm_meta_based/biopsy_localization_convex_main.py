@@ -66,6 +66,7 @@ import plotly.express as px
 import shutil
 import statsmodels.api as sm
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from statsmodels.nonparametric import kernel_regression
 
 def main():
@@ -102,7 +103,7 @@ def main():
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
-    num_MC_simulations_input = 10
+    num_MC_simulations_input = 100
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
 
@@ -1398,27 +1399,135 @@ def main():
                         dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=dose_output_dict_by_MC_trial_for_pandas_data_frame)
 
                         # do non parametric kernel regression (local linear)
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression = kernel_regression.KernelReg(dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], var_type='c')
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit = all_MC_trials_dose_vs_axial_Z_non_parametric_regression.fit(np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000))
+                        z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000)
+                        """
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                            parallel_pool,
+                            x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                            y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
+                            eval_x = z_vals_to_evaluate, N=13, conf_interval=0.95
+                        )
+                        """
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
+                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                            parallel_pool,
+                            x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                            y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
+                            eval_x = z_vals_to_evaluate, N=150, conf_interval=0.95
+                        )
+                        
+                        
+                        
 
                         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
-                        fig = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
-                        fig.add_trace(
+                        """
+                        fig = go.Figure([
                             go.Scatter(
-                                x=np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000),
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit[0],
+                                name='Measurement',
+                                x=df['Time'],
+                                y=df['10 Min Sampled Avg'],
+                                mode='lines',
+                                line=dict(color='rgb(31, 119, 180)'),
+                            ),
+
+                        ])
+                        """
+                        
+                        fig_global = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
+                        fig_global.add_trace(
+                            go.Scatter(
+                                name='LOWESS regression',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
                                 mode="lines",
-                                line=go.scatter.Line(color="black"),
-                                showlegend=False)
+                                line=dict(color='rgb(31, 119, 180)'),
+                                showlegend=True
+                                )
+                        )
+                        fig_global.add_trace(
+                            go.Scatter(
+                                name='Upper 95% CI',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
+                                mode='lines',
+                                marker=dict(color="#444"),
+                                line=dict(width=0),
+                                showlegend=True
+                            )
+                        )
+                        fig_global.add_trace(
+                            go.Scatter(
+                                name='Lower 95% CI',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
+                                marker=dict(color="#444"),
+                                line=dict(width=0),
+                                mode='lines',
+                                fillcolor='rgba(0, 100, 20, 0.3)',
+                                fill='tonexty',
+                                showlegend=True
+                            )
+                        )
+                        fig_global.update_layout(
+                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+
+                        fig_regression_only = go.Figure([
+                            go.Scatter(
+                                name='LOWESS regression',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
+                                mode="lines",
+                                line=dict(color='rgb(31, 119, 180)'),
+                                showlegend=True
+                                ),
+                            go.Scatter(
+                                name='Upper 95% CI',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
+                                mode='lines',
+                                marker=dict(color="#444"),
+                                line=dict(width=0),
+                                showlegend=True
+                            ),
+                            go.Scatter(
+                                name='Lower 95% CI',
+                                x=z_vals_to_evaluate,
+                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
+                                marker=dict(color="#444"),
+                                line=dict(width=0),
+                                mode='lines',
+                                fillcolor='rgba(0, 100, 20, 0.3)',
+                                fill='tonexty',
+                                showlegend=True
+                            )
+                        ])
+                        fig_regression_only.update_layout(
+                            yaxis_title='Conditional mean dose (Gy)',
+                            xaxis_title='Axial pos Z (mm)',
+                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
                         )
                                                 
                         svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.svg'
                         svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                        fig.write_image(svg_all_MC_trials_dose_fig_file_path)
+                        fig_global.write_image(svg_all_MC_trials_dose_fig_file_path)
 
                         html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.html'
                         html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
-                        fig.write_html(html_all_MC_trials_dose_fig_file_path)
+                        fig_global.write_html(html_all_MC_trials_dose_fig_file_path)
+
+                        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.svg'
+                        svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
+                        fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path)
+
+                        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.html'
+                        html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
+                        fig_regression_only.write_html(html_all_MC_trials_dose_fig_file_path)
                         
                         
                         
