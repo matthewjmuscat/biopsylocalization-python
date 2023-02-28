@@ -539,9 +539,10 @@ def simulator_parallel(parallel_pool, live_display, layout_groups, master_struct
                 
                 mu_all_bx_pts_list = np.mean(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1).tolist()
                 std_all_bx_pts_list = np.std(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, axis = 1, ddof=1).tolist()
-                
+                quantiles_all_bx_pts_dict_of_lists = {'Q'+str(q): np.quantile(dosimetric_localization_dose_vals_by_bx_point_all_trials_list, q/100,axis = 1).tolist() for q in range(5,100,5)}
+
                 MC_dose_stats_dict = {"Dose statistics by bx pt (mean,se,var)": mu_se_var_all_bx_pts_list, "Confidence intervals (95%) by bx pt": confidence_intervals_all_bx_pts_list}
-                MC_dose_stats_basic_dict = {"Mean dose by bx pt": mu_all_bx_pts_list, "STD by bx pt": std_all_bx_pts_list}
+                MC_dose_stats_basic_dict = {"Mean dose by bx pt": mu_all_bx_pts_list, "STD by bx pt": std_all_bx_pts_list, "Qunatiles dose by bx pt dict": quantiles_all_bx_pts_dict_of_lists}
                 specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = MC_dose_stats_dict
                 specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"] = MC_dose_stats_basic_dict
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)

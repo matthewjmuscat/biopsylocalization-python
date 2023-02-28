@@ -68,6 +68,8 @@ import statsmodels.api as sm
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from statsmodels.nonparametric import kernel_regression
+from statsmodels.regression.quantile_regression import QuantReg
+from statsmodels.regression.quantile_regression import QuantRegResults
 
 def main():
     
@@ -103,7 +105,7 @@ def main():
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
-    num_MC_simulations_input = 100
+    num_MC_simulations_input = 10
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
 
@@ -1375,6 +1377,7 @@ def main():
                         stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"]
                         mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
                         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+                        quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Qunatiles dose by bx pt dict"].copy()
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
                         pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
@@ -1533,6 +1536,7 @@ def main():
                         
                         # create 3d scatter dose plot axial (z) vs radial (r) vs mean dose
                         dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+                        dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
                         dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
                         specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
                         
@@ -1551,8 +1555,41 @@ def main():
                         
                         
                         # create 2d scatter dose plot axial (z) vs mean dose 
-                        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
-                                                
+                        #fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
+                        fig = go.Figure([
+                            go.Scatter(
+                                name='Mean',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Mean dose (Gy)"],
+                                mode='markers',
+                                marker_color='rgba(0, 255, 0, 1)',
+                                showlegend=True
+                            ),
+                            go.Scatter(
+                                name='95th Quantile',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Q95"],
+                                mode='markers',
+                                marker_color='rgba(255, 0, 0, 1)',
+                                showlegend=True
+                            ),
+                            go.Scatter(
+                                name='5th Quantile',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Q5"],
+                                mode='markers',
+                                marker_color='rgba(0, 0, 255, 1)',
+                                showlegend=True
+                            )
+                        ])
+                        fig.update_layout(
+                            yaxis_title='Dose (Gy)',
+                            xaxis_title='Axial pos Z (mm)',
+                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+
+
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.svg'
                         svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
                         fig.write_image(svg_dose_fig_file_path)
