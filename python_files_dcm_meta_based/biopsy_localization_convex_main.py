@@ -1419,7 +1419,7 @@ def main():
                             parallel_pool,
                             x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
                             y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                            eval_x = z_vals_to_evaluate, N=150, conf_interval=0.95
+                            eval_x = z_vals_to_evaluate, N=5, conf_interval=0.95
                         )
                         
                         
@@ -1574,6 +1574,30 @@ def main():
                                 showlegend=True
                             ),
                             go.Scatter(
+                                name='75th Quantile',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Q75"],
+                                mode='markers',
+                                marker_color='rgba(0, 255, 255, 1)',
+                                showlegend=True
+                            ),
+                            go.Scatter(
+                                name='50th Quantile (median)',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Q50"],
+                                mode='markers',
+                                marker_color='rgba(255, 0, 255, 1)',
+                                showlegend=True
+                            ),
+                            go.Scatter(
+                                name='25th Quantile',
+                                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                                y=dose_output_dict_for_pandas_data_frame["Q25"],
+                                mode='markers',
+                                marker_color='rgba(255, 255, 0, 1)',
+                                showlegend=True
+                            ),
+                            go.Scatter(
                                 name='5th Quantile',
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q5"],
@@ -1597,6 +1621,86 @@ def main():
                         html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.html'
                         html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
+
+
+
+                        # perform non parametric kernel regression through conditional quantiles and conditional mean doses
+                        dose_output_dict_for_regression = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+                        dose_output_dict_for_regression.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
+                        non_parametric_kernel_regressions_dict = {}
+                        data_for_non_parametric_kernel_regressions_dict = {}
+                        data_keys_to_regress = ["Q95","Q5","Q50","Mean"]
+                        for data_key in data_keys_to_regress:
+                            data_for_non_parametric_kernel_regressions_dict[data_key]=dose_output_dict_for_regression[data_key].copy()
+                            
+                        for data_key, data_to_regress in data_for_non_parametric_kernel_regressions_dict.items():
+                            non_parametric_regression_fit, \
+                            non_parametric_regression_lower, \
+                            non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                                parallel_pool,
+                                x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
+                                y = data_to_regress, 
+                                eval_x = z_vals_to_evaluate, N=5, conf_interval=0.95
+                            )
+                            
+                            non_parametric_kernel_regressions_dict[data_key] = (non_parametric_regression_fit, \
+                            non_parametric_regression_lower, \
+                            non_parametric_regression_upper)
+                            
+                        
+                        fig_regressions_only_quantiles_and_mean = go.Figure()
+                        for data_key,regression_tuple in non_parametric_kernel_regressions_dict.items(): 
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+' regression',
+                                    x=z_vals_to_evaluate,
+                                    y=regression_tuple[0],
+                                    mode="lines",
+                                    line=dict(color='rgb(31, 119, 180)'),
+                                    showlegend=True
+                                    )
+                            )
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+': Upper 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=regression_tuple[2],
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=False
+                                )
+                            )
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+': Lower 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=regression_tuple[1],
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=False
+                                )
+                            )
+                            
+                        
+                        fig_regressions_only_quantiles_and_mean.update_layout(
+                            yaxis_title='Dose (Gy)',
+                            xaxis_title='Axial pos Z (mm)',
+                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+
+
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose_output.svg'
+                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path)
+
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose_output.html'
+                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
 
 
