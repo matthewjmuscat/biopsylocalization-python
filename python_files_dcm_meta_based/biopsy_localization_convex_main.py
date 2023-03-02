@@ -105,7 +105,7 @@ def main():
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
-    num_MC_simulations_input = 10
+    num_MC_simulations_input = 100
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
 
@@ -1419,7 +1419,7 @@ def main():
                             parallel_pool,
                             x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
                             y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                            eval_x = z_vals_to_evaluate, N=5, conf_interval=0.95
+                            eval_x = z_vals_to_evaluate, N=15, conf_interval=0.95
                         )
                         
                         
@@ -1556,13 +1556,20 @@ def main():
                         
                         # create 2d scatter dose plot axial (z) vs mean dose 
                         #fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
+                        regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
+                                                  "Q75": 'rgba(0, 255, 255, 1)', 
+                                                  "Q50":'rgba(255, 0, 255, 1)',
+                                                  'Q25': 'rgba(255, 255, 0, 1)',
+                                                  "Q5":'rgba(0, 0, 255, 1)',
+                                                  "Mean":'rgba(0, 255, 0, 1)'
+                        }
                         fig = go.Figure([
                             go.Scatter(
                                 name='Mean',
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Mean dose (Gy)"],
                                 mode='markers',
-                                marker_color='rgba(0, 255, 0, 1)',
+                                marker_color=regression_colors_dict["Mean"],
                                 showlegend=True
                             ),
                             go.Scatter(
@@ -1570,7 +1577,7 @@ def main():
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q95"],
                                 mode='markers',
-                                marker_color='rgba(255, 0, 0, 1)',
+                                marker_color=regression_colors_dict["Q95"],
                                 showlegend=True
                             ),
                             go.Scatter(
@@ -1578,7 +1585,7 @@ def main():
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q75"],
                                 mode='markers',
-                                marker_color='rgba(0, 255, 255, 1)',
+                                marker_color=regression_colors_dict["Q75"],
                                 showlegend=True
                             ),
                             go.Scatter(
@@ -1586,7 +1593,7 @@ def main():
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q50"],
                                 mode='markers',
-                                marker_color='rgba(255, 0, 255, 1)',
+                                marker_color=regression_colors_dict["Q50"],
                                 showlegend=True
                             ),
                             go.Scatter(
@@ -1594,7 +1601,7 @@ def main():
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q25"],
                                 mode='markers',
-                                marker_color='rgba(255, 255, 0, 1)',
+                                marker_color=regression_colors_dict["Q25"],
                                 showlegend=True
                             ),
                             go.Scatter(
@@ -1602,7 +1609,7 @@ def main():
                                 x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
                                 y=dose_output_dict_for_pandas_data_frame["Q5"],
                                 mode='markers',
-                                marker_color='rgba(0, 0, 255, 1)',
+                                marker_color=regression_colors_dict["Q5"],
                                 showlegend=True
                             )
                         ])
@@ -1640,7 +1647,7 @@ def main():
                                 parallel_pool,
                                 x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
                                 y = data_to_regress, 
-                                eval_x = z_vals_to_evaluate, N=5, conf_interval=0.95
+                                eval_x = z_vals_to_evaluate, N=15, conf_interval=0.95
                             )
                             
                             non_parametric_kernel_regressions_dict[data_key] = (non_parametric_regression_fit, \
@@ -1656,7 +1663,7 @@ def main():
                                     x=z_vals_to_evaluate,
                                     y=regression_tuple[0],
                                     mode="lines",
-                                    line=dict(color='rgb(31, 119, 180)'),
+                                    line=dict(color=regression_colors_dict[data_key]),
                                     showlegend=True
                                     )
                             )

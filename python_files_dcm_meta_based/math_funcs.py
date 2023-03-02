@@ -186,7 +186,7 @@ def non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
     
 
 def non_param_kernel_regression(x, y, eval_x, NPKR_type='ll'):
-    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type)
+    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type, bw = [0.25])
     NPKR_fit_vals, NPKR_partial_derivatives_vals = NPKR_class_obj.fit(eval_x)
     # Note that I do not return the partial derivatives as they do not seem important here
     return NPKR_fit_vals
