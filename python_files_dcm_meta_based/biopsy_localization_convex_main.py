@@ -104,8 +104,8 @@ def main():
     spinner_type = 'line'
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
-    num_sample_pts_per_bx_input = 1000
-    num_MC_simulations_input = 100
+    num_sample_pts_per_bx_input = 10000
+    num_MC_simulations_input = 50
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
 
@@ -1368,6 +1368,13 @@ def main():
                 os.mkdir(output_figures_dir)
                 print('>Directory: ', output_figures_dir, ' created.')
 
+
+                stopwatch.stop()
+                regression_type_ans = ques_funcs.multi_choice_question('> Type of regression (LOWESS = 1, NPKR = 0)?')
+                stopwatch.start()
+                stopwatch.stop()
+                global_regression_ans = ques_funcs.ask_ok('> Perform regression on global data?')
+                stopwatch.start()
             
                 # generate pandas data frame by reading dose output from file 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1403,118 +1410,117 @@ def main():
 
                         # do non parametric kernel regression (local linear)
                         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000)
-                        """
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
-                            parallel_pool,
-                            x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
-                            y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                            eval_x = z_vals_to_evaluate, N=13, conf_interval=0.95
-                        )
-                        """
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
-                        all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
-                            parallel_pool,
-                            x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
-                            y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                            eval_x = z_vals_to_evaluate, N=15, conf_interval=0.95
-                        )
+                        
+                        num_bootstraps_all_MC_data = 15
+                        
+                        if regression_type_ans == True and global_regression_ans == True:
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                                parallel_pool,
+                                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                                y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
+                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data, conf_interval=0.95
+                            )
+                        elif regression_type_ans == False and global_regression_ans == True:
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
+                            all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                                parallel_pool,
+                                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                                y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
+                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data, conf_interval=0.95
+                            )
+                        elif global_regression_ans == False:
+                            pass
                         
                         
                         
 
                         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
-                        """
-                        fig = go.Figure([
-                            go.Scatter(
-                                name='Measurement',
-                                x=df['Time'],
-                                y=df['10 Min Sampled Avg'],
-                                mode='lines',
-                                line=dict(color='rgb(31, 119, 180)'),
-                            ),
-
-                        ])
-                        """
-                        
+                                                
                         fig_global = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
-                        fig_global.add_trace(
-                            go.Scatter(
-                                name='LOWESS regression',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
-                                mode="lines",
-                                line=dict(color='rgb(31, 119, 180)'),
-                                showlegend=True
+                        if global_regression_ans == True:
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name='Regression',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
+                                    mode="lines",
+                                    line=dict(color='rgb(31, 119, 180)'),
+                                    showlegend=True
+                                    )
+                            )
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name='Upper 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=True
                                 )
-                        )
-                        fig_global.add_trace(
-                            go.Scatter(
-                                name='Upper 95% CI',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
-                                mode='lines',
-                                marker=dict(color="#444"),
-                                line=dict(width=0),
-                                showlegend=True
                             )
-                        )
-                        fig_global.add_trace(
-                            go.Scatter(
-                                name='Lower 95% CI',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
-                                marker=dict(color="#444"),
-                                line=dict(width=0),
-                                mode='lines',
-                                fillcolor='rgba(0, 100, 20, 0.3)',
-                                fill='tonexty',
-                                showlegend=True
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name='Lower 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=True
+                                )
                             )
-                        )
+                        elif global_regression_ans == False:
+                            pass
+                        
                         fig_global.update_layout(
                             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
-
-                        fig_regression_only = go.Figure([
-                            go.Scatter(
-                                name='LOWESS regression',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
-                                mode="lines",
-                                line=dict(color='rgb(31, 119, 180)'),
-                                showlegend=True
+                        if global_regression_ans == True:
+                            fig_regression_only = go.Figure([
+                                go.Scatter(
+                                    name='Regression',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit,
+                                    mode="lines",
+                                    line=dict(color='rgb(31, 119, 180)'),
+                                    showlegend=True
+                                    ),
+                                go.Scatter(
+                                    name='Upper 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=True
                                 ),
-                            go.Scatter(
-                                name='Upper 95% CI',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper,
-                                mode='lines',
-                                marker=dict(color="#444"),
-                                line=dict(width=0),
-                                showlegend=True
-                            ),
-                            go.Scatter(
-                                name='Lower 95% CI',
-                                x=z_vals_to_evaluate,
-                                y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
-                                marker=dict(color="#444"),
-                                line=dict(width=0),
-                                mode='lines',
-                                fillcolor='rgba(0, 100, 20, 0.3)',
-                                fill='tonexty',
-                                showlegend=True
+                                go.Scatter(
+                                    name='Lower 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower,
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=True
+                                )
+                            ])
+                            fig_regression_only.update_layout(
+                                yaxis_title='Conditional mean dose (Gy)',
+                                xaxis_title='Axial pos Z (mm)',
+                                title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                                hovermode="x unified"
                             )
-                        ])
-                        fig_regression_only.update_layout(
-                            yaxis_title='Conditional mean dose (Gy)',
-                            xaxis_title='Axial pos Z (mm)',
-                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
-                            hovermode="x unified"
-                        )
+                        elif global_regression_ans == False:
+                            pass
                                                 
                         svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.svg'
                         svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
@@ -1523,15 +1529,16 @@ def main():
                         html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.html'
                         html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
                         fig_global.write_html(html_all_MC_trials_dose_fig_file_path)
+                        if global_regression_ans == True:
+                            svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.svg'
+                            svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
+                            fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path)
 
-                        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.svg'
-                        svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                        fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path)
-
-                        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.html'
-                        html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
-                        fig_regression_only.write_html(html_all_MC_trials_dose_fig_file_path)
-                        
+                            html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.html'
+                            html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
+                            fig_regression_only.write_html(html_all_MC_trials_dose_fig_file_path)
+                        elif global_regression_ans == False:
+                            pass
                         
                         
                         # create 3d scatter dose plot axial (z) vs radial (r) vs mean dose
@@ -1637,22 +1644,39 @@ def main():
                         non_parametric_kernel_regressions_dict = {}
                         data_for_non_parametric_kernel_regressions_dict = {}
                         data_keys_to_regress = ["Q95","Q5","Q50","Mean"]
+                        num_bootstraps_mean_and_quantile_data = 15
                         for data_key in data_keys_to_regress:
                             data_for_non_parametric_kernel_regressions_dict[data_key]=dose_output_dict_for_regression[data_key].copy()
                             
                         for data_key, data_to_regress in data_for_non_parametric_kernel_regressions_dict.items():
-                            non_parametric_regression_fit, \
-                            non_parametric_regression_lower, \
-                            non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
-                                parallel_pool,
-                                x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
-                                y = data_to_regress, 
-                                eval_x = z_vals_to_evaluate, N=15, conf_interval=0.95
-                            )
+                            if regression_type_ans == True:
+                                non_parametric_regression_fit, \
+                                non_parametric_regression_lower, \
+                                non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
+                                    y = data_to_regress, 
+                                    eval_x = z_vals_to_evaluate, 
+                                    N=num_bootstraps_mean_and_quantile_data, 
+                                    conf_interval=0.95
+                                )
+                            elif regression_type_ans == False:
+                                non_parametric_regression_fit, \
+                                non_parametric_regression_lower, \
+                                non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
+                                    y = data_to_regress, 
+                                    eval_x = z_vals_to_evaluate, 
+                                    N=num_bootstraps_mean_and_quantile_data, 
+                                    conf_interval=0.95
+                                )
                             
-                            non_parametric_kernel_regressions_dict[data_key] = (non_parametric_regression_fit, \
-                            non_parametric_regression_lower, \
-                            non_parametric_regression_upper)
+                            non_parametric_kernel_regressions_dict[data_key] = (
+                                non_parametric_regression_fit, 
+                                non_parametric_regression_lower, 
+                                non_parametric_regression_upper
+                            )
                             
                         
                         fig_regressions_only_quantiles_and_mean = go.Figure()

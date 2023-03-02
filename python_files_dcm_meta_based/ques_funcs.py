@@ -28,3 +28,18 @@ def ask_to_continue(prompt, retries=4, reminder='Please try again!'):
         if retries < 0:
             raise ValueError('invalid user response')
         print(reminder)
+
+def multi_choice_question(prompt, retries=4, reminder='Please try again!'):
+    """
+    This function defines a generic yes or no question.
+    """
+    while True:
+        ans = input(prompt + ' [1/0]\n')
+        if ans in ('1', 'one'):
+            return True
+        if ans in ('0', 'zero'):
+            return False
+        retries = retries - 1
+        if retries < 0:
+            raise ValueError('invalid user response')
+        print(reminder)

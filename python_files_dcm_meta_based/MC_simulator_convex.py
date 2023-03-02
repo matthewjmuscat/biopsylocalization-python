@@ -66,7 +66,16 @@ def simulator(master_structure_reference_dict, structs_referenced_list, num_simu
 
 
 
-def simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, num_dose_calc_NN, spinner_type):
+def simulator_parallel(parallel_pool, 
+                       live_display, 
+                       layout_groups, 
+                       master_structure_reference_dict, 
+                       structs_referenced_list, 
+                       dose_ref, 
+                       master_structure_info_dict, 
+                       biopsy_z_voxel_length, 
+                       num_dose_calc_NN, 
+                       spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
