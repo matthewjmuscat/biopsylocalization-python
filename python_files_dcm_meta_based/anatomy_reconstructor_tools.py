@@ -128,22 +128,26 @@ def build_pairings_list(num_points_in_all_slices):
     return test_pairings_list_all
 
 def slice_point_pairings_interpolator(parallel_pool, interpolation_dist, zslices_index_pairings_dict, threeDdata_zslice_list):
-    #interslice_interpolation_information = interslice_interpolation_information_obj(threeDdata_zslice_list)
-    interslice_interpolation_information_parallel = interslice_interpolation_information_obj(threeDdata_zslice_list)
+    """
+    Note that although you can switch the option, it is faster to analyze serially than in parallel
+    """
+    
+    interslice_interpolation_information = interslice_interpolation_information_obj(threeDdata_zslice_list)
+    #interslice_interpolation_information_parallel = interslice_interpolation_information_obj(threeDdata_zslice_list)
     
     #st = time.time()
-    #interslice_interpolation_information.analyze_structure(threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)
+    interslice_interpolation_information.analyze_structure(threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)
     #et = time.time()
     #elapsed_time = et - st
     #print('\n Serial execution time:', elapsed_time, 'seconds')
     
     #st = time.time()
-    interslice_interpolation_information_parallel.analyze_structure_parallel(parallel_pool, threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)    
+    #interslice_interpolation_information_parallel.analyze_structure_parallel(parallel_pool, threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)    
     #et = time.time()
     #elapsed_time = et - st
     #print('\n Parallel execution time:', elapsed_time, 'seconds')
 
-    return interslice_interpolation_information_parallel
+    return interslice_interpolation_information
 
 
 def create_lineset_all_zslices(threeDdata_zslice_list):

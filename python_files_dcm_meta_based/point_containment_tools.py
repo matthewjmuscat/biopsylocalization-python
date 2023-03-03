@@ -16,7 +16,7 @@ def create_point_cloud(data_arr, color = np.array([0,0,0])):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(data_arr)
     if color == 'random':
-        pcd_color = np.random.uniform(0, 0.7, size=3)
+        pcd_color = np.random.uniform(0, 0.9, size=3)
     else:
         pcd_color = color
     point_cloud.paint_uniform_color(pcd_color)

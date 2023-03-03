@@ -385,6 +385,7 @@ def main():
                                 structure_centroids_array[index] = structure_zslice_centroid
 
 
+                           
                         # conduct INTER-slice interpolation
                         interp_dist_z_slice = 0.5
                         interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_dist_z_slice)
@@ -395,24 +396,28 @@ def main():
                         # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
                         num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        interp_dist = 2 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                        interp_dist = 0.1 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                        # SLOWER TO ANALYZE PARALLEL
+                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
+
+                        # FASTER TO ANALYZE SERIALLY
                         interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
                         
-                        interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
 
                         #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
                         #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
 
                         # fill in the end caps
+                        
                         interp_dist_caps = 2
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
                         interpolation_information.create_fill(first_zslice, interp_dist_caps)
                         interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
-                        #et = time.time()
-                        #elapsed_time = et - st
-                        #print('\n Execution time:', elapsed_time, 'seconds')
+                        
 
                         # generate point cloud of raw threeDdata
                         threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
@@ -457,8 +462,11 @@ def main():
                         threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
                         threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
                         threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-
-                        
+                        pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
+                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
+                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
+                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
+                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
                         # plot raw points ?
                         #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
 
@@ -535,6 +543,7 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         if structs == structs_referenced_list[0]:
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
@@ -564,7 +573,8 @@ def main():
                         if structs == structs_referenced_list[0]: 
                             structure_pcd = specific_structure["Reconstructed structure point cloud"]
                         else: 
-                            structure_pcd = specific_structure["Point cloud raw"]
+                            #structure_pcd = specific_structure["Point cloud raw"]
+                            structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
                         pcd_list.append(structure_pcd)
                         
                 plotting_funcs.plot_geometries(*pcd_list)
@@ -1839,9 +1849,9 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
         bpsy_info = {"Num structs": len(bpsy_ref)}
         OAR_info = {"Num structs": len(OAR_ref)}
@@ -1972,6 +1982,23 @@ class interpolation_information_obj:
         self.interpolated_pts_with_end_caps_list = None
         self.interpolated_pts_with_end_caps_np_arr = None 
 
+    def serial_analyze(self,three_Ddata_list,interp_dist):
+        self.interpolate_distance = interp_dist
+        for threeDdata_zslice in three_Ddata_list:
+            result = self.analyze_structure_slice(threeDdata_zslice)
+            zslice_key = result[0] 
+            z_slice_seg_obj_list = result[1]
+            numpoints_raw_per_zslice = result[2]
+            numpoints_after_interpolation_per_zslice_temp  = result[3]
+            threeDdata_zslice_interpolated_list = result[4]
+
+            self.scipylinesegments_by_zslice_keys_dict[zslice_key] = z_slice_seg_obj_list
+            self.numpoints_raw_per_zslice_dict[zslice_key] = numpoints_raw_per_zslice
+            self.numpoints_after_interpolation_per_zslice_dict[zslice_key] = numpoints_after_interpolation_per_zslice_temp
+            for interpolated_point in threeDdata_zslice_interpolated_list:
+                self.interpolated_pts_list.append(interpolated_point)
+        self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
+    
     def parallel_analyze(self, parallel_pool, three_Ddata_list,interp_dist):
         pool = parallel_pool
         self.interpolate_distance = interp_dist
