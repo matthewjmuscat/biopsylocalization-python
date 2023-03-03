@@ -3,9 +3,9 @@ import pandas as pd
 import scipy
 import open3d as o3d
 import biopsy_localization_convex_main as main
+import time
 
-
-def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist):
+def inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, max_interpolation_dist):
     # check if each slice has the same number of points
     
     
@@ -44,7 +44,7 @@ def inter_zslice_interpolator(threeDdata_zslice_list, max_interpolation_dist):
         #loader.change_msg("Slices repaired, all z-slices now have equal number of points.")
     zslices_index_pairings_dict = perform_distance_minimization(threeDdata_equal_pt_zslice_list)
     #print(zslices_index_pairings_dict)
-    interslice_interpolation_information = slice_point_pairings_interpolator(max_interpolation_dist, zslices_index_pairings_dict, threeDdata_equal_pt_zslice_list)
+    interslice_interpolation_information = slice_point_pairings_interpolator(parallel_pool, max_interpolation_dist, zslices_index_pairings_dict, threeDdata_equal_pt_zslice_list)
     #loader.change_msg("Z-slice point pairings determined.")
     return interslice_interpolation_information, threeDdata_equal_pt_zslice_list
 
@@ -127,10 +127,23 @@ def build_pairings_list(num_points_in_all_slices):
         test_pairings_list_all[i] = test_pairings_list
     return test_pairings_list_all
 
-def slice_point_pairings_interpolator(interpolation_dist, zslices_index_pairings_dict, threeDdata_zslice_list):
-    interslice_interpolation_information = interslice_interpolation_information_obj(threeDdata_zslice_list)
-    interslice_interpolation_information.analyze_structure(threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)
-    return interslice_interpolation_information
+def slice_point_pairings_interpolator(parallel_pool, interpolation_dist, zslices_index_pairings_dict, threeDdata_zslice_list):
+    #interslice_interpolation_information = interslice_interpolation_information_obj(threeDdata_zslice_list)
+    interslice_interpolation_information_parallel = interslice_interpolation_information_obj(threeDdata_zslice_list)
+    
+    #st = time.time()
+    #interslice_interpolation_information.analyze_structure(threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('\n Serial execution time:', elapsed_time, 'seconds')
+    
+    #st = time.time()
+    interslice_interpolation_information_parallel.analyze_structure_parallel(parallel_pool, threeDdata_zslice_list, zslices_index_pairings_dict, interpolation_dist)    
+    #et = time.time()
+    #elapsed_time = et - st
+    #print('\n Parallel execution time:', elapsed_time, 'seconds')
+
+    return interslice_interpolation_information_parallel
 
 
 def create_lineset_all_zslices(threeDdata_zslice_list):
@@ -180,6 +193,41 @@ class interslice_interpolation_information_obj:
             adjacent_index = (current_slice_index+1) 
             threeDdata_adjacent_slice_arr = threeDdata_zslice_list[adjacent_index]
             threeDdata_interpolated_bt_two_zslices_list = self.analyze_adjacent_structure_slices(threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist)
+            for interpolated_slice_index,z_slice_arr in enumerate(threeDdata_interpolated_bt_two_zslices_list):
+                self.interpolated_pts_list.insert(insert_index,z_slice_arr)
+                interpolated_zslice_val = z_slice_arr[0,2]
+                self.zslice_vals_after_interpolation_list.append(interpolated_zslice_val)
+                insert_index = insert_index + 1 
+            insert_index = insert_index + 1
+            threeDdata_next_slice_arr = threeDdata_zslice_list[current_slice_index+1]
+            next_zslice_val = threeDdata_next_slice_arr[0,2]
+            self.zslice_vals_after_interpolation_list.append(next_zslice_val)
+        self.generate_interpolated_pts_np_arr()
+
+    def analyze_structure_parallel(self, parallel_pool, threeDdata_zslice_list, zslices_index_pairings_dict, max_interp_dist):
+        self.interpolated_pts_list = threeDdata_zslice_list.copy()
+        self.zslices_index_pairings_dict = zslices_index_pairings_dict
+        self.max_interp_distance = max_interp_dist
+        threeDdata_first_slice_arr = threeDdata_zslice_list[0]
+        first_zslice_val = threeDdata_first_slice_arr[0,2]
+        self.zslice_vals_after_interpolation_list.append(first_zslice_val)
+        args_list = []
+        for current_slice_index in range(self.num_z_slices_raw-1): # exclude last slice
+            threeDdata_current_slice_arr = threeDdata_zslice_list[current_slice_index]
+            adjacent_index = (current_slice_index+1) 
+            threeDdata_adjacent_slice_arr = threeDdata_zslice_list[adjacent_index]
+            arg = (zslices_index_pairings_dict, threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist)
+            args_list.append(arg)
+        
+        threeDdata_interpolated_bt_two_zslices_results_list = parallel_pool.starmap(self.analyze_adjacent_structure_slices_for_parallel, args_list)
+        insert_index = 1
+
+        for current_slice_index in range(self.num_z_slices_raw-1): # exclude last slice
+            threeDdata_interpolated_bt_two_zslices_list = threeDdata_interpolated_bt_two_zslices_results_list[current_slice_index][0]
+            linesegments_by_point_pairings_keys_dict = threeDdata_interpolated_bt_two_zslices_results_list[current_slice_index][1]
+            adjacent_slice_key = threeDdata_interpolated_bt_two_zslices_results_list[current_slice_index][2]
+            self.linesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key] = linesegments_by_point_pairings_keys_dict
+
             for interpolated_slice_index,z_slice_arr in enumerate(threeDdata_interpolated_bt_two_zslices_list):
                 self.interpolated_pts_list.insert(insert_index,z_slice_arr)
                 interpolated_zslice_val = z_slice_arr[0,2]
@@ -252,6 +300,67 @@ class interslice_interpolation_information_obj:
             threeDdata_interpolated_zslices_list_temp.append(new_z_slice)
         
         return threeDdata_interpolated_zslices_list_temp
+    
+    @staticmethod
+    def analyze_adjacent_structure_slices_for_parallel(zslices_index_pairings_dict, threeDdata_current_slice_arr, threeDdata_adjacent_slice_arr, max_interp_dist):
+        linesegments_by_point_pairings_keys_dict = {}
+        z_val_current = threeDdata_current_slice_arr[0,2] 
+        z_val_adjacent = threeDdata_adjacent_slice_arr[0,2]
+        current_zslice_num_points = np.size(threeDdata_current_slice_arr,0)
+        current_zslice_num_segments = current_zslice_num_points
+        adjacent_slice_key = (z_val_current,z_val_adjacent)
+        threeDdata_interpolated_zslices_list_temp = []
+        zvals_key = (z_val_current,z_val_adjacent)
+        current_and_adjacent_zslices_index_pairings = zslices_index_pairings_dict[zvals_key]
+        caa_ind_p = current_and_adjacent_zslices_index_pairings
+        total_num_interpolations_counter = 0
+        #insert_index = 1
+        longest_segment_index = None
+        longest_segment_length = 0
+        for j in range(0,current_zslice_num_segments):
+            point_pairings_key = caa_ind_p[j]
+            current_zslice_pt_index = point_pairings_key[0]
+            adjacent_zslice_pt_index = point_pairings_key[1]
+            pt_indices_key = (current_zslice_pt_index,adjacent_zslice_pt_index)
+            segment_points = np.empty([2,3], dtype=float)
+            segment_points[0,:] = threeDdata_current_slice_arr[current_zslice_pt_index]
+            segment_points[1,:] = threeDdata_adjacent_slice_arr[adjacent_zslice_pt_index]
+            segment_vec = segment_points[1,:] - segment_points[0,:]
+            segment_length = np.linalg.norm(segment_vec)
+            segment_obj = line_segment_obj(segment_vec,segment_length,segment_points,zvals_key,pt_indices_key)
+            if segment_length > longest_segment_length:
+                longest_segment_index = j
+                longest_segment_length = segment_length
+                segment_obj.longest_segment_in_adjacent_slices = True
+            linesegments_by_point_pairings_keys_dict[point_pairings_key] = segment_obj
+    
+        #self.linesegments_dict_by_adjacent_zslice_keys_dict[adjacent_slice_key] = linesegments_by_point_pairings_keys_dict
+
+        new_z_slices_vals_list = []
+        # analyze longest segment
+        longest_segment_point_pairings_key = caa_ind_p[longest_segment_index]
+        longest_segment_obj = linesegments_by_point_pairings_keys_dict[longest_segment_point_pairings_key]
+        longest_segment_obj_length = longest_segment_obj.segment_length
+        num_interpolations_on_longest_segment = int(np.floor(longest_segment_obj_length/max_interp_dist))
+        t_vals_with_end_points = np.linspace(0, 1, num=num_interpolations_on_longest_segment+2) # generate the t values to evaluate along the longest segment 
+        t_vals_without_end_points = t_vals_with_end_points[1:-1]
+        for t_val_ind,t_val in enumerate(t_vals_without_end_points):
+            new_z_slices_vals_list.append(longest_segment_obj.coordinate_val('z',t_val)) # calculate new z_vals
+        # loop through all new z vals to be added
+        
+        for z_val in new_z_slices_vals_list:
+            new_z_slice = np.empty([current_zslice_num_segments,3], dtype = float)
+            # loop through all segments
+            for j, (segment_key, segment_obj) in enumerate(linesegments_by_point_pairings_keys_dict.items()):
+                new_point = np.empty([1,3],dtype=float)
+                new_point_xy = segment_obj.new_xy_vals_from_z(z_val)
+                new_point[0,0] = new_point_xy[0] # new x val
+                new_point[0,1] = new_point_xy[1] # new y val
+                new_point[0,2] = z_val
+                new_z_slice[j,:] = new_point
+            threeDdata_interpolated_zslices_list_temp.append(new_z_slice)
+        
+        return threeDdata_interpolated_zslices_list_temp, linesegments_by_point_pairings_keys_dict, adjacent_slice_key
 
     def generate_interpolated_pts_np_arr(self):
         interpolated_pts_arr = np.empty([0,3])

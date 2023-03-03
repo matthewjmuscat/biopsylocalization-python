@@ -104,7 +104,7 @@ def main():
     spinner_type = 'line'
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
-    num_sample_pts_per_bx_input = 10000
+    num_sample_pts_per_bx_input = 1000
     num_MC_simulations_input = 50
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
@@ -328,7 +328,7 @@ def main():
             processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
             processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
 
-
+            #live_display.stop()
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
@@ -387,7 +387,7 @@ def main():
 
                         # conduct INTER-slice interpolation
                         interp_dist_z_slice = 0.5
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(threeDdata_zslice_list, interp_dist_z_slice)
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_dist_z_slice)
                         
                         # conduct INTRA-slice interpolation
                         # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
