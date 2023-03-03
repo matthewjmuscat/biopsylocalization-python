@@ -105,9 +105,11 @@ def main():
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
-    num_MC_simulations_input = 50
+    num_MC_containment_simulations_input = 10
+    num_MC_dose_simulations_input = 50
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
+    num_bootstraps_all_MC_data_input = 15
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -1027,13 +1029,21 @@ def main():
             simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
             stopwatch.start()
 
-            num_simulations = num_MC_simulations_input
-            master_structure_info_dict["Global"]["MC info"]["Num MC simulations"] = num_simulations
+            
+            master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"] = num_MC_containment_simulations_input
+            master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"] = num_MC_dose_simulations_input
             if simulation_ans ==  True:
                 print('>Beginning simulation')
-                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, live_display, layout_groups, master_structure_reference_dict, structs_referenced_list, dose_ref, master_structure_info_dict, biopsy_z_voxel_length, num_dose_calc_NN, spinner_type)
-                #master_structure_reference_dict_simulated = MC_simulator_convex.simulator(master_structure_reference_dict, structs_referenced_list,num_simulations, pandas_read_uncertainties)
-                print('test')
+                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, 
+                                                                                         live_display, 
+                                                                                         layout_groups, 
+                                                                                         master_structure_reference_dict, 
+                                                                                         structs_referenced_list, 
+                                                                                         dose_ref, 
+                                                                                         master_structure_info_dict, 
+                                                                                         biopsy_z_voxel_length, 
+                                                                                         num_dose_calc_NN, 
+                                                                                         spinner_type)
             else: 
                 pass
 
@@ -1093,14 +1103,14 @@ def main():
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         bx_points_bx_coords_sys_arr_row = bx_points_bx_coords_sys_arr_list.copy()
                         bx_points_bx_coords_sys_arr_row.insert(0,'')
-                        containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
+                        containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
                         containment_output_csv_file_path = specific_output_dir.joinpath(containment_output_file_name)
                         with open(containment_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
                             write.writerow(['BX ID ->',specific_bx_structure['ROI']])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
-                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num MC containment sims ->',num_MC_containment_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed containment structure'])
                             write.writerow(['Col ->','Fixed bx point'])
@@ -1144,14 +1154,14 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-                        containment_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
+                        containment_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
                         containment_voxelized_output_csv_file_path = specific_output_dir.joinpath(containment_voxelized_output_file_name)
                         with open(containment_voxelized_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
                             write.writerow(['BX ID ->',specific_bx_structure['ROI']])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
-                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num MC containment sims ->',num_MC_containment_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed containment structure'])
                             write.writerow(['Col ->','Fixed voxel'])
@@ -1181,11 +1191,9 @@ def main():
                                 write.writerow(std_dev_binomial_estimator_row)
                                 write.writerow([''])
                 
-                # copy uncertainty file used for simulation to output folder
-                uncertainties_file_filled_output_folder = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
-                containment_voxelized_output_csv_file_path = specific_output_dir.joinpath(containment_voxelized_output_file_name) 
+                # copy uncertainty file used for simulation to output folder 
                 shutil.copy(uncertainties_file_filled, specific_output_dir)
-
+                
 
             else:
                 pass
@@ -1245,7 +1253,7 @@ def main():
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
-                        dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
+                        dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
                         dose_output_csv_file_path = specific_output_dir.joinpath(dose_output_file_name)
                         specific_bx_structure["Output csv file paths dict"]["Dose output point-wise csv"] = dose_output_csv_file_path
                         with open(dose_output_csv_file_path, 'w', newline='') as f:
@@ -1253,7 +1261,7 @@ def main():
                             write.writerow(['Patient ID ->',patientUID])
                             write.writerow(['BX ID ->',specific_bx_structure['ROI']])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
-                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num MC dose sims ->',num_MC_dose_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed bx pt'])
                             write.writerow(['Col ->','Fixed MC trial'])
@@ -1272,14 +1280,14 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-                        dose_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC='+str(num_simulations)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_voxelized_out.csv'
+                        dose_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_voxelized_out.csv'
                         dose_voxelized_output_csv_file_path = specific_output_dir.joinpath(dose_voxelized_output_file_name)
                         with open(dose_voxelized_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
                             write.writerow(['BX ID ->',specific_bx_structure['ROI']])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
-                            write.writerow(['Num MC sims ->',num_simulations])
+                            write.writerow(['Num MC dose sims ->',num_MC_dose_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Info'])
                             write.writerow(['Col ->','Fixed voxel'])
@@ -1421,8 +1429,6 @@ def main():
                         # do non parametric kernel regression (local linear)
                         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000)
                         
-                        num_bootstraps_all_MC_data = 15
-                        
                         if regression_type_ans == True and global_regression_ans == True:
                             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
                             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
@@ -1430,7 +1436,7 @@ def main():
                                 parallel_pool,
                                 x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
                                 y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data, conf_interval=0.95
+                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
                             )
                         elif regression_type_ans == False and global_regression_ans == True:
                             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_fit, \
@@ -1439,7 +1445,7 @@ def main():
                                 parallel_pool,
                                 x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
                                 y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data, conf_interval=0.95
+                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
                             )
                         elif global_regression_ans == False:
                             pass
@@ -1873,7 +1879,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
         dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "Dose grid point cloud thresholded": None, "KDtree": None}
         master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
-    mc_info = {"Num MC simulations": None, "Num sample pts per BX core": None}
+    mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None}
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
     return master_st_ds_ref_dict, master_st_ds_info_global_dict, st_ref_list, ds_ref

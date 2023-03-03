@@ -83,24 +83,25 @@ def simulator_parallel(parallel_pool,
         live_display.start(refresh = True)
         num_patients = master_structure_info_dict["Global"]["Num patients"]
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
-        num_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC simulations"]
+        num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
+        num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
         num_sample_pts_per_bx = master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"]
 
-
+        max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
 
         default_output = "Initializing"
-        processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(num_simulations,num_global_structures,default_output)
-        processing_patients_task_completed_main_description = "[green]Generating {} MC samples for {} structures".format(num_simulations,num_global_structures)
+        processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,default_output)
+        processing_patients_task_completed_main_description = "[green]Generating {} MC samples for {} structures".format(max_simulations,num_global_structures)
         processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total = num_patients)
         processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total = num_patients, visible = False)
 
         # simulate all structure shifts in parallel and update the master reference dict
         for patientUID,pydicom_item in master_structure_reference_dict.items():
-            processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(num_simulations,num_global_structures,patientUID)
+            processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,patientUID)
             patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
 
 
-            patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, num_simulations)
+            patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, max_simulations)
             master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
             patients_progress.update(processing_patients_task, advance = 1)
             completed_progress.update(processing_patients_task_completed, advance = 1)
@@ -113,7 +114,7 @@ def simulator_parallel(parallel_pool,
         num_OARs_global = master_structure_info_dict["Global"]["Num OARs"]
         num_DILs_global = master_structure_info_dict["Global"]["Num DILs"]
         
-        simulation_info_important_line_str = "Simulation data: # MC samples = {} | # sample pts per BX core = {} | # biopsies = {} | # anatomical structures = {} | # patients = {}.".format(str(num_simulations), str(num_sample_pts_per_bx), str(num_biopsies_global), str(num_global_structures-num_biopsies_global), str(num_patients))
+        simulation_info_important_line_str = "Simulation data: # MC containment simulations = {} | # MC dose simulations = {} | # sample pts per BX core = {} | # biopsies = {} | # anatomical structures = {} | # patients = {}.".format(str(num_MC_containment_simulations), str(num_MC_dose_simulations), str(num_sample_pts_per_bx), str(num_biopsies_global), str(num_global_structures-num_biopsies_global), str(num_patients))
         important_info.add_text_line(simulation_info_important_line_str, live_display)
         
 
@@ -208,11 +209,17 @@ def simulator_parallel(parallel_pool,
                     prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
                     prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
                     
-                    testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_simulations)
+                    testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
                     all_trials_POP_test_results_and_point_clouds_tuple = []
-                    for single_trial_shifted_bx_data_arr in shifted_bx_data_3darr:
+                    
+                    for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr):
+                        # cutoff the number of simulations for containment since it is slow
+                        if trial_num > (num_MC_containment_simulations-1):
+                            break
+                        else:
+                            pass
                         #single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
-                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, num_simulations, non_bx_struct_interpolated_pts_np_arr, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
+                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, non_bx_struct_interpolated_pts_np_arr, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
                         all_trials_POP_test_results_and_point_clouds_tuple.append(single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple)
                         
                         
@@ -229,6 +236,7 @@ def simulator_parallel(parallel_pool,
                         """
                         
                         MC_trial_progress.update(testing_each_trial_task, advance=1)
+                        
                     
                     MC_trial_progress.remove_task(testing_each_trial_task)
                     MC_translation_results_for_fixed_bx_dict[structure_info] = all_trials_POP_test_results_and_point_clouds_tuple
@@ -272,7 +280,7 @@ def simulator_parallel(parallel_pool,
                     structure_specific_results_dict = structure_specific_results_dict_empty.copy()
                     # counter list needs to be reset for every structure 
                     bx_containment_counter_by_org_pt_ind_list = [0]*num_sample_pts_per_bx    
-                    compiling_results_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial...", total=num_simulations)
+                    compiling_results_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial...", total=num_MC_containment_simulations)
                     for MC_trial in structure_MC_results:
                         MC_trial_BX_pts_result_list = MC_trial[0]
                         for bx_pt_index, bx_point_result in enumerate(MC_trial_BX_pts_result_list):
@@ -293,7 +301,7 @@ def simulator_parallel(parallel_pool,
                         MC_trial_progress.update(compiling_results_each_trial_task, advance=1) 
                     MC_trial_progress.remove_task(compiling_results_each_trial_task)
                     structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list
-                    bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_simulations for x in bx_containment_counter_by_org_pt_ind_list]
+                    bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_MC_containment_simulations for x in bx_containment_counter_by_org_pt_ind_list]
                     structure_specific_results_dict["Binomial estimator list"] = bx_containment_binomial_estimator_by_org_pt_ind_list
                     MC_compiled_results_for_fixed_bx_dict[structureID] = structure_specific_results_dict
                     structures_progress.update(compiling_results_each_non_bx_structure_containment_task, advance=1)
@@ -329,7 +337,7 @@ def simulator_parallel(parallel_pool,
                     bx_containment_counter_by_org_pt_ind_list = structure_specific_results_dict["Total successes (containment) list"] 
                     probability_estimator_list = bx_containment_binomial_estimator_by_org_pt_ind_list
                     num_successes_list = bx_containment_counter_by_org_pt_ind_list
-                    num_trials = num_simulations
+                    num_trials = num_MC_containment_simulations
                     confidence_interval_list = calculate_binomial_containment_conf_intervals_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
                     standard_err_list = calculate_binomial_containment_stand_err_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
                     structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
@@ -396,7 +404,7 @@ def simulator_parallel(parallel_pool,
                         conf_interval_in_voxel_list = np.take(conf_interval_list, sample_pts_indices_in_voxel_arr, axis = 0)[0].tolist()
 
                         total_successes_in_voxel = sum(total_success_in_voxel_list)
-                        total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_simulations
+                        total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_MC_containment_simulations
                         if num_sample_pts_in_voxel < 1:
                             arithmetic_mean_binomial_estimators_in_voxel = 'No data'
                         else:
@@ -488,7 +496,7 @@ def simulator_parallel(parallel_pool,
                 
                 bx_only_shifted_3darr = specific_bx_structure["MC data: bx only shifted 3darr"] # note that the 3rd dimension slices are each MC trial
                 dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{},{}]...".format(patientUID, specific_bx_structure_roi), total = None)
-                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
                 specific_bx_structure['MC data: bx to dose NN search objects list'] = dosimetric_localization_all_MC_trials_list
                 indeterminate_progress_sub.remove_task(dosimetric_calc_parallel_task)
 
@@ -605,7 +613,7 @@ def simulator_parallel(parallel_pool,
                     dose_vals_in_voxel_by_sampled_pt_index_arr = np.take(specific_bx_dose_results_list, sample_pts_indices_in_voxel_arr, axis = 0)[0]
                     dose_vals_in_voxel_list = dose_vals_in_voxel_by_sampled_pt_index_arr.flatten(order='C').tolist()
                     
-                    total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_simulations
+                    total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_MC_dose_simulations
                     if total_num_MC_trials_in_voxel < 1:
                         arithmetic_mean_dose_in_voxel = 'No data'
                     else:
@@ -692,13 +700,17 @@ def normal_distribution_MLE(data_1d_arr):
 
 
 
-def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
+def dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
     # build args list
     args_list = [None]*bx_only_shifted_3darr.shape[0]
     dose_ref_dict_roi = dose_ref_dict["Dose ID"]
     specific_bx_structure_roi = specific_bx_structure["ROI"]
     dose_data_KDtree = dose_ref_dict["KDtree"]
     for single_MC_trial_slice_index, bx_only_shifted_single_MC_trial_slice in enumerate(bx_only_shifted_3darr):
+        if single_MC_trial_slice_index > (num_MC_dose_simulations-1):
+            break
+        else:
+            pass 
         single_MC_trial_arg = (dose_data_KDtree, bx_only_shifted_single_MC_trial_slice, specific_bx_structure_roi, dose_ref_dict_roi, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
         args_list[single_MC_trial_slice_index] = single_MC_trial_arg
     
@@ -865,7 +877,7 @@ def point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simu
 
 
 
-def point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, num_simulations, containment_structure_pts_arr, interslice_interpolation_information_of_containment_structure, test_pts_arr):
+def point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, containment_structure_pts_arr, interslice_interpolation_information_of_containment_structure, test_pts_arr):
     num_pts = test_pts_arr.shape[0]
     test_pts_list = test_pts_arr.tolist()
     test_pts_point_cloud_after_axis_aligned_bounding_box_test = o3d.geometry.PointCloud()
