@@ -561,7 +561,7 @@ def simulator_parallel(parallel_pool,
                 MC_dose_stats_dict = {"Dose statistics by bx pt (mean,se,var)": mu_se_var_all_bx_pts_list, "Confidence intervals (95%) by bx pt": confidence_intervals_all_bx_pts_list}
                 MC_dose_stats_basic_dict = {"Mean dose by bx pt": mu_all_bx_pts_list, "STD by bx pt": std_all_bx_pts_list, "Qunatiles dose by bx pt dict": quantiles_all_bx_pts_dict_of_lists}
                 specific_bx_structure["MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)"] = MC_dose_stats_dict
-                specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"] = MC_dose_stats_basic_dict
+                specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"] = MC_dose_stats_basic_dict
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
             
             biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, visible = False)
@@ -702,7 +702,7 @@ def normal_distribution_MLE(data_1d_arr):
 
 def dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
     # build args list
-    args_list = [None]*bx_only_shifted_3darr.shape[0]
+    args_list = [None]*num_MC_dose_simulations
     dose_ref_dict_roi = dose_ref_dict["Dose ID"]
     specific_bx_structure_roi = specific_bx_structure["ROI"]
     dose_data_KDtree = dose_ref_dict["KDtree"]

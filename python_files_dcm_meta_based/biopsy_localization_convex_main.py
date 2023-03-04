@@ -105,8 +105,8 @@ def main():
     output_folder_name = 'Output data'
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
-    num_MC_containment_simulations_input = 10
-    num_MC_dose_simulations_input = 50
+    num_MC_containment_simulations_input = 20
+    num_MC_dose_simulations_input = 10
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
     num_bootstraps_all_MC_data_input = 15
@@ -1266,7 +1266,7 @@ def main():
                             write.writerow(['Row ->','Fixed bx pt'])
                             write.writerow(['Col ->','Fixed MC trial'])
                             write.writerow(['Vector (mm)','X (mm)', 'Y (mm)', 'Z (mm)', 'r (mm)', 'Mean (Gy)', 'STD (Gy)', 'All MC trials doses (Gy) -->'])
-                            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"]
+                            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
                             for pt_index, dose_vals_row in enumerate(specific_bx_structure['MC data: Dose vals for each sampled bx pt list']):
                                 #dose_vals_row_with_point = dose_vals_row.copy()
                                 pt_radius_bx_coord_sys = np.linalg.norm(bx_points_bx_coords_sys_arr_list[pt_index][0:2])
@@ -1399,7 +1399,7 @@ def main():
                     bx_structs = structs_referenced_list[0]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_struct_roi = specific_bx_structure["ROI"]
-                        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std)"]
+                        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
                         mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
                         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
                         quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Qunatiles dose by bx pt dict"].copy()
@@ -1776,7 +1776,180 @@ def main():
                         html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose_output.html'
                         html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
+                
 
+                # perform containment probabilities plots and regressions
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    bx_structs = structs_referenced_list[0]
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        bx_struct_roi = specific_bx_structure["ROI"]
+                        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                        bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
+                        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+                        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+                        pt_radius_point_wise_for_pd_data_frame_list = []
+                        axial_Z_point_wise_for_pd_data_frame_list = []
+                        binom_est_point_wise_for_pd_data_frame_list = []
+                        total_successes_point_wise_for_pd_data_frame_list = []
+                        std_err_point_wise_for_pd_data_frame_list = []
+                        MC_trial_index_point_wise_for_pd_data_frame_list = []
+                        ROI_name_point_wise_for_pd_data_frame_list = []
+                             
+                        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+                            containment_structure_ROI = containment_structure_key_tuple[0]
+                            ROI_name_point_wise_for_pd_data_frame_list = ROI_name_point_wise_for_pd_data_frame_list + [containment_structure_ROI]*len(bx_points_bx_coords_sys_arr_list)
+                            containment_structure_successes_list = containment_structure_dict['Total successes (containment) list']
+                            containment_structure_binom_est_list = containment_structure_dict["Binomial estimator list"]
+                            containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
+                            total_successes_point_wise_for_pd_data_frame_list = total_successes_point_wise_for_pd_data_frame_list + containment_structure_successes_list
+                            binom_est_point_wise_for_pd_data_frame_list = binom_est_point_wise_for_pd_data_frame_list + containment_structure_binom_est_list
+                            std_err_point_wise_for_pd_data_frame_list = std_err_point_wise_for_pd_data_frame_list + containment_structure_stand_err_list
+                            
+                            pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + pt_radius_bx_coord_sys.tolist()
+                            axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + bx_points_bx_coords_sys_arr[:,2].tolist()     
+                            
+                        containment_output_dict_by_MC_trial_for_pandas_data_frame = {"Structure ROI": ROI_name_point_wise_for_pd_data_frame_list, "Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, "Mean probability (binom est)": binom_est_point_wise_for_pd_data_frame_list, "Total successes": total_successes_point_wise_for_pd_data_frame_list, "STD err": std_err_point_wise_for_pd_data_frame_list}
+                        containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
+   
+                        # do non parametric kernel regression (local linear)
+                        z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000)
+                        all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict = {}
+                        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+                            if regression_type_ans == True:
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, \
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = containment_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                                    y = containment_output_dict_by_MC_trial_for_pandas_data_frame["Mean probability (binom est)"], 
+                                    eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
+                                )
+                            elif regression_type_ans == False:
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, \
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
+                                all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = containment_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                                    y = containment_output_dict_by_MC_trial_for_pandas_data_frame["Mean probability (binom est)"], 
+                                    eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
+                                )
+                            containment_regressions_tuple = {"Mean regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, 
+                                "Lower 95 regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, 
+                                "Upper 95 regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper}
+
+                            all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[containment_structure_key_tuple] = containment_regressions_tuple
+                        
+                        # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
+                                                
+                        fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI")
+                        fig_regression_only = go.Figure()
+                        for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
+                            containment_structure_ROI = containment_structure_key_tuple[0]
+                            mean_regression = containment_structure_regressions_dict["Mean regression"]
+                            lower95_regression = containment_structure_regressions_dict["Lower 95 regression"]
+                            upper95_regression = containment_structure_regressions_dict["Upper 95 regression"]
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI+' regression',
+                                    x=z_vals_to_evaluate,
+                                    y=mean_regression,
+                                    mode="lines",
+                                    line=dict(color='rgb(31, 119, 180)'),
+                                    showlegend=True
+                                    )
+                            )
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI+' upper 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=upper95_regression,
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=False
+                                )
+                            )
+                            fig_global.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI+' lower 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=lower95_regression,
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=False
+                                )
+                            )
+
+                            # regressions only figure
+                            fig_regression_only.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI + ' regression',
+                                    x=z_vals_to_evaluate,
+                                    y=mean_regression,
+                                    mode="lines",
+                                    line=dict(color='rgb(31, 119, 180)'),
+                                    showlegend=True
+                                )
+                            )
+                            fig_regression_only.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI + ' upper 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=upper95_regression,
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=False
+                                )
+                            )
+                            fig_regression_only.add_trace(
+                                go.Scatter(
+                                    name=containment_structure_ROI + ' lower 95% CI',
+                                    x=z_vals_to_evaluate,
+                                    y=lower95_regression,
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=False
+                                )
+                            )
+
+                        fig_global.update_layout(
+                            title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+
+                        fig_regression_only.update_layout(
+                            yaxis_title='Conditional mean probability',
+                            xaxis_title='Axial pos Z (mm)',
+                            title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+                        
+                                                
+                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment_output.svg'
+                        svg_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path)
+
+                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment_output.html'
+                        html_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                        fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
+                        
+                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment_output.svg'
+                        svg_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path)
+
+                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment_output.html'
+                        html_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                        fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
+                       
+                        
             """
             stopwatch.stop()
             save_containment_probability_plots_ans = ques_funcs.ask_ok('>Save all containment probability plots?')
@@ -1855,7 +2028,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_total_num_structs = 0
     global_num_patients = 0
     for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
         OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
         DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
