@@ -336,7 +336,7 @@ def main():
             processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
             processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
 
-            live_display.stop()
+            #live_display.stop()
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
@@ -877,7 +877,7 @@ def main():
                     patients_progress.stop_task(processing_patients_task)
                     completed_progress.stop_task(processing_patients_completed_task)
                     stopwatch.stop()
-                    plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd)
+                    #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd)
                     stopwatch.start()
                     patients_progress.start_task(processing_patients_task)
                     completed_progress.start_task(processing_patients_completed_task)
@@ -971,14 +971,15 @@ def main():
             stopwatch.start()
             if uncertainty_template_generate == True:
                 # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
-                #today = date.today()
-                #date_file_name_format = today.strftime("%b-%d-%Y")
+                stopwatch.stop()
+                default_sigma = ques_funcs.ask_for_float_question('> Enter the default sigma value to generate for all structures:')
+                stopwatch.start()
 
                 date_time_now = datetime.now()
                 date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
                 uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
 
-                uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs)
+                uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, default_sigma)
             else:
                 pass
 
@@ -1103,16 +1104,30 @@ def main():
                     print('>Directory: ', specific_output_dir, ' created.')
                     specific_output_dir_exists = True
 
+
+                #create global csv output folder
+                csv_output_folder_name = 'Output CSVs'
+                csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
+                csv_output_dir.mkdir(parents=True, exist_ok=True)
+                
+                # create patient specific output directories for csv files
+                patient_sp_output_csv_dir_dict = {}
+                for patientUID in master_structure_reference_dict.keys():
+                    patient_sp_output_csv_dir = csv_output_dir.joinpath(patientUID)
+                    patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
+                    patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
+
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         bx_points_bx_coords_sys_arr_row = bx_points_bx_coords_sys_arr_list.copy()
                         bx_points_bx_coords_sys_arr_row.insert(0,'')
                         containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
-                        containment_output_csv_file_path = specific_output_dir.joinpath(containment_output_file_name)
+                        containment_output_csv_file_path = patient_sp_output_csv_dir.joinpath(containment_output_file_name)
                         with open(containment_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
@@ -1161,9 +1176,10 @@ def main():
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         containment_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
-                        containment_voxelized_output_csv_file_path = specific_output_dir.joinpath(containment_voxelized_output_file_name)
+                        containment_voxelized_output_csv_file_path = patient_sp_output_csv_dir.joinpath(containment_voxelized_output_file_name)
                         with open(containment_voxelized_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
@@ -1254,15 +1270,18 @@ def main():
                         specific_output_dir_exists = True
                 else:
                     pass
-
                 
+                
+                
+                # write csv files
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
-                        dose_output_csv_file_path = specific_output_dir.joinpath(dose_output_file_name)
+                        dose_output_csv_file_path = patient_sp_output_csv_dir.joinpath(dose_output_file_name)
                         specific_bx_structure["Output csv file paths dict"]["Dose output point-wise csv"] = dose_output_csv_file_path
                         with open(dose_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
@@ -1287,9 +1306,10 @@ def main():
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         dose_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_voxelized_out.csv'
-                        dose_voxelized_output_csv_file_path = specific_output_dir.joinpath(dose_voxelized_output_file_name)
+                        dose_voxelized_output_csv_file_path = patient_sp_output_csv_dir.joinpath(dose_voxelized_output_file_name)
                         with open(dose_voxelized_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
@@ -1341,7 +1361,7 @@ def main():
             
             
             stopwatch.stop()
-            create_dose_probability_plots_ans = ques_funcs.ask_ok('>Generate dose plots?')
+            create_dose_probability_plots_ans = ques_funcs.ask_ok('>Generate dose and containment plots?')
             stopwatch.start()
 
             if create_dose_probability_plots_ans ==  True:
@@ -1401,10 +1421,19 @@ def main():
                 stopwatch.stop()
                 global_regression_ans = ques_funcs.ask_ok('> Perform regression on global data?')
                 stopwatch.start()
-            
+
+                # generate and store patient directory folders for saving
+                patient_sp_output_figures_dir_dict = {}
+                for patientUID in master_structure_reference_dict.keys():
+                    bx_structs = structs_referenced_list[0]
+                    patient_sp_output_figures_dir = output_figures_dir.joinpath(patientUID)
+                    patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
+                    patient_sp_output_figures_dir_dict[patientUID] = patient_sp_output_figures_dir
+
                 # generate pandas data frame by reading dose output from file 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_struct_roi = specific_bx_structure["ROI"]
                         stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
@@ -1546,20 +1575,20 @@ def main():
                         elif global_regression_ans == False:
                             pass
                                                 
-                        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.svg'
-                        svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
+                        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.svg'
+                        svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
                         fig_global.write_image(svg_all_MC_trials_dose_fig_file_path)
 
-                        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose_output.html'
-                        html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
+                        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.html'
+                        html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
                         fig_global.write_html(html_all_MC_trials_dose_fig_file_path)
                         if global_regression_ans == True:
-                            svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.svg'
-                            svg_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
+                            svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.svg'
+                            svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
                             fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path)
 
-                            html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose_output.html'
-                            html_all_MC_trials_dose_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
+                            html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.html'
+                            html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
                             fig_regression_only.write_html(html_all_MC_trials_dose_fig_file_path)
                         elif global_regression_ans == False:
                             pass
@@ -1575,12 +1604,12 @@ def main():
                          
                         fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose")
                                                 
-                        svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose_output.svg'
-                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
                         fig.write_image(svg_dose_fig_file_path)
 
-                        html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose_output.html'
-                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
 
                         
@@ -1652,12 +1681,12 @@ def main():
                         )
 
 
-                        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.svg'
-                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
                         fig.write_image(svg_dose_fig_file_path)
 
-                        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose_output.html'
-                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
 
 
@@ -1749,12 +1778,12 @@ def main():
                         )
 
 
-                        svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose_output.svg'
-                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
                         fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path)
 
-                        html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose_output.html'
-                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
 
@@ -1777,18 +1806,19 @@ def main():
                         
                         fig = px.box(dose_output_voxelized_pandas_data_frame)
                         
-                        svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose_output.svg'
-                        svg_dose_fig_file_path = output_figures_dir.joinpath(svg_dose_fig_name)
+                        svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
                         fig.write_image(svg_dose_fig_file_path)
 
-                        html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose_output.html'
-                        html_dose_fig_file_path = output_figures_dir.joinpath(html_dose_fig_name)
+                        html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
                 
 
                 # perform containment probabilities plots and regressions
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     bx_structs = structs_referenced_list[0]
+                    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_struct_roi = specific_bx_structure["ROI"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
@@ -1942,73 +1972,24 @@ def main():
                         )
                         
                                                 
-                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment_output.svg'
-                        svg_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.svg'
+                        svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
                         fig_global.write_image(svg_all_MC_trials_containment_fig_file_path)
 
-                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment_output.html'
-                        html_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.html'
+                        html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
                         fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
                         
-                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment_output.svg'
-                        svg_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
+                        svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
                         fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path)
 
-                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment_output.html'
-                        html_all_MC_trials_containment_fig_file_path = output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
+                        html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
                         fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
                        
                         
-            """
-            stopwatch.stop()
-            save_containment_probability_plots_ans = ques_funcs.ask_ok('>Save all containment probability plots?')
-            stopwatch.start()
-
-            if write_dose_to_file_ans ==  True:
-                if created_output_dir == False:
-                    while created_output_dir == False:
-                        
-                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
-                        stopwatch.stop()
-                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
-                        stopwatch.start()
-
-                        if output_dir_generate == True:
-                            if os.path.isdir(output_dir) == True:
-                                print('>Directory already exists')
-                                created_output_dir = True
-                            else:
-                                os.mkdir(output_dir)
-                                print('>Directory: ', output_dir, ' created.')
-                                created_output_dir = True
-                        else:
-                            stopwatch.stop()
-                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
-                            stopwatch.start()
-                            if exit_programme == True:
-                                sys.exit('>Programme exited.')
-                            else: 
-                                pass
-                else:
-                    pass
-                if specific_output_dir_exists == False:
-                    date_time_now = datetime.now()
-                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
-                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
-
-                    print('>Creating specific output directory.')
-                    if os.path.isdir(specific_output_dir) == True:
-                        print('>Directory already exists.')
-                        specific_output_dir_exists = True
-                    else:
-                        os.mkdir(specific_output_dir)
-                        print('>Directory: ', specific_output_dir, ' created.')
-                        specific_output_dir_exists = True
-                else:
-                    pass
             
-            """
             
             print('>Programme has ended.')
 

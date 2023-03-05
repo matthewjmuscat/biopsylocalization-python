@@ -128,14 +128,8 @@ def simulator_parallel(parallel_pool,
             patients_progress.update(translating_patients_structures_task, description = translating_patients_main_desc)
 
             # create a dictionary of all non bx structures
-            structure_organized_for_bx_data_blank_dict = {}
-            for non_bx_struct_type in structs_referenced_list[1:]:
-                for specific_non_bx_structure_index, specific_non_bx_structure in enumerate(pydicom_item[non_bx_struct_type]):
-                    specific_non_bx_struct_roi = specific_non_bx_structure["ROI"]
-                    specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
-                    structure_organized_for_bx_data_blank_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_structure_index] = None
-            #MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
-            #MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
+            
             # set structure type to BX 
             bx_structure_type = structs_referenced_list[0]
             local_patient_num_biopsies = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
@@ -174,6 +168,8 @@ def simulator_parallel(parallel_pool,
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
+            
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
@@ -262,7 +258,8 @@ def simulator_parallel(parallel_pool,
         compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(compiling_results_patient_containment_task, description = "[red]Compiling MC results [{}]...".format(patientUID), total=num_patients)
-            bx_structure_type = structs_referenced_list[0]           
+            bx_structure_type = structs_referenced_list[0]
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)           
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             compiling_results_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
@@ -359,6 +356,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing containment results [{}]...".format(patientUID))
             bx_structure_type = structs_referenced_list[0]           
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
@@ -1090,3 +1088,14 @@ class nearest_neighbour_child_dose:
         self.NN_pt_on_comparison_struct = NN_pt_on_comparison_struct
         self.euclidean_dist = euclidean_dist
         self.nearest_dose = nearest_dose
+
+
+def create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list):
+    structure_organized_for_bx_data_blank_dict = {}
+    for non_bx_struct_type in structs_referenced_list[1:]:
+        for specific_non_bx_structure_index, specific_non_bx_structure in enumerate(pydicom_item[non_bx_struct_type]):
+            specific_non_bx_struct_roi = specific_non_bx_structure["ROI"]
+            specific_non_bx_struct_refnum = specific_non_bx_structure["Ref #"]
+            structure_organized_for_bx_data_blank_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_structure_index] = None
+
+    return structure_organized_for_bx_data_blank_dict

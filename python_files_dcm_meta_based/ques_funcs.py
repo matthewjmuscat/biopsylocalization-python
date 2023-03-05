@@ -43,3 +43,24 @@ def multi_choice_question(prompt, retries=4, reminder='Please try again!'):
         if retries < 0:
             raise ValueError('invalid user response')
         print(reminder)
+
+def ask_for_float_question(prompt, retries=4, reminder='Please try again!'):
+    """
+    This function defines a generic yes or no question.
+    """
+    while True:
+        ans = input(prompt + '\n')
+        if isfloat(ans):
+            return float(ans)
+        retries = retries - 1
+        if retries < 0:
+            raise ValueError('invalid user response')
+        print(reminder)
+
+
+def isfloat(num):
+    try:
+        float(num)
+        return True
+    except ValueError:
+        return False

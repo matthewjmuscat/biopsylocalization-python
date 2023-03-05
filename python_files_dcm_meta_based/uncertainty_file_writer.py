@@ -3,7 +3,7 @@ import csv
 import loading_tools
 
 
-def uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs):
+def uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, global_sigma):
     global_header = ['Total num structs']
     headerUID = ['Patient UID']
     headerSTRUCT = ['Structure type']
@@ -16,7 +16,7 @@ def uncertainty_file_preper(uncertainties_file, master_structure_reference_dict,
     headerunc_bx = ['mu X (B)', 'sigma X (B)', 'mu Y (B)', 'sigma Y (B)', 'mu Z (B)', 'sigma Z (B)'] 
     headerunc_L = ['mu X (L)', 'sigma X (L)', 'mu Y (L)', 'sigma Y (L)', 'mu Z (L)', 'sigma Z (L)']
     headerunc_generic = ['mu X', 'sigma X', 'mu Y', 'sigma Y', 'mu Z', 'sigma Z']
-    zero_row = [0]*6
+    default_vals_row = [0,float(global_sigma),0,float(global_sigma),0,float(global_sigma)]
     end_struct = ['_']*6
 
    
@@ -48,7 +48,7 @@ def uncertainty_file_preper(uncertainties_file, master_structure_reference_dict,
                         writer.writerow(headerrow)
                         writer.writerow(header_data)
                         writer.writerow(sub_header_row)
-                        writer.writerow(zero_row)
+                        writer.writerow(default_vals_row)
                         writer.writerow(end_struct)
                     loader.iterator = loader.iterator + 1
 
