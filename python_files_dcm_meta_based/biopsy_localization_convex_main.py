@@ -94,6 +94,7 @@ def main():
     # The following could be user input, for now they are defined here, and used throughout 
     # the programme for generality
     data_folder_name = 'Data'
+    input_data_folder_name = "Input data"
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
     oaroi_contour_names = ['Prostate','Urethra','Rectum','random']
     biopsy_contour_names = ['Bx']
@@ -103,8 +104,11 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
+    interp_inter_slice_dist = 0.5
+    interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
+    interp_dist_caps = 2
     biopsy_radius = 0.3
-    num_sample_pts_per_bx_input = 1000
+    num_sample_pts_per_bx_input = 100
     num_MC_containment_simulations_input = 20
     num_MC_dose_simulations_input = 10
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
@@ -141,8 +145,10 @@ def main():
             data_dir = pathlib.Path(__file__).parents[2].joinpath(data_folder_name)
             uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
             output_dir = data_dir.joinpath(output_folder_name)
-            dicom_paths_list = list(pathlib.Path(data_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
-            important_info.add_text_line("Reading dicom data from: "+ str(data_dir), live_display)
+            input_dir = data_dir.joinpath(input_data_folder_name)
+            input_dir.mkdir(parents=True, exist_ok=True)
+            dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
+            important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
             important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
 
             num_dicoms = len(dicom_paths_list)
@@ -330,7 +336,7 @@ def main():
             processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
             processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
 
-            #live_display.stop()
+            live_display.stop()
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
@@ -354,7 +360,12 @@ def main():
                         # can uncomment surrounding lines to time this particular process
                         #st = time.time()
                         threeDdata_zslice_list = []
-                        structure_contour_points_raw_sequence = RTst_dcms_dict[patientUID].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0:]
+                        for roi_contour_seq_item in RTst_dcms_dict[patientUID].ROIContourSequence:
+                            if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
+                                structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
+                                break
+                            else:
+                                pass
                         for index, slice_object in enumerate(structure_contour_points_raw_sequence):
                             contour_slice_points = slice_object.ContourData                       
                             threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
@@ -389,8 +400,7 @@ def main():
 
                            
                         # conduct INTER-slice interpolation
-                        interp_dist_z_slice = 0.5
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_dist_z_slice)
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
                         
                         # conduct INTRA-slice interpolation
                         # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
@@ -398,22 +408,20 @@ def main():
                         # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
                         num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        interp_dist = 0.1 # this is/should be a user defined length scale! It is used in the interpolation_information_obj class
+                        
                         # SLOWER TO ANALYZE PARALLEL
                         #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
+                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
 
                         # FASTER TO ANALYZE SERIALLY
                         interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_dist)
+                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
                         
 
                         #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_dist)
+                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
 
                         # fill in the end caps
-                        
-                        interp_dist_caps = 2
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
                         interpolation_information.create_fill(first_zslice, interp_dist_caps)
@@ -544,9 +552,9 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         if structs == structs_referenced_list[0]:
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
@@ -1816,13 +1824,14 @@ def main():
                         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=10000)
                         all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict = {}
                         for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+                            containment_structure_ROI = containment_structure_key_tuple[0]
                             if regression_type_ans == True:
                                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, \
                                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
                                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                                     parallel_pool,
-                                    x = containment_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
-                                    y = containment_output_dict_by_MC_trial_for_pandas_data_frame["Mean probability (binom est)"], 
+                                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Axial pos Z (mm)"], 
+                                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Mean probability (binom est)"], 
                                     eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
                                 )
                             elif regression_type_ans == False:
@@ -1830,15 +1839,15 @@ def main():
                                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
                                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                                     parallel_pool,
-                                    x = containment_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
-                                    y = containment_output_dict_by_MC_trial_for_pandas_data_frame["Mean probability (binom est)"], 
+                                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Axial pos Z (mm)"], 
+                                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Mean probability (binom est)"], 
                                     eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
                                 )
-                            containment_regressions_tuple = {"Mean regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, 
+                            containment_regressions_dict = {"Mean regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, 
                                 "Lower 95 regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, 
                                 "Upper 95 regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper}
 
-                            all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[containment_structure_key_tuple] = containment_regressions_tuple
+                            all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[containment_structure_key_tuple] = containment_regressions_dict
                         
                         # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
                                                 
