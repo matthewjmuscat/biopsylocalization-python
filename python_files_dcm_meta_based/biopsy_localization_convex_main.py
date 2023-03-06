@@ -100,7 +100,7 @@ def main():
     biopsy_contour_names = ['Bx']
     dil_contour_names = ['DIL']
     uncertainty_folder_name = 'Uncertainty data'
-    uncertainty_file_name = "uncertainties_prepared_unfilled"
+    uncertainty_file_name = "uncertainties_file_auto_generated"
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
@@ -108,9 +108,9 @@ def main():
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
     biopsy_radius = 0.3
-    num_sample_pts_per_bx_input = 100
-    num_MC_containment_simulations_input = 20
-    num_MC_dose_simulations_input = 10
+    num_sample_pts_per_bx_input = 1000
+    num_MC_containment_simulations_input = 50
+    num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
     num_bootstraps_all_MC_data_input = 15
