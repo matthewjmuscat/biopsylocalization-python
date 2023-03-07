@@ -96,7 +96,8 @@ def main():
     data_folder_name = 'Data'
     input_data_folder_name = "Input data"
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
-    oaroi_contour_names = ['Prostate','Urethra','Rectum','random']
+    #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random']
+    oaroi_contour_names = ['Prostate'] # consider prostate only for OARs!
     biopsy_contour_names = ['Bx']
     dil_contour_names = ['DIL']
     uncertainty_folder_name = 'Uncertainty data'
