@@ -111,7 +111,7 @@ def main():
     biopsy_radius = 0.3
     num_sample_pts_per_bx_input = 1000
     num_MC_containment_simulations_input = 50
-    num_MC_dose_simulations_input = 1000
+    num_MC_dose_simulations_input = 100
     biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 8
     num_bootstraps_all_MC_data_input = 15
@@ -151,12 +151,17 @@ def main():
             dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
             important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
             important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
-
+            
+            #live_display.stop()
             num_dicoms = len(dicom_paths_list)
             important_info.add_text_line("Found "+str(num_dicoms)+" dicom files.", live_display)
             reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
             reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
-            dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
+            dicom_elems_modality_list = []
+            for dicom_path in dicom_paths_list:
+                with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item:
+                    dicom_elems_modality_list.append(copy.deepcopy(py_dicom_item[0x0008,0x0060].value))
+            #dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
             indeterminate_progress_main.update(reading_dicoms_task_indeterminate, visible = False)
             completed_progress.update(reading_dicoms_task_indeterminate_completed, advance = num_dicoms,visible = True)
             live_display.refresh()
@@ -170,9 +175,18 @@ def main():
             # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
             # creation of the PatientUID, that is generally created from or referenced from here 
             # throughout the programme, it is formed as "patientname (patientID)"
-            RTst_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]}
-            RTdose_dcms_dict = {UID_generator(x): x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]}
-            
+            RTst_dcms_dict = {}
+            RTdose_dcms_dict = {}
+            for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
+                if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
+                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                        RTst_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+                elif dicom_elems_modality_list[dicom_path_index] == modality_list[1]:
+                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                        RTdose_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+            #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
+            #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
+            #live_display.stop()
             num_RTst_dcms_entries = len(RTst_dcms_dict)
             num_RTdose_dcms_entries = len(RTdose_dcms_dict)
             important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
@@ -361,12 +375,13 @@ def main():
                         # can uncomment surrounding lines to time this particular process
                         #st = time.time()
                         threeDdata_zslice_list = []
-                        for roi_contour_seq_item in RTst_dcms_dict[patientUID].ROIContourSequence:
-                            if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
-                                structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
-                                break
-                            else:
-                                pass
+                        with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
+                            for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
+                                if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
+                                    structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
+                                    break
+                                else:
+                                    pass
                         for index, slice_object in enumerate(structure_contour_points_raw_sequence):
                             contour_slice_points = slice_object.ContourData                       
                             threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
@@ -413,6 +428,7 @@ def main():
                         # SLOWER TO ANALYZE PARALLEL
                         #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
                         #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                        
 
                         # FASTER TO ANALYZE SERIALLY
                         interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
@@ -1697,7 +1713,7 @@ def main():
                         dose_output_dict_for_regression.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
                         non_parametric_kernel_regressions_dict = {}
                         data_for_non_parametric_kernel_regressions_dict = {}
-                        data_keys_to_regress = ["Q95","Q5","Q50","Mean"]
+                        data_keys_to_regress = ["Q95","Q5","Q50","Mean","Q75","Q25"]
                         num_bootstraps_mean_and_quantile_data = 15
                         for data_key in data_keys_to_regress:
                             data_for_non_parametric_kernel_regressions_dict[data_key]=dose_output_dict_for_regression[data_key].copy()
@@ -1732,7 +1748,7 @@ def main():
                                 non_parametric_regression_upper
                             )
                             
-                        
+                        # create regression figure
                         fig_regressions_only_quantiles_and_mean = go.Figure()
                         for data_key,regression_tuple in non_parametric_kernel_regressions_dict.items(): 
                             fig_regressions_only_quantiles_and_mean.add_trace(
@@ -1787,6 +1803,69 @@ def main():
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
+
+                        # create simplified regression figure
+                        quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 200, 0.3)')] # must be organized where first element is lower and second element is upper bound
+                        fig_regressions_dose_quantiles_simple = go.Figure()
+                        for quantile_pair_tuple in quantile_pairs_list: 
+                            lower_regression_key = quantile_pair_tuple[0]
+                            upper_regression_key = quantile_pair_tuple[1]
+                            fill_color = quantile_pair_tuple[2]
+                            lower_regression_tuple = non_parametric_kernel_regressions_dict[lower_regression_key]
+                            upper_regression_tuple = non_parametric_kernel_regressions_dict[upper_regression_key]
+                            fig_regressions_dose_quantiles_simple.add_trace(
+                                go.Scatter(
+                                    name=upper_regression_key+' regression',
+                                    x=z_vals_to_evaluate,
+                                    y=upper_regression_tuple[0],
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(color=regression_colors_dict[upper_regression_key]),
+                                    showlegend=True
+                                )
+                            )
+                            fig_regressions_dose_quantiles_simple.add_trace(
+                                go.Scatter(
+                                    name=lower_regression_key+' regression',
+                                    x=z_vals_to_evaluate,
+                                    y=lower_regression_tuple[0],
+                                    marker=dict(color="#444"),
+                                    line=dict(color=regression_colors_dict[lower_regression_key]),
+                                    mode='lines',
+                                    fillcolor=fill_color,
+                                    fill='tonexty',
+                                    showlegend=True
+                                )
+                            )
+                            
+                        median_key = "Q50"
+                        median_dose_regression_tuple = non_parametric_kernel_regressions_dict[median_key]
+                        fig_regressions_dose_quantiles_simple.add_trace(
+                            go.Scatter(
+                                name=median_key+' regression',
+                                x=z_vals_to_evaluate,
+                                y=median_dose_regression_tuple[0],
+                                mode="lines",
+                                line=dict(color=regression_colors_dict[median_key]),
+                                showlegend=True
+                            )
+                        )
+                        
+                        fig_regressions_dose_quantiles_simple.update_layout(
+                            yaxis_title='Dose (Gy)',
+                            xaxis_title='Axial pos Z (mm)',
+                            title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+
+
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path)
+
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+                        fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
 
                         # create box plots of voxelized data
@@ -2018,30 +2097,32 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_num_DIL = 0
     global_total_num_structs = 0
     global_num_patients = 0
-    for UID, structure_item in structure_dcm_dict.items():
-        bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-        OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-        DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
+    for UID, structure_item_path in structure_dcm_dict.items():
+        with pydicom.dcmread(structure_item_path, defer_size = '2 MB') as structure_item: 
+            bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+            OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+            DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
-        bpsy_info = {"Num structs": len(bpsy_ref)}
-        OAR_info = {"Num structs": len(OAR_ref)}
-        DIL_info = {"Num structs": len(DIL_ref)}
-        patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
-        all_structs_info = {"Total num structs": patient_total_num_structs}
-        
-        global_num_OAR = global_num_OAR + OAR_info["Num structs"]
-        global_num_DIL = global_num_DIL + DIL_info["Num structs"] 
-        global_num_biopsies = global_num_biopsies + bpsy_info["Num structs"]
-        global_total_num_structs = global_total_num_structs + patient_total_num_structs
-        global_num_patients = global_num_patients + 1
+            bpsy_info = {"Num structs": len(bpsy_ref)}
+            OAR_info = {"Num structs": len(OAR_ref)}
+            DIL_info = {"Num structs": len(DIL_ref)}
+            patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
+            all_structs_info = {"Total num structs": patient_total_num_structs}
+            
+            global_num_OAR = global_num_OAR + OAR_info["Num structs"]
+            global_num_DIL = global_num_DIL + DIL_info["Num structs"] 
+            global_num_biopsies = global_num_biopsies + bpsy_info["Num structs"]
+            global_total_num_structs = global_total_num_structs + patient_total_num_structs
+            global_num_patients = global_num_patients + 1
 
-        master_st_ds_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_ref, st_ref_list[1]:OAR_ref, st_ref_list[2]:DIL_ref,"Ready to plot data list": None}
-        master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
+            master_st_ds_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_ref, st_ref_list[1]:OAR_ref, st_ref_list[2]:DIL_ref,"Ready to plot data list": None}
+            master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
     
-    for UID, dose_item in dose_dcm_dict.items():
-        dose_ID = UID + dose_item.StudyDate
-        dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "Dose grid point cloud thresholded": None, "KDtree": None}
-        master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
+    for UID, dose_item_path in dose_dcm_dict.items():
+        with pydicom.dcmread(dose_item_path, defer_size = '2 MB') as dose_item: 
+            dose_ID = UID + dose_item.StudyDate
+            dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "Dose grid point cloud thresholded": None, "KDtree": None}
+            master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
     mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None}
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
