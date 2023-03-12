@@ -67,6 +67,7 @@ import shutil
 import statsmodels.api as sm
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.io as pio
 from statsmodels.nonparametric import kernel_regression
 from statsmodels.regression.quantile_regression import QuantReg
 from statsmodels.regression.quantile_regression import QuantRegResults
@@ -108,13 +109,16 @@ def main():
     interp_inter_slice_dist = 0.5
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
-    biopsy_radius = 0.3
+    biopsy_radius = 0.4
     num_sample_pts_per_bx_input = 1000
     num_MC_containment_simulations_input = 50
     num_MC_dose_simulations_input = 100
-    biopsy_z_voxel_length = 0.1 #voxelize biopsy core every 1 mm along core
+    biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_bootstraps_all_MC_data_input = 15
+    pio.templates.default = "plotly_white"
+    svg_image_scale = 3
+    NPKR_bandwidth = 0.5
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -1499,7 +1503,7 @@ def main():
                                 parallel_pool,
                                 x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
                                 y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
-                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
+                                eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95, bandwidth = NPKR_bandwidth
                             )
                         elif global_regression_ans == False:
                             pass
@@ -1594,7 +1598,7 @@ def main():
                                                 
                         svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.svg'
                         svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                        fig_global.write_image(svg_all_MC_trials_dose_fig_file_path)
+                        fig_global.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale)
 
                         html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.html'
                         html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
@@ -1602,7 +1606,7 @@ def main():
                         if global_regression_ans == True:
                             svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.svg'
                             svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                            fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path)
+                            fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale)
 
                             html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.html'
                             html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
@@ -1623,12 +1627,23 @@ def main():
                                                 
                         svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
 
                         html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
 
+
+                        # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
+                        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)")
+                                                
+                        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+
+                        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+                        fig.write_html(html_dose_fig_file_path)
                         
                         
                         # create 2d scatter dose plot axial (z) vs mean dose 
@@ -1700,7 +1715,7 @@ def main():
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1739,7 +1754,7 @@ def main():
                                     y = data_to_regress, 
                                     eval_x = z_vals_to_evaluate, 
                                     N=num_bootstraps_mean_and_quantile_data, 
-                                    conf_interval=0.95
+                                    conf_interval=0.95, bandwidth = NPKR_bandwidth
                                 )
                             
                             non_parametric_kernel_regressions_dict[data_key] = (
@@ -1797,7 +1812,7 @@ def main():
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path)
+                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1861,7 +1876,7 @@ def main():
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path)
+                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1888,7 +1903,7 @@ def main():
                         
                         svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
 
                         html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1951,7 +1966,7 @@ def main():
                                     parallel_pool,
                                     x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Axial pos Z (mm)"], 
                                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Mean probability (binom est)"], 
-                                    eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95
+                                    eval_x = z_vals_to_evaluate, N=num_bootstraps_all_MC_data_input, conf_interval=0.95, bandwidth = NPKR_bandwidth
                                 )
                             containment_regressions_dict = {"Mean regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit, 
                                 "Lower 95 regression": all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, 
@@ -1961,7 +1976,7 @@ def main():
                         
                         # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
                                                 
-                        fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI")
+                        fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", error_y = "STD err")
                         fig_regression_only = go.Figure()
                         for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
                             containment_structure_ROI = containment_structure_key_tuple[0]
@@ -2054,7 +2069,7 @@ def main():
                                                 
                         svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.svg'
                         svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path)
+                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale)
 
                         html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.html'
                         html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
@@ -2062,7 +2077,7 @@ def main():
                         
                         svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
                         svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path)
+                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale)
 
                         html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
                         html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)

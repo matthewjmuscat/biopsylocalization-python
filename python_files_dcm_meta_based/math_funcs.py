@@ -155,7 +155,7 @@ def lowess_with_confidence_bounds(
 def non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
     parallel_pool,
     x, y, eval_x, 
-    N=200, conf_interval=0.95
+    N=200, conf_interval=0.95, bandwidth = 0.5
 ):
     x = np.asarray(x)
     y = np.asarray(y)
@@ -165,7 +165,7 @@ def non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
         sample = np.random.choice(len(x), len(x), replace=True)
         sampled_x = x[sample]
         sampled_y = y[sample]
-        args_list[i] = (sampled_x, sampled_y, eval_x)
+        args_list[i] = (sampled_x, sampled_y, eval_x, bandwidth)
     
     all_NPKR_fit_vals_list = parallel_pool.starmap(non_param_kernel_regression, args_list)
     NPKR_fit_vals = all_NPKR_fit_vals_list[0]
@@ -185,8 +185,8 @@ def non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
     return NPKR_fit_vals, bottom, top
     
 
-def non_param_kernel_regression(x, y, eval_x, NPKR_type='ll'):
-    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type, bw = [0.25])
+def non_param_kernel_regression(x, y, eval_x, bandwidth = 0.5, NPKR_type='ll'):
+    NPKR_class_obj = kernel_regression.KernelReg(exog=x, endog=y, var_type='c', reg_type = NPKR_type, bw = [bandwidth])
     NPKR_fit_vals, NPKR_partial_derivatives_vals = NPKR_class_obj.fit(eval_x)
     # Note that I do not return the partial derivatives as they do not seem important here
     return NPKR_fit_vals
