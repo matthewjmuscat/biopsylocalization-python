@@ -127,12 +127,19 @@ def main():
     svg_image_width = 1920
     open3d_views_jsons_folder_name = "open3d_views_jsons"
     open3d_views_dose_folder_name = "dose_views"
+    open3d_views_containment_folder_name = "containment_views"
     open_3d_screen_views_dose_jsons = ["ScreenCamera_2023-03-15-12-33-41.json", 
                                        "ScreenCamera_2023-03-15-12-33-53.json",
                                        "ScreenCamera_2023-03-15-13-07-02.json", 
                                        "ScreenCamera_2023-03-15-13-08-08.json"
                                        ]
-    open_3d_screen_views_containment_jsons = []
+    open_3d_screen_views_containment_jsons = ["ScreenCamera_2023-02-19-15-14-47.json", 
+                                              "ScreenCamera_2023-02-19-15-27-46.json",
+                                              "ScreenCamera_2023-02-19-15-14-47.json", 
+                                              "ScreenCamera_2023-02-19-15-29-43.json"
+                                              ]
+    show_NN_dose_demonstration_plots = True 
+    show_containment_demonstration_plots = False
     
 
     cpu_count = os.cpu_count()
@@ -159,10 +166,15 @@ def main():
             rich_layout["main-right"].update(important_info)
             rich_layout["footer"].update(app_footer)
 
+
+            # set the paths for the JSON views for the NN dose demonstration
             open3d_views_jsons_dir = pathlib.Path(__file__).parents[1].joinpath(open3d_views_jsons_folder_name)
             dose_views_jsons_dir = open3d_views_jsons_dir.joinpath(open3d_views_dose_folder_name)
             dose_views_jsons_paths_list = [dose_views_jsons_dir.joinpath(name) for name in open_3d_screen_views_dose_jsons]
 
+            # set the paths for the JSON views for the containment demonstration
+            containment_views_jsons_dir = open3d_views_jsons_dir.joinpath(open3d_views_containment_folder_name)
+            containment_views_jsons_paths_list = [containment_views_jsons_dir.joinpath(name) for name in open_3d_screen_views_containment_jsons]
 
             # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
             # First we access the data directory, it must be in a location 
@@ -1130,6 +1142,9 @@ def main():
                                                                                          num_dose_calc_NN, 
                                                                                          num_dose_NN_to_show_for_animation_plotting,
                                                                                          dose_views_jsons_paths_list,
+                                                                                         containment_views_jsons_paths_list,
+                                                                                         show_NN_dose_demonstration_plots,
+                                                                                         show_containment_demonstration_plots,
                                                                                          spinner_type)
             else: 
                 pass

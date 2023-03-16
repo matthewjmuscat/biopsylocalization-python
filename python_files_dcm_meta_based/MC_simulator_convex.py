@@ -77,7 +77,10 @@ def simulator_parallel(parallel_pool,
                        biopsy_z_voxel_length, 
                        num_dose_calc_NN,
                        num_dose_NN_to_show_for_animation_plotting,
-                       dose_views_jsons_paths_list, 
+                       dose_views_jsons_paths_list,
+                       containment_views_jsons_paths_list,
+                       show_NN_dose_demonstration_plots,
+                       show_containment_demonstration_plots, 
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -223,16 +226,16 @@ def simulator_parallel(parallel_pool,
                         
                         
                         # plot results to make sure everything is working properly, containment structure is blue, shifted and tested pcd should be red and green
-                        """
-                        if non_bx_structure_type == 'DIL ref':
-                            bx_test_pts_results = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
-                            bx_test_pts_results_pcd = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
-                            structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud(single_trial_shifted_bx_data_arr)
-                            plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
-                            plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
-                            plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-14-47.json", [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-27-46.json")
-                            plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-14-47.json", [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], "ScreenCamera_2023-02-19-15-29-43.json")
-                        """
+                        if show_containment_demonstration_plots == True:
+                            if non_bx_structure_type == 'DIL ref':
+                                bx_test_pts_results = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
+                                bx_test_pts_results_pcd = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
+                                structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud(single_trial_shifted_bx_data_arr)
+                                plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                                plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
+                                plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
+                                plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
+                        
                         
                         MC_trial_progress.update(testing_each_trial_task, advance=1)
                         
@@ -474,7 +477,7 @@ def simulator_parallel(parallel_pool,
 
         
 
-        live_display.stop()
+        #live_display.stop()
         calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Calculating NN dosimetric localization [{}]...".format("initializing"), total=num_patients)
         calc_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating NN dosimetric localization", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -505,39 +508,41 @@ def simulator_parallel(parallel_pool,
                 dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{},{}]...".format(patientUID, specific_bx_structure_roi), total = None)
                 dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
                 
-                # plot everything to make sure its working properly!
-                unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
-                unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
-                for mc_trial_NN_parent_dose_obj in dosimetric_localization_all_MC_trials_list:
-                    NN_data_list_for_one_MC_trial = mc_trial_NN_parent_dose_obj.NN_data_list
-                    NN_pts_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx,3])
-                    NN_doses_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx])
-                    queried_bx_pts_arr_concatenated = np.empty([num_sample_pts_per_bx,3])
-                    queried_bx_pts_assigned_doses_arr_concatenated = np.empty([num_sample_pts_per_bx])
-                    for sampled_pt_index,NN_child_dose_obj in enumerate(NN_data_list_for_one_MC_trial):
-                        NN_pts_array_on_dose_lattice = NN_child_dose_obj.NN_pt_on_comparison_struct
-                        NN_dose_array_on_dose_lattice = NN_child_dose_obj.NN_dose_on_comparison_struct
-                        queried_bx_pt_instance = NN_child_dose_obj.queried_BX_pt
-                        queried_bx_pt_assigned_dose_instance = NN_child_dose_obj.nearest_dose
-                        NN_pts_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN,:] = NN_pts_array_on_dose_lattice
-                        NN_doses_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN] = NN_dose_array_on_dose_lattice
-                        queried_bx_pts_arr_concatenated[sampled_pt_index] = queried_bx_pt_instance
-                        queried_bx_pts_assigned_doses_arr_concatenated[sampled_pt_index] = queried_bx_pt_assigned_dose_instance
-                    
-                    patients_progress.stop_task(calc_dose_NN_biopsy_containment_task)
-                    completed_progress.stop_task(calc_dose_NN_biopsy_containment_task_complete)
-                    stopwatch.stop()
-                    #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
-                    geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
-                    geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
-                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
-                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
-                    plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = False, axes_visible=True)
-                    plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True, axes_visible=True)
-                    stopwatch.start()
-                    patients_progress.start_task(calc_dose_NN_biopsy_containment_task)
-                    completed_progress.start_task(calc_dose_NN_biopsy_containment_task_complete)
-
+                if show_NN_dose_demonstration_plots == True:
+                    # plot everything to make sure its working properly!
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+                    for mc_trial_NN_parent_dose_obj in dosimetric_localization_all_MC_trials_list:
+                        NN_data_list_for_one_MC_trial = mc_trial_NN_parent_dose_obj.NN_data_list
+                        NN_pts_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx,3])
+                        NN_doses_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx])
+                        queried_bx_pts_arr_concatenated = np.empty([num_sample_pts_per_bx,3])
+                        queried_bx_pts_assigned_doses_arr_concatenated = np.empty([num_sample_pts_per_bx])
+                        for sampled_pt_index,NN_child_dose_obj in enumerate(NN_data_list_for_one_MC_trial):
+                            NN_pts_array_on_dose_lattice = NN_child_dose_obj.NN_pt_on_comparison_struct
+                            NN_dose_array_on_dose_lattice = NN_child_dose_obj.NN_dose_on_comparison_struct
+                            queried_bx_pt_instance = NN_child_dose_obj.queried_BX_pt
+                            queried_bx_pt_assigned_dose_instance = NN_child_dose_obj.nearest_dose
+                            NN_pts_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN,:] = NN_pts_array_on_dose_lattice
+                            NN_doses_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN] = NN_dose_array_on_dose_lattice
+                            queried_bx_pts_arr_concatenated[sampled_pt_index] = queried_bx_pt_instance
+                            queried_bx_pts_assigned_doses_arr_concatenated[sampled_pt_index] = queried_bx_pt_assigned_dose_instance
+                        
+                        patients_progress.stop_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.stop_task(calc_dose_NN_biopsy_containment_task_complete)
+                        stopwatch.stop()
+                        #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = False, axes_visible=True)
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True, axes_visible=True)
+                        stopwatch.start()
+                        patients_progress.start_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.start_task(calc_dose_NN_biopsy_containment_task_complete)
+                else:
+                    pass
 
                 specific_bx_structure['MC data: bx to dose NN search objects list'] = dosimetric_localization_all_MC_trials_list
                 indeterminate_progress_sub.remove_task(dosimetric_calc_parallel_task)
