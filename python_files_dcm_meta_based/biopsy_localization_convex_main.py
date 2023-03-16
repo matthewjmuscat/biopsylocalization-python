@@ -71,6 +71,7 @@ import plotly.io as pio
 from statsmodels.nonparametric import kernel_regression
 from statsmodels.regression.quantile_regression import QuantReg
 from statsmodels.regression.quantile_regression import QuantRegResults
+import misc_tools
 
 def main():
     
@@ -124,6 +125,14 @@ def main():
     NPKR_bandwidth = 0.5
     svg_image_height = 1080
     svg_image_width = 1920
+    open3d_views_jsons_folder_name = "open3d_views_jsons"
+    open3d_views_dose_folder_name = "dose_views"
+    open_3d_screen_views_dose_jsons = ["ScreenCamera_2023-03-15-12-33-41.json", 
+                                       "ScreenCamera_2023-03-15-12-33-53.json",
+                                       "ScreenCamera_2023-03-15-13-07-02.json", 
+                                       "ScreenCamera_2023-03-15-13-08-08.json"
+                                       ]
+    open_3d_screen_views_containment_jsons = []
     
 
     cpu_count = os.cpu_count()
@@ -150,6 +159,11 @@ def main():
             rich_layout["main-right"].update(important_info)
             rich_layout["footer"].update(app_footer)
 
+            open3d_views_jsons_dir = pathlib.Path(__file__).parents[1].joinpath(open3d_views_jsons_folder_name)
+            dose_views_jsons_dir = open3d_views_jsons_dir.joinpath(open3d_views_dose_folder_name)
+            dose_views_jsons_paths_list = [dose_views_jsons_dir.joinpath(name) for name in open_3d_screen_views_dose_jsons]
+
+
             # The figure dictionary to be plotted, this needs to be requested of the user later in the programme, after the  dicoms are read
             # First we access the data directory, it must be in a location 
             # two levels up from this file
@@ -157,13 +171,32 @@ def main():
             uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
             output_dir = data_dir.joinpath(output_folder_name)
             input_dir = data_dir.joinpath(input_data_folder_name)
-            input_dir.mkdir(parents=True, exist_ok=True)
+
+            misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir)
+            #data_dir.mkdir(parents=True, exist_ok=True)
+            #uncertainty_dir.mkdir(parents=True, exist_ok=True)
+            #output_dir.mkdir(parents=True, exist_ok=True)
+            #input_dir.mkdir(parents=True, exist_ok=True)
             dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
             important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
             important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
             
             #live_display.stop()
             num_dicoms = len(dicom_paths_list)
+            if num_dicoms == 0:
+                live_display.stop()
+                while num_dicoms == 0:
+                    print("The input folder is empty!")
+                    print("Reading dicom data from: "+ str(input_dir))
+                    print("Fill input folder with data then continue.")
+                    continue_programme = ques_funcs.ask_ok('> Continue?' )
+                    if continue_programme == False:
+                        sys.exit('> Programme exited.')
+                    else:
+                        dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm"))
+                        num_dicoms = len(dicom_paths_list)
+                live_display.start()
+
             important_info.add_text_line("Found "+str(num_dicoms)+" dicom files.", live_display)
             reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
             reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
@@ -205,9 +238,9 @@ def main():
             if num_RTst_dcms_entries != num_RTdose_dcms_entries:
                 live_display.stop()
                 stopwatch.stop()
-                exit_programme = ques_funcs.ask_ok('>Unequal number of structure files vs dose files, will encounter error later in the programme. Continue anyway?' )
+                continue_programme = ques_funcs.ask_ok('>Unequal number of structure files vs dose files, will encounter error later in the programme. Continue anyway?' )
                 stopwatch.start()
-                if exit_programme == True:
+                if continue_programme == False:
                     sys.exit('>Programme exited.')
                 else:
                     pass
@@ -979,11 +1012,12 @@ def main():
 
 
             live_display.stop()
-            
+            live_display.console.print("[bold red]User input required:")
             ## begin simulation section
+            """
             created_dir = False
             while created_dir == False:
-                live_display.console.print("[bold red]User input required:")
+                
                 print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will NOT be overwritten.')
                 stopwatch.stop()
                 uncertainty_dir_generate = ques_funcs.ask_ok('>Continue?')
@@ -1005,6 +1039,7 @@ def main():
                         sys.exit('>Programme exited.')
                     else: 
                         pass
+            """
             
             stopwatch.stop()
             uncertainty_template_generate = ques_funcs.ask_ok('>Do you want to generate an uncertainty file template for this patient data repo?')
@@ -1094,6 +1129,7 @@ def main():
                                                                                          biopsy_z_voxel_length, 
                                                                                          num_dose_calc_NN, 
                                                                                          num_dose_NN_to_show_for_animation_plotting,
+                                                                                         dose_views_jsons_paths_list,
                                                                                          spinner_type)
             else: 
                 pass

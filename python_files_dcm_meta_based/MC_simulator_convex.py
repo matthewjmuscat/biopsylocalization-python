@@ -76,7 +76,8 @@ def simulator_parallel(parallel_pool,
                        master_structure_info_dict, 
                        biopsy_z_voxel_length, 
                        num_dose_calc_NN,
-                       num_dose_NN_to_show_for_animation_plotting, 
+                       num_dose_NN_to_show_for_animation_plotting,
+                       dose_views_jsons_paths_list, 
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -529,8 +530,8 @@ def simulator_parallel(parallel_pool,
                     #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
                     geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
                     geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
-                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, "ScreenCamera_2023-03-15-12-33-41.json", geometry_list_thresholded_dose_lattice, "ScreenCamera_2023-03-15-12-33-53.json")
-                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, "ScreenCamera_2023-03-15-13-07-02.json", geometry_list_thresholded_dose_lattice, "ScreenCamera_2023-03-15-13-08-08.json")
+                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
+                    plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
                     plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = False, axes_visible=True)
                     plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True, axes_visible=True)
                     stopwatch.start()

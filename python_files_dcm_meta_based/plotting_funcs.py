@@ -592,6 +592,9 @@ def dose_point_cloud_with_lines_only_for_animation(org_sampled_bx_pcd, threshold
 
 
 def plot_two_views_side_by_side(points_pcd_1_list, view_1_json_path, points_pcd_2_list, view_2_json_path):
+    view_1_json_path = str(view_1_json_path)
+    view_2_json_path = str(view_2_json_path)
+    
     vis_1 = o3d.visualization.Visualizer()
     with open(view_1_json_path) as json_file_1:
         params_dict_1 = json.load(json_file_1)
