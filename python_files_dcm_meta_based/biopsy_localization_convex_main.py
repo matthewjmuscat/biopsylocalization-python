@@ -106,19 +106,25 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
+    lower_bound_dose_percent = 5
+    color_flattening_deg = 3 
     interp_inter_slice_dist = 0.5
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
     biopsy_radius = 0.4
-    num_sample_pts_per_bx_input = 1000
-    num_MC_containment_simulations_input = 50
-    num_MC_dose_simulations_input = 100
+    num_sample_pts_per_bx_input = 50
+    num_MC_containment_simulations_input = 2
+    num_MC_dose_simulations_input = 10
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
+    num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_all_MC_data_input = 15
     pio.templates.default = "plotly_white"
     svg_image_scale = 3
     NPKR_bandwidth = 0.5
+    svg_image_height = 1080
+    svg_image_width = 1920
+    
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -317,9 +323,21 @@ def main():
                 #phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C')
                 dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
 
-                dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True)
+                dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
                 dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
+                
+                # plot labelled dose point cloud (note due to the number of labels, this is very buggy and doesnt display properly as of open3d 0.16.1)
+                """
+                patients_progress.stop_task(processing_patients_dose_task)
+                completed_progress.stop_task(processing_patients_dose_task_completed)
+                stopwatch.stop()
+                plotting_funcs.dose_point_cloud_with_dose_labels(phys_space_dose_map_3d_arr, paint_dose_with_color = True)
+                stopwatch.start()
+                patients_progress.start_task(processing_patients_dose_task)
+                completed_progress.start_task(processing_patients_dose_task_completed)
+                """
 
+                # plot dose point cloud cubic lattice (color only)
                 patients_progress.stop_task(processing_patients_dose_task)
                 completed_progress.stop_task(processing_patients_dose_task_completed)
                 stopwatch.stop()
@@ -328,9 +346,8 @@ def main():
                 patients_progress.start_task(processing_patients_dose_task)
                 completed_progress.start_task(processing_patients_dose_task_completed)
 
-                # user defined quantity!
-                lower_bound_dose_percent = 5
-                thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                # user defined quantity moved to beginning of programme
+                thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
                 dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
 
                 patients_progress.stop_task(processing_patients_dose_task)
@@ -834,7 +851,9 @@ def main():
                 biopsies_progress.stop_task(parsing_sampled_biopsy_data_task)
                 completed_progress.stop_task(parsing_sampled_biopsy_data_task_completed)
                 stopwatch.stop()
-                plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd, axis_aligned_bounding_box)
+                #with or without bounding box?
+                #plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd, axis_aligned_bounding_box)
+                #plotting_funcs.plot_geometries(sampled_bx_points_from_global_delaunay_point_cloud, reconstructed_bx_pcd)
                 stopwatch.start()
                 biopsies_progress.start_task(parsing_sampled_biopsy_data_task)
                 completed_progress.start_task(parsing_sampled_biopsy_data_task_completed)
@@ -1065,7 +1084,8 @@ def main():
             if simulation_ans ==  True:
                 print('>Beginning simulation')
                 master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, 
-                                                                                         live_display, 
+                                                                                         live_display,
+                                                                                         stopwatch, 
                                                                                          layout_groups, 
                                                                                          master_structure_reference_dict, 
                                                                                          structs_referenced_list, 
@@ -1073,6 +1093,7 @@ def main():
                                                                                          master_structure_info_dict, 
                                                                                          biopsy_z_voxel_length, 
                                                                                          num_dose_calc_NN, 
+                                                                                         num_dose_NN_to_show_for_animation_plotting,
                                                                                          spinner_type)
             else: 
                 pass
@@ -1556,6 +1577,9 @@ def main():
                             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
+
+                        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
+
                         if global_regression_ans == True:
                             fig_regression_only = go.Figure([
                                 go.Scatter(
@@ -1593,12 +1617,13 @@ def main():
                                 title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                                 hovermode="x unified"
                             )
+                            fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
                         elif global_regression_ans == False:
                             pass
                                                 
                         svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.svg'
                         svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                        fig_global.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale)
+                        fig_global.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.html'
                         html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
@@ -1606,7 +1631,7 @@ def main():
                         if global_regression_ans == True:
                             svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.svg'
                             svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
-                            fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale)
+                            fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                             html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.html'
                             html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
@@ -1624,10 +1649,11 @@ def main():
                         
                          
                         fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose")
-                                                
+                        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
+
                         svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1636,10 +1662,11 @@ def main():
 
                         # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
                         fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)")
-                                                
+                        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
+
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1648,12 +1675,30 @@ def main():
                         
                         # create 2d scatter dose plot axial (z) vs mean dose 
                         #fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
-                        regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
-                                                  "Q75": 'rgba(0, 255, 255, 1)', 
+                        
+                        # can change the name of this dictionary to 'regression_colors_dict' to make all the regressions a different color
+                        regression_colors_dict_different = {"Q95":'rgba(255, 0, 0, 1)',
+                                                  "Q75":'rgba(0, 255, 255, 1)', 
                                                   "Q50":'rgba(255, 0, 255, 1)',
-                                                  'Q25': 'rgba(255, 255, 0, 1)',
+                                                  'Q25':'rgba(255, 255, 0, 1)',
                                                   "Q5":'rgba(0, 0, 255, 1)',
                                                   "Mean":'rgba(0, 255, 0, 1)'
+                        }
+                        # can change the name of this dictionary to 'regression_colors_dict' to make the paired regressions the same color
+                        regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
+                                                  "Q75":'rgba(0, 0, 255, 1)', 
+                                                  "Q50":'rgba(255, 0, 255, 1)',
+                                                  'Q25':'rgba(0, 0, 255, 1)',
+                                                  "Q5":'rgba(255, 0, 0, 1)',
+                                                  "Mean":'rgba(0, 255, 0, 1)'
+                        }
+                        
+                        regression_line_styles_dict = {"Q95": '4,14',
+                                                  "Q75": '10,10,10', 
+                                                  "Q50": 'dot',
+                                                  'Q25': '12,2,12',
+                                                  "Q5": '2,16,2',
+                                                  "Mean": 'solid'
                         }
                         fig = go.Figure([
                             go.Scatter(
@@ -1711,11 +1756,11 @@ def main():
                             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
-
+                        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1772,7 +1817,7 @@ def main():
                                     x=z_vals_to_evaluate,
                                     y=regression_tuple[0],
                                     mode="lines",
-                                    line=dict(color=regression_colors_dict[data_key]),
+                                    line=dict(color = regression_colors_dict[data_key], dash = regression_line_styles_dict[data_key]),
                                     showlegend=True
                                     )
                             )
@@ -1808,11 +1853,11 @@ def main():
                             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
-
+                        fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1820,7 +1865,7 @@ def main():
 
 
                         # create simplified regression figure
-                        quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 200, 0.3)')] # must be organized where first element is lower and second element is upper bound
+                        quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 255, 0.3)')] # must be organized where first element is lower and second element is upper bound
                         fig_regressions_dose_quantiles_simple = go.Figure()
                         for quantile_pair_tuple in quantile_pairs_list: 
                             lower_regression_key = quantile_pair_tuple[0]
@@ -1835,7 +1880,7 @@ def main():
                                     y=upper_regression_tuple[0],
                                     mode='lines',
                                     marker=dict(color="#444"),
-                                    line=dict(color=regression_colors_dict[upper_regression_key]),
+                                    line=dict(color=regression_colors_dict[upper_regression_key], dash = regression_line_styles_dict[upper_regression_key]),
                                     showlegend=True
                                 )
                             )
@@ -1845,7 +1890,7 @@ def main():
                                     x=z_vals_to_evaluate,
                                     y=lower_regression_tuple[0],
                                     marker=dict(color="#444"),
-                                    line=dict(color=regression_colors_dict[lower_regression_key]),
+                                    line=dict(color=regression_colors_dict[lower_regression_key], dash = regression_line_styles_dict[lower_regression_key]),
                                     mode='lines',
                                     fillcolor=fill_color,
                                     fill='tonexty',
@@ -1861,7 +1906,7 @@ def main():
                                 x=z_vals_to_evaluate,
                                 y=median_dose_regression_tuple[0],
                                 mode="lines",
-                                line=dict(color=regression_colors_dict[median_key]),
+                                line=dict(color=regression_colors_dict[median_key], dash = regression_line_styles_dict[median_key]),
                                 showlegend=True
                             )
                         )
@@ -1872,11 +1917,11 @@ def main():
                             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
-
+                        fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
@@ -1898,14 +1943,27 @@ def main():
                         #dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
                         #specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
                         
-                        
-                        fig = px.box(dose_output_voxelized_pandas_data_frame)
-                        
+                        # box plot
+                        fig = px.box(dose_output_voxelized_pandas_data_frame, points = False)
+                        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+
                         svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.svg'
                         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+                        fig.write_html(html_dose_fig_file_path)
+
+                        # violin plot
+                        fig = px.violin(dose_output_voxelized_pandas_data_frame, box=True, points = False)
+                        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+                    
+                        svg_dose_fig_name = bx_struct_roi + ' - voxelized_violin_plot_dose.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                        html_dose_fig_name = bx_struct_roi + ' - voxelized_violin_plot_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
                 
@@ -2058,6 +2116,7 @@ def main():
                             title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
+                        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
 
                         fig_regression_only.update_layout(
                             yaxis_title='Conditional mean probability',
@@ -2065,11 +2124,11 @@ def main():
                             title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                             hovermode="x unified"
                         )
-                        
+                        fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
                                                 
                         svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.svg'
                         svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale)
+                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.html'
                         html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
@@ -2077,7 +2136,7 @@ def main():
                         
                         svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
                         svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale)
+                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
                         html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
                         html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)

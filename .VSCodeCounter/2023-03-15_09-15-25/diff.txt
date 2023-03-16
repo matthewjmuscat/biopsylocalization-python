@@ -1,0 +1,34 @@
+Date : 2023-03-15 09:15:25
+Directory : h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based
+Total : 7 files,  1042 codes, 31 comments, 152 blanks, all 1225 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| Python   |          6 |      1,005 |         31 |        152 |      1,188 |
+| JSON     |          1 |         37 |          0 |          0 |         37 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++-------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                          | files      | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                             |          7 |      1,042 |         31 |        152 |      1,225 |
+| . (Files)                                                                                                                     |          6 |      1,005 |         31 |        152 |      1,188 |
+| Junk                                                                                                                          |          1 |         37 |          0 |          0 |         37 |
++-------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++-------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                                                                      | language | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\Junk\test_book.ipynb               | JSON     |         37 |          0 |          0 |         37 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\MC_simulator_convex.py             | Python   |         54 |          1 |          9 |         64 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\anatomy_reconstructor_tools.py     | Python   |         83 |         18 |         12 |        113 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\biopsy_localization_convex_main.py | Python   |        596 |        -11 |         61 |        646 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\math_funcs.py                      | Python   |         99 |         17 |         29 |        145 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\plotting_funcs.py                  | Python   |        147 |          0 |         37 |        184 |
+| h:\UBC\Research\Biopsy localisation\biopsy-localization-python\python_files_dcm_meta_based\ques_funcs.py                      | Python   |         26 |          6 |          4 |         36 |
+| Total                                                                                                                         |          |      1,042 |         31 |        152 |      1,225 |
++-------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

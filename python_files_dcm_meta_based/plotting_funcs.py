@@ -8,6 +8,10 @@ import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import json
 import plotly.express as px
+import point_containment_tools
+import copy
+import plotly.graph_objects as go
+
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -426,7 +430,7 @@ def plot_point_cloud_and_trimesh_side_by_side(points_arr_1, tri_mesh):
 
 
 
-def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
+def create_dose_point_cloud(data_3d_arr, color_flattening_degree, paint_dose_color = True):
     point_cloud = o3d.geometry.PointCloud()
     data_all_slices_2d_arr = np.reshape(data_3d_arr, (-1,7))
     num_points = data_all_slices_2d_arr.shape[0]
@@ -436,9 +440,14 @@ def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
     min_dose = np.amin(dose_data_all_slices_2d_arr)
     point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
     if paint_dose_color == True:
+        root = 1/color_flattening_degree
         pcd_color_arr = np.zeros((num_points,3))
-        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr
-        pcd_color_arr = pcd_color_arr/max_dose
+        dose_data_all_slices_2d_arr_nth_rooted = np.power(dose_data_all_slices_2d_arr,root)
+        max_dose_nth_rooted = np.power(max_dose,root)
+        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr[:,2] = dose_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr = pcd_color_arr/max_dose_nth_rooted
+        pcd_color_arr[:,2] = 1 - pcd_color_arr[:,2]
         #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
         point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
     else:
@@ -449,7 +458,7 @@ def create_dose_point_cloud(data_3d_arr, paint_dose_color = True):
 
 
 
-def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lower_bound_percent = 10):
+def create_thresholded_dose_point_cloud(data_3d_arr, color_flattening_degree, paint_dose_color = True, lower_bound_percent = 10):
     point_cloud = o3d.geometry.PointCloud()
     data_all_slices_2d_arr = np.reshape(data_3d_arr, (-1,7))
     dose_data_all_slices_2d_arr = data_all_slices_2d_arr[:,6]
@@ -461,9 +470,14 @@ def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lo
     min_dose = np.amin(dose_data_all_slices_2d_arr)
     point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
     if paint_dose_color == True:
+        root = 1/color_flattening_degree
         pcd_color_arr = np.zeros((num_points,3))
-        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr
-        pcd_color_arr = pcd_color_arr/max_dose_og
+        dose_data_all_slices_2d_arr_nth_rooted = np.power(dose_data_all_slices_2d_arr,root)
+        max_dose_og_nth_rooted = np.power(max_dose_og,root)
+        pcd_color_arr[:,0] = dose_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr[:,2] = dose_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr = pcd_color_arr/max_dose_og_nth_rooted
+        pcd_color_arr[:,2] = 1 - pcd_color_arr[:,2]
         #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
         point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
     else:
@@ -471,6 +485,108 @@ def create_thresholded_dose_point_cloud(data_3d_arr, paint_dose_color = True, lo
         point_cloud.paint_uniform_color(pcd_color)
 
     return point_cloud
+
+
+
+
+
+def dose_point_cloud_with_dose_labels(data_3d_arr, paint_dose_with_color = True):
+    pointcloud = create_dose_point_cloud(data_3d_arr, paint_dose_color = paint_dose_with_color)
+    gui_instance = gui.Application.instance
+    gui_instance.initialize()
+    window = gui_instance.create_window("Mesh-Viewer", 1024, 750)
+    scene = gui.SceneWidget()
+    scene.scene = rendering.Open3DScene(window.renderer)
+    window.add_child(scene)
+    scene.scene.add_geometry("mesh_name", pointcloud, rendering.MaterialRecord())
+    bounds = pointcloud.get_axis_aligned_bounding_box()
+    scene.setup_camera(60, bounds, bounds.get_center())
+    
+    data_all_slices_2d_arr = np.reshape(data_3d_arr, (-1,7))
+    num_points = data_all_slices_2d_arr.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr[:,3:6]
+    dose_data_all_slices_2d_arr = data_all_slices_2d_arr[:,6]
+    for i in range(num_points):
+        scene.add_3d_label(position_data_all_slices_2d_arr[i,:], '{dose_val}'.format(dose_val = round(dose_data_all_slices_2d_arr[i],1)))
+
+    gui_instance.run()  # Run until user closes window
+    gui_instance.quit()
+    window.close()
+    del window
+    del gui_instance
+
+
+
+def dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_dose_lattice_arr, NN_doses_on_dose_lattice_arr, queried_bx_pts_arr, queried_bx_pts_assigned_doses_arr, num_dose_NN_per_bx_pt, draw_lines = True):
+    NN_doses_locations_pointcloud = point_containment_tools.create_point_cloud(NN_pts_on_dose_lattice_arr)
+    queried_bx_pts_locations_pointcloud = point_containment_tools.create_point_cloud(queried_bx_pts_arr, color = np.array([0,1,0]))
+    
+    gui_instance = gui.Application.instance
+    gui_instance.initialize()
+    window = gui_instance.create_window("Mesh-Viewer", 1024, 750)
+    scene = gui.SceneWidget()
+    scene.scene = rendering.Open3DScene(window.renderer)
+    window.add_child(scene)
+
+    scene.scene.add_geometry("Dose pcd", NN_doses_locations_pointcloud, rendering.MaterialRecord())
+    scene.scene.add_geometry("Queried bx pts pcd", queried_bx_pts_locations_pointcloud, rendering.MaterialRecord())
+    bounds = NN_doses_locations_pointcloud.get_axis_aligned_bounding_box()
+    scene.setup_camera(60, bounds, bounds.get_center())
+    
+    num_bx_points = queried_bx_pts_arr.shape[0]
+    num_NN_dose_points = NN_pts_on_dose_lattice_arr.shape[0]
+
+    line_set_list = []
+    for i in range(num_bx_points):
+        scene.add_3d_label(queried_bx_pts_arr[i,:], '{dose_val}'.format(dose_val = round(queried_bx_pts_assigned_doses_arr[i],1)))
+        if draw_lines == True:
+            line_set_points_bx_pt_then_NN_arr = np.concatenate((np.expand_dims(queried_bx_pts_arr[i,:], axis=0),NN_pts_on_dose_lattice_arr[i*num_dose_NN_per_bx_pt:i*num_dose_NN_per_bx_pt+num_dose_NN_per_bx_pt,:]), axis=0)
+            line_set_lines = [[0,j+1] for j in range(num_dose_NN_per_bx_pt)]
+            line_set = o3d.geometry.LineSet()
+            line_set.points = o3d.utility.Vector3dVector(line_set_points_bx_pt_then_NN_arr)
+            line_set.lines = o3d.utility.Vector2iVector(line_set_lines)
+            line_set_list.append(copy.copy(line_set))
+    
+    line_mat = o3d.visualization.rendering.MaterialRecord()
+    line_mat.shader = "unlitLine"
+    line_mat.line_width = 10
+    for line_set in line_set_list:
+        scene.scene.add_geometry("", line_set, line_mat)
+    
+    for i in range(num_NN_dose_points):
+        scene.add_3d_label(NN_pts_on_dose_lattice_arr[i,:], '{dose_val}'.format(dose_val = round(NN_doses_on_dose_lattice_arr[i],1)))
+
+    gui_instance.run()  # Run until user closes window
+    gui_instance.quit()
+    window.close()
+    del window
+    del gui_instance
+
+
+
+def dose_point_cloud_with_lines_only_for_animation(org_sampled_bx_pcd, thresholded_dose_pcd, NN_pts_on_dose_lattice_arr, queried_bx_pts_arr, num_dose_NN_per_bx_pt, draw_lines = True):
+    NN_doses_locations_pointcloud = point_containment_tools.create_point_cloud(NN_pts_on_dose_lattice_arr)
+    queried_bx_pts_locations_pointcloud = point_containment_tools.create_point_cloud(queried_bx_pts_arr, color = np.array([0,1,0]))
+    
+    geometry_list = [org_sampled_bx_pcd, thresholded_dose_pcd, NN_doses_locations_pointcloud,queried_bx_pts_locations_pointcloud]
+    
+    num_bx_points = queried_bx_pts_arr.shape[0]
+    line_color = np.array([0,1,1])
+    if draw_lines == True:
+        line_set_list = []
+        for i in range(num_bx_points):
+            line_set_points_bx_pt_then_NN_arr = np.concatenate((np.expand_dims(queried_bx_pts_arr[i,:], axis=0),NN_pts_on_dose_lattice_arr[i*num_dose_NN_per_bx_pt:i*num_dose_NN_per_bx_pt+num_dose_NN_per_bx_pt,:]), axis=0)
+            line_set_lines = [[0,j+1] for j in range(num_dose_NN_per_bx_pt)]
+            line_set = o3d.geometry.LineSet()
+            line_set.points = o3d.utility.Vector3dVector(line_set_points_bx_pt_then_NN_arr)
+            line_set.lines = o3d.utility.Vector2iVector(line_set_lines)
+            line_set.paint_uniform_color(line_color)
+            line_set_list.append(copy.copy(line_set))
+    
+        geometry_list = geometry_list + line_set_list
+    
+    o3d.visualization.draw_geometries(geometry_list)
+    return geometry_list
 
 
 
@@ -518,5 +634,86 @@ def plot_two_views_side_by_side(points_pcd_1_list, view_1_json_path, points_pcd_
     vis_2.destroy_window()
 
 
+def fix_plotly_grid_lines(fig, y_axis = True, x_axis = True):
+    if x_axis:
+        fig.update_xaxes(minor=dict(ticklen=6, tickcolor="black", showgrid=True))
+        fig.update_xaxes(gridcolor='black', zeroline = True, zerolinecolor='black', rangemode = 'tozero')
+    if y_axis:
+        fig.update_yaxes(gridcolor='black', minor_griddash="dot")
+        fig.update_yaxes(zeroline = True, zerolinecolor='black')
+    return fig
 
 
+
+
+
+def dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_dose_lattice_arr, NN_doses_on_dose_lattice_arr, queried_bx_pts_arr, queried_bx_pts_assigned_doses_arr, num_dose_NN_per_bx_pt, draw_lines = True, axes_visible = False):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(
+        x=NN_pts_on_dose_lattice_arr[:,0],
+        y=NN_pts_on_dose_lattice_arr[:,1],
+        z=NN_pts_on_dose_lattice_arr[:,2],
+        mode = 'markers',
+        marker = dict(color = 'black', size = 2)
+        )
+    )
+    fig.add_trace(go.Scatter3d(
+        x=queried_bx_pts_arr[:,0],
+        y=queried_bx_pts_arr[:,1],
+        z=queried_bx_pts_arr[:,2],
+        mode = 'markers',
+        marker = dict(color = 'green', size = 2)
+        )
+    )
+
+    num_bx_points = queried_bx_pts_arr.shape[0]
+    num_NN_dose_points = NN_pts_on_dose_lattice_arr.shape[0]
+
+    if draw_lines == True:
+        for i in range(num_bx_points):
+            for j in range(num_dose_NN_per_bx_pt):
+                bx_pt_and_jth_NN_arr = np.empty((2,3))
+                bx_pt_and_jth_NN_arr[0] = queried_bx_pts_arr[i,:]
+                bx_pt_and_jth_NN_arr[1] = NN_pts_on_dose_lattice_arr[i*num_dose_NN_per_bx_pt+j,:]
+                fig.add_trace(go.Scatter3d(
+                    x=bx_pt_and_jth_NN_arr[:,0],
+                    y=bx_pt_and_jth_NN_arr[:,1],
+                    z=bx_pt_and_jth_NN_arr[:,2],
+                    mode = 'lines',
+                    line = dict(color = 'black', dash='dot')
+                    )
+                )
+            
+
+    annotations_list = []
+    for i in range(num_bx_points):
+        annotation_dict = dict(
+            showarrow=False,
+            x = queried_bx_pts_arr[i,0],
+            y = queried_bx_pts_arr[i,1],
+            z = queried_bx_pts_arr[i,2],
+            text = '{dose_val}'.format(dose_val = round(queried_bx_pts_assigned_doses_arr[i],1)),
+            font=dict(color="green", size=12)
+            )
+        annotations_list.append(annotation_dict.copy())
+
+
+    for i in range(num_NN_dose_points):
+        annotation_dict = dict(
+            showarrow=False,
+            x = NN_pts_on_dose_lattice_arr[i,0],
+            y = NN_pts_on_dose_lattice_arr[i,1],
+            z = NN_pts_on_dose_lattice_arr[i,2],
+            text = '{dose_val}'.format(dose_val = round(NN_doses_on_dose_lattice_arr[i],1)),
+            font=dict(color="black", size=12)
+            )
+        annotations_list.append(annotation_dict.copy())
+
+
+    fig.update_layout(
+        scene=dict(annotations = annotations_list)
+    )
+    if axes_visible == False:
+        fig.update_scenes(xaxis_visible=False, yaxis_visible=False,zaxis_visible=False)
+
+    fig.show()
