@@ -113,6 +113,7 @@ def main():
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
     biopsy_radius = 0.4
+    biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     num_sample_pts_per_bx_input = 100
     num_MC_containment_simulations_input = 10
     num_MC_dose_simulations_input = 20
@@ -1164,6 +1165,7 @@ def main():
                                                                                          containment_views_jsons_paths_list,
                                                                                          show_NN_dose_demonstration_plots,
                                                                                          show_containment_demonstration_plots,
+                                                                                         biopsy_needle_compartment_length,
                                                                                          spinner_type)
             else: 
                 pass
@@ -2243,9 +2245,94 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_num_patients = 0
     for UID, structure_item_path in structure_dcm_dict.items():
         with pydicom.dcmread(structure_item_path, defer_size = '2 MB') as structure_item: 
-            bpsy_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Reconstructed biopsy cylinder length (from contour data)": None, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Interpolated structure point cloud dict": None, "Reconstructed structure pts arr": None, "Reconstructed structure point cloud": None, "Reconstructed structure delaunay global": None, "Random uniformly sampled volume pts arr": None, "Random uniformly sampled volume pts pcd": None, "Random uniformly sampled volume pts bx coord sys arr": None, "Random uniformly sampled volume pts bx coord sys pcd": None, "Bounding box for random uniformly sampled volume pts": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "MC data: bx only shifted 3darr": None, "MC data: bx and structure shifted dict": None, "MC data: MC sim translation results dict": None, "MC data: compiled sim results": None, "MC data: voxelized containment results dict": None, "MC data: voxelized containment results dict (dict of lists)": None, "MC data: bx to dose NN search objects list": None, "MC data: Dose NN child obj for each sampled bx pt list": None, "MC data: Dose vals for each sampled bx pt list": None, "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, "MC data: voxelized dose results list": None, "MC data: voxelized dose results dict (dict of lists)": None, "Output csv file paths dict": {}, "Output data frames": {}, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
-            OAR_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
-            DIL_ref = [{"ROI":x.ROIName, "Ref #":x.ROINumber, "Raw contour pts": None, "Equal num zslice contour pts": None, "Intra-slice interpolation information": None, "Inter-slice interpolation information": None, "Point cloud raw": None, "Delaunay triangulation global structure": None, "Delaunay triangulation zslice-wise list": None, "Structure centroid pts": None, "Best fit line of centroid pts": None, "Centroid line sample pts": None, "Reconstructed structure pts arr": None, "Interpolated structure point cloud dict": None, "Reconstructed structure delaunay global": None, "Uncertainty data": None, "MC data: Generated normal dist random samples arr": None, "KDtree": None, "Nearest neighbours objects": [], "Plot attributes": plot_attributes()} for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
+            bpsy_ref = [{"ROI":x.ROIName, 
+                         "Ref #":x.ROINumber, 
+                         "Reconstructed biopsy cylinder length (from contour data)": None, 
+                         "Raw contour pts": None, 
+                         "Equal num zslice contour pts": None, 
+                         "Intra-slice interpolation information": None, 
+                         "Inter-slice interpolation information": None, 
+                         "Point cloud raw": None, 
+                         "Delaunay triangulation global structure": None, 
+                         "Delaunay triangulation zslice-wise list": None, 
+                         "Structure centroid pts": None, 
+                         "Best fit line of centroid pts": None, 
+                         "Centroid line sample pts": None, 
+                         "Interpolated structure point cloud dict": None, 
+                         "Reconstructed structure pts arr": None, 
+                         "Reconstructed structure point cloud": None, 
+                         "Reconstructed structure delaunay global": None, 
+                         "Random uniformly sampled volume pts arr": None, 
+                         "Random uniformly sampled volume pts pcd": None, 
+                         "Random uniformly sampled volume pts bx coord sys arr": None, 
+                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
+                         "Bounding box for random uniformly sampled volume pts": None, 
+                         "Uncertainty data": None, 
+                         "MC data: Generated uniform dist (biopsy needle compartment) random samples arr": None, 
+                         "MC data: Generated normal dist random samples arr": None, 
+                         "MC data: bx only shifted 3darr": None, 
+                         "MC data: bx and structure shifted dict": None, 
+                         "MC data: MC sim translation results dict": None, 
+                         "MC data: compiled sim results": None, 
+                         "MC data: voxelized containment results dict": None, 
+                         "MC data: voxelized containment results dict (dict of lists)": None, 
+                         "MC data: bx to dose NN search objects list": None, 
+                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
+                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
+                         "MC data: voxelized dose results list": None, 
+                         "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "Output csv file paths dict": {}, 
+                         "Output data frames": {}, 
+                         "KDtree": None, 
+                         "Nearest neighbours objects": [], 
+                         "Plot attributes": plot_attributes()
+                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+            
+            OAR_ref = [{"ROI":x.ROIName, 
+                        "Ref #":x.ROINumber, 
+                        "Raw contour pts": None, 
+                        "Equal num zslice contour pts": None, 
+                        "Intra-slice interpolation information": None, 
+                        "Inter-slice interpolation information": None, 
+                        "Point cloud raw": None, 
+                        "Delaunay triangulation global structure": None, 
+                        "Delaunay triangulation zslice-wise list": None, 
+                        "Structure centroid pts": None, 
+                        "Best fit line of centroid pts": None, 
+                        "Centroid line sample pts": None, 
+                        "Reconstructed structure pts arr": None, 
+                        "Interpolated structure point cloud dict": None, 
+                        "Reconstructed structure delaunay global": None, 
+                        "Uncertainty data": None, 
+                        "MC data: Generated normal dist random samples arr": None, 
+                        "KDtree": None, 
+                        "Nearest neighbours objects": [], 
+                        "Plot attributes": plot_attributes()
+                        } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
+            
+            DIL_ref = [{"ROI":x.ROIName, 
+                        "Ref #":x.ROINumber, 
+                        "Raw contour pts": None, 
+                        "Equal num zslice contour pts": None, 
+                        "Intra-slice interpolation information": None, 
+                        "Inter-slice interpolation information": None, 
+                        "Point cloud raw": None, 
+                        "Delaunay triangulation global structure": None, 
+                        "Delaunay triangulation zslice-wise list": None, 
+                        "Structure centroid pts": None, 
+                        "Best fit line of centroid pts": None, 
+                        "Centroid line sample pts": None, 
+                        "Reconstructed structure pts arr": None, 
+                        "Interpolated structure point cloud dict": None, 
+                        "Reconstructed structure delaunay global": None, 
+                        "Uncertainty data": None, 
+                        "MC data: Generated normal dist random samples arr": None, 
+                        "KDtree": None, 
+                        "Nearest neighbours objects": [], 
+                        "Plot attributes": plot_attributes()
+                        } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
             bpsy_info = {"Num structs": len(bpsy_ref)}
             OAR_info = {"Num structs": len(OAR_ref)}
@@ -2259,13 +2346,39 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
             global_total_num_structs = global_total_num_structs + patient_total_num_structs
             global_num_patients = global_num_patients + 1
 
-            master_st_ds_ref_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_ref, st_ref_list[1]:OAR_ref, st_ref_list[2]:DIL_ref,"Ready to plot data list": None}
-            master_st_ds_info_dict[UID] = {"Patient ID":str(structure_item[0x0010,0x0020].value),"Patient Name":str(structure_item[0x0010,0x0010].value),st_ref_list[0]:bpsy_info, st_ref_list[1]:OAR_info, st_ref_list[2]:DIL_info, "All ref":all_structs_info}
+            master_st_ds_ref_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
+                                          "Patient Name": str(structure_item[0x0010,0x0010].value),
+                                          st_ref_list[0]: bpsy_ref, st_ref_list[1]:OAR_ref, 
+                                          st_ref_list[2]: DIL_ref,
+                                          "Ready to plot data list": None
+                                          }
+            master_st_ds_info_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
+                                           "Patient Name": str(structure_item[0x0010,0x0010].value),
+                                           st_ref_list[0]: bpsy_info, 
+                                           st_ref_list[1]: OAR_info, 
+                                           st_ref_list[2]: DIL_info, 
+                                           "All ref": all_structs_info
+                                           }
     
     for UID, dose_item_path in dose_dcm_dict.items():
         with pydicom.dcmread(dose_item_path, defer_size = '2 MB') as dose_item: 
             dose_ID = UID + dose_item.StudyDate
-            dose_ref_dict = {"Dose ID": dose_ID, "Study date": dose_item.StudyDate, "Dose pixel data": dose_item.PixelData, "Dose pixel arr": dose_item.pixel_array, "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], "Dose grid scaling": float(dose_item.DoseGridScaling), "Dose units": dose_item.DoseUnits, "Dose type": dose_item.DoseType, "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], "Dose phys space and pixel 3d arr": None, "Dose grid point cloud": None, "Dose grid point cloud thresholded": None, "KDtree": None}
+            dose_ref_dict = {"Dose ID": dose_ID, 
+                             "Study date": dose_item.StudyDate, 
+                             "Dose pixel data": dose_item.PixelData, 
+                             "Dose pixel arr": dose_item.pixel_array, 
+                             "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], 
+                             "Dose grid scaling": float(dose_item.DoseGridScaling), 
+                             "Dose units": dose_item.DoseUnits, 
+                             "Dose type": dose_item.DoseType, 
+                             "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], 
+                             "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], 
+                             "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], 
+                             "Dose phys space and pixel 3d arr": None, 
+                             "Dose grid point cloud": None, 
+                             "Dose grid point cloud thresholded": None, 
+                             "KDtree": None
+                             }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
     mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None}

@@ -80,7 +80,8 @@ def simulator_parallel(parallel_pool,
                        dose_views_jsons_paths_list,
                        containment_views_jsons_paths_list,
                        show_NN_dose_demonstration_plots,
-                       show_containment_demonstration_plots, 
+                       show_containment_demonstration_plots,
+                       biopsy_needle_compartment_length, 
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -106,7 +107,7 @@ def simulator_parallel(parallel_pool,
             processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,patientUID)
             patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
 
-
+            patient_dict_updated_with_bx_structs_generated_uniform_dist_translation_samples = MC_simulator_shift_biopsy_structures_uniform_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, biopsy_needle_compartment_length, max_simulations)
             patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, max_simulations)
             master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
             patients_progress.update(processing_patients_task, advance = 1)
@@ -783,7 +784,31 @@ def calculate_binomial_containment_stand_err_parallel(parallel_pool, probability
     return standard_err_list
 
 
+def MC_simulator_shift_biopsy_structures_uniform_generator_parallel(parallel_pool, patient_dict, structs_referenced_list, biopsy_needle_compartment_length, num_simulations):
+    # build args list for parallel computing
+    args_list = []
+    patient_dict_updated_with_generated_samples = patient_dict.copy()
+    bx_structs = structs_referenced_list[0]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(patient_dict[bx_structs]):
+        #spec_structure_zslice_wise_delaunay_obj_list = specific_structure["Delaunay triangulation zslice-wise list"]
+        bx_core_length = specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']
+        core_length_compartment_length_difference = biopsy_needle_compartment_length - bx_core_length
+        if core_length_compartment_length_difference <= 0:
+            core_length_compartment_length_difference = 0.
+        
+        specific_bx_structure_args = (bx_structs, specific_bx_structure_index, core_length_compartment_length_difference, num_simulations)
+        args_list.append(specific_bx_structure_args)
 
+    sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list = parallel_pool.starmap(MC_simulator_uniform_shift_structure_generator,args_list)
+
+    # update the patient dictionary
+    for generated_shifts_info_list in sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list:
+        structure_type = generated_shifts_info_list[0]
+        specific_structure_index = generated_shifts_info_list[1]
+        specific_structure_structure_uniform_dist_shift_samples_arr = generated_shifts_info_list[2]
+        patient_dict_updated_with_generated_samples[structure_type][specific_structure_index]["MC data: Generated uniform dist (biopsy needle compartment) random samples arr"] = specific_structure_structure_uniform_dist_shift_samples_arr
+
+    return patient_dict_updated_with_generated_samples
 
 
 def MC_simulator_shift_all_structures_generator_parallel(parallel_pool, patient_dict, structs_referenced_list, num_simulations):
@@ -821,6 +846,22 @@ def MC_simulator_shift_structure_generator(structure_type, specific_structure_in
             np.random.normal(loc=sp_struct_uncertainty_data_mean_arr[2], scale=sp_struct_uncertainty_data_sigma_arr[2], size=num_simulations)],   
             dtype = float).T
     generated_shifts_info_list = [structure_type, specific_structure_index, structure_normal_dist_shift_samples_arr]
+    return generated_shifts_info_list
+
+
+
+def MC_simulator_uniform_shift_structure_generator(structure_type, specific_structure_index, core_length_compartment_length_difference, num_simulations):
+    """
+    note that since this is an uncertainty in the location of the biopsy within the compartment,
+    shifts in the x and y directions (relative to the biopsy reconstructed core) are zero, while
+    shifts in the z direction (relative to the biopsy reconstructed core) are uniformly generated.
+    """
+    structure_uniform_dist_shift_samples_arr = np.array([ 
+            np.zeros(num_simulations, dtype=float),  
+            np.zeros(num_simulations, dtype=float),  
+            np.random.uniform(low=0, high=core_length_compartment_length_difference, size=num_simulations)],   
+            dtype = float).T
+    generated_shifts_info_list = [structure_type, specific_structure_index, structure_uniform_dist_shift_samples_arr]
     return generated_shifts_info_list
 
 
