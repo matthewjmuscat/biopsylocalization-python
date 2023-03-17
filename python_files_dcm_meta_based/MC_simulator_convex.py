@@ -81,7 +81,9 @@ def simulator_parallel(parallel_pool,
                        containment_views_jsons_paths_list,
                        show_NN_dose_demonstration_plots,
                        show_containment_demonstration_plots,
-                       biopsy_needle_compartment_length, 
+                       biopsy_needle_compartment_length,
+                       simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                       plot_uniform_shifts_to_check_plotly,
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -106,8 +108,8 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,patientUID)
             patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-
-            patient_dict_updated_with_bx_structs_generated_uniform_dist_translation_samples = MC_simulator_shift_biopsy_structures_uniform_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, biopsy_needle_compartment_length, max_simulations)
+            if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
+                patient_dict_updated_with_bx_structs_generated_uniform_dist_translation_samples = MC_simulator_shift_biopsy_structures_uniform_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, biopsy_needle_compartment_length, max_simulations)
             patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples = MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, max_simulations)
             master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
             patients_progress.update(processing_patients_task, advance = 1)
@@ -150,7 +152,7 @@ def simulator_parallel(parallel_pool,
                 # Do all trials in parallel
                 indeterminate_sub_desc_bx_shift = "[cyan]~~Shifting biopsy structure (BX shift) [{},{}]".format(patientUID, specific_bx_structure_roi)
                 indeterminate_sub_bx_shift_task = indeterminate_progress_sub.add_task(indeterminate_sub_desc_bx_shift, total=None)
-                bx_only_shifted_randomly_sampled_bx_pts_3Darr = MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure)
+                bx_only_shifted_randomly_sampled_bx_pts_3Darr = MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure, simulate_uniform_bx_shifts_due_to_bx_needle_compartment, plot_uniform_shifts_to_check_plotly)
                 # THIS SHOULD BE SAVED AT THE END. Save the 3d array of the bx only shifted data containing all MC trials as slices to the master reference dictionary
                 indeterminate_progress_sub.update(indeterminate_sub_bx_shift_task, visible = False)
                 master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
@@ -806,7 +808,7 @@ def MC_simulator_shift_biopsy_structures_uniform_generator_parallel(parallel_poo
         structure_type = generated_shifts_info_list[0]
         specific_structure_index = generated_shifts_info_list[1]
         specific_structure_structure_uniform_dist_shift_samples_arr = generated_shifts_info_list[2]
-        patient_dict_updated_with_generated_samples[structure_type][specific_structure_index]["MC data: Generated uniform dist (biopsy needle compartment) random samples arr"] = specific_structure_structure_uniform_dist_shift_samples_arr
+        patient_dict_updated_with_generated_samples[structure_type][specific_structure_index]["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"] = specific_structure_structure_uniform_dist_shift_samples_arr
 
     return patient_dict_updated_with_generated_samples
 
@@ -854,41 +856,87 @@ def MC_simulator_uniform_shift_structure_generator(structure_type, specific_stru
     """
     note that since this is an uncertainty in the location of the biopsy within the compartment,
     shifts in the x and y directions (relative to the biopsy reconstructed core) are zero, while
-    shifts in the z direction (relative to the biopsy reconstructed core) are uniformly generated.
+    shifts in the z direction (relative to the biopsy reconstructed core, ie along the axis of the needle) 
+    are uniformly generated. Therefore, we just generate distances here, and that will be multipled by
+    the unit vector along the needle axis later.
     """
+    """
+    #this code was used to generate 3d vectors, but there is no need, as described in the function description
     structure_uniform_dist_shift_samples_arr = np.array([ 
             np.zeros(num_simulations, dtype=float),  
             np.zeros(num_simulations, dtype=float),  
             np.random.uniform(low=0, high=core_length_compartment_length_difference, size=num_simulations)],   
             dtype = float).T
+    """
+    structure_uniform_dist_shift_samples_arr = np.random.uniform(low=0, high=core_length_compartment_length_difference, size=num_simulations)
+
     generated_shifts_info_list = [structure_type, specific_structure_index, structure_uniform_dist_shift_samples_arr]
     return generated_shifts_info_list
 
 
-def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure):
+def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel_pool, specific_bx_structure, simulate_uniform_bx_shifts_due_to_bx_needle_compartment, plot_uniform_shifts_to_check_plotly):
     randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
     randomly_sampled_bx_shifts_arr = specific_bx_structure["MC data: Generated normal dist random samples arr"]
+    
+    # do the normal only shifts alone, regardless of whether uniform shifts will be done, data may be useful later
+    args_list_normal_shifts = []
+    for bx_shift in randomly_sampled_bx_shifts_arr:
+        arg = (randomly_sampled_bx_pts_arr, bx_shift)
+        args_list_normal_shifts.append(arg)
+    
+    randomly_sampled_bx_pts_arr_bx_normal_only_shift_arr_each_sampled_shift_list = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_bx_only_shift,args_list_normal_shifts)
+    
+    if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
+        random_uniformly_sampled_bx_shifts_arr = specific_bx_structure["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"]
+        # notice the minus sign below!!
+        bx_needle_centroid_vec_tip_to_handle_unit_vec = -specific_bx_structure["Centroid line unit vec (bx needle base to bx needle tip)"]
 
-    args_list = []
-    for bx_shift_ind in range(randomly_sampled_bx_shifts_arr.shape[0]):
-        arg = (randomly_sampled_bx_pts_arr, randomly_sampled_bx_shifts_arr[bx_shift_ind])
-        args_list.append(arg)
 
-    randomly_sampled_bx_pts_arr_bx_only_shift_arr_each_sampled_shift_list = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_bx_only_shift,args_list)
-
+        args_list_uniform_compartment_shifts = []
+        for uniform_bx_shift_distance in random_uniformly_sampled_bx_shifts_arr:
+            arg = (randomly_sampled_bx_pts_arr, uniform_bx_shift_distance, bx_needle_centroid_vec_tip_to_handle_unit_vec, plot_uniform_shifts_to_check_plotly)
+            args_list_uniform_compartment_shifts.append(arg)
+        
+        randomly_sampled_bx_pts_bx_uniform_compartment_only_shift_arr_each_sampled_shift_list = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_bx_uniform_compartment_only_shift, args_list_uniform_compartment_shifts)
+ 
+        args_list_uniform_and_normal_shifts = []
+        for bx_shift_ind, bx_shift in enumerate(randomly_sampled_bx_shifts_arr):
+            arg = (randomly_sampled_bx_pts_bx_uniform_compartment_only_shift_arr_each_sampled_shift_list[bx_shift_ind], bx_shift)
+            args_list_uniform_and_normal_shifts.append(arg)
+    
+        randomly_sampled_bx_pts_arr_bx_only_shift_final_arr_each_sampled_shift_list = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_bx_only_shift,args_list_uniform_and_normal_shifts)
+    else:
+        randomly_sampled_bx_pts_arr_bx_only_shift_final_arr_each_sampled_shift_list = randomly_sampled_bx_pts_arr_bx_normal_only_shift_arr_each_sampled_shift_list.copy()
+        
     num_bx_sampled_points = randomly_sampled_bx_pts_arr.shape[0]
     num_bx_sampled_shifts = randomly_sampled_bx_shifts_arr.shape[0]
 
-    # create a 3d array that stores all the shifted bx data where each 3d slice is the shifted bx data for a fixed sampled bx shift, ie each slice is a sampled bx shift trial
+    """
+    create a 3d array that stores all the shifted bx data where each 3d slice is the shifted bx data for 
+    a fixed sampled bx shift, ie each slice is a sampled bx shift trial. Note though that if the uniform 
+    compartment shifts are done, these are still slices of constant shift vectors, but they are now 
+    composed of two shifts. Each slice is a unique uniform shift vector plus a unique norm shift vector.
+    """
     randomly_sampled_bx_pts_arr_bx_only_shift_3Darr = np.empty([num_bx_sampled_shifts,num_bx_sampled_points,3],dtype=float)
 
     # build the above described 3d array from the parallel results list
-    for index,randomly_sampled_bx_pts_arr_bx_only_shift_arr in enumerate(randomly_sampled_bx_pts_arr_bx_only_shift_arr_each_sampled_shift_list):
+    for index, randomly_sampled_bx_pts_arr_bx_only_shift_arr in enumerate(randomly_sampled_bx_pts_arr_bx_only_shift_final_arr_each_sampled_shift_list):
         randomly_sampled_bx_pts_arr_bx_only_shift_3Darr[index] = randomly_sampled_bx_pts_arr_bx_only_shift_arr
 
     return randomly_sampled_bx_pts_arr_bx_only_shift_3Darr
 
 
+def MC_simulator_translate_sampled_bx_points_arr_bx_uniform_compartment_only_shift(randomly_sampled_bx_pts_arr, bx_uniform_shift_length, bx_centroid_vec_tip_to_needle_handle_unit_vec, plot_uniform_shifts_to_check = True):
+    # For a single trial, all BX points are shifted by the same vector!
+    randomly_sampled_bx_pts_arr_bx_uniform_compartment_only_shift_arr = randomly_sampled_bx_pts_arr + bx_centroid_vec_tip_to_needle_handle_unit_vec*bx_uniform_shift_length
+    """
+    these should shift inferior (more negative values) if the biopsies are 
+    systematically being contoured at the biopsy needle tip.
+    """
+    if plot_uniform_shifts_to_check == True:
+        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([randomly_sampled_bx_pts_arr_bx_uniform_compartment_only_shift_arr, randomly_sampled_bx_pts_arr], colors_for_arrays_list = ['blue','red'], aspect_mode_input = 'data')
+    
+    return randomly_sampled_bx_pts_arr_bx_uniform_compartment_only_shift_arr
 
 
 def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift(randomly_sampled_bx_pts_arr, bx_shift_vector):

@@ -72,6 +72,7 @@ from statsmodels.nonparametric import kernel_regression
 from statsmodels.regression.quantile_regression import QuantReg
 from statsmodels.regression.quantile_regression import QuantRegResults
 import misc_tools
+import matplotlib.colors as mcolors
 
 def main():
     
@@ -114,9 +115,10 @@ def main():
     interp_dist_caps = 2
     biopsy_radius = 0.4
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
-    num_sample_pts_per_bx_input = 100
-    num_MC_containment_simulations_input = 10
-    num_MC_dose_simulations_input = 20
+    simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
+    num_sample_pts_per_bx_input = 250
+    num_MC_containment_simulations_input = 75
+    num_MC_dose_simulations_input = 200
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -145,8 +147,13 @@ def main():
     show_containment_demonstration_plots = False
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = False
+    show_processed_3d_datasets_renderings_plotly = False
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
+    plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     
+
+    # plot attributes:
+
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -680,6 +687,21 @@ def main():
                             
                     plotting_funcs.plot_geometries(*pcd_list)
 
+
+            if show_processed_3d_datasets_renderings_plotly == True:
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    arr_list = []
+                    for structs in structs_referenced_list:
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            if structs == structs_referenced_list[0]: 
+                                structure_arr = specific_structure["Reconstructed structure pts arr"]
+                            else: 
+                                # structure_arr = specific_structure["Raw contour pts"]
+                                structure_arr = specific_structure["Intra-slice interpolation information"].interpolated_pts_np_arr
+                            arr_list.append(structure_arr)
+                    plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
+
+
                 
             #et = time.time()
             #elapsed_time = et - st
@@ -951,7 +973,9 @@ def main():
 
                     translation_vec_bx_coord_sys_origin = -apex_inf_vec_bx_centroid_arr
                     apex_to_base_bx_best_fit_vec = base_sup_vec_bx_centroid_arr - apex_inf_vec_bx_centroid_arr
+                    apex_to_base_bx_best_fit_unit_vec = apex_to_base_bx_best_fit_vec/np.linalg.norm(apex_to_base_bx_best_fit_vec)
 
+                    specific_structure["Centroid line unit vec (bx needle base to bx needle tip)"] = apex_to_base_bx_best_fit_unit_vec
                     reconstructed_biopsy_point_cloud = specific_structure["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = specific_structure["Reconstructed structure pts arr"]
                     sampled_bx_points_pcd = specific_structure["Random uniformly sampled volume pts pcd"]
@@ -1166,6 +1190,8 @@ def main():
                                                                                          show_NN_dose_demonstration_plots,
                                                                                          show_containment_demonstration_plots,
                                                                                          biopsy_needle_compartment_length,
+                                                                                         simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                                                                         plot_uniform_shifts_to_check_plotly,
                                                                                          spinner_type)
             else: 
                 pass
@@ -1606,7 +1632,7 @@ def main():
 
                         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
                                                 
-                        fig_global = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num")
+                        fig_global = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
                         if global_regression_ans == True:
                             fig_global.add_trace(
                                 go.Scatter(
@@ -1720,7 +1746,7 @@ def main():
                         
                         
                          
-                        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose")
+                        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose", width  = svg_image_width, height = svg_image_height)
                         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
                         svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.svg'
@@ -1733,7 +1759,7 @@ def main():
 
 
                         # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
-                        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)")
+                        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
                         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
                         svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.svg'
@@ -1746,7 +1772,7 @@ def main():
                         
                         
                         # create 2d scatter dose plot axial (z) vs mean dose 
-                        #fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose")
+                        #fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Mean dose (Gy)", error_y = "STD dose", width  = svg_image_width, height = svg_image_height)
                         
                         # can change the name of this dictionary to 'regression_colors_dict' to make all the regressions a different color
                         regression_colors_dict_different = {"Q95":'rgba(255, 0, 0, 1)',
@@ -2105,114 +2131,135 @@ def main():
                             all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[containment_structure_key_tuple] = containment_regressions_dict
                         
                         # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
-                                                
-                        fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", error_y = "STD err")
-                        fig_regression_only = go.Figure()
-                        for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
-                            containment_structure_ROI = containment_structure_key_tuple[0]
-                            mean_regression = containment_structure_regressions_dict["Mean regression"]
-                            lower95_regression = containment_structure_regressions_dict["Lower 95 regression"]
-                            upper95_regression = containment_structure_regressions_dict["Upper 95 regression"]
-                            fig_global.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI+' regression',
-                                    x=z_vals_to_evaluate,
-                                    y=mean_regression,
-                                    mode="lines",
-                                    line=dict(color='rgb(31, 119, 180)'),
-                                    showlegend=True
+                        plot_type_list = ['with_errors','']
+                        done_regression_only = False                        
+                        for plot_type in plot_type_list:
+                            # one with error bars on binom est, one without error bars
+                            if plot_type == 'with_errors':
+                                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", error_y = "STD err", width  = svg_image_width, height = svg_image_height)
+                            if plot_type == '':
+                                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", width  = svg_image_width, height = svg_image_height)
+                            
+                            fig_regression_only = go.Figure()
+                            for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
+                                regression_color = 'rgb'+str(tuple(np.random.randint(low=0,high=225,size=3)))
+                                containment_structure_ROI = containment_structure_key_tuple[0]
+                                mean_regression = containment_structure_regressions_dict["Mean regression"]
+                                lower95_regression = containment_structure_regressions_dict["Lower 95 regression"]
+                                upper95_regression = containment_structure_regressions_dict["Upper 95 regression"]
+                                fig_global.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI+' regression',
+                                        x=z_vals_to_evaluate,
+                                        y=mean_regression,
+                                        mode="lines",
+                                        line=dict(color=regression_color),
+                                        showlegend=True
+                                        )
+                                )
+                                fig_global.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI+' upper 95% CI',
+                                        x=z_vals_to_evaluate,
+                                        y=upper95_regression,
+                                        mode='lines',
+                                        marker=dict(color="#444"),
+                                        line=dict(width=0),
+                                        showlegend=False
                                     )
-                            )
-                            fig_global.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI+' upper 95% CI',
-                                    x=z_vals_to_evaluate,
-                                    y=upper95_regression,
-                                    mode='lines',
-                                    marker=dict(color="#444"),
-                                    line=dict(width=0),
-                                    showlegend=False
                                 )
-                            )
-                            fig_global.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI+' lower 95% CI',
-                                    x=z_vals_to_evaluate,
-                                    y=lower95_regression,
-                                    marker=dict(color="#444"),
-                                    line=dict(width=0),
-                                    mode='lines',
-                                    fillcolor='rgba(0, 100, 20, 0.3)',
-                                    fill='tonexty',
-                                    showlegend=False
+                                fig_global.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI+' lower 95% CI',
+                                        x=z_vals_to_evaluate,
+                                        y=lower95_regression,
+                                        marker=dict(color="#444"),
+                                        line=dict(width=0),
+                                        mode='lines',
+                                        fillcolor='rgba(0, 100, 20, 0.3)',
+                                        fill='tonexty',
+                                        showlegend=False
+                                    )
                                 )
-                            )
 
-                            # regressions only figure
-                            fig_regression_only.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI + ' regression',
-                                    x=z_vals_to_evaluate,
-                                    y=mean_regression,
-                                    mode="lines",
-                                    line=dict(color='rgb(31, 119, 180)'),
-                                    showlegend=True
+                                # regressions only figure
+                                fig_regression_only.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI + ' regression',
+                                        x=z_vals_to_evaluate,
+                                        y=mean_regression,
+                                        mode="lines",
+                                        line=dict(color=regression_color),
+                                        showlegend=True
+                                    )
                                 )
-                            )
-                            fig_regression_only.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI + ' upper 95% CI',
-                                    x=z_vals_to_evaluate,
-                                    y=upper95_regression,
-                                    mode='lines',
-                                    marker=dict(color="#444"),
-                                    line=dict(width=0),
-                                    showlegend=False
+                                fig_regression_only.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI + ' upper 95% CI',
+                                        x=z_vals_to_evaluate,
+                                        y=upper95_regression,
+                                        mode='lines',
+                                        marker=dict(color="#444"),
+                                        line=dict(width=0),
+                                        showlegend=False
+                                    )
                                 )
-                            )
-                            fig_regression_only.add_trace(
-                                go.Scatter(
-                                    name=containment_structure_ROI + ' lower 95% CI',
-                                    x=z_vals_to_evaluate,
-                                    y=lower95_regression,
-                                    marker=dict(color="#444"),
-                                    line=dict(width=0),
-                                    mode='lines',
-                                    fillcolor='rgba(0, 100, 20, 0.3)',
-                                    fill='tonexty',
-                                    showlegend=False
+                                fig_regression_only.add_trace(
+                                    go.Scatter(
+                                        name=containment_structure_ROI + ' lower 95% CI',
+                                        x=z_vals_to_evaluate,
+                                        y=lower95_regression,
+                                        marker=dict(color="#444"),
+                                        line=dict(width=0),
+                                        mode='lines',
+                                        fillcolor='rgba(0, 100, 20, 0.3)',
+                                        fill='tonexty',
+                                        showlegend=False
+                                    )
                                 )
+
+                            fig_global.update_layout(
+                                title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                                hovermode="x unified"
                             )
+                            fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
 
-                        fig_global.update_layout(
-                            title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
-                            hovermode="x unified"
-                        )
-                        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
+                            fig_regression_only.update_layout(
+                                yaxis_title='Conditional mean probability',
+                                xaxis_title='Axial pos Z (mm)',
+                                title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                                hovermode="x unified"
+                            )
+                            fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
+                            
+                            if plot_type == 'with_errors':
+                                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment_with_errors.svg'
+                            else:                       
+                                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment.svg'
+                            svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                            fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-                        fig_regression_only.update_layout(
-                            yaxis_title='Conditional mean probability',
-                            xaxis_title='Axial pos Z (mm)',
-                            title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
-                            hovermode="x unified"
-                        )
-                        fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
-                                                
-                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.svg'
-                        svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+                            if plot_type == 'with_errors':
+                                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment_with_errors.html'
+                            else:
+                                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment.html'
+                            html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                            fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
+                            
+                            if done_regression_only == False:
+                                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
+                                svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                                fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_containment.html'
-                        html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
-                        fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
-                        
-                        svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
-                        svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
-                        fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+                                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
+                                html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                                fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
+                            
+                                done_regression_only = True
+                            else: 
+                                pass
 
-                        html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
-                        html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
-                        fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
+                            
                        
                         
             
@@ -2258,6 +2305,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "Structure centroid pts": None, 
                          "Best fit line of centroid pts": None, 
                          "Centroid line sample pts": None, 
+                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
                          "Interpolated structure point cloud dict": None, 
                          "Reconstructed structure pts arr": None, 
                          "Reconstructed structure point cloud": None, 
@@ -2268,7 +2316,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "Random uniformly sampled volume pts bx coord sys pcd": None, 
                          "Bounding box for random uniformly sampled volume pts": None, 
                          "Uncertainty data": None, 
-                         "MC data: Generated uniform dist (biopsy needle compartment) random samples arr": None, 
+                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
                          "MC data: Generated normal dist random samples arr": None, 
                          "MC data: bx only shifted 3darr": None, 
                          "MC data: bx and structure shifted dict": None, 

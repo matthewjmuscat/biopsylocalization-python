@@ -732,7 +732,7 @@ def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_
     fig = go.Figure()
     for array_index, pts_array in enumerate(arrays_to_plot_list):
         if len(colors_for_arrays_list) != len(arrays_to_plot_list):
-            color_elem = 'black'
+            color_elem = 'rgb'+str(tuple(np.random.randint(low=0,high=255,size=3)))
         else:
             color_elem = colors_for_arrays_list[array_index]
         fig.add_trace(go.Scatter3d(
