@@ -650,7 +650,10 @@ def fix_plotly_grid_lines(fig, y_axis = True, x_axis = True):
 
 
 
-def dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_dose_lattice_arr, NN_doses_on_dose_lattice_arr, queried_bx_pts_arr, queried_bx_pts_assigned_doses_arr, num_dose_NN_per_bx_pt, draw_lines = True, axes_visible = False):
+def dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_dose_lattice_arr, NN_doses_on_dose_lattice_arr, queried_bx_pts_arr, queried_bx_pts_assigned_doses_arr, num_dose_NN_per_bx_pt, aspect_mode_input = 'data', draw_lines = True, axes_visible = False):
+    """
+    aspect_mode_input can be one of ( "auto" | "cube" | "data" | "manual" ), follows the plotly fig.update_scenes(aspectmode=<VALUE>) module
+    """
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
         x=NN_pts_on_dose_lattice_arr[:,0],
@@ -714,9 +717,37 @@ def dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_dose_lattic
 
 
     fig.update_layout(
-        scene=dict(annotations = annotations_list)
+        scene=dict(annotations = annotations_list, aspectmode = aspect_mode_input)
     )
     if axes_visible == False:
         fig.update_scenes(xaxis_visible=False, yaxis_visible=False,zaxis_visible=False)
 
     fig.show()
+
+
+def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_arrays_list = [], aspect_mode_input = 'data'):
+    """
+    aspect_mode_input can be one of ( "auto" | "cube" | "data" | "manual" ), follows the plotly fig.update_scenes(aspectmode=<VALUE>) module
+    """
+    fig = go.Figure()
+    for array_index, pts_array in enumerate(arrays_to_plot_list):
+        if len(colors_for_arrays_list) != len(arrays_to_plot_list):
+            color_elem = 'black'
+        else:
+            color_elem = colors_for_arrays_list[array_index]
+        fig.add_trace(go.Scatter3d(
+            x=pts_array[:,0],
+            y=pts_array[:,1],
+            z=pts_array[:,2],
+            mode = 'markers',
+            marker = dict(color = color_elem, size = 2)
+            )
+        )
+    
+    fig.update_layout(
+        scene=dict(aspectmode = aspect_mode_input)
+        )    
+    
+    fig.show()
+
+    

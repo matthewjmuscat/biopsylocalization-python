@@ -113,9 +113,9 @@ def main():
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
     biopsy_radius = 0.4
-    num_sample_pts_per_bx_input = 50
-    num_MC_containment_simulations_input = 2
-    num_MC_dose_simulations_input = 10
+    num_sample_pts_per_bx_input = 100
+    num_MC_containment_simulations_input = 10
+    num_MC_dose_simulations_input = 20
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -138,8 +138,13 @@ def main():
                                               "ScreenCamera_2023-02-19-15-14-47.json", 
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
-    show_NN_dose_demonstration_plots = True 
+    
+    # plots to show:
+    show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
+    show_3d_dose_renderings = False
+    show_processed_3d_datasets_renderings = False
+    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     
 
     cpu_count = os.cpu_count()
@@ -381,27 +386,29 @@ def main():
                 patients_progress.start_task(processing_patients_dose_task)
                 completed_progress.start_task(processing_patients_dose_task_completed)
                 """
-
                 # plot dose point cloud cubic lattice (color only)
-                patients_progress.stop_task(processing_patients_dose_task)
-                completed_progress.stop_task(processing_patients_dose_task_completed)
-                stopwatch.stop()
-                plotting_funcs.plot_geometries(dose_point_cloud)
-                stopwatch.start()
-                patients_progress.start_task(processing_patients_dose_task)
-                completed_progress.start_task(processing_patients_dose_task_completed)
+                if show_3d_dose_renderings == True:
+                    patients_progress.stop_task(processing_patients_dose_task)
+                    completed_progress.stop_task(processing_patients_dose_task_completed)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(dose_point_cloud)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_dose_task)
+                    completed_progress.start_task(processing_patients_dose_task_completed)
 
                 # user defined quantity moved to beginning of programme
                 thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
                 dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
-
-                patients_progress.stop_task(processing_patients_dose_task)
-                completed_progress.stop_task(processing_patients_dose_task_completed)
-                stopwatch.stop()
-                plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
-                stopwatch.start()
-                patients_progress.start_task(processing_patients_dose_task)
-                completed_progress.start_task(processing_patients_dose_task_completed)
+                
+                # plot dose point cloud thresholded cubic lattice (color only)
+                if show_3d_dose_renderings == True:
+                    patients_progress.stop_task(processing_patients_dose_task)
+                    completed_progress.stop_task(processing_patients_dose_task_completed)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_dose_task)
+                    completed_progress.start_task(processing_patients_dose_task_completed)
 
                 patients_progress.update(processing_patients_dose_task, advance=1)
                 completed_progress.update(processing_patients_dose_task_completed, advance=1)
@@ -655,22 +662,22 @@ def main():
 
             live_display.refresh()
 
-            print('test')
-
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                dose_ref_dict = pydicom_item[dose_ref]
-                dose_grid_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
-                pcd_list = [dose_grid_pcd]
-                for structs in structs_referenced_list:
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        if structs == structs_referenced_list[0]: 
-                            structure_pcd = specific_structure["Reconstructed structure point cloud"]
-                        else: 
-                            #structure_pcd = specific_structure["Point cloud raw"]
-                            structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
-                        pcd_list.append(structure_pcd)
-                        
-                plotting_funcs.plot_geometries(*pcd_list)
+            # displays 3d renderings of patient contour data and dose data
+            if show_processed_3d_datasets_renderings == True:
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    dose_ref_dict = pydicom_item[dose_ref]
+                    dose_grid_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
+                    pcd_list = [dose_grid_pcd]
+                    for structs in structs_referenced_list:
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            if structs == structs_referenced_list[0]: 
+                                structure_pcd = specific_structure["Reconstructed structure point cloud"]
+                            else: 
+                                #structure_pcd = specific_structure["Point cloud raw"]
+                                structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
+                            pcd_list.append(structure_pcd)
+                            
+                    plotting_funcs.plot_geometries(*pcd_list)
 
                 
             #et = time.time()
@@ -958,7 +965,8 @@ def main():
                     
                     reconstructed_biopsy_bx_coord_sys_tr_point_cloud.translate(translation_vec_bx_coord_sys_origin)
                     sampled_bx_points_bx_coord_sys_tr_pcd.translate(translation_vec_bx_coord_sys_origin)
-
+                    
+                    # show translated (to biopsy coordinate system) reconstructed biopsies?
                     patients_progress.stop_task(processing_patients_task)
                     completed_progress.stop_task(processing_patients_completed_task)
                     stopwatch.stop()
@@ -989,17 +997,28 @@ def main():
                     sampled_bx_points_bx_coord_sys_tr_and_rot_arr_point_cloud = point_containment_tools.create_point_cloud(sampled_bx_points_bx_coord_sys_tr_and_rot_arr)
 
                     # plot shifted and rotated biopsies to ensure transformations are correct for biopsy coord system?
-                    #coord_frame = o3d.geometry.create_mesh_coordinate_frame()
-                    patients_progress.stop_task(processing_patients_task)
-                    completed_progress.stop_task(processing_patients_completed_task)
-                    stopwatch.stop()
-                    #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
-                    #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)                    
-                    #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
-                    #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
-                    #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_from_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
-                    #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
-                    stopwatch.start()
+                    if show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot == True:
+                        # create axis aligned bounding box for the translated and rotated reconstructed biopsies
+                        reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box = reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud.get_axis_aligned_bounding_box()
+                        reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box_arr = np.asarray(reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box.get_box_points())
+                        reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box.color = np.array([0,0,0], dtype=float)
+                        #coord_frame = o3d.geometry.create_mesh_coordinate_frame()
+                        patients_progress.stop_task(processing_patients_task)
+                        completed_progress.stop_task(processing_patients_completed_task)
+                        stopwatch.stop()
+                        # other options...
+                        #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                        #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)   
+                        #plotting_funcs.plot_geometries(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box)         
+                        #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                        #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                        #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_from_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                        #plotting_funcs.plot_geometries_with_axes(sampled_bx_points_pcd, reconstructed_biopsy_point_cloud, axis_aligned_bounding_box, reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd)
+                        
+                        # just the reconstructed biopsy core and sampled points with its axis aligned bounding box, to show that the transformation to biopsy coordinate system was successful
+                        plotting_funcs.plot_geometries(reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box)                        
+                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list = [reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr, sampled_bx_points_bx_coord_sys_tr_and_rot_arr], colors_for_arrays_list = ['red','black'])
+                        stopwatch.start()
                     
                     # check if the arrays are equal? using the two different methods
                     sampled_bx_points_bx_coord_sys_tr_and_rot_arr_from_pcd_transform = np.asarray(sampled_bx_points_bx_coord_sys_tr_and_rot_pcd.points)
