@@ -117,8 +117,8 @@ def main():
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     num_sample_pts_per_bx_input = 250
-    num_MC_containment_simulations_input = 75
-    num_MC_dose_simulations_input = 200
+    num_MC_containment_simulations_input = 100
+    num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -146,8 +146,8 @@ def main():
     show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
     show_3d_dose_renderings = False
-    show_processed_3d_datasets_renderings = False
-    show_processed_3d_datasets_renderings_plotly = False
+    show_processed_3d_datasets_renderings = True
+    show_processed_3d_datasets_renderings_plotly = True
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     
