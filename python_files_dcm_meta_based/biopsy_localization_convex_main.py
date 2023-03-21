@@ -113,7 +113,7 @@ def main():
     interp_inter_slice_dist = 0.5
     interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 2
-    biopsy_radius = 0.4
+    biopsy_radius = 0.275
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     num_sample_pts_per_bx_input = 250
@@ -145,7 +145,7 @@ def main():
     # plots to show:
     show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
-    show_3d_dose_renderings = False
+    show_3d_dose_renderings = True
     show_processed_3d_datasets_renderings = True
     show_processed_3d_datasets_renderings_plotly = True
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
