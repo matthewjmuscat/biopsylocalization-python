@@ -145,7 +145,7 @@ def main():
     # plots to show:
     show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
-    show_3d_dose_renderings = True
+    show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = True
     show_processed_3d_datasets_renderings_plotly = True
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
