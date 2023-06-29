@@ -99,8 +99,8 @@ def main():
     data_folder_name = 'Data'
     input_data_folder_name = "Input data"
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
-    #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random']
-    oaroi_contour_names = ['Prostate'] # consider prostate only for OARs!
+    #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
+    oaroi_contour_names = ['Prostate'] # consider prostate only for OARs! If the first position is the prostate, the simulated biopsies will be generated relative to this structure
     biopsy_contour_names = ['Bx']
     dil_contour_names = ['DIL']
     uncertainty_folder_name = 'Uncertainty data'
@@ -142,6 +142,12 @@ def main():
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
     
+    bx_sim_locations = ["1","2","3","4","5","6","7","8","9","10","11","12"]
+    bx_sim_ref_identifier = "sim"
+    simulate_biopsies_relative_to = 'Prostate' # the second position of structs referenced list, likely intended to be OAR (for prostate)
+    
+    
+
     # plots to show:
     show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
@@ -154,6 +160,15 @@ def main():
 
     # plot attributes:
 
+
+    # non-user changeable variables, but need to be initiatied:
+    bx_ref = "Bx ref"
+    oar_ref = "OAR ref"
+    dil_ref = "DIL ref"
+    structs_referenced_dict = {bx_ref: biopsy_contour_names, oar_ref: oaroi_contour_names, dil_ref: dil_contour_names} 
+    structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work!
+    dose_ref = "Dose ref"
+    num_simulated_bxs_to_create = len(bx_sim_locations)
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -280,15 +295,34 @@ def main():
                 else:
                     pass
             important_info.add_text_line("Each patient contains a structure and dose file.", live_display)    
-            
-            
             building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
             building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-            master_structure_reference_dict, master_structure_info_dict, structs_referenced_list, dose_ref = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names)
+            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier)
             indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
             completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
             important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
             live_display.refresh()
+
+            
+            # setting some variables for use in simulating biopsies
+            if len(bx_sim_locations) >= 1:
+                keyfound = False
+                for i in structs_referenced_dict.keys():
+                    if simulate_biopsies_relative_to in structs_referenced_dict[i]:
+                        if keyfound == True:
+                            raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
+                        simulate_biopsies_relative_to_struct_type = i
+                        keyfound = True
+                if keyfound == False:
+                    raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
+                important_info.add_text_line("Simulating "+ str(len(bx_sim_locations))+" biopsies relative to "+simulate_biopsies_relative_to+" (Found under "+simulate_biopsies_relative_to_struct_type+").", live_display)          
+                live_display.refresh()
+            else: 
+                important_info.add_text_line("Not creating any simulated biopsies.")          
+                live_display.refresh() 
+
+                
+
 
 
             # Now, we dont want to add the contour points to the structure list above,
@@ -423,50 +457,57 @@ def main():
             
             patients_progress.update(processing_patients_dose_task, visible=False)
             completed_progress.update(processing_patients_dose_task_completed, visible=True)
-                    
-        
+
+            
+            # create info for simulated biopsies
+            if num_simulated_bxs_to_create >= 1:
+                centroid_line_vec_list = [0,0,1]
+                centroid_first_pos_list = [0,0,0]
+                num_centroids_for_sim_bxs = 10
+                centroid_sep_dist = biopsy_needle_compartment_length/num_centroids_for_sim_bxs
+                simulated_bx_rad = 2
+                plot_simulated_cores_immediately = False
+
 
             patientUID_default = "Initializing"
-            processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
-            processing_patients_task_completed_main_description = "[green]Processing patient structure data"
-            processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
-            processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
-
-            #live_display.stop()
+            pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
+            pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
+            pulling_patients_task = patients_progress.add_task(pulling_patients_task_main_description, total=num_patients)
+            pulling_patients_task_completed = completed_progress.add_task(pulling_patients_task_completed_main_description, total=num_patients, visible = False) 
+                    
+            
             for patientUID,pydicom_item in master_structure_reference_dict.items():
-                processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
-                patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                
+                pulling_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
+
                 structureID_default = "Initializing"
                 num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
+                pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                         structureID = specific_structure["ROI"]
-                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(specific_structure["ROI"])
-                        #print(specific_structure["Ref #"])
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
-
-                        # can uncomment surrounding lines to time this particular process
-                        #st = time.time()
-                        threeDdata_zslice_list = []
-                        with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
-                            for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
-                                if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
-                                    structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
-                                    break
-                                else:
-                                    pass
-                        for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                            contour_slice_points = slice_object.ContourData                       
-                            threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                            threeDdata_zslice_list.append(threeDdata_zslice)
+                        structure_reference_number = specific_structure["Ref #"]
+                        pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                        structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
+                        
+                        # create points for simulated biopsies to create
+                        if bx_sim_ref_identifier in str(structure_reference_number):
+                            threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_list,centroid_first_pos_list,num_centroids_for_sim_bxs,centroid_sep_dist,simulated_bx_rad,plot_simulated_cores_immediately)
+                        # otherwise just read the data from dicoms
+                        else:
+                            threeDdata_zslice_list = []
+                            with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
+                                for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
+                                    if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
+                                        structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
+                                        break
+                                    else:
+                                        pass
+                            for index, slice_object in enumerate(structure_contour_points_raw_sequence):
+                                contour_slice_points = slice_object.ContourData                       
+                                threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                                threeDdata_zslice_list.append(threeDdata_zslice)
 
 
                         total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
@@ -478,10 +519,86 @@ def main():
                             raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
                         else: 
                             raise Exception("Something went wrong when calculating total number of points in structure!")
+                        
+                        # for non-biopsy only
+                        if structs != bx_ref:
+                            structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                            # find zslice-wise centroids
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):                           
+                                structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                                structure_centroids_array[index] = structure_zslice_centroid
+                            structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure global centroid"] = structure_global_centroid
 
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
+
+                        structures_progress.update(pulling_structures_task, advance=1)
+                structures_progress.remove_task(pulling_structures_task)
+                patients_progress.update(pulling_patients_task, advance=1)
+                completed_progress.update(pulling_patients_task_completed, advance=1)
+            patients_progress.update(pulling_patients_task, visible=False)
+            completed_progress.update(pulling_patients_task_completed,  visible=True)            
+
+
+
+            patientUID_default = "Initializing"
+            processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
+            processing_patients_task_completed_main_description = "[green]Processing patient structure data"
+            processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
+            processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
+
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                
+                structureID_default = "Initializing"
+                num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
+                for structs in structs_referenced_list:
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        structureID = specific_structure["ROI"]
+                        structure_reference_number = specific_structure["Ref #"]
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                        # The below print lines were just for my own understanding of how to access the data structure
+                        #print(specific_structure["ROI"])
+                        #print(specific_structure["Ref #"])
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                        # can uncomment surrounding lines to time this particular process
+                        #st = time.time()
+
+                        # create vectors and info for simulated biopsies
+                        
+
+                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+                        
+                        # transform simulated biopsies to location
+                        if structs == bx_ref and bx_sim_ref_identifier in str(structure_reference_number):
+                            # first extract the appropriate relative structure to transform biopsies to
+                            for relative_specific_structure_index, relative_specific_structure in enumerate(master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type]):
+                                if simulate_biopsies_relative_to == relative_specific_structure["ROI"]:
+                                    simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
+                                    break
+                                else:
+                                    pass
+                            simulated_bx_relative_structure_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                            threeDdata_arr_temp = np.array(threeDdata_zslice_list)
+                            simulated_bx_global_centroid_before_translation_to_relative_struct_centroid = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
+                            translation_vector_to_relative_structure_centroid = simulated_bx_relative_structure_global_centroid - simulated_bx_global_centroid_before_translation_to_relative_struct_centroid
+                            for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list):
+                                temp_bx_zslice_arr = bx_zslice_arr.copy()
+                                translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
+                                threeDdata_zslice_list[bx_zslice_arr_index] = translated_bx_zslice_arr
+                        
+                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
                         threeDdata_array = np.empty([total_structure_points,3])
                         # for biopsy only
-                        if structs == structs_referenced_list[0]:
+                        if structs == bx_ref:
                             structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
                         lower_bound_index = 0  
                         # build raw threeDdata
@@ -490,7 +607,7 @@ def main():
                             threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
                             lower_bound_index = lower_bound_index + current_zslice_num_points 
                             
-                            if structs == structs_referenced_list[0]:
+                            if structs == bx_ref:
                                 structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
                                 structure_centroids_array[index] = structure_zslice_centroid
 
@@ -603,7 +720,7 @@ def main():
 
 
                         # for biopsies only
-                        if structs == structs_referenced_list[0]:
+                        if structs == bx_ref:
                             centroid_line = pca.linear_fitter(structure_centroids_array.T)
                             centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
                             slice_reconstruction_max_distance = 0.1
@@ -637,7 +754,7 @@ def main():
 
 
                         # plot only the biopsies
-                        if structs == structs_referenced_list[0]:
+                        if structs == bx_ref:
                             specific_structure["Plot attributes"].plot_bool = True
 
 
@@ -651,7 +768,7 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        if structs == structs_referenced_list[0]:
+                        if structs == bx_ref:
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
@@ -668,6 +785,10 @@ def main():
             patients_progress.update(processing_patients_task, visible=False)
             completed_progress.update(processing_patients_task_completed,  visible=True)                
 
+            
+            
+            
+            
             live_display.refresh()
 
             # displays 3d renderings of patient contour data and dose data
@@ -678,7 +799,7 @@ def main():
                     pcd_list = [dose_grid_pcd]
                     for structs in structs_referenced_list:
                         for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            if structs == structs_referenced_list[0]: 
+                            if structs == bx_ref: 
                                 structure_pcd = specific_structure["Reconstructed structure point cloud"]
                             else: 
                                 #structure_pcd = specific_structure["Point cloud raw"]
@@ -693,7 +814,7 @@ def main():
                     arr_list = []
                     for structs in structs_referenced_list:
                         for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            if structs == structs_referenced_list[0]: 
+                            if structs == bx_ref: 
                                 structure_arr = specific_structure["Reconstructed structure pts arr"]
                             else: 
                                 # structure_arr = specific_structure["Raw contour pts"]
@@ -712,7 +833,7 @@ def main():
             
             with loading_tools.Loader(num_patients,"Generating KD trees and conducting nearest neighbour searches...") as loader:
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    Bx_structs = structs_referenced_list[0]
+                    Bx_structs = bx_ref
                     for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]): 
                         BX_centroid_line_sample = specific_BX_structure["Centroid line sample pts"]
                         for non_BX_structs in structs_referenced_list[1:]:
@@ -750,7 +871,7 @@ def main():
                                 threeDdata_list_and_color.append('o')
                                 global_data_list_per_patient.append(threeDdata_list_and_color)
 
-                                if structs == structs_referenced_list[0]:
+                                if structs == bx_ref:
                                     centroid_line_sample = specific_structure["Centroid line sample pts"] 
                                     structure_centroids_array = specific_structure["Structure centroid pts"]
                                     centroid_line = specific_structure["Best fit line of centroid pts"] 
@@ -836,7 +957,7 @@ def main():
             processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=num_patients, visible=False)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
-                bx_structs = structs_referenced_list[0]
+                bx_structs = bx_ref
 
                 processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_parallel_computing_main_description)
@@ -950,7 +1071,7 @@ def main():
 
             # rotating pointclouds to create bx oriented frame of reference
             for patientUID,pydicom_item in master_structure_reference_dict.items():
-                bx_structs = structs_referenced_list[0]
+                bx_structs = bx_ref
 
                 processing_patient_rotating_bx_main_description = "Creating biopsy oriented coordinate system [{}]...".format(patientUID)
                 patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_rotating_bx_main_description)
@@ -1179,7 +1300,10 @@ def main():
                                                                                          stopwatch, 
                                                                                          layout_groups, 
                                                                                          master_structure_reference_dict, 
-                                                                                         structs_referenced_list, 
+                                                                                         structs_referenced_list,
+                                                                                         bx_ref,
+                                                                                         oar_ref,
+                                                                                         dil_ref, 
                                                                                          dose_ref, 
                                                                                          master_structure_info_dict, 
                                                                                          biopsy_z_voxel_length, 
@@ -1259,7 +1383,7 @@ def main():
 
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
@@ -1315,7 +1439,7 @@ def main():
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         containment_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
@@ -1415,7 +1539,7 @@ def main():
                 
                 # write csv files
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
@@ -1445,7 +1569,7 @@ def main():
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         dose_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_voxelized_out.csv'
@@ -1565,14 +1689,14 @@ def main():
                 # generate and store patient directory folders for saving
                 patient_sp_output_figures_dir_dict = {}
                 for patientUID in master_structure_reference_dict.keys():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_figures_dir = output_figures_dir.joinpath(patientUID)
                     patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                     patient_sp_output_figures_dir_dict[patientUID] = patient_sp_output_figures_dir
 
                 # generate pandas data frame by reading dose output from file 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_struct_roi = specific_bx_structure["ROI"]
@@ -2068,7 +2192,7 @@ def main():
 
                 # perform containment probabilities plots and regressions
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    bx_structs = structs_referenced_list[0]
+                    bx_structs = bx_ref
                     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
                         bx_struct_roi = specific_bx_structure["ROI"]
@@ -2274,7 +2398,7 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list):
+def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
     we can match the ROI name to the contour information, since the contour
@@ -2283,8 +2407,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     master_st_ds_ref_dict = {}
     master_st_ds_info_dict = {}
     master_st_ds_info_global_dict = {"Global": None, "By patient": None}
-    st_ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
-    ds_ref = "Dose ref"
+    
     global_num_biopsies = 0
     global_num_OAR = 0
     global_num_DIL = 0
@@ -2295,13 +2418,15 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
             bpsy_ref = [{"ROI":x.ROIName, 
                          "Ref #":x.ROINumber, 
                          "Reconstructed biopsy cylinder length (from contour data)": None, 
+                         "Raw contour pts zslice list": None,
                          "Raw contour pts": None, 
                          "Equal num zslice contour pts": None, 
                          "Intra-slice interpolation information": None, 
                          "Inter-slice interpolation information": None, 
                          "Point cloud raw": None, 
                          "Delaunay triangulation global structure": None, 
-                         "Delaunay triangulation zslice-wise list": None, 
+                         "Delaunay triangulation zslice-wise list": None,
+                         "Structure global centroid": None, 
                          "Structure centroid pts": None, 
                          "Best fit line of centroid pts": None, 
                          "Centroid line sample pts": None, 
@@ -2338,8 +2463,60 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "Plot attributes": plot_attributes()
                          } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
             
+            bpsy_ref_simulated = [{"ROI": "Bx_Tr_sim" + x, 
+                         "Ref #": bx_sim_ref_identifier_str + x, 
+                         "Reconstructed biopsy cylinder length (from contour data)": None, 
+                         "Raw contour pts zslice list": None,
+                         "Raw contour pts": None, 
+                         "Equal num zslice contour pts": None, 
+                         "Intra-slice interpolation information": None, 
+                         "Inter-slice interpolation information": None, 
+                         "Point cloud raw": None, 
+                         "Delaunay triangulation global structure": None, 
+                         "Delaunay triangulation zslice-wise list": None,
+                         "Structure global centroid": None,  
+                         "Structure centroid pts": None, 
+                         "Best fit line of centroid pts": None, 
+                         "Centroid line sample pts": None, 
+                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
+                         "Interpolated structure point cloud dict": None, 
+                         "Reconstructed structure pts arr": None, 
+                         "Reconstructed structure point cloud": None, 
+                         "Reconstructed structure delaunay global": None, 
+                         "Random uniformly sampled volume pts arr": None, 
+                         "Random uniformly sampled volume pts pcd": None, 
+                         "Random uniformly sampled volume pts bx coord sys arr": None, 
+                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
+                         "Bounding box for random uniformly sampled volume pts": None, 
+                         "Uncertainty data": None, 
+                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
+                         "MC data: Generated normal dist random samples arr": None, 
+                         "MC data: bx only shifted 3darr": None, 
+                         "MC data: bx and structure shifted dict": None, 
+                         "MC data: MC sim translation results dict": None, 
+                         "MC data: compiled sim results": None, 
+                         "MC data: voxelized containment results dict": None, 
+                         "MC data: voxelized containment results dict (dict of lists)": None, 
+                         "MC data: bx to dose NN search objects list": None, 
+                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
+                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
+                         "MC data: voxelized dose results list": None, 
+                         "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "Output csv file paths dict": {}, 
+                         "Output data frames": {}, 
+                         "KDtree": None, 
+                         "Nearest neighbours objects": [], 
+                         "Plot attributes": plot_attributes()
+                         } for x in bx_sim_locations_list]
+            
+            bpsy_ref = bpsy_ref + bpsy_ref_simulated 
+
+
             OAR_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber, 
+                        "Ref #":x.ROINumber,
+                        "Raw contour pts zslice list": None, 
                         "Raw contour pts": None, 
                         "Equal num zslice contour pts": None, 
                         "Intra-slice interpolation information": None, 
@@ -2349,7 +2526,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                         "Delaunay triangulation zslice-wise list": None, 
                         "Structure centroid pts": None, 
                         "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None, 
+                        "Centroid line sample pts": None,
+                        "Structure global centroid": None,  
                         "Reconstructed structure pts arr": None, 
                         "Interpolated structure point cloud dict": None, 
                         "Reconstructed structure delaunay global": None, 
@@ -2361,7 +2539,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
             
             DIL_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber, 
+                        "Ref #":x.ROINumber,
+                        "Raw contour pts zslice list": None, 
                         "Raw contour pts": None, 
                         "Equal num zslice contour pts": None, 
                         "Intra-slice interpolation information": None, 
@@ -2371,7 +2550,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                         "Delaunay triangulation zslice-wise list": None, 
                         "Structure centroid pts": None, 
                         "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None, 
+                        "Centroid line sample pts": None,
+                        "Structure global centroid": None, 
                         "Reconstructed structure pts arr": None, 
                         "Interpolated structure point cloud dict": None, 
                         "Reconstructed structure delaunay global": None, 
@@ -2382,7 +2562,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                         "Plot attributes": plot_attributes()
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
-            bpsy_info = {"Num structs": len(bpsy_ref)}
+            bpsy_info = {"Num structs": len(bpsy_ref), "Num sim structs": len(bpsy_ref_simulated), "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated)}
             OAR_info = {"Num structs": len(OAR_ref)}
             DIL_info = {"Num structs": len(DIL_ref)}
             patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
@@ -2432,7 +2612,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None}
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
-    return master_st_ds_ref_dict, master_st_ds_info_global_dict, st_ref_list, ds_ref
+    return master_st_ds_ref_dict, master_st_ds_info_global_dict
 
 class uncertainty_data:
     def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):

@@ -270,6 +270,126 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector, list_origin_to
     """
 
 
+def biopsy_points_creater_by_transport_for_sim_bxs(list_centroid_line_vector, list_origin_to_first_centroid_vector, num_centroids, centroid_separation_distance, biopsy_radius_input, plot_stuff):
+    """
+    A function that creates points in a cylinder surrounding the centroid line, 
+    note that the centroid vector that describes the line must point from the 
+    first centroid point towards the rest of them, since at the moment this 
+    programme works by creating one ring, and then transporting this ring 
+    forwards to make successive rings
+    """
+    centroid_vector = np.array(list_centroid_line_vector)
+    norm_centroid_vector = np.linalg.norm(centroid_vector)
+    lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
+    norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
+    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
+    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
+        lab_azimuth_centroid = 0
+    if centroid_vector[1] < 0:
+        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+    centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
+    centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
+    centroid_z = np.cos(lab_polar_centroid)
+    
+
+    # plot the stuff? if not confident that algo works then change below plot var to True
+    unit_centroid_vector = (1/norm_centroid_vector)*centroid_vector
+
+    
+    if plot_stuff == True:
+        fig=plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(unit_centroid_vector[0], unit_centroid_vector[1], unit_centroid_vector[2], c='r', marker='o')
+        ax.scatter(centroid_x, centroid_y, centroid_z, c='b', marker='x')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        plt.xlim([-2, 2])
+        plt.ylim([-2, 2])
+        ax.set_zlim(-2,2)
+
+        
+        #print(list_centroid_line_vector)
+        #print(unit_centroid_vector)
+        #print('azimuth centroid = ',lab_azimuth_centroid)
+        #print('polar centroid = ',lab_polar_centroid)
+        #print(centroid_x,centroid_y,centroid_z)
+        plt.show()
+
+
+
+    origin_to_first_centroid_vector = np.array(list_origin_to_first_centroid_vector)
+
+    theta_0 = lab_polar_centroid # polar angle of the incoming photon in the lab frame
+    phi_0 = lab_azimuth_centroid # azimuth angle of the incoming photon in the lab frame
+    chi = np.pi/2 # in-plane scatter angle of the outgoing photon relative to the incoming photon vector
+    
+    num_ring_points = 20
+    lab_ring_points = np.empty(shape=[num_ring_points*num_centroids,3])
+
+    
+    rotation_matrix_x = np.array([np.cos(theta_0)*np.cos(phi_0),-np.sin(phi_0),np.sin(theta_0)*np.cos(phi_0)])
+    rotation_matrix_y = np.array([np.cos(theta_0)*np.sin(phi_0),np.cos(phi_0),np.sin(theta_0)*np.sin(phi_0)])
+    rotation_matrix_z = np.array([-np.sin(theta_0),0,np.cos(theta_0)])
+    rotation_matrix = rotation_matrix_x
+    rotation_matrix = np.vstack([rotation_matrix,rotation_matrix_y])
+    rotation_matrix = np.vstack([rotation_matrix,rotation_matrix_z])
+
+    # transport and create more rings, first make an appropriately sized array for all points that are values of the first ring
+    radius = biopsy_radius_input
+    for k in range(0,num_centroids):
+        for j in range(0,num_ring_points):
+            eta = 0+j*2*np.pi/num_ring_points # out of plane scatter angle of the outgoing photon relative to the incoming photon vector
+
+            centroid_vec_frame_vec_to_circ_x = np.array([radius*np.sin(chi)*np.cos(eta)])
+            centroid_vec_frame_vec_to_circ_y = np.array([radius*np.sin(chi)*np.sin(eta)])
+            centroid_vec_frame_vec_to_circ_z = np.array([radius*np.cos(chi)])
+            centroid_vec_frame_vec_to_circ = centroid_vec_frame_vec_to_circ_x
+            centroid_vec_frame_vec_to_circ = np.vstack([centroid_vec_frame_vec_to_circ,centroid_vec_frame_vec_to_circ_y])
+            centroid_vec_frame_vec_to_circ = np.vstack([centroid_vec_frame_vec_to_circ,centroid_vec_frame_vec_to_circ_z])
+
+            lab_vec_to_circle = np.dot(rotation_matrix,centroid_vec_frame_vec_to_circ)
+
+            # create point, transport to first centroid, then go to orthogonal ring
+            lab_ring_point = origin_to_first_centroid_vector + lab_vec_to_circle.T
+            #print(lab_ring_point)
+            lab_ring_points[j+k*num_ring_points] = lab_ring_point
+
+    # now add appropriate multiples of transport vector to each array slice, to make shifted rings
+    for k in range(1,num_centroids):
+        lab_ring_points[k*num_ring_points:(k+1)*num_ring_points] = lab_ring_points[(k-1)*num_ring_points:k*num_ring_points] + unit_centroid_vector*centroid_separation_distance
+
+    lab_ring_points_Transpose = lab_ring_points.T
+
+    lab_ring_points_zslice_list = [lab_ring_points[num_ring_points*j:num_ring_points*(j+1)] for j in range(num_centroids)]
+    
+
+    if plot_stuff == True:
+        fig=plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        
+        ax.scatter(origin_to_first_centroid_vector[0], origin_to_first_centroid_vector[1], origin_to_first_centroid_vector[2], c='g', marker='o')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        plt.xlim([-2, 2])
+        plt.ylim([-2, 2])
+        ax.set_zlim(-2,2)
+        ax.scatter(lab_ring_points_Transpose[0], lab_ring_points_Transpose[1], lab_ring_points_Transpose[2], c='r', marker='o')
+        plt.show()
+    #print('done!')
+
+    return lab_ring_points_zslice_list
+
+
+
+
 def biopsy_points_reconstruction_and_uniform_sampler(list_origin_to_first_centroid_vector,centroid_line,biopsy_cyl_outer_radius = 1, plot_stuff = False):
     """
     A function that uniformly samples points in a cylinder surrounding the centroid line, 

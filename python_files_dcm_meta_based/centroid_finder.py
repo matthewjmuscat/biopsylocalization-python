@@ -16,6 +16,14 @@ def centroid_finder_mean_based_numpy(points):
     return centroid
 
 
+def centeroidfinder_numpy_3D(arr):
+    length = arr.shape[0]
+    sum_x = np.sum(arr[:, 0])
+    sum_y = np.sum(arr[:, 1])
+    sum_z = np.sum(arr[:, 2])
+    return np.array([[sum_x/length, sum_y/length, sum_z/length]])
+
+
 
 
 
