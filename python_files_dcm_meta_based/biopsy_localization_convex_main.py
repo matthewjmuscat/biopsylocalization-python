@@ -541,7 +541,7 @@ def main():
             completed_progress.update(pulling_patients_task_completed,  visible=True)            
 
 
-
+            live_display.stop()
             patientUID_default = "Initializing"
             processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
             processing_patients_task_completed_main_description = "[green]Processing patient structure data"
@@ -587,14 +587,16 @@ def main():
                                 else:
                                     pass
                             simulated_bx_relative_structure_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
-                            threeDdata_arr_temp = np.array(threeDdata_zslice_list)
-                            simulated_bx_global_centroid_before_translation_to_relative_struct_centroid = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
-                            translation_vector_to_relative_structure_centroid = simulated_bx_relative_structure_global_centroid - simulated_bx_global_centroid_before_translation_to_relative_struct_centroid
-                            for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list):
+                            threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
+                            simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
+                            translation_vector_to_relative_structure_centroid = simulated_bx_relative_structure_global_centroid - simulated_bx_global_centroid_before_translation
+                            threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
+                            for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
                                 temp_bx_zslice_arr = bx_zslice_arr.copy()
                                 translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
-                                threeDdata_zslice_list[bx_zslice_arr_index] = translated_bx_zslice_arr
-                        
+                                threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
+                            threeDdata_zslice_list = threeDdata_zslice_list_temp
+
                         total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
                         threeDdata_array = np.empty([total_structure_points,3])
                         # for biopsy only
