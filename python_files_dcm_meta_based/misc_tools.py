@@ -18,3 +18,13 @@ def checkdirs(live_display, important_info, *paths):
             sys.exit('> Programme exited.')
         else:
             live_display.start()
+
+
+def find_closest_z_slice(threeD_data_zslice_list,z_val):
+    # used to find the closest zslice of points to a given z value within the ThreeDdata structure 
+    # which is a list of numpy arrays where each
+    # element of the list is a constant zslice
+    closest_z_slice_index = min(range(len(threeD_data_zslice_list)), key=lambda i: abs(threeD_data_zslice_list[i][0,2]-z_val))
+    return closest_z_slice_index
+
+

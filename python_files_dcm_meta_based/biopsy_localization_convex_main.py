@@ -142,7 +142,7 @@ def main():
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
     
-    bx_sim_locations = ["1","2","3","4","5","6","7","8","9","10","11","12"]
+    bx_sim_locations = ["centroid"]
     bx_sim_ref_identifier = "sim"
     simulate_biopsies_relative_to = 'Prostate' # the second position of structs referenced list, likely intended to be OAR (for prostate)
     
@@ -586,17 +586,29 @@ def main():
                                     break
                                 else:
                                     pass
-                            simulated_bx_relative_structure_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
                             threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
                             simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
-                            translation_vector_to_relative_structure_centroid = simulated_bx_relative_structure_global_centroid - simulated_bx_global_centroid_before_translation
+                            translation_vector_to_relative_structure_centroid = relative_structure_for_sim_bx_global_centroid - simulated_bx_global_centroid_before_translation
                             threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
                             for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
                                 temp_bx_zslice_arr = bx_zslice_arr.copy()
                                 translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
                                 threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
                             threeDdata_zslice_list = threeDdata_zslice_list_temp
-
+                            # at this point the created biopsy centroid has been shifted to the global centroid of the relative structure
+                            # now we want to move each created biopsy to the appropriate sub position within the relative structure
+                            
+                            # CODE REMOVED: because after discussion with Nathan, simulating this 12 core pattern to compare to targeted biopsy is not as interesting to him 
+                            """
+                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                            threeD_data_zslice_list_relative_structure = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Raw contour pts zslice list"].copy()
+                            closest_zslice_index_of_relative_structure_to_its_global_centroid = misc_tools.find_closest_z_slice(threeD_data_zslice_list_relative_structure, relative_structure_for_sim_bx_global_centroid)
+                            closest_zslice_of_relative_structure_arr = threeD_data_zslice_list_relative_structure[closest_zslice_index_of_relative_structure_to_its_global_centroid]
+                            centroid_of_zslice_of_relative_structure = centroid_finder.centeroidfinder_numpy_3D(closest_zslice_of_relative_structure_arr)
+                            """
+                        
+                        
                         total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
                         threeDdata_array = np.empty([total_structure_points,3])
                         # for biopsy only
