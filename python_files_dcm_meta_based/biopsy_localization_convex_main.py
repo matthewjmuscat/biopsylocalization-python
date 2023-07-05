@@ -117,8 +117,8 @@ def main():
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     num_sample_pts_per_bx_input = 250
-    num_MC_containment_simulations_input = 100
-    num_MC_dose_simulations_input = 1000
+    num_MC_containment_simulations_input = 50
+    num_MC_dose_simulations_input = 100
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -142,9 +142,9 @@ def main():
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
     
-    bx_sim_locations = ["centroid"]
+    bx_sim_locations = ["centroid"] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies.
     bx_sim_ref_identifier = "sim"
-    simulate_biopsies_relative_to = 'Prostate' # the second position of structs referenced list, likely intended to be OAR (for prostate)
+    simulate_biopsies_relative_to = ['DIL',"Prostate"] # the second position of structs referenced list, likely intended to be OAR (for prostate)
     
     
 
@@ -295,31 +295,40 @@ def main():
                 else:
                     pass
             important_info.add_text_line("Each patient contains a structure and dose file.", live_display)    
+            
+            
+            # setting some variables for use in simulating biopsies
+            if len(bx_sim_locations) >= 1:
+                simulate_biopsies_relative_to_struct_type_list = [None]*len(simulate_biopsies_relative_to)
+                for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
+                    keyfound = False
+                    for struct_type_key in structs_referenced_dict.keys():
+                        if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]:
+                            if keyfound == True:
+                                raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
+                            simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
+                            keyfound = True
+                    if keyfound == False:
+                        raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
+                important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
+                live_display.refresh()
+            else: 
+                important_info.add_text_line("Not creating any simulated biopsies.")          
+                live_display.refresh() 
+            
+            
+            
+            # patient dictionary creation
             building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
             building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier)
+            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier,simulate_biopsies_relative_to,simulate_biopsies_relative_to_struct_type_list)
             indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
             completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
             important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
             live_display.refresh()
 
             
-            # setting some variables for use in simulating biopsies
-            if len(bx_sim_locations) >= 1:
-                keyfound = False
-                for i in structs_referenced_dict.keys():
-                    if simulate_biopsies_relative_to in structs_referenced_dict[i]:
-                        if keyfound == True:
-                            raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
-                        simulate_biopsies_relative_to_struct_type = i
-                        keyfound = True
-                if keyfound == False:
-                    raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
-                important_info.add_text_line("Simulating "+ str(len(bx_sim_locations))+" biopsies relative to "+simulate_biopsies_relative_to+" (Found under "+simulate_biopsies_relative_to_struct_type+").", live_display)          
-                live_display.refresh()
-            else: 
-                important_info.add_text_line("Not creating any simulated biopsies.")          
-                live_display.refresh() 
+
 
                 
 
@@ -541,7 +550,6 @@ def main():
             completed_progress.update(pulling_patients_task_completed,  visible=True)            
 
 
-            live_display.stop()
             patientUID_default = "Initializing"
             processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
             processing_patients_task_completed_main_description = "[green]Processing patient structure data"
@@ -580,13 +588,16 @@ def main():
                         # transform simulated biopsies to location
                         if structs == bx_ref and bx_sim_ref_identifier in str(structure_reference_number):
                             # first extract the appropriate relative structure to transform biopsies to
-                            for relative_specific_structure_index, relative_specific_structure in enumerate(master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type]):
-                                if simulate_biopsies_relative_to == relative_specific_structure["ROI"]:
-                                    simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
-                                    break
-                                else:
-                                    pass
-                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                            relative_structure_ref_num_from_bx_info = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Relative structure ref #"]
+                            for relative_struct_type in simulate_biopsies_relative_to_struct_type_list:
+                                for relative_specific_structure_index, relative_specific_structure in enumerate(master_structure_reference_dict[patientUID][relative_struct_type]):
+                                    if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
+                                        simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
+                                        simulate_biopsies_relative_to_specific_structure_struct_type = relative_struct_type
+                                        break
+                                    else:
+                                        pass
+                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
                             threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
                             simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
                             translation_vector_to_relative_structure_centroid = relative_structure_for_sim_bx_global_centroid - simulated_bx_global_centroid_before_translation
@@ -600,9 +611,10 @@ def main():
                             # now we want to move each created biopsy to the appropriate sub position within the relative structure
                             
                             # CODE REMOVED: because after discussion with Nathan, simulating this 12 core pattern to compare to targeted biopsy is not as interesting to him 
+                            #If this code needs to be reinstated, it needs to be reworked, variables have changed.
                             """
-                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
-                            threeD_data_zslice_list_relative_structure = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_struct_type][simulated_bx_relative_to_specific_structure_index]["Raw contour pts zslice list"].copy()
+                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                            threeD_data_zslice_list_relative_structure = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Raw contour pts zslice list"].copy()
                             closest_zslice_index_of_relative_structure_to_its_global_centroid = misc_tools.find_closest_z_slice(threeD_data_zslice_list_relative_structure, relative_structure_for_sim_bx_global_centroid)
                             closest_zslice_of_relative_structure_arr = threeD_data_zslice_list_relative_structure[closest_zslice_index_of_relative_structure_to_its_global_centroid]
                             centroid_of_zslice_of_relative_structure = centroid_finder.centeroidfinder_numpy_3D(closest_zslice_of_relative_structure_arr)
@@ -836,7 +848,8 @@ def main():
                             arr_list.append(structure_arr)
                     plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
 
-
+            live_display.stop()
+            print('test')
                 
             #et = time.time()
             #elapsed_time = et - st
@@ -2412,7 +2425,7 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str):
+def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str,sim_bx_relative_to_list,sim_bx_relative_to_struct_type):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
     we can match the ROI name to the contour information, since the contour
@@ -2429,103 +2442,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
     global_num_patients = 0
     for UID, structure_item_path in structure_dcm_dict.items():
         with pydicom.dcmread(structure_item_path, defer_size = '2 MB') as structure_item: 
-            bpsy_ref = [{"ROI":x.ROIName, 
-                         "Ref #":x.ROINumber, 
-                         "Reconstructed biopsy cylinder length (from contour data)": None, 
-                         "Raw contour pts zslice list": None,
-                         "Raw contour pts": None, 
-                         "Equal num zslice contour pts": None, 
-                         "Intra-slice interpolation information": None, 
-                         "Inter-slice interpolation information": None, 
-                         "Point cloud raw": None, 
-                         "Delaunay triangulation global structure": None, 
-                         "Delaunay triangulation zslice-wise list": None,
-                         "Structure global centroid": None, 
-                         "Structure centroid pts": None, 
-                         "Best fit line of centroid pts": None, 
-                         "Centroid line sample pts": None, 
-                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
-                         "Interpolated structure point cloud dict": None, 
-                         "Reconstructed structure pts arr": None, 
-                         "Reconstructed structure point cloud": None, 
-                         "Reconstructed structure delaunay global": None, 
-                         "Random uniformly sampled volume pts arr": None, 
-                         "Random uniformly sampled volume pts pcd": None, 
-                         "Random uniformly sampled volume pts bx coord sys arr": None, 
-                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
-                         "Bounding box for random uniformly sampled volume pts": None, 
-                         "Uncertainty data": None, 
-                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
-                         "MC data: Generated normal dist random samples arr": None, 
-                         "MC data: bx only shifted 3darr": None, 
-                         "MC data: bx and structure shifted dict": None, 
-                         "MC data: MC sim translation results dict": None, 
-                         "MC data: compiled sim results": None, 
-                         "MC data: voxelized containment results dict": None, 
-                         "MC data: voxelized containment results dict (dict of lists)": None, 
-                         "MC data: bx to dose NN search objects list": None, 
-                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None, 
-                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
-                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
-                         "MC data: voxelized dose results list": None, 
-                         "MC data: voxelized dose results dict (dict of lists)": None, 
-                         "Output csv file paths dict": {}, 
-                         "Output data frames": {}, 
-                         "KDtree": None, 
-                         "Nearest neighbours objects": [], 
-                         "Plot attributes": plot_attributes()
-                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
             
-            bpsy_ref_simulated = [{"ROI": "Bx_Tr_sim" + x, 
-                         "Ref #": bx_sim_ref_identifier_str + x, 
-                         "Reconstructed biopsy cylinder length (from contour data)": None, 
-                         "Raw contour pts zslice list": None,
-                         "Raw contour pts": None, 
-                         "Equal num zslice contour pts": None, 
-                         "Intra-slice interpolation information": None, 
-                         "Inter-slice interpolation information": None, 
-                         "Point cloud raw": None, 
-                         "Delaunay triangulation global structure": None, 
-                         "Delaunay triangulation zslice-wise list": None,
-                         "Structure global centroid": None,  
-                         "Structure centroid pts": None, 
-                         "Best fit line of centroid pts": None, 
-                         "Centroid line sample pts": None, 
-                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
-                         "Interpolated structure point cloud dict": None, 
-                         "Reconstructed structure pts arr": None, 
-                         "Reconstructed structure point cloud": None, 
-                         "Reconstructed structure delaunay global": None, 
-                         "Random uniformly sampled volume pts arr": None, 
-                         "Random uniformly sampled volume pts pcd": None, 
-                         "Random uniformly sampled volume pts bx coord sys arr": None, 
-                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
-                         "Bounding box for random uniformly sampled volume pts": None, 
-                         "Uncertainty data": None, 
-                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
-                         "MC data: Generated normal dist random samples arr": None, 
-                         "MC data: bx only shifted 3darr": None, 
-                         "MC data: bx and structure shifted dict": None, 
-                         "MC data: MC sim translation results dict": None, 
-                         "MC data: compiled sim results": None, 
-                         "MC data: voxelized containment results dict": None, 
-                         "MC data: voxelized containment results dict (dict of lists)": None, 
-                         "MC data: bx to dose NN search objects list": None, 
-                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None, 
-                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
-                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
-                         "MC data: voxelized dose results list": None, 
-                         "MC data: voxelized dose results dict (dict of lists)": None, 
-                         "Output csv file paths dict": {}, 
-                         "Output data frames": {}, 
-                         "KDtree": None, 
-                         "Nearest neighbours objects": [], 
-                         "Plot attributes": plot_attributes()
-                         } for x in bx_sim_locations_list]
-            
-            bpsy_ref = bpsy_ref + bpsy_ref_simulated 
 
 
             OAR_ref = [{"ROI":x.ROIName, 
@@ -2576,6 +2493,108 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                         "Plot attributes": plot_attributes()
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
+            
+            bpsy_ref = [{"ROI":x.ROIName, 
+                         "Ref #":x.ROINumber, 
+                         "Reconstructed biopsy cylinder length (from contour data)": None, 
+                         "Raw contour pts zslice list": None,
+                         "Raw contour pts": None, 
+                         "Equal num zslice contour pts": None, 
+                         "Intra-slice interpolation information": None, 
+                         "Inter-slice interpolation information": None, 
+                         "Point cloud raw": None, 
+                         "Delaunay triangulation global structure": None, 
+                         "Delaunay triangulation zslice-wise list": None,
+                         "Structure global centroid": None, 
+                         "Structure centroid pts": None, 
+                         "Best fit line of centroid pts": None, 
+                         "Centroid line sample pts": None, 
+                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
+                         "Interpolated structure point cloud dict": None, 
+                         "Reconstructed structure pts arr": None, 
+                         "Reconstructed structure point cloud": None, 
+                         "Reconstructed structure delaunay global": None, 
+                         "Random uniformly sampled volume pts arr": None, 
+                         "Random uniformly sampled volume pts pcd": None, 
+                         "Random uniformly sampled volume pts bx coord sys arr": None, 
+                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
+                         "Bounding box for random uniformly sampled volume pts": None, 
+                         "Uncertainty data": None, 
+                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
+                         "MC data: Generated normal dist random samples arr": None, 
+                         "MC data: bx only shifted 3darr": None, 
+                         "MC data: bx and structure shifted dict": None, 
+                         "MC data: MC sim translation results dict": None, 
+                         "MC data: compiled sim results": None, 
+                         "MC data: voxelized containment results dict": None, 
+                         "MC data: voxelized containment results dict (dict of lists)": None, 
+                         "MC data: bx to dose NN search objects list": None, 
+                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
+                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
+                         "MC data: voxelized dose results list": None, 
+                         "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "Output csv file paths dict": {}, 
+                         "Output data frames": {}, 
+                         "KDtree": None, 
+                         "Nearest neighbours objects": [], 
+                         "Plot attributes": plot_attributes()
+                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
+            
+            bpsy_ref_simulated = [{"ROI": "Bx_Tr_"+bx_sim_ref_identifier_str+" " + x.ROIName, 
+                         "Ref #": bx_sim_ref_identifier_str +" "+ x.ROIName, 
+                         "Relative structure name": x.ROIName,
+                         "Relative structure ref #": x.ROINumber, 
+                         "Reconstructed biopsy cylinder length (from contour data)": None, 
+                         "Raw contour pts zslice list": None,
+                         "Raw contour pts": None, 
+                         "Equal num zslice contour pts": None, 
+                         "Intra-slice interpolation information": None, 
+                         "Inter-slice interpolation information": None, 
+                         "Point cloud raw": None, 
+                         "Delaunay triangulation global structure": None, 
+                         "Delaunay triangulation zslice-wise list": None,
+                         "Structure global centroid": None,  
+                         "Structure centroid pts": None, 
+                         "Best fit line of centroid pts": None, 
+                         "Centroid line sample pts": None, 
+                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
+                         "Interpolated structure point cloud dict": None, 
+                         "Reconstructed structure pts arr": None, 
+                         "Reconstructed structure point cloud": None, 
+                         "Reconstructed structure delaunay global": None, 
+                         "Random uniformly sampled volume pts arr": None, 
+                         "Random uniformly sampled volume pts pcd": None, 
+                         "Random uniformly sampled volume pts bx coord sys arr": None, 
+                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
+                         "Bounding box for random uniformly sampled volume pts": None, 
+                         "Uncertainty data": None, 
+                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
+                         "MC data: Generated normal dist random samples arr": None, 
+                         "MC data: bx only shifted 3darr": None, 
+                         "MC data: bx and structure shifted dict": None, 
+                         "MC data: MC sim translation results dict": None, 
+                         "MC data: compiled sim results": None, 
+                         "MC data: voxelized containment results dict": None, 
+                         "MC data: voxelized containment results dict (dict of lists)": None, 
+                         "MC data: bx to dose NN search objects list": None, 
+                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
+                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
+                         "MC data: voxelized dose results list": None, 
+                         "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "Output csv file paths dict": {}, 
+                         "Output data frames": {}, 
+                         "KDtree": None, 
+                         "Nearest neighbours objects": [], 
+                         "Plot attributes": plot_attributes()
+                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in sim_bx_relative_to_list)]
+            
+            bpsy_ref = bpsy_ref + bpsy_ref_simulated 
+            
+            
             bpsy_info = {"Num structs": len(bpsy_ref), "Num sim structs": len(bpsy_ref_simulated), "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated)}
             OAR_info = {"Num structs": len(OAR_ref)}
             DIL_info = {"Num structs": len(DIL_ref)}
