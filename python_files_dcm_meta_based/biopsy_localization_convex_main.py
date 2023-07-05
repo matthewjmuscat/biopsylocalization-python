@@ -848,8 +848,6 @@ def main():
                             arr_list.append(structure_arr)
                     plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
 
-            live_display.stop()
-            print('test')
                 
             #et = time.time()
             #elapsed_time = et - st
