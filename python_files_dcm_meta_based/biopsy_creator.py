@@ -116,7 +116,11 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector, list_origin_to
     norm_centroid_vector = np.linalg.norm(centroid_vector)
     lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
     norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
-    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
+    if norm_centroid_vector_xy_proj == 0:
+        lab_azimuth_centroid = 0
+    else:
+        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
+    
     if centroid_vector[1] == 0 and centroid_vector[0] == 0:
         lab_azimuth_centroid = 0
     if centroid_vector[1] < 0:
