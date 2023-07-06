@@ -117,7 +117,7 @@ def main():
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     num_sample_pts_per_bx_input = 250
-    num_MC_containment_simulations_input = 1
+    num_MC_containment_simulations_input = 100
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
@@ -1024,7 +1024,7 @@ def main():
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
             sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = num_patients)
-            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.random_uniform_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
             completed_progress.update(sampling_points_task_indeterminate_completed, advance = num_patients, visible = True, refresh = True)

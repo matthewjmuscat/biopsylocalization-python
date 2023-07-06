@@ -1157,7 +1157,7 @@ def point_sampler_from_global_delaunay_convex_structure_for_sequential(num_sampl
     return bx_samples_arr, bx_samples_arr_point_cloud, axis_aligned_bounding_box
 
 
-def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr, patientUID, structure_type, specific_structure_index):
+def random_uniform_point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, delaunay_global_convex_structure_tri, reconstructed_bx_arr, patientUID, structure_type, specific_structure_index):
     insert_index = 0
     reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
     reconstructed_bx_point_cloud_color = np.array([0,0,1])
@@ -1199,6 +1199,66 @@ def point_sampler_from_global_delaunay_convex_structure_parallel(num_samples, de
     
     return bx_samples_arr, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
 
+
+def grid_point_sampler_from_global_delaunay_convex_structure_parallel(grid_separation_distance, delaunay_global_convex_structure_tri, reconstructed_bx_arr, patientUID, structure_type, specific_structure_index):
+    
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    reconstructed_bx_point_cloud_color = np.array([0,0,1])
+    reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
+
+    
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    bounding_box_color = np.array([0,0,0], dtype=float)
+    axis_aligned_bounding_box.color = bounding_box_color
+    max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
+    min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
+
+    lattice_sizex = grid_separation_distance/math.ceil(abs(max_bounds[0]-min_bounds[0])) + 1
+    lattice_sizey = grid_separation_distance/math.ceil(abs(max_bounds[1]-min_bounds[1])) + 1
+    lattice_sizez = grid_separation_distance/math.ceil(abs(max_bounds[2]-min_bounds[2])) + 1
+    origin = min_bounds
+
+    bx_samples_arr = generate_cubic_lattice(grid_separation_distance, lattice_sizex,lattice_sizey,lattice_sizez,origin)
+    list_of_passed_indices = []
+    for test_point_index, test_point in enumerate(bx_samples_arr):
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,test_point)
+        if containment_result_bool == True:
+            list_of_passed_indices.append(test_point_index)
+        else:
+            pass
+    num_pts_contained = len(list_of_passed_indices)
+    bx_samples_arr_within_bx = np.empty((num_pts_contained,3),dtype=float)
+
+    for index_for_new_arr,index_in_org_array in enumerate(list_of_passed_indices):
+        bx_samples_arr_within_bx[index_for_new_arr] = bx_samples_arr[index_in_org_array]
+
+    bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+    bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr_within_bx, bx_samples_arr_point_cloud_color)
+    
+    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
+    
+    
+
+
+def generate_cubic_lattice(distance, sizex,sizey,sizez,origin):
+    """
+    Generates an evenly spaced cubic lattice of points in three dimensions.
+
+    Returns:
+        numpy.ndarray: Array of lattice points.
+    """
+    total_points = sizex*sizey*sizez
+    points = np.zeros((total_points, 3))
+    
+    index = 0
+    for i in range(sizex):
+        for j in range(sizey):
+            for k in range(sizez):
+                points[index] = np.array([i, j, k]) * distance
+                index += 1
+    points = points + origin
+    return points
 
 class nearest_neighbour_parent_dose:
     def __init__(self,BX_struct_name,comparison_struct_name,comparison_struct_type,comparison_structure_points_that_made_KDtree,queried_BX_points, dose_2d_arr, NN_search_output):
