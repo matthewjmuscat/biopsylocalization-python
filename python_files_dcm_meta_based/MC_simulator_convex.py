@@ -97,7 +97,7 @@ def simulator_parallel(parallel_pool,
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
         num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
         num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
-        num_sample_pts_per_bx = master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"]
+        bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
 
         max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
 
@@ -126,7 +126,7 @@ def simulator_parallel(parallel_pool,
         num_OARs_global = master_structure_info_dict["Global"]["Num OARs"]
         num_DILs_global = master_structure_info_dict["Global"]["Num DILs"]
         
-        simulation_info_important_line_str = "Simulation data: # MC containment simulations = {} | # MC dose simulations = {} | # sample pts per BX core = {} | # biopsies = {} | # anatomical structures = {} | # patients = {}.".format(str(num_MC_containment_simulations), str(num_MC_dose_simulations), str(num_sample_pts_per_bx), str(num_biopsies_global), str(num_global_structures-num_biopsies_global), str(num_patients))
+        simulation_info_important_line_str = "Simulation data: # MC containment simulations = {} | # MC dose simulations = {} | # lattice spacing for BX cores (mm) = {} | # biopsies = {} | # anatomical structures = {} | # patients = {}.".format(str(num_MC_containment_simulations), str(num_MC_dose_simulations), str(bx_sample_pt_lattice_spacing), str(num_biopsies_global), str(num_global_structures-num_biopsies_global), str(num_patients))
         important_info.add_text_line(simulation_info_important_line_str, live_display)
         
 
@@ -275,6 +275,7 @@ def simulator_parallel(parallel_pool,
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             compiling_results_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
                 MC_translation_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] 
@@ -507,6 +508,7 @@ def simulator_parallel(parallel_pool,
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total=sp_patient_total_num_BXs)           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
                 
@@ -1214,9 +1216,9 @@ def grid_point_sampler_from_global_delaunay_convex_structure_parallel(grid_separ
     max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
     min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
 
-    lattice_sizex = grid_separation_distance/math.ceil(abs(max_bounds[0]-min_bounds[0])) + 1
-    lattice_sizey = grid_separation_distance/math.ceil(abs(max_bounds[1]-min_bounds[1])) + 1
-    lattice_sizez = grid_separation_distance/math.ceil(abs(max_bounds[2]-min_bounds[2])) + 1
+    lattice_sizex = int(math.ceil(abs(max_bounds[0]-min_bounds[0])/grid_separation_distance) + 1)
+    lattice_sizey = int(math.ceil(abs(max_bounds[1]-min_bounds[1])/grid_separation_distance) + 1)
+    lattice_sizez = int(math.ceil(abs(max_bounds[2]-min_bounds[2])/grid_separation_distance) + 1)
     origin = min_bounds
 
     bx_samples_arr = generate_cubic_lattice(grid_separation_distance, lattice_sizex,lattice_sizey,lattice_sizez,origin)
@@ -1233,10 +1235,12 @@ def grid_point_sampler_from_global_delaunay_convex_structure_parallel(grid_separ
     for index_for_new_arr,index_in_org_array in enumerate(list_of_passed_indices):
         bx_samples_arr_within_bx[index_for_new_arr] = bx_samples_arr[index_in_org_array]
 
+    num_bx_sample_pts_after_exclusions = bx_samples_arr_within_bx.shape[0]
+
     bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
     bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr_within_bx, bx_samples_arr_point_cloud_color)
     
-    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
+    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, num_bx_sample_pts_after_exclusions, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
     
     
 
@@ -1248,7 +1252,7 @@ def generate_cubic_lattice(distance, sizex,sizey,sizez,origin):
     Returns:
         numpy.ndarray: Array of lattice points.
     """
-    total_points = sizex*sizey*sizez
+    total_points = int(sizex*sizey*sizez)
     points = np.zeros((total_points, 3))
     
     index = 0

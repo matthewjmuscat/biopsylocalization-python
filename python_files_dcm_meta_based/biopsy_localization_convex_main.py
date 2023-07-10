@@ -116,7 +116,8 @@ def main():
     biopsy_radius = 0.275
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
-    num_sample_pts_per_bx_input = 250
+    #num_sample_pts_per_bx_input = 250
+    bx_sample_pts_lattice_spacing = 0.2
     num_MC_containment_simulations_input = 100
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
@@ -153,8 +154,8 @@ def main():
     show_containment_demonstration_plots = False
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = True
-    show_processed_3d_datasets_renderings_plotly = True
-    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
+    show_processed_3d_datasets_renderings_plotly = False
+    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = True
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     
 
@@ -321,7 +322,7 @@ def main():
             # patient dictionary creation
             building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
             building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier,simulate_biopsies_relative_to,simulate_biopsies_relative_to_struct_type_list)
+            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier,simulate_biopsies_relative_to,simulate_biopsies_relative_to_struct_type_list,bx_sample_pts_lattice_spacing)
             indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
             completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
             important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
@@ -817,9 +818,6 @@ def main():
             
             live_display.refresh()
 
-            live_display.stop()
-            print('test')
-
             # displays 3d renderings of patient contour data and dose data
             if show_processed_3d_datasets_renderings == True:
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -975,8 +973,8 @@ def main():
             #st = time.time()
             args_list = []
             num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-            num_sample_pts_per_bx = num_sample_pts_per_bx_input
-            master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
+            #num_sample_pts_per_bx = num_sample_pts_per_bx_input
+            #master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
 
             patientUID_default = "Initializing"
             processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID_default)
@@ -1002,7 +1000,7 @@ def main():
                     reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                    args_list.append((num_sample_pts_per_bx, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, bx_structs, specific_structure_index))
+                    args_list.append((bx_sample_pts_lattice_spacing, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, bx_structs, specific_structure_index))
                     biopsies_progress.update(processing_biopsies_task, advance=1)
                 
                 biopsies_progress.update(processing_biopsies_task, visible = False)
@@ -1024,14 +1022,13 @@ def main():
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
             sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = num_patients)
-            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.random_uniform_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
             completed_progress.update(sampling_points_task_indeterminate_completed, advance = num_patients, visible = True, refresh = True)
             live_display.refresh()
 
-            
-
+           
 
             #et = time.time()
             #elapsed_time = et - st
@@ -1045,7 +1042,7 @@ def main():
             parsing_sampled_biopsy_data_task = biopsies_progress.add_task("[red]"+parsing_sampled_biopsy_data_task_main_description, total = global_num_biopsies)
             parsing_sampled_biopsy_data_task_completed = completed_progress.add_task("[green]"+parsing_sampled_biopsy_data_task_main_description_completed, total = global_num_biopsies, visible = False)
 
-            for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
+            for sampled_bx_pts_arr, axis_aligned_bounding_box_arr, num_sample_pts_in_specific_bx, structure_info_dict in parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr:
                 temp_patient_UID = structure_info_dict["Patient UID"]
                 temp_structure_type = structure_info_dict["Structure type"]
                 temp_specific_structure_index = structure_info_dict["Specific structure index"]
@@ -1070,6 +1067,7 @@ def main():
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts arr"] = sampled_bx_pts_arr
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts pcd"] = sampled_bx_points_from_global_delaunay_point_cloud
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Bounding box for random uniformly sampled volume pts"] = axis_aligned_bounding_box
+                master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Num sampled bx pts"] = num_sample_pts_in_specific_bx
                 reconstructed_bx_pcd = master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Reconstructed structure point cloud"] 
 
                 biopsies_progress.stop_task(parsing_sampled_biopsy_data_task)
@@ -1191,7 +1189,7 @@ def main():
                         
                         # just the reconstructed biopsy core and sampled points with its axis aligned bounding box, to show that the transformation to biopsy coordinate system was successful
                         plotting_funcs.plot_geometries(reconstructed_biopsy_bx_coord_sys_tr_and_rot_point_cloud, sampled_bx_points_bx_coord_sys_tr_and_rot_pcd, reconstructed_biopsy_bx_coord_sys_tr_and_rot_axis_aligned_bounding_box)                        
-                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list = [reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr, sampled_bx_points_bx_coord_sys_tr_and_rot_arr], colors_for_arrays_list = ['red','black'])
+                        #plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list = [reconstructed_biopsy_bx_coord_sys_tr_and_rot_arr, sampled_bx_points_bx_coord_sys_tr_and_rot_arr], colors_for_arrays_list = ['red','black'])
                         stopwatch.start()
                     
                     # check if the arrays are equal? using the two different methods
@@ -1414,6 +1412,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         bx_points_bx_coords_sys_arr_row = bx_points_bx_coords_sys_arr_list.copy()
@@ -1470,6 +1469,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         containment_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_voxelized_out.csv'
                         containment_voxelized_output_csv_file_path = patient_sp_output_csv_dir.joinpath(containment_voxelized_output_file_name)
                         with open(containment_voxelized_output_csv_file_path, 'w', newline='') as f:
@@ -1570,6 +1570,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
@@ -1600,6 +1601,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         dose_voxelized_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_voxelized_out.csv'
                         dose_voxelized_output_csv_file_path = patient_sp_output_csv_dir.joinpath(dose_voxelized_output_file_name)
                         with open(dose_voxelized_output_csv_file_path, 'w', newline='') as f:
@@ -2426,7 +2428,7 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str,sim_bx_relative_to_list,sim_bx_relative_to_struct_type):
+def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str,sim_bx_relative_to_list,sim_bx_relative_to_struct_type, bx_sample_pt_lattice_spacing):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
     we can match the ROI name to the contour information, since the contour
@@ -2520,6 +2522,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "Random uniformly sampled volume pts bx coord sys arr": None, 
                          "Random uniformly sampled volume pts bx coord sys pcd": None, 
                          "Bounding box for random uniformly sampled volume pts": None, 
+                         "Num sampled bx pts": None,
                          "Uncertainty data": None, 
                          "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
                          "MC data: Generated normal dist random samples arr": None, 
@@ -2569,7 +2572,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "Random uniformly sampled volume pts pcd": None, 
                          "Random uniformly sampled volume pts bx coord sys arr": None, 
                          "Random uniformly sampled volume pts bx coord sys pcd": None, 
-                         "Bounding box for random uniformly sampled volume pts": None, 
+                         "Bounding box for random uniformly sampled volume pts": None,
+                         "Num sampled bx pts": None, 
                          "Uncertainty data": None, 
                          "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None, 
                          "MC data: Generated normal dist random samples arr": None, 
@@ -2643,7 +2647,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                              }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
-    mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None}
+    mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None, "BX sample pt lattice spacing": bx_sample_pt_lattice_spacing}
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
     return master_st_ds_ref_dict, master_st_ds_info_global_dict
