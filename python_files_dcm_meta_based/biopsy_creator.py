@@ -11,11 +11,14 @@ def biopsy_points_creater_ring(list_centroid_line_vector,list_origin_to_first_ce
     norm_centroid_vector = np.linalg.norm(centroid_vector)
     lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
     norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
-    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
-    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
+
+    if norm_centroid_vector_xy_proj == 0:
         lab_azimuth_centroid = 0
-    if centroid_vector[1] < 0:
-        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+    else:
+        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj) 
+        if centroid_vector[1] < 0:
+            lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+
     centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
     centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
     centroid_z = np.cos(lab_polar_centroid)
@@ -116,15 +119,14 @@ def biopsy_points_creater_by_transport(list_centroid_line_vector, list_origin_to
     norm_centroid_vector = np.linalg.norm(centroid_vector)
     lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
     norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
+
     if norm_centroid_vector_xy_proj == 0:
         lab_azimuth_centroid = 0
     else:
-        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
-    
-    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
-        lab_azimuth_centroid = 0
-    if centroid_vector[1] < 0:
-        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj) 
+        if centroid_vector[1] < 0:
+            lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+
     centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
     centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
     centroid_z = np.cos(lab_polar_centroid)
@@ -286,11 +288,14 @@ def biopsy_points_creater_by_transport_for_sim_bxs(list_centroid_line_vector, li
     norm_centroid_vector = np.linalg.norm(centroid_vector)
     lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
     norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
-    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
-    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
+    
+    if norm_centroid_vector_xy_proj == 0:
         lab_azimuth_centroid = 0
-    if centroid_vector[1] < 0:
-        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+    else:
+        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj) 
+        if centroid_vector[1] < 0:
+            lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+
     centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
     centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
     centroid_z = np.cos(lab_polar_centroid)
@@ -409,11 +414,14 @@ def biopsy_points_reconstruction_and_uniform_sampler(list_origin_to_first_centro
     norm_centroid_vector = biopsy_cyl_z_length
     lab_polar_centroid = np.arccos(centroid_vector[2]/norm_centroid_vector)
     norm_centroid_vector_xy_proj = norm_centroid_vector*np.sin(lab_polar_centroid)
-    lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj)
-    if centroid_vector[1] == 0 and centroid_vector[0] == 0:
+
+    if norm_centroid_vector_xy_proj == 0:
         lab_azimuth_centroid = 0
-    if centroid_vector[1] < 0:
-        lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+    else:
+        lab_azimuth_centroid = np.arccos(centroid_vector[0]/norm_centroid_vector_xy_proj) 
+        if centroid_vector[1] < 0:
+            lab_azimuth_centroid = 2*np.pi - lab_azimuth_centroid
+
     centroid_x = np.sin(lab_polar_centroid)*np.cos(lab_azimuth_centroid)
     centroid_y = np.sin(lab_polar_centroid)*np.sin(lab_azimuth_centroid)
     centroid_z = np.cos(lab_polar_centroid)

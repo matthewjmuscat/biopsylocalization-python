@@ -388,7 +388,11 @@ class line_segment_obj:
         except:
             print('incorrect size/type of line segment points array')
         self.segment_length = seg_length
-        self.unit_segment_vector = segment_vector/seg_length
+        if seg_length == 0:
+            self.unit_segment_vector = segment_vector*0
+        else:
+            self.unit_segment_vector = segment_vector/seg_length
+            
         self.num_interpolations_on_segment = None
         self.longest_segment_in_adjacent_slices = False
     def coordinate_val(self,coordinate,t):

@@ -116,10 +116,10 @@ def main():
     biopsy_radius = 0.275
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
-    #num_sample_pts_per_bx_input = 250
+    #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
-    num_MC_containment_simulations_input = 100
-    num_MC_dose_simulations_input = 1000
+    num_MC_containment_simulations_input = 10
+    num_MC_dose_simulations_input = 100
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -145,7 +145,7 @@ def main():
     
     bx_sim_locations = ["centroid"] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies.
     bx_sim_ref_identifier = "sim"
-    simulate_biopsies_relative_to = ['DIL',"Prostate"] # the second position of structs referenced list, likely intended to be OAR (for prostate)
+    simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
     
     
 
@@ -155,7 +155,7 @@ def main():
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = True
     show_processed_3d_datasets_renderings_plotly = False
-    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = True
+    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     
 
@@ -468,13 +468,13 @@ def main():
             patients_progress.update(processing_patients_dose_task, visible=False)
             completed_progress.update(processing_patients_dose_task_completed, visible=True)
 
-            
+
             # create info for simulated biopsies
             if num_simulated_bxs_to_create >= 1:
                 centroid_line_vec_list = [0,0,1]
                 centroid_first_pos_list = [0,0,0]
                 num_centroids_for_sim_bxs = 10
-                centroid_sep_dist = biopsy_needle_compartment_length/num_centroids_for_sim_bxs
+                centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
                 simulated_bx_rad = 2
                 plot_simulated_cores_immediately = False
 
