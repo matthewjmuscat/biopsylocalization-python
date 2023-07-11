@@ -647,7 +647,7 @@ def simulator_parallel(parallel_pool,
                                        "Dose vals arr (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr}
 
                 specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
-                specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict # note that this corresponds to the 
+                specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict 
 
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
             biopsies_progress.remove_task(calculate_biopsy_DVH_quantities_by_biopsy_task)    

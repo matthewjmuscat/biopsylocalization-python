@@ -149,6 +149,7 @@ def main():
     differential_dvh_resolution = 100 # the number of bins
     cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
+    num_cumulative_dvh_plots_to_show = 50
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -2260,7 +2261,52 @@ def main():
                         html_dose_fig_name = bx_struct_roi + ' - voxelized_violin_plot_dose.html'
                         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
                         fig.write_html(html_dose_fig_file_path)
-                
+
+
+                        # create dvh plots
+                        #differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
+                                                
+                        #differential_dvh_histogram_percent_by_MC_trial_arr = differential_dvh_dict["Percent arr"]
+
+                        #dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=dose_output_dict_by_MC_trial_for_pandas_data_frame)
+
+
+
+                        cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
+                        cumulative_dvh_histogram_percent_by_MC_trial_arr = cumulative_dvh_dict["Percent arr"]
+                        cumulative_dvh_dose_vals_by_MC_trial_1darr = cumulative_dvh_dict["Dose vals arr (Gy)"]
+                        cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists = cumulative_dvh_histogram_percent_by_MC_trial_arr.tolist()
+                        cumulative_dvh_dose_vals_by_MC_trial_list = cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist()
+                        percent_vals_list = []
+                        dose_vals_list = cumulative_dvh_dose_vals_by_MC_trial_list*num_cumulative_dvh_plots_to_show 
+                        mc_trial_index_list = []
+                        for mc_trial_index in range(num_cumulative_dvh_plots_to_show):
+                            percent_vals_list = percent_vals_list + cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
+                            mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
+                        cumulative_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
+                                                                    "Dose (Gy)": dose_vals_list,
+                                                                    "MC trial": mc_trial_index_list}
+                        cumulative_dvh_pandas_dataframe = pandas.DataFrame.from_dict(cumulative_dvh_dict_for_pandas_dataframe)
+
+                        fig_global = px.line(cumulative_dvh_pandas_dataframe, x="Dose vals (Gy)", y="Percent vals", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
+                        fig_global.update_layout(
+                            title='Cumulative DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_cumulative_dvh_plots_to_show)+', trials)',
+                            hovermode="x unified"
+                        )
+                        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
+                        
+                        svg_cumulative_dvh_fig_name = bx_struct_roi + ' - cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials.svg'
+                        svg_cumulative_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_cumulative_dvh_fig_name)
+                        fig_global.write_image(svg_cumulative_dvh_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                        html_cumulative_dvh_fig_name = bx_struct_roi + ' - cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials.html'
+                        html_cumulative_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(html_cumulative_dvh_fig_name) 
+                        fig_global.write_html(html_cumulative_dvh_fig_file_path)
+
+
+
+
+
 
                 # perform containment probabilities plots and regressions
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
