@@ -100,6 +100,7 @@ def simulator_parallel(parallel_pool,
         num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
         num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
         bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
+        bx_sample_pts_volume_element = bx_sample_pt_lattice_spacing**3 
 
         max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
 
@@ -623,12 +624,30 @@ def simulator_parallel(parallel_pool,
                     differential_dvh_histogram_counts_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_counts_specific_MC_trial
                     differential_dvh_histogram_edges_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_edges_specific_MC_trial
 
+                differential_dvh_histogram_volume_by_MC_trial_arr = differential_dvh_histogram_counts_by_MC_trial_arr*bx_sample_pts_volume_element
+                differential_dvh_histogram_percent_by_MC_trial_arr = (differential_dvh_histogram_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
+
+                differential_dvh_dict = {"Counts arr": differential_dvh_histogram_counts_by_MC_trial_arr, 
+                                       "Percent arr": differential_dvh_histogram_percent_by_MC_trial_arr, 
+                                       "Volume arr (cubic mm)": differential_dvh_histogram_volume_by_MC_trial_arr, 
+                                       "Dose bins (edges) arr (Gy)": differential_dvh_histogram_edges_by_MC_trial_arr} # note that all rows in the edges array should be equal!
+
+                # compute cumulative dvh quantities from differential dvh
+                cumulative_dvh_counts_by_MC_trial_arr_D0_val = np.sum(differential_dvh_histogram_counts_by_MC_trial_arr, axis=1, keepdims = True)
+                cumulative_dvh_counts_by_MC_trial_arr_Dgt0_vals = num_sampled_bx_pts - np.cumsum(differential_dvh_histogram_counts_by_MC_trial_arr, axis=1)
+                cumulative_dvh_counts_by_MC_trial_arr = np.concatenate((cumulative_dvh_counts_by_MC_trial_arr_D0_val, cumulative_dvh_counts_by_MC_trial_arr_Dgt0_vals), axis=1)
+                cumulative_dvh_volume_by_MC_trial_arr = cumulative_dvh_counts_by_MC_trial_arr*bx_sample_pts_volume_element
+                cumulative_dvh_percent_by_MC_trial_arr = (cumulative_dvh_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
                 
-                cumulative_dvh_counts_by_MC_trial_arr = num_sampled_bx_pts - np.cumsum(differential_dvh_histogram_counts_by_MC_trial_arr, axis=1)
+                cumulative_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_histogram_edges_by_MC_trial_arr[0].copy()
                 
-                specific_bx_structure["MC data: Differential DVH histogram counts arr"] = differential_dvh_histogram_counts_by_MC_trial_arr
-                specific_bx_structure["MC data: Differential DVH histogram edges arr"] = differential_dvh_histogram_edges_by_MC_trial_arr # note that all rows should be equal!
-                specific_bx_structure["MC data: Cumulative DVH histogram counts arr"] = cumulative_dvh_counts_by_MC_trial_arr # note that this corresponds to the 
+                cumulative_dvh_dict = {"Counts arr": cumulative_dvh_counts_by_MC_trial_arr, 
+                                       "Percent arr": cumulative_dvh_percent_by_MC_trial_arr, 
+                                       "Volume arr (cubic mm)": cumulative_dvh_volume_by_MC_trial_arr, 
+                                       "Dose vals arr (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr}
+
+                specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
+                specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict # note that this corresponds to the 
 
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
             biopsies_progress.remove_task(calculate_biopsy_DVH_quantities_by_biopsy_task)    
