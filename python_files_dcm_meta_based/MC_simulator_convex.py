@@ -87,6 +87,8 @@ def simulator_parallel(parallel_pool,
                        biopsy_needle_compartment_length,
                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                        plot_uniform_shifts_to_check_plotly,
+                       differential_dvh_resolution,
+                       cumulative_dvh_resolution,
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -564,6 +566,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
                     
 
+        live_display.stop()
         bx_structure_type = bx_ref
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients)
@@ -590,6 +593,50 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, visible = True)
         live_display.refresh()
 
+
+
+        bx_structure_type = bx_ref
+        calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
+        calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calculate_biopsy_DVH_quantities_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            calculate_biopsy_DVH_quantities_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
+                
+                num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"].copy()
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = np.array(dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
+                max_dose_val_all_MC_trials = np.amax(dosimetric_localization_dose_vals_by_bx_point_all_trials_arr)
+                minimum_dose_val = 0
+                differential_dvh_range = (minimum_dose_val,max_dose_val_all_MC_trials)
+                #differential_DVH_bin_length = (max_dose_val_all_MC_trials-minimum_dose_val)/differential_dvh_resolution
+                #differential_DVH_bins_list = [[minimum_dose_val+j*differential_DVH_bin_length,minimum_dose_val+(j+1)*differential_DVH_bin_length]for j in range(differential_dvh_resolution)]
+                differential_dvh_histogram_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution]) # each row is a specific MC simulation, each column corresponds to the number of counts in that bin index 
+                differential_dvh_histogram_edges_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the bin edge 
+                #cumulative_dvh_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the number of counts that satisfy the bound provided by the dose value bin edge of the same index of the differential_dvh_histogram_edges_by_MC_trial_arr
+                for MC_trial_index in range(num_MC_dose_simulations):
+                    dosimetric_localization_dose_vals_all_pts_specific_MC_trial = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr[:,MC_trial_index]
+                    differential_dvh_histogram_counts_specific_MC_trial, differential_dvh_histogram_edges_specific_MC_trial = np.histogram(dosimetric_localization_dose_vals_all_pts_specific_MC_trial, bins = differential_dvh_resolution, range = differential_dvh_range)
+                    differential_dvh_histogram_counts_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_counts_specific_MC_trial
+                    differential_dvh_histogram_edges_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_edges_specific_MC_trial
+
+                
+                cumulative_dvh_counts_by_MC_trial_arr = num_sampled_bx_pts - np.cumsum(differential_dvh_histogram_counts_by_MC_trial_arr, axis=1)
+                
+                specific_bx_structure["MC data: Differential DVH histogram counts arr"] = differential_dvh_histogram_counts_by_MC_trial_arr
+                specific_bx_structure["MC data: Differential DVH histogram edges arr"] = differential_dvh_histogram_edges_by_MC_trial_arr # note that all rows should be equal!
+                specific_bx_structure["MC data: Cumulative DVH histogram counts arr"] = cumulative_dvh_counts_by_MC_trial_arr # note that this corresponds to the 
+
+                biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
+            biopsies_progress.remove_task(calculate_biopsy_DVH_quantities_by_biopsy_task)    
+            patients_progress.update(calculate_biopsy_DVH_quantities_task, advance=1)
+            completed_progress.update(calculate_biopsy_DVH_quantities_task_complete, advance=1)
+        patients_progress.update(calculate_biopsy_DVH_quantities_task, visible = False)
+        completed_progress.update(calculate_biopsy_DVH_quantities_task_complete, visible = True)
+        live_display.refresh()
 
 
 

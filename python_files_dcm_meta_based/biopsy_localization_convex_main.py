@@ -146,8 +146,8 @@ def main():
     bx_sim_locations = ["centroid"] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies.
     bx_sim_ref_identifier = "sim"
     simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
-    
-    
+    differential_dvh_resolution = 100 # the number of bins
+    cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -1342,6 +1342,8 @@ def main():
                                                                                          biopsy_needle_compartment_length,
                                                                                          simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                                                          plot_uniform_shifts_to_check_plotly,
+                                                                                         differential_dvh_resolution,
+                                                                                         cumulative_dvh_resolution,
                                                                                          spinner_type)
             else: 
                 pass
@@ -1573,9 +1575,15 @@ def main():
                         num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
+                        
+                        differential_dvh_histogram_edges_by_MC_trial_arr = specific_bx_structure["MC data: Differential DVH histogram edges arr"]
+                        differential_dvh_histogram_counts_by_MC_trial_arr = specific_bx_structure["MC data: Differential DVH histogram counts arr"]
+                        cumulative_dvh_counts_by_MC_trial_arr = specific_bx_structure["MC data: Cumulative DVH histogram counts arr"] 
+
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
                         dose_output_csv_file_path = patient_sp_output_csv_dir.joinpath(dose_output_file_name)
                         specific_bx_structure["Output csv file paths dict"]["Dose output point-wise csv"] = dose_output_csv_file_path
+                        
                         with open(dose_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
@@ -1595,6 +1603,21 @@ def main():
                                 info_row_part = [bx_points_bx_coords_sys_arr_list[pt_index], bx_points_bx_coords_sys_arr_list[pt_index][0], bx_points_bx_coords_sys_arr_list[pt_index][1], bx_points_bx_coords_sys_arr_list[pt_index][2], pt_radius_bx_coord_sys, mean_dose_val_specific_bx_pt, std_dose_val_specific_bx_pt]
                                 complete_dose_vals_row = info_row_part + dose_vals_row
                                 write.writerow(complete_dose_vals_row)
+
+                            write.writerow(['___'])
+                            write.writerow(['Differential DVH info'])
+                            write.writerow(['Each row is a fixed MC trial'])
+                            write.writerow(['Lower bin edge']+differential_dvh_histogram_edges_by_MC_trial_arr[0].tolist()[0:-1])
+                            write.writerow(['Upper bin edge']+differential_dvh_histogram_edges_by_MC_trial_arr[0].tolist()[1:])
+                            for mc_trial in range(num_MC_dose_simulations_input):
+                                write.writerow(['']+differential_dvh_histogram_counts_by_MC_trial_arr[mc_trial,:].tolist())
+
+                            write.writerow(['___'])
+                            write.writerow(['Cumulative DVH info'])
+                            write.writerow(['Each row is a fixed MC trial'])
+                            write.writerow(['Dose value']+differential_dvh_histogram_edges_by_MC_trial_arr[0].tolist()[1:])
+                            for mc_trial in range(num_MC_dose_simulations_input):
+                                write.writerow(['']+cumulative_dvh_counts_by_MC_trial_arr[mc_trial,:].tolist())
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2534,7 +2557,10 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
                          "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None,
+                         "MC data: Differential DVH histogram counts arr": None, 
+                         "MC data: Differential DVH histogram edges arr": None,
+                         "MC data: Cumulative DVH histogram counts arr": None, 
                          "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
@@ -2585,7 +2611,10 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
                          "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None, 
+                         "MC data: Dose vals for each sampled bx pt list": None,
+                         "MC data: Differential DVH histogram counts arr": None, 
+                         "MC data: Differential DVH histogram edges arr": None, 
+                         "MC data: Cumulative DVH histogram counts arr": None, 
                          "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
