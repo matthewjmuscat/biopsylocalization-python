@@ -150,6 +150,8 @@ def main():
     cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
     num_cumulative_dvh_plots_to_show = 50
+    volume_DVH_percent_dose = [100,200,300]
+
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -171,6 +173,7 @@ def main():
     structs_referenced_dict = {bx_ref: biopsy_contour_names, oar_ref: oaroi_contour_names, dil_ref: dil_contour_names} 
     structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work!
     dose_ref = "Dose ref"
+    plan_ref = "Plan ref"
     num_simulated_bxs_to_create = len(bx_sim_locations)
 
     cpu_count = os.cpu_count()
@@ -263,6 +266,7 @@ def main():
             # throughout the programme, it is formed as "patientname (patientID)"
             RTst_dcms_dict = {}
             RTdose_dcms_dict = {}
+            RTplan_dcms_dict = {}
             for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
                 if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
                     with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
@@ -270,34 +274,72 @@ def main():
                 elif dicom_elems_modality_list[dicom_path_index] == modality_list[1]:
                     with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
                         RTdose_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+                elif dicom_elems_modality_list[dicom_path_index] == modality_list[2]:
+                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                        RTplan_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+
             #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
             #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
             #live_display.stop()
             num_RTst_dcms_entries = len(RTst_dcms_dict)
             num_RTdose_dcms_entries = len(RTdose_dcms_dict)
+            num_RTplan_dcms_entries = len(RTplan_dcms_dict)
             important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
             important_info.add_text_line("Found "+str(num_RTdose_dcms_entries)+" unique patients with RT dose files.", live_display)
+            important_info.add_text_line("Found "+str(num_RTplan_dcms_entries)+" unique patients with RT plan files.", live_display)
 
+
+            # check if the found files make sense
+            num_RTst_neq_RTdose = False
+            num_RTst_neq_RTplan = False
+            num_RTdose_neq_RTplan = False
             if num_RTst_dcms_entries != num_RTdose_dcms_entries:
+                num_RTst_neq_RTdose = True
+            if num_RTst_dcms_entries != num_RTplan_dcms_entries:
+                num_RTst_neq_RTplan = True
+            if num_RTdose_dcms_entries != num_RTplan_dcms_entries:
+                num_RTdose_neq_RTplan = True
+
+            if num_RTdose_neq_RTplan or num_RTst_neq_RTplan or num_RTst_neq_RTdose:
                 live_display.stop()
                 stopwatch.stop()
-                continue_programme = ques_funcs.ask_ok('>Unequal number of structure files vs dose files, will encounter error later in the programme. Continue anyway?' )
+                continue_programme = ques_funcs.ask_ok('>Unequal number of structure files('+str(num_RTst_dcms_entries)+ \
+                                                    ') dose files ('+str(num_RTdose_dcms_entries)+\
+                                                    '), to plan files ('+str(num_RTplan_dcms_entries)+\
+                                                    ') will encounter error later in the programme. Continue anyway?')
                 stopwatch.start()
                 if continue_programme == False:
                     sys.exit('>Programme exited.')
                 else:
-                    pass
+                    important_info.add_text_line("There are NOT the same number of structure, dose and plan files.", live_display)
+            else: 
+                important_info.add_text_line("There are the same number of structure, dose and plan files.", live_display)   
 
+            
+            
+
+            # check if each patient has the correct files
+            num_RTst_neq_RTdose_keys = False
+            num_RTst_neq_RTplan_keys = False
+            num_RTdose_neq_RTplan_keys = False
             if RTst_dcms_dict.keys() != RTdose_dcms_dict.keys():
+                num_RTst_neq_RTdose_keys = True
+            if RTst_dcms_dict.keys() != RTplan_dcms_dict.keys():
+                num_RTst_neq_RTplan_keys = True            
+            if RTdose_dcms_dict.keys() != RTplan_dcms_dict.keys():
+                num_RTdose_neq_RTplan_keys = True
+
+            if num_RTst_neq_RTdose_keys or num_RTst_neq_RTplan_keys or num_RTdose_neq_RTplan_keys:
                 live_display.stop()
                 stopwatch.stop()
-                exit_programme = ques_funcs.ask_ok('>Same number of structure files vs dose files but there is an incongruency between them (file pairs do not match patients), will encounter error later in the programme. Continue anyway?' )
+                exit_programme = ques_funcs.ask_ok('>Same number of structure files, dose files and plan files but there is an incongruency between them (file pairs do not match patients), will encounter error later in the programme. Continue anyway?' )
                 stopwatch.start()
                 if exit_programme == True:
                     sys.exit('>Programme exited.')
                 else:
-                    pass
-            important_info.add_text_line("Each patient contains a structure and dose file.", live_display)    
+                    important_info.add_text_line("Each patient does NOT contain a structure, dose and plan file.", live_display) 
+            else: 
+                important_info.add_text_line("Each patient contains a structure, dose and plan file.", live_display)    
             
             
             # setting some variables for use in simulating biopsies
@@ -324,7 +366,20 @@ def main():
             # patient dictionary creation
             building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
             building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, RTdose_dcms_dict, oaroi_contour_names,dil_contour_names,biopsy_contour_names,structs_referenced_list,dose_ref,bx_sim_locations,bx_sim_ref_identifier,simulate_biopsies_relative_to,simulate_biopsies_relative_to_struct_type_list,bx_sample_pts_lattice_spacing)
+            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, 
+                                                                                               RTdose_dcms_dict,
+                                                                                               RTplan_dcms_dict, 
+                                                                                               oaroi_contour_names,
+                                                                                               dil_contour_names,
+                                                                                               biopsy_contour_names,
+                                                                                               structs_referenced_list,
+                                                                                               dose_ref,
+                                                                                               plan_ref,
+                                                                                               bx_sim_locations,
+                                                                                               bx_sim_ref_identifier,
+                                                                                               simulate_biopsies_relative_to,
+                                                                                               simulate_biopsies_relative_to_struct_type_list,
+                                                                                               bx_sample_pts_lattice_spacing)
             indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
             completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
             important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
@@ -1332,7 +1387,8 @@ def main():
                                                                                          bx_ref,
                                                                                          oar_ref,
                                                                                          dil_ref, 
-                                                                                         dose_ref, 
+                                                                                         dose_ref,
+                                                                                         plan_ref, 
                                                                                          master_structure_info_dict, 
                                                                                          biopsy_z_voxel_length, 
                                                                                          num_dose_calc_NN, 
@@ -1346,6 +1402,7 @@ def main():
                                                                                          plot_uniform_shifts_to_check_plotly,
                                                                                          differential_dvh_resolution,
                                                                                          cumulative_dvh_resolution,
+                                                                                         volume_DVH_percent_dose,
                                                                                          spinner_type)
             else: 
                 pass
@@ -1580,6 +1637,8 @@ def main():
                         
                         differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
                         cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
+
+                        dvh_metric_vol_dose_percent_dict = specific_bx_structure["MC data: dose volume metrics dict"]
                         
                         dose_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_d='+str(num_MC_dose_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-dose_out.csv'
                         dose_output_csv_file_path = patient_sp_output_csv_dir.joinpath(dose_output_file_name)
@@ -1638,6 +1697,13 @@ def main():
                                 write.writerow(['Dose value']+cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist())
                                 for mc_trial in range(num_MC_dose_simulations_input):
                                     write.writerow(['']+cumulative_dvh_counts_by_MC_trial_arr[mc_trial,:].tolist())
+
+                            write.writerow(['___'])
+                            write.writerow(['DVH metrics, percentages are relative to CTV target dose'])
+                            write.writerow(['Each row is a fixed DVH metric, each column is a fixed MC trial'])
+                            for vol_DVH_percent in volume_DVH_percent_dose:
+                                dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]
+                                write.writerow(['V'+str(vol_DVH_percent)+'%']+dvh_metric_all_MC_trials)
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2288,9 +2354,9 @@ def main():
                                                                     "MC trial": mc_trial_index_list}
                         cumulative_dvh_pandas_dataframe = pandas.DataFrame.from_dict(cumulative_dvh_dict_for_pandas_dataframe)
 
-                        fig_global = px.line(cumulative_dvh_pandas_dataframe, x="Dose vals (Gy)", y="Percent vals", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
+                        fig_global = px.line(cumulative_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
                         fig_global.update_layout(
-                            title='Cumulative DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_cumulative_dvh_plots_to_show)+', trials)',
+                            title='Cumulative DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_cumulative_dvh_plots_to_show)+' trials)',
                             hovermode="x unified"
                         )
                         fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
@@ -2516,7 +2582,7 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,bx_sim_locations_list,bx_sim_ref_identifier_str,sim_bx_relative_to_list,sim_bx_relative_to_struct_type, bx_sample_pt_lattice_spacing):
+def structure_referencer(structure_dcm_dict, dose_dcm_dict, plan_dcm_dict, OAR_list,DIL_list,Bx_list,st_ref_list,ds_ref,pln_ref,bx_sim_locations_list,bx_sim_ref_identifier_str,sim_bx_relative_to_list,sim_bx_relative_to_struct_type, bx_sample_pt_lattice_spacing):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
     we can match the ROI name to the contour information, since the contour
@@ -2624,7 +2690,8 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "MC data: Dose NN child obj for each sampled bx pt list": None, 
                          "MC data: Dose vals for each sampled bx pt list": None,
                          "MC data: Differential DVH dict": None,
-                         "MC data: Cumulative DVH dict": None, 
+                         "MC data: Cumulative DVH dict": None,
+                         "MC data: dose volume metrics dict": None, 
                          "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
@@ -2678,6 +2745,7 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                          "MC data: Dose vals for each sampled bx pt list": None,
                          "MC data: Differential DVH dict": None,
                          "MC data: Cumulative DVH dict": None,
+                         "MC data: dose volume metrics dict": None,
                          "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
@@ -2692,7 +2760,9 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
             bpsy_ref = bpsy_ref + bpsy_ref_simulated 
             
             
-            bpsy_info = {"Num structs": len(bpsy_ref), "Num sim structs": len(bpsy_ref_simulated), "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated)}
+            bpsy_info = {"Num structs": len(bpsy_ref), 
+                         "Num sim structs": len(bpsy_ref_simulated), 
+                         "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated)}
             OAR_info = {"Num structs": len(OAR_ref)}
             DIL_info = {"Num structs": len(DIL_ref)}
             patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
@@ -2706,10 +2776,12 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
 
             master_st_ds_ref_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
                                           "Patient Name": str(structure_item[0x0010,0x0010].value),
-                                          st_ref_list[0]: bpsy_ref, st_ref_list[1]:OAR_ref, 
+                                          st_ref_list[0]: bpsy_ref, 
+                                          st_ref_list[1]:OAR_ref, 
                                           st_ref_list[2]: DIL_ref,
                                           "Ready to plot data list": None
                                           }
+            
             master_st_ds_info_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
                                            "Patient Name": str(structure_item[0x0010,0x0010].value),
                                            st_ref_list[0]: bpsy_info, 
@@ -2739,8 +2811,32 @@ def structure_referencer(structure_dcm_dict, dose_dcm_dict, OAR_list,DIL_list,Bx
                              }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
 
-    mc_info = {"Num MC containment simulations": None, "Num MC dose simulations": None, "Num sample pts per BX core": None, "BX sample pt lattice spacing": bx_sample_pt_lattice_spacing}
-    master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, "Num structures": global_total_num_structs, "Num biopsies": global_num_biopsies, "Num DILs": global_num_DIL, "Num OARs": global_num_OAR, "MC info": mc_info}
+    for UID, plan_item_path in plan_dcm_dict.items():
+        with pydicom.dcmread(plan_item_path, defer_size = '2 MB') as plan_item: 
+            plan_ID = UID + plan_item.StudyDate
+            plan_ref_dict = {"Plan ID": plan_ID, 
+                             "Study date": plan_item.StudyDate,
+                             "Dose units": 'Gy', # this is by default for this dicom tag: (300A,0026)
+                             "Prescription doses dict": {}
+                             }
+            
+            for dose_ref_seq_ind in range(len(plan_item.DoseReferenceSequence)):
+                plan_ref_dict["Prescription doses dict"][plan_item.DoseReferenceSequence[dose_ref_seq_ind]["DoseReferenceType"].value] = plan_item.DoseReferenceSequence[dose_ref_seq_ind]["TargetPrescriptionDose"].value
+                
+            master_st_ds_ref_dict[UID][pln_ref] = plan_ref_dict
+
+    mc_info = {"Num MC containment simulations": None, 
+               "Num MC dose simulations": None, 
+               "Num sample pts per BX core": None, 
+               "BX sample pt lattice spacing": bx_sample_pt_lattice_spacing}
+    
+    master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, 
+                                               "Num structures": global_total_num_structs, 
+                                               "Num biopsies": global_num_biopsies, 
+                                               "Num DILs": global_num_DIL, 
+                                               "Num OARs": global_num_OAR, 
+                                               "MC info": mc_info}
+    
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
     return master_st_ds_ref_dict, master_st_ds_info_global_dict
 

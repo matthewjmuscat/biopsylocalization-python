@@ -75,7 +75,8 @@ def simulator_parallel(parallel_pool,
                        bx_ref,
                        oar_ref,
                        dil_ref, 
-                       dose_ref, 
+                       dose_ref,
+                       plan_ref, 
                        master_structure_info_dict, 
                        biopsy_z_voxel_length, 
                        num_dose_calc_NN,
@@ -89,6 +90,7 @@ def simulator_parallel(parallel_pool,
                        plot_uniform_shifts_to_check_plotly,
                        differential_dvh_resolution,
                        cumulative_dvh_resolution,
+                       volume_DVH_percent_dose,
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -101,6 +103,7 @@ def simulator_parallel(parallel_pool,
         num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
         bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
         bx_sample_pts_volume_element = bx_sample_pt_lattice_spacing**3 
+        
 
         max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
 
@@ -567,7 +570,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
                     
 
-        live_display.stop()
+
         bx_structure_type = bx_ref
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients)
@@ -603,6 +606,8 @@ def simulator_parallel(parallel_pool,
             patients_progress.update(calculate_biopsy_DVH_quantities_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             calculate_biopsy_DVH_quantities_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
+            ctv_dose = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
+
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
@@ -618,11 +623,21 @@ def simulator_parallel(parallel_pool,
                 differential_dvh_histogram_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution]) # each row is a specific MC simulation, each column corresponds to the number of counts in that bin index 
                 differential_dvh_histogram_edges_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the bin edge 
                 #cumulative_dvh_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the number of counts that satisfy the bound provided by the dose value bin edge of the same index of the differential_dvh_histogram_edges_by_MC_trial_arr
+                dvh_metric_vol_dose_percent_dict = {}
+                for vol_dose_percent in volume_DVH_percent_dose:
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = []
                 for MC_trial_index in range(num_MC_dose_simulations):
                     dosimetric_localization_dose_vals_all_pts_specific_MC_trial = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr[:,MC_trial_index]
                     differential_dvh_histogram_counts_specific_MC_trial, differential_dvh_histogram_edges_specific_MC_trial = np.histogram(dosimetric_localization_dose_vals_all_pts_specific_MC_trial, bins = differential_dvh_resolution, range = differential_dvh_range)
                     differential_dvh_histogram_counts_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_counts_specific_MC_trial
                     differential_dvh_histogram_edges_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_edges_specific_MC_trial
+                    
+                    # find specific DVH metrics
+                    for vol_dose_percent in volume_DVH_percent_dose:
+                        dose_threshold = (vol_dose_percent/100)*ctv_dose
+                        counts_for_vol_dose_percent = dosimetric_localization_dose_vals_all_pts_specific_MC_trial[dosimetric_localization_dose_vals_all_pts_specific_MC_trial > dose_threshold].shape[0]
+                        percent_for_vol_dose_percent = (counts_for_vol_dose_percent/num_sampled_bx_pts)*100
+                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)].append(percent_for_vol_dose_percent)
 
                 differential_dvh_histogram_volume_by_MC_trial_arr = differential_dvh_histogram_counts_by_MC_trial_arr*bx_sample_pts_volume_element
                 differential_dvh_histogram_percent_by_MC_trial_arr = (differential_dvh_histogram_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
@@ -648,6 +663,7 @@ def simulator_parallel(parallel_pool,
 
                 specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
                 specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict 
+                specific_bx_structure["MC data: dose volume metrics dict"] = dvh_metric_vol_dose_percent_dict 
 
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
             biopsies_progress.remove_task(calculate_biopsy_DVH_quantities_by_biopsy_task)    
