@@ -625,7 +625,7 @@ def simulator_parallel(parallel_pool,
                 #cumulative_dvh_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the number of counts that satisfy the bound provided by the dose value bin edge of the same index of the differential_dvh_histogram_edges_by_MC_trial_arr
                 dvh_metric_vol_dose_percent_dict = {}
                 for vol_dose_percent in volume_DVH_percent_dose:
-                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = []
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = {"All trials list": [], "Mean": None, "STD": None}
                 for MC_trial_index in range(num_MC_dose_simulations):
                     dosimetric_localization_dose_vals_all_pts_specific_MC_trial = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr[:,MC_trial_index]
                     differential_dvh_histogram_counts_specific_MC_trial, differential_dvh_histogram_edges_specific_MC_trial = np.histogram(dosimetric_localization_dose_vals_all_pts_specific_MC_trial, bins = differential_dvh_resolution, range = differential_dvh_range)
@@ -637,7 +637,14 @@ def simulator_parallel(parallel_pool,
                         dose_threshold = (vol_dose_percent/100)*ctv_dose
                         counts_for_vol_dose_percent = dosimetric_localization_dose_vals_all_pts_specific_MC_trial[dosimetric_localization_dose_vals_all_pts_specific_MC_trial > dose_threshold].shape[0]
                         percent_for_vol_dose_percent = (counts_for_vol_dose_percent/num_sampled_bx_pts)*100
-                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)].append(percent_for_vol_dose_percent)
+                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"].append(percent_for_vol_dose_percent)
+
+                    for vol_dose_percent in volume_DVH_percent_dose:
+                        dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"]) 
+                        mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)
+                        std_of_dvh_metric = np.std(dvh_metric_all_trials_arr)
+                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"] = mean_of_dvh_metric
+                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["STD"] = std_of_dvh_metric
 
                 differential_dvh_histogram_volume_by_MC_trial_arr = differential_dvh_histogram_counts_by_MC_trial_arr*bx_sample_pts_volume_element
                 differential_dvh_histogram_percent_by_MC_trial_arr = (differential_dvh_histogram_counts_by_MC_trial_arr/num_sampled_bx_pts)*100

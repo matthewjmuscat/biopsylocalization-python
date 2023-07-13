@@ -1702,8 +1702,11 @@ def main():
                             write.writerow(['DVH metrics, percentages are relative to CTV target dose'])
                             write.writerow(['Each row is a fixed DVH metric, each column is a fixed MC trial'])
                             for vol_DVH_percent in volume_DVH_percent_dose:
-                                dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]
+                                dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["All trials list"]
+                                dvh_metric_mean = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Mean"]
+                                dvh_metric_std = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["STD"]
                                 write.writerow(['V'+str(vol_DVH_percent)+'%']+dvh_metric_all_MC_trials)
+                                write.writerow(['V'+str(vol_DVH_percent)+'% mean', dvh_metric_mean, 'V'+str(vol_DVH_percent)+'% STD', dvh_metric_std])
 
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
