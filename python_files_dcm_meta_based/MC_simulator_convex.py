@@ -598,7 +598,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
-
+        live_display.stop()
         bx_structure_type = bx_ref
         calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
         calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients)
@@ -639,20 +639,30 @@ def simulator_parallel(parallel_pool,
                         percent_for_vol_dose_percent = (counts_for_vol_dose_percent/num_sampled_bx_pts)*100
                         dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"].append(percent_for_vol_dose_percent)
 
-                    for vol_dose_percent in volume_DVH_percent_dose:
-                        dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"]) 
-                        mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)
-                        std_of_dvh_metric = np.std(dvh_metric_all_trials_arr)
-                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"] = mean_of_dvh_metric
-                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["STD"] = std_of_dvh_metric
+                
+                for vol_dose_percent in volume_DVH_percent_dose:
+                    dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"]) 
+                    mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)
+                    std_of_dvh_metric = np.std(dvh_metric_all_trials_arr)
+                    quantiles_of_dvh_metric = {'Q'+str(q): np.quantile(dvh_metric_all_trials_arr, q/100) for q in range(5,100,5)}
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"] = mean_of_dvh_metric
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["STD"] = std_of_dvh_metric
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Quantiles"] = quantiles_of_dvh_metric
 
                 differential_dvh_histogram_volume_by_MC_trial_arr = differential_dvh_histogram_counts_by_MC_trial_arr*bx_sample_pts_volume_element
                 differential_dvh_histogram_percent_by_MC_trial_arr = (differential_dvh_histogram_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
+                
+                differential_dvh_histogram_counts_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_counts_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                differential_dvh_histogram_volume_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_volume_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                differential_dvh_histogram_percent_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_percent_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
 
                 differential_dvh_dict = {"Counts arr": differential_dvh_histogram_counts_by_MC_trial_arr, 
                                        "Percent arr": differential_dvh_histogram_percent_by_MC_trial_arr, 
                                        "Volume arr (cubic mm)": differential_dvh_histogram_volume_by_MC_trial_arr, 
-                                       "Dose bins (edges) arr (Gy)": differential_dvh_histogram_edges_by_MC_trial_arr} # note that all rows in the edges array should be equal!
+                                       "Dose bins (edges) arr (Gy)": differential_dvh_histogram_edges_by_MC_trial_arr,
+                                       "Quantiles counts dict": differential_dvh_histogram_counts_quantiles_by_dose_bin,
+                                       "Quantiles percent dict": differential_dvh_histogram_percent_quantiles_by_dose_bin,
+                                       "Quantiles volume dict": differential_dvh_histogram_volume_quantiles_by_dose_bin} # note that all rows in the edges array should be equal!
 
                 # compute cumulative dvh quantities from differential dvh
                 cumulative_dvh_counts_by_MC_trial_arr_D0_val = np.sum(differential_dvh_histogram_counts_by_MC_trial_arr, axis=1, keepdims = True)
@@ -662,11 +672,18 @@ def simulator_parallel(parallel_pool,
                 cumulative_dvh_percent_by_MC_trial_arr = (cumulative_dvh_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
                 
                 cumulative_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_histogram_edges_by_MC_trial_arr[0].copy()
+
+                cumulative_dvh_histogram_counts_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_counts_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                cumulative_dvh_histogram_volume_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_volume_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                cumulative_dvh_histogram_percent_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_percent_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
                 
                 cumulative_dvh_dict = {"Counts arr": cumulative_dvh_counts_by_MC_trial_arr, 
                                        "Percent arr": cumulative_dvh_percent_by_MC_trial_arr, 
                                        "Volume arr (cubic mm)": cumulative_dvh_volume_by_MC_trial_arr, 
-                                       "Dose vals arr (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr}
+                                       "Dose vals arr (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr,
+                                       "Quantiles counts dict": cumulative_dvh_histogram_counts_quantiles_by_dose_val,
+                                       "Quantiles percent dict": cumulative_dvh_histogram_percent_quantiles_by_dose_val,
+                                       "Quantiles volume dict": cumulative_dvh_histogram_volume_quantiles_by_dose_val}
 
                 specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
                 specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict 

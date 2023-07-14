@@ -2292,6 +2292,15 @@ def main():
                         fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
 
+
+
+
+                        
+
+
+
+
+
                         # create box plots of voxelized data
                         stats_dose_val_all_MC_trials_voxelized = specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"]
                         dose_vals_in_voxel = stats_dose_val_all_MC_trials_voxelized["All dose vals in voxel list"]
@@ -2371,6 +2380,169 @@ def main():
                         html_cumulative_dvh_fig_name = bx_struct_roi + ' - cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials.html'
                         html_cumulative_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(html_cumulative_dvh_fig_name) 
                         fig_global.write_html(html_cumulative_dvh_fig_file_path)
+
+
+
+                        # perform non parametric kernel regression through conditional quantiles and conditional mean cumulative DVH plot
+                        dose_vals_to_evaluate = np.linspace(min(cumulative_dvh_dose_vals_by_MC_trial_1darr), max(cumulative_dvh_dose_vals_by_MC_trial_1darr), num=10000)
+                        quantiles_cumulative_dvh_dict = cumulative_dvh_dict["Quantiles percent dict"]
+                        cumulative_dvh_output_dict_for_regression = {"Dose pts (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr}
+                        cumulative_dvh_output_dict_for_regression.update(quantiles_cumulative_dvh_dict)
+                        non_parametric_kernel_regressions_dict = {}
+                        data_for_non_parametric_kernel_regressions_dict = {}
+                        data_keys_to_regress = ["Q95","Q5","Q50","Q75","Q25"]
+                        num_bootstraps_mean_and_quantile_data = 15
+                        for data_key in data_keys_to_regress:
+                            data_for_non_parametric_kernel_regressions_dict[data_key]=cumulative_dvh_output_dict_for_regression[data_key].copy()
+                            
+                        for data_key, data_to_regress in data_for_non_parametric_kernel_regressions_dict.items():
+                            if regression_type_ans == True:
+                                non_parametric_regression_fit, \
+                                non_parametric_regression_lower, \
+                                non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = cumulative_dvh_output_dict_for_regression["Dose pts (Gy)"], 
+                                    y = data_to_regress, 
+                                    eval_x = dose_vals_to_evaluate, 
+                                    N=num_bootstraps_mean_and_quantile_data, 
+                                    conf_interval=0.95
+                                )
+                            elif regression_type_ans == False:
+                                non_parametric_regression_fit, \
+                                non_parametric_regression_lower, \
+                                non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                                    parallel_pool,
+                                    x = cumulative_dvh_output_dict_for_regression["Dose pts (Gy)"], 
+                                    y = data_to_regress, 
+                                    eval_x = dose_vals_to_evaluate, 
+                                    N=num_bootstraps_mean_and_quantile_data, 
+                                    conf_interval=0.95, bandwidth = NPKR_bandwidth
+                                )
+                            
+                            non_parametric_kernel_regressions_dict[data_key] = (
+                                non_parametric_regression_fit, 
+                                non_parametric_regression_lower, 
+                                non_parametric_regression_upper
+                            )
+                            
+                        # create regression figure
+                        fig_regressions_only_quantiles_and_mean = go.Figure()
+                        for data_key,regression_tuple in non_parametric_kernel_regressions_dict.items(): 
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+' regression',
+                                    x=dose_vals_to_evaluate,
+                                    y=regression_tuple[0],
+                                    mode="lines",
+                                    line=dict(color = regression_colors_dict[data_key], dash = regression_line_styles_dict[data_key]),
+                                    showlegend=True
+                                    )
+                            )
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+': Upper 95% CI',
+                                    x=dose_vals_to_evaluate,
+                                    y=regression_tuple[2],
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    showlegend=False
+                                )
+                            )
+                            fig_regressions_only_quantiles_and_mean.add_trace(
+                                go.Scatter(
+                                    name=data_key+': Lower 95% CI',
+                                    x=dose_vals_to_evaluate,
+                                    y=regression_tuple[1],
+                                    marker=dict(color="#444"),
+                                    line=dict(width=0),
+                                    mode='lines',
+                                    fillcolor='rgba(0, 100, 20, 0.3)',
+                                    fill='tonexty',
+                                    showlegend=False
+                                )
+                            )
+                            
+                        
+                        fig_regressions_only_quantiles_and_mean.update_layout(
+                            yaxis_title='Percent volume',
+                            xaxis_title='Dose (Gy)',
+                            title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+                        fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
+
+                        svg_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                        html_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+                        fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
+
+
+                        # create simplified regression figure
+                        quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 255, 0.3)')] # must be organized where first element is lower and second element is upper bound
+                        fig_regressions_dose_quantiles_simple = go.Figure()
+                        for quantile_pair_tuple in quantile_pairs_list: 
+                            lower_regression_key = quantile_pair_tuple[0]
+                            upper_regression_key = quantile_pair_tuple[1]
+                            fill_color = quantile_pair_tuple[2]
+                            lower_regression_tuple = non_parametric_kernel_regressions_dict[lower_regression_key]
+                            upper_regression_tuple = non_parametric_kernel_regressions_dict[upper_regression_key]
+                            fig_regressions_dose_quantiles_simple.add_trace(
+                                go.Scatter(
+                                    name=upper_regression_key+' regression',
+                                    x=dose_vals_to_evaluate,
+                                    y=upper_regression_tuple[0],
+                                    mode='lines',
+                                    marker=dict(color="#444"),
+                                    line=dict(color=regression_colors_dict[upper_regression_key], dash = regression_line_styles_dict[upper_regression_key]),
+                                    showlegend=True
+                                )
+                            )
+                            fig_regressions_dose_quantiles_simple.add_trace(
+                                go.Scatter(
+                                    name=lower_regression_key+' regression',
+                                    x=dose_vals_to_evaluate,
+                                    y=lower_regression_tuple[0],
+                                    marker=dict(color="#444"),
+                                    line=dict(color=regression_colors_dict[lower_regression_key], dash = regression_line_styles_dict[lower_regression_key]),
+                                    mode='lines',
+                                    fillcolor=fill_color,
+                                    fill='tonexty',
+                                    showlegend=True
+                                )
+                            )
+                            
+                        median_key = "Q50"
+                        median_dose_regression_tuple = non_parametric_kernel_regressions_dict[median_key]
+                        fig_regressions_dose_quantiles_simple.add_trace(
+                            go.Scatter(
+                                name=median_key+' regression',
+                                x=dose_vals_to_evaluate,
+                                y=median_dose_regression_tuple[0],
+                                mode="lines",
+                                line=dict(color=regression_colors_dict[median_key], dash = regression_line_styles_dict[median_key]),
+                                showlegend=True
+                            )
+                        )
+                        
+                        fig_regressions_dose_quantiles_simple.update_layout(
+                            yaxis_title='Percent volume',
+                            xaxis_title='Dose (Gy)',
+                            title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
+                            hovermode="x unified"
+                        )
+                        fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
+
+                        svg_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles_simplified.svg'
+                        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+                        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                        html_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles_simplified.html'
+                        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+                        fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
 
 
