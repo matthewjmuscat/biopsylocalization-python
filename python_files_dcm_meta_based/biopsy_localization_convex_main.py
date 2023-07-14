@@ -150,7 +150,8 @@ def main():
     cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
     num_cumulative_dvh_plots_to_show = 50
-    volume_DVH_percent_dose = [100,200,300]
+    num_differential_dvh_plots_to_show = 50
+    volume_DVH_percent_dose = [100,125,150,200,300]
 
 
     # plots to show:
@@ -2341,15 +2342,46 @@ def main():
                         fig.write_html(html_dose_fig_file_path)
 
 
-                        # create dvh plots
-                        #differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
-                                                
+                        # create differential dvh plots
+                        #differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]                    
                         #differential_dvh_histogram_percent_by_MC_trial_arr = differential_dvh_dict["Percent arr"]
-
                         #dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=dose_output_dict_by_MC_trial_for_pandas_data_frame)
+                        differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
+                        differential_dvh_histogram_percent_by_MC_trial_arr = differential_dvh_dict["Percent arr"]
+                        differential_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
+                        differential_dvh_dose_vals_list = differential_dvh_dose_vals_by_MC_trial_1darr.tolist()
+                        differential_dvh_dose_bins_categorical_list = ['['+str(round(differential_dvh_dose_vals_list[i],1))+','+str(round(differential_dvh_dose_vals_list[i+1],1))+']' for i in range(len(differential_dvh_dose_vals_by_MC_trial_1darr)-1)]
+                        differential_dvh_histogram_percent_by_MC_trial_list_of_lists = differential_dvh_histogram_percent_by_MC_trial_arr.tolist()
+                        
+                        percent_vals_list = []
+                        dose_bins_list = differential_dvh_dose_bins_categorical_list*num_differential_dvh_plots_to_show 
+                        mc_trial_index_list = []
+                        for mc_trial_index in range(num_differential_dvh_plots_to_show):
+                            percent_vals_list = percent_vals_list + differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
+                            mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
+                        differential_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
+                                                                    "Dose (Gy)": dose_bins_list,
+                                                                    "MC trial": mc_trial_index_list}
+                        differential_dvh_pandas_dataframe = pandas.DataFrame.from_dict(differential_dvh_dict_for_pandas_dataframe)
+
+                        fig_global = px.line(differential_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
+                        fig_global.update_layout(
+                            title='Differential DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_differential_dvh_plots_to_show)+' trials)',
+                            hovermode="x unified"
+                        )
+                        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
+                        
+                        svg_differential_dvh_fig_name = bx_struct_roi + ' - differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials.svg'
+                        svg_differential_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_differential_dvh_fig_name)
+                        fig_global.write_image(svg_differential_dvh_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                        html_differential_dvh_fig_name = bx_struct_roi + ' - differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials.html'
+                        html_differential_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(html_differential_dvh_fig_name) 
+                        fig_global.write_html(html_differential_dvh_fig_file_path)
 
 
 
+                        # create cumulative DVH plots
                         cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
                         cumulative_dvh_histogram_percent_by_MC_trial_arr = cumulative_dvh_dict["Percent arr"]
                         cumulative_dvh_dose_vals_by_MC_trial_1darr = cumulative_dvh_dict["Dose vals arr (Gy)"]
