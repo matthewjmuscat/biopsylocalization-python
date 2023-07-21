@@ -91,6 +91,7 @@ def simulator_parallel(parallel_pool,
                        differential_dvh_resolution,
                        cumulative_dvh_resolution,
                        volume_DVH_percent_dose,
+                       plot_translation_vectors_pointclouds,
                        spinner_type):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -136,6 +137,7 @@ def simulator_parallel(parallel_pool,
         important_info.add_text_line(simulation_info_important_line_str, live_display)
         
 
+        live_display.stop()
         default_patientUID = "initializing"
         translating_patients_main_desc = "[red]MC simulating biopsy and anatomy randomized translations [{}]...".format(default_patientUID)
         translating_patients_structures_task = patients_progress.add_task(translating_patients_main_desc, total=num_patients)
@@ -180,6 +182,23 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(translating_patients_structures_task, visible=False)
         completed_progress.update(translating_patients_structures_task_completed, visible=True)
         live_display.refresh()
+
+
+
+        if plot_translation_vectors_pointclouds == True:
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                for structs in structs_referenced_list:
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        if structs == bx_structure_type:
+                            total_rigid_shift_vectors_arr = specific_structure["MC data: Total rigid shift vectors arr"]
+                            #randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                            plotting_funcs.plot_point_clouds(total_rigid_shift_vectors_arr)
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([total_rigid_shift_vectors_arr], title_text = str(patientUID) + str(specific_structure["ROI"]))
+                        else: 
+                            total_rigid_shift_vectors_arr = specific_structure["MC data: Generated normal dist random samples arr"]
+                            plotting_funcs.plot_point_clouds(total_rigid_shift_vectors_arr)
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([total_rigid_shift_vectors_arr], title_text = str(patientUID) + str(specific_structure["ROI"]))
+
 
 
         
@@ -598,7 +617,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
-        live_display.stop()
+        #live_display.stop()
         bx_structure_type = bx_ref
         calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
         calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients)
@@ -1001,8 +1020,12 @@ def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel
         random_uniformly_sampled_bx_shifts_arr = specific_bx_structure["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"]
         # notice the minus sign below!!
         bx_needle_centroid_vec_tip_to_handle_unit_vec = -specific_bx_structure["Centroid line unit vec (bx needle base to bx needle tip)"]
-
-
+        num_uniform_shifts = random_uniformly_sampled_bx_shifts_arr.shape[0]
+        bx_needle_uniform_compartment_shift_vectors_array = np.tile(bx_needle_centroid_vec_tip_to_handle_unit_vec,(num_uniform_shifts,1))
+        bx_needle_uniform_compartment_shift_vectors_array = np.multiply(bx_needle_uniform_compartment_shift_vectors_array,random_uniformly_sampled_bx_shifts_arr[...,None]) # The [...,None] converts the row vector to a column vector for proper element-wise multiplication
+        specific_bx_structure["MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr"] = bx_needle_uniform_compartment_shift_vectors_array
+        total_rigid_shift_vectors_arr = bx_needle_uniform_compartment_shift_vectors_array + randomly_sampled_bx_shifts_arr
+        specific_bx_structure["MC data: Total rigid shift vectors arr"] = total_rigid_shift_vectors_arr
         args_list_uniform_compartment_shifts = []
         for uniform_bx_shift_distance in random_uniformly_sampled_bx_shifts_arr:
             arg = (randomly_sampled_bx_pts_arr, uniform_bx_shift_distance, bx_needle_centroid_vec_tip_to_handle_unit_vec, plot_uniform_shifts_to_check_plotly)
@@ -1017,6 +1040,8 @@ def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_parallel(parallel
     
         randomly_sampled_bx_pts_arr_bx_only_shift_final_arr_each_sampled_shift_list = parallel_pool.starmap(MC_simulator_translate_sampled_bx_points_arr_bx_only_shift,args_list_uniform_and_normal_shifts)
     else:
+        total_rigid_shift_vectors_arr = randomly_sampled_bx_shifts_arr
+        specific_bx_structure["MC data: Total rigid shift vectors arr"] = total_rigid_shift_vectors_arr
         randomly_sampled_bx_pts_arr_bx_only_shift_final_arr_each_sampled_shift_list = randomly_sampled_bx_pts_arr_bx_normal_only_shift_arr_each_sampled_shift_list.copy()
         
     num_bx_sampled_points = randomly_sampled_bx_pts_arr.shape[0]

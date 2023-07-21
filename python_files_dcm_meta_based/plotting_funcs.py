@@ -725,7 +725,7 @@ def dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_dose_lattic
     fig.show()
 
 
-def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_arrays_list = [], aspect_mode_input = 'data'):
+def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_arrays_list = [], aspect_mode_input = 'data', title_text = ''):
     """
     aspect_mode_input can be one of ( "auto" | "cube" | "data" | "manual" ), follows the plotly fig.update_scenes(aspectmode=<VALUE>) module
     """
@@ -745,7 +745,8 @@ def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_
         )
     
     fig.update_layout(
-        scene=dict(aspectmode = aspect_mode_input)
+        scene=dict(aspectmode = aspect_mode_input),
+        title = dict(text = str(title_text))
         )    
     
     fig.show()
