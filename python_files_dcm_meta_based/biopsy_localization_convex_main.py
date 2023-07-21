@@ -162,7 +162,7 @@ def main():
     show_processed_3d_datasets_renderings_plotly = False
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
-    plot_translation_vectors_pointclouds = True
+    plot_translation_vectors_pointclouds = False
 
     # plot attributes:
 

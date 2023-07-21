@@ -137,7 +137,6 @@ def simulator_parallel(parallel_pool,
         important_info.add_text_line(simulation_info_important_line_str, live_display)
         
 
-        live_display.stop()
         default_patientUID = "initializing"
         translating_patients_main_desc = "[red]MC simulating biopsy and anatomy randomized translations [{}]...".format(default_patientUID)
         translating_patients_structures_task = patients_progress.add_task(translating_patients_main_desc, total=num_patients)
