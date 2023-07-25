@@ -75,9 +75,13 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
+
+        dose_output_z_and_radius_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
+        pt_radius_bx_coord_sys = dose_output_z_and_radius_dict_for_pandas_data_frame["Radial pos (mm)"]
+
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+        #bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+        #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
         
 
 
@@ -238,24 +242,13 @@ def production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_o
                                                                    svg_image_width,
                                                                    svg_image_height
                                                                    ):
+    
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
-        if "Dose output Z and radius" not in specific_bx_structure["Output data frames"]:
-            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-            mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
-            std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
-            quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
-            bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-            bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-            pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
-
-            dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
-            dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
-            dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
-            specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
-        else: 
-            dose_output_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output Z and radius"]
+        
+        dose_output_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output Z and radius"]
+        
         
         
         fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose", width  = svg_image_width, height = svg_image_height)
@@ -270,18 +263,6 @@ def production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_o
         fig.write_html(html_dose_fig_file_path)
 
 
-        # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
-        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
-        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
-
-        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.svg'
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
-
-        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.html'
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig.write_html(html_dose_fig_file_path)
-
 
 def production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patient_sp_output_figures_dir_dict,
                                                                    patientUID,
@@ -291,25 +272,13 @@ def production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patien
                                                                    svg_image_width,
                                                                    svg_image_height
                                                                    ):
+    
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
-        if "Dose output Z and radius" not in specific_bx_structure["Output data frames"]:
-            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-            mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
-            std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
-            quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
-            bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-            bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-            pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
-
-            dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
-            dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
-            dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
-            specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
-        else: 
-            dose_output_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output Z and radius"] 
-        
+         
+        dose_output_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output Z and radius"] 
+               
             
         # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
         fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
@@ -341,22 +310,22 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
-        if "Dose output Z and radius" not in specific_bx_structure["Output data frames"]:
-            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-            mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
-            std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
-            quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
-            bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-            bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-            pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
 
-            dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
-            dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
-            dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
-            specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
-        else: 
-            dose_output_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output Z and radius"]
+        dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
+        pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["Radial pos (mm)"]
+
+        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+        #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+        mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
+        std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+        quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
         
+        
+        
+        
+       
         
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
@@ -637,6 +606,7 @@ def production_plot_voxelized_axial_dose_distribution_box_violin_by_patient(pati
         dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
 
         specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Dose output voxelized"] = dose_output_voxelized_dict_for_pandas_data_frame
 
         # box plot
         fig = px.box(dose_output_voxelized_pandas_data_frame, points = False)
@@ -708,7 +678,9 @@ def production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_outp
                                                     "Dose (Gy)": dose_bins_list,
                                                     "MC trial": mc_trial_index_list}
         differential_dvh_pandas_dataframe = pandas.DataFrame.from_dict(differential_dvh_dict_for_pandas_dataframe)
+
         specific_bx_structure["Output data frames"]["Differential DVH by MC trial"] = differential_dvh_pandas_dataframe
+        specific_bx_structure["Output dicts for data frames"]["Differential DVH by MC trial"] = differential_dvh_dict_for_pandas_dataframe
 
         fig_global = px.line(differential_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
         fig_global.update_layout(
@@ -747,7 +719,9 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
 
         percent_volume_binned_dict_for_pandas_data_frame = {str(differential_dvh_dose_bins_list[i]): differential_dvh_histogram_percent_by_dose_bin_arr[i,:] for i in range(len(differential_dvh_dose_bins_list))}
         percent_volume_binned_dict_pandas_data_frame = pandas.DataFrame(data=percent_volume_binned_dict_for_pandas_data_frame)
+
         specific_bx_structure["Output data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_for_pandas_data_frame
         
         # box plot
         fig = px.box(percent_volume_binned_dict_pandas_data_frame, points = False)
@@ -797,7 +771,9 @@ def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output
                                                     "Dose (Gy)": dose_vals_list,
                                                     "MC trial": mc_trial_index_list}
         cumulative_dvh_pandas_dataframe = pandas.DataFrame.from_dict(cumulative_dvh_dict_for_pandas_dataframe)
+
         specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_pandas_dataframe
+        specific_bx_structure["Output dicts for data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_dict_for_pandas_dataframe
 
         fig_global = px.line(cumulative_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
         fig_global.update_layout(
@@ -1082,7 +1058,9 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                                                      "STD err": std_err_point_wise_for_pd_data_frame_list}
         
         containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
+
         specific_bx_structure["Output data frames"]["Containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
