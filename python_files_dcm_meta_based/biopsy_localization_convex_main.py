@@ -117,13 +117,17 @@ def main():
     interp_dist_caps = 2
     biopsy_radius = 0.275
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
+    
+    # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
-    num_MC_containment_simulations_input = 10
+    num_MC_containment_simulations_input = 20
     num_MC_dose_simulations_input = 100
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
+    
+    
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
     pio.templates.default = "plotly_white"
@@ -151,8 +155,8 @@ def main():
     differential_dvh_resolution = 100 # the number of bins
     cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
-    num_cumulative_dvh_plots_to_show = 50
-    num_differential_dvh_plots_to_show = 50
+    num_cumulative_dvh_plots_to_show = 25
+    num_differential_dvh_plots_to_show = 25
     volume_DVH_percent_dose = [100,125,150,200,300]
 
 
@@ -167,13 +171,63 @@ def main():
     plot_translation_vectors_pointclouds = False
 
     # Final production plots to create:
+    regression_type_input = 0 # LOWESS = 1 or True, NPKR = 0 or False, this concerns the type of non parametric kernel regression that is performed
+    global_regression_input = False # True or False bool type, this concerns whether a regression is performed on the axial dose distribution scatter plot containing all the data points of dose from all trials for each point 
+
     num_z_vals_to_evaluate_for_regression_plots = 1000
+    tissue_class_probability_plot_type_list = ['with_errors','']
     production_plots_input_dictionary = {"Sampled translation vector magnitudes box plots": \
-                                            {"Plot bool": True, "Name": "box_plot_sampled_translations_magnitudes_all_trials"}, 
+                                            {"Plot bool": True, 
+                                             "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials"
+                                             }, 
                                         "Axial dose distribution all trials and global regression": \
-                                            {"Plot bool": True, "Name": "scatter_and_regression_plot_axial_dose_distribution"},
-                                        "Axial and radial dose distribution": \
-                                            {"Plot bool": True, "Name": "scatter_axial_and_radial_dose_distribution"}
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-scatter-all_trials_axial_dose_distribution"
+                                             },
+                                        "Axial and radial (3D, surface) dose distribution": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-scatter-axial_and_radial_3D_surface_dose_distribution"
+                                             },
+                                        "Axial and radial (2D, color) dose distribution": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-scatter-axial_and_radial_2D_color_dose_distribution"
+                                             },
+                                        "Axial dose distribution quantiles scatter plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
+                                             },
+                                        "Axial dose distribution quantiles regression plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-regression-quantiles_axial_dose_distribution"
+                                             },
+                                        "Axial dose distribution voxelized box plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-box_plot-voxelized_axial_dose_distribution"
+                                             },
+                                        "Axial dose distribution voxelized violin plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - dose-violin_plot-voxelized_axial_dose_distribution"
+                                             },
+                                        "Differential DVH showing N trials plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - dose-DVH-differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials'
+                                             },
+                                        "Differential DVH dose binned all trials box plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot'
+                                             },
+                                        "Cumulative DVH showing N trials plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - dose-DVH-cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials'
+                                             },
+                                        "Cumulative DVH quantile regression all trials plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles'
+                                             },
+                                        "Tissue classification scatter and regression probabilities all trials plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - tissue_class-regression-probabilities'
+                                             }
                                         }
     
 
@@ -212,6 +266,19 @@ def main():
             #rich_layout["box2"].update(Panel(make_syntax(), border_style="green"))
             rich_layout["main-right"].update(important_info)
             rich_layout["footer"].update(app_footer)
+
+            # Initial check and recalibration of inputs
+            if num_cumulative_dvh_plots_to_show > num_MC_dose_simulations_input:
+                num_cumulative_dvh_plots_to_show = num_MC_dose_simulations_input
+                important_info.add_text_line("Altered number of cumulative DVH plots to show input to maximum set by number of dose simulations input, since exceeded maxmimum allowable. New value is: "+str(num_cumulative_dvh_plots_to_show), live_display)
+            else:
+                pass
+
+            if num_differential_dvh_plots_to_show > num_MC_dose_simulations_input:
+                num_differential_dvh_plots_to_show = num_MC_dose_simulations_input
+                important_info.add_text_line("Altered number of differential DVH plots to show input to maximum set by number of dose simulations input, since exceeded maxmimum allowable. New value is: "+str(num_differential_dvh_plots_to_show), live_display)
+            else:
+                pass
 
 
             # set the paths for the JSON views for the NN dose demonstration
@@ -1835,14 +1902,14 @@ def main():
                 os.mkdir(output_figures_dir)
                 print('>Directory: ', output_figures_dir, ' created.')
 
-
+                """
                 stopwatch.stop()
-                regression_type_ans = ques_funcs.multi_choice_question('> Type of regression (LOWESS = 1, NPKR = 0)?')
+                regression_type_input = ques_funcs.multi_choice_question('> Type of regression (LOWESS = 1, NPKR = 0)?')
                 stopwatch.start()
                 stopwatch.stop()
-                global_regression_ans = ques_funcs.ask_ok('> Perform regression on global data?')
+                global_regression_input = ques_funcs.ask_ok('> Perform regression on global data?')
                 stopwatch.start()
-
+                """
 
                 live_display.start()
                 important_info.add_text_line("Creating production plots.", live_display)
@@ -1882,370 +1949,526 @@ def main():
 
                 # Plot boxplots of sampled rigid shift vectors
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating box plots of sampled rigid shift vectors"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot name"]
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating box plots of sampled rigid shift vectors"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
 
-                    production_plots.production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
-                                              patient_sp_output_figures_dir_dict,
-                                              structs_referenced_list,
-                                              bx_structs,
-                                              pydicom_item,
-                                              all_ref_key,
-                                              svg_image_scale,
-                                              svg_image_width,
-                                              svg_image_height)
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)
 
+                        production_plots.production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
+                                                patient_sp_output_figures_dir_dict,
+                                                structs_referenced_list,
+                                                bx_structs,
+                                                pydicom_item,
+                                                all_ref_key,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string
+                                                )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)
+                else:
+                    pass
 
                 
                 # all MC trials spatial axial dose distribution with global regression 
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating axial dose distribution scatter plot (all trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating axial dose distribution scatter plot (all trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Axial dose distribution all trials and global regression"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating axial dose distribution scatter plot (all trials) [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose distribution all trials and global regression"]["Plot name"]
+                
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating axial dose distribution scatter plot (all trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating axial dose distribution scatter plot (all trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                    production_plots.production_plot_axial_dose_distribution_all_trials_and_regression_by_patient(patient_sp_output_figures_dir_dict,
-                                                                   patientUID,
-                                                                   pydicom_item,
-                                                                   bx_structs,
-                                                                   global_regression_ans,
-                                                                   regression_type_ans,
-                                                                   parallel_pool,
-                                                                   num_bootstraps_for_regression_plots_input,
-                                                                   NPKR_bandwidth,
-                                                                   svg_image_scale,
-                                                                   svg_image_width,
-                                                                   svg_image_height,
-                                                                   num_z_vals_to_evaluate_for_regression_plots
-                                                                   )
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating axial dose distribution scatter plot (all trials) [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_axial_dose_distribution_all_trials_and_regression_by_patient(patient_sp_output_figures_dir_dict,
+                                                                    patientUID,
+                                                                    pydicom_item,
+                                                                    bx_structs,
+                                                                    global_regression_input,
+                                                                    regression_type_input,
+                                                                    parallel_pool,
+                                                                    num_bootstraps_for_regression_plots_input,
+                                                                    NPKR_bandwidth,
+                                                                    svg_image_scale,
+                                                                    svg_image_width,
+                                                                    svg_image_height,
+                                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                                    general_plot_name_string
+                                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)
+                else:
+                    pass
 
 
                 
                 # 3d scatter axial and radial dose distribution map
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating (3D) scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating (3D) scatter axial/radial dose distribution plot (all trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Axial and radial (3D, surface) dose distribution"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating (3D) scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Axial and radial (3D, surface) dose distribution"]["Plot name"]
 
-                    production_plots.production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_output_figures_dir_dict,
-                                                                   patientUID,
-                                                                   pydicom_item,
-                                                                   bx_structs,
-                                                                   svg_image_scale,
-                                                                   svg_image_width,
-                                                                   svg_image_height
-                                                                   )
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating (3D) scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating (3D) scatter axial/radial dose distribution plot (all trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating (3D) scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_output_figures_dir_dict,
+                                                                    patientUID,
+                                                                    pydicom_item,
+                                                                    bx_structs,
+                                                                    svg_image_scale,
+                                                                    svg_image_width,
+                                                                    svg_image_height,
+                                                                    general_plot_name_string
+                                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)
+                else:
+                    pass
 
 
                 # 2d color axial and radial dose distribution map
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Axial and radial (2D, color) dose distribution"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Axial and radial (2D, color) dose distribution"]["Plot name"]
 
-                    production_plots.production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patient_sp_output_figures_dir_dict,
-                                                                   patientUID,
-                                                                   pydicom_item,
-                                                                   bx_structs,
-                                                                   svg_image_scale,
-                                                                   svg_image_width,
-                                                                   svg_image_height
-                                                                   )
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patient_sp_output_figures_dir_dict,
+                                                                    patientUID,
+                                                                    pydicom_item,
+                                                                    bx_structs,
+                                                                    svg_image_scale,
+                                                                    svg_image_width,
+                                                                    svg_image_height,
+                                                                    general_plot_name_string
+                                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)
+                else:
+                    pass
 
 
                 
-                
 
+
+                # quantiles scatter plot of axial dose distribution
+
+                if production_plots_input_dictionary["Axial dose distribution quantiles scatter plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose distribution quantiles scatter plot"]["Plot name"]
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating axial dose distribution quantile scatter plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile scatter plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating axial dose distribution quantile scatter plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+
+                        production_plots.production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_sp_output_figures_dir_dict,
+                                                                        patientUID,
+                                                                        pydicom_item,
+                                                                        bx_structs,
+                                                                        svg_image_scale,
+                                                                        svg_image_width,
+                                                                        svg_image_height,
+                                                                        general_plot_name_string
+                                                                        )
+
+
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+
+                
 
 
                 # quantile regression of axial dose distribution
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile regression plots"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                
+                if production_plots_input_dictionary["Axial dose distribution quantiles regression plot"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                    production_plots.production_plot_axial_dose_distribution_quantile_regressions_by_patient(patient_sp_output_figures_dir_dict,
-                                                                patientUID,
-                                                                pydicom_item,
-                                                                bx_structs,
-                                                                regression_type_ans,
-                                                                parallel_pool,
-                                                                NPKR_bandwidth,
-                                                                num_bootstraps_for_regression_plots_input,
-                                                                svg_image_scale,
-                                                                svg_image_width,
-                                                                svg_image_height,
-                                                                num_z_vals_to_evaluate_for_regression_plots
-                                                                )
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose distribution quantiles regression plot"]["Plot name"]
                     
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
-
-
-
-                # voxelized box and violin axial dose distribution  
-
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating voxelized axial dose distribution box/violin plots [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating voxelized axial dose distribution box/violin plots"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile regression plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_axial_dose_distribution_quantile_regressions_by_patient(patient_sp_output_figures_dir_dict,
+                                                                    patientUID,
+                                                                    pydicom_item,
+                                                                    bx_structs,
+                                                                    regression_type_input,
+                                                                    parallel_pool,
+                                                                    NPKR_bandwidth,
+                                                                    num_bootstraps_for_regression_plots_input,
+                                                                    svg_image_scale,
+                                                                    svg_image_width,
+                                                                    svg_image_height,
+                                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                                    general_plot_name_string
+                                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+
+
+
+                # voxelized box plot axial dose distribution  
+
+                if production_plots_input_dictionary["Axial dose distribution voxelized box plot"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating voxelized axial dose distribution box/violin plots [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose distribution voxelized box plot"]["Plot name"]
+                    
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating voxelized axial dose distribution box plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating voxelized axial dose distribution box plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                    production_plots.production_plot_voxelized_axial_dose_distribution_box_violin_by_patient(patient_sp_output_figures_dir_dict,
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating voxelized axial dose distribution box plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patient_sp_output_figures_dir_dict,
                                                                             patientUID,
                                                                             pydicom_item,
                                                                             bx_structs,
                                                                             svg_image_scale,
                                                                             svg_image_width,
                                                                             svg_image_height,
+                                                                            general_plot_name_string
                                                                             )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+
+                
+
+                # voxelized violin plot axial dose distribution  
+
+                if production_plots_input_dictionary["Axial dose distribution voxelized violin plot"]["Plot bool"] == True:
                     
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose distribution voxelized violin plot"]["Plot name"]
+                    
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating voxelized axial dose distribution violin plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating voxelized axial dose distribution violin plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
 
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating voxelized axial dose distribution violin plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
+                        production_plots.production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(patient_sp_output_figures_dir_dict,
+                                                                            patientUID,
+                                                                            pydicom_item,
+                                                                            bx_structs,
+                                                                            svg_image_scale,
+                                                                            svg_image_width,
+                                                                            svg_image_height,
+                                                                            general_plot_name_string
+                                                                            )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
 
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+                
+                
                         
                 # Show N trials of differential DVH plots
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Differential DVH showing N trials plot"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials) [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                    production_plots.production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
-                                            patientUID,
-                                            pydicom_item,
-                                            bx_structs,
-                                            svg_image_scale,
-                                            svg_image_width,
-                                            svg_image_height,
-                                            num_differential_dvh_plots_to_show
-                                            )
+                    general_plot_name_string = production_plots_input_dictionary["Differential DVH showing N trials plot"]["Plot name"]
                     
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
-
-
-                # Show box plots (quantiles) from all trials of DVH data
-
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating box plots of DVH data (all trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating box plots of DVH data (all trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    
-                    processing_patient_production_plot_description = "Creating box plots of DVH data (all trials) [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                    production_plots.production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures_dir_dict,
-                                                patientUID,
-                                                pydicom_item,
-                                                bx_structs,
-                                                svg_image_scale,
-                                                svg_image_width,
-                                                svg_image_height
-                                                ) 
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
                         
+                        processing_patient_production_plot_description = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials) [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-
-                # show N trials of cumulative DVH plots
-
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    
-                    processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                    production_plots.production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
+                        production_plots.production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
                                                 patientUID,
                                                 pydicom_item,
                                                 bx_structs,
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                num_cumulative_dvh_plots_to_show
+                                                num_differential_dvh_plots_to_show,
+                                                general_plot_name_string
                                                 )
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+
+
+                # Show box plots (quantiles) from all trials of DVH data
+
+                if production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Plot name"]
+                    
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating box plots of differential DVH data (all trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating box plots of differential DVH data (all trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating box plots of differential DVH data (all trials) [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_structs,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string
+                                                    ) 
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass 
+                        
+
+
+                # show N trials of cumulative DVH plots
+
+                if production_plots_input_dictionary["Cumulative DVH showing N trials plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Cumulative DVH showing N trials plot"]["Plot name"]
+                    
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_structs,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    num_cumulative_dvh_plots_to_show,
+                                                    general_plot_name_string
+                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
                         
 
 
                 # show quantile regression plots of cumulative DVH data from all trials
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating cumulative DVH qunatile regression plots [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating cumulative DVH qunatile regression plots"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating cumulative DVH qunatile regression plots [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot"]["Plot name"]
 
-                    production_plots.production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_output_figures_dir_dict,
-                                                patientUID,
-                                                pydicom_item,
-                                                bx_structs,
-                                                regression_type_ans,
-                                                num_z_vals_to_evaluate_for_regression_plots,
-                                                parallel_pool,
-                                                NPKR_bandwidth,
-                                                num_bootstraps_for_regression_plots_input,
-                                                svg_image_scale,
-                                                svg_image_width,
-                                                svg_image_height
-                                                )
-                    
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating cumulative DVH quantile regression plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating cumulative DVH quantile regression plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
 
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)   
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating cumulative DVH quantile regression plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_structs,
+                                                    regression_type_input,
+                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                    parallel_pool,
+                                                    NPKR_bandwidth,
+                                                    num_bootstraps_for_regression_plots_input,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string
+                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
                         
 
 
                 # perform containment probabilities plots and regressions
 
-                patientUID_default = "Initializing"
-                processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
-                processing_patient_production_plot_description_completed = "Creating containment probability plots"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
-
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                if production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot bool"] == True:
                     
-                    processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+                    general_plot_name_string = production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot name"]
 
-                    production_plots.production_plot_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
-                                                patientUID,
-                                                pydicom_item,
-                                                bx_structs,
-                                                regression_type_ans,
-                                                parallel_pool,
-                                                NPKR_bandwidth,
-                                                num_bootstraps_for_regression_plots_input,
-                                                num_z_vals_to_evaluate_for_regression_plots,
-                                                svg_image_scale,
-                                                svg_image_width,
-                                                svg_image_height
-                                                )
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patient_production_plot_description_completed = "Creating containment probability plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_structs,
+                                                    regression_type_input,
+                                                    parallel_pool,
+                                                    NPKR_bandwidth,
+                                                    num_bootstraps_for_regression_plots_input,
+                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                    tissue_class_probability_plot_type_list,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string
+                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass
                     
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)  
                     
 
                             

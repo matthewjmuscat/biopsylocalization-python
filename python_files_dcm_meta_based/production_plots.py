@@ -14,7 +14,8 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               all_ref_key,
                                               svg_image_scale,
                                               svg_image_width,
-                                              svg_image_height):
+                                              svg_image_height,
+                                              general_plot_name_string):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     structure_name_and_shift_type_dict_for_pandas_data_frame = {}
@@ -47,11 +48,11 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
         hovermode="x unified"
     )
 
-    svg_dose_fig_name = patientUID + ' - sampled_translations_magnitudes_box_plot.svg'
+    svg_dose_fig_name = patientUID + general_plot_name_string+'.svg'
     svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
     fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-    html_dose_fig_name = patientUID + ' - sampled_translations_magnitudes_box_plot.html'
+    html_dose_fig_name = patientUID + general_plot_name_string+'.html'
     html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
     fig.write_html(html_dose_fig_file_path)
 
@@ -69,7 +70,8 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
                                                                    svg_image_scale,
                                                                    svg_image_width,
                                                                    svg_image_height,
-                                                                   num_z_vals_to_evaluate_for_regression_plots
+                                                                   num_z_vals_to_evaluate_for_regression_plots,
+                                                                   general_plot_name_string
                                                                    ):
     # generate pandas data frame by reading dose output from file
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -216,19 +218,19 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
         elif global_regression_ans == False:
             pass
                                 
-        svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.svg'
+        svg_all_MC_trials_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
         fig_global.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_scatter_all_MC_trials_dose.html'
+        html_all_MC_trials_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
         fig_global.write_html(html_all_MC_trials_dose_fig_file_path)
         if global_regression_ans == True:
-            svg_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.svg'
+            svg_all_MC_trials_dose_fig_name = bx_struct_roi + general_plot_name_string+'_with_global_regression.svg'
             svg_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_dose_fig_name)
             fig_regression_only.write_image(svg_all_MC_trials_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-            html_all_MC_trials_dose_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_dose.html'
+            html_all_MC_trials_dose_fig_name = bx_struct_roi + general_plot_name_string+'_with_global_regression.html'
             html_all_MC_trials_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_dose_fig_name)
             fig_regression_only.write_html(html_all_MC_trials_dose_fig_file_path)
         elif global_regression_ans == False:
@@ -240,7 +242,8 @@ def production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_o
                                                                    bx_structs,
                                                                    svg_image_scale,
                                                                    svg_image_width,
-                                                                   svg_image_height
+                                                                   svg_image_height,
+                                                                   general_plot_name_string
                                                                    ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -254,11 +257,11 @@ def production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_o
         fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose", width  = svg_image_width, height = svg_image_height)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - 3d_scatter_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
 
@@ -270,7 +273,8 @@ def production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patien
                                                                    bx_structs,
                                                                    svg_image_scale,
                                                                    svg_image_width,
-                                                                   svg_image_height
+                                                                   svg_image_height,
+                                                                   general_plot_name_string
                                                                    ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -284,27 +288,27 @@ def production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patien
         fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_axial_radial_color_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
 
-        
-def production_plot_axial_dose_distribution_quantile_regressions_by_patient(patient_sp_output_figures_dir_dict,
+
+
+
+
+
+def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_sp_output_figures_dir_dict,
                                                                 patientUID,
                                                                 pydicom_item,
                                                                 bx_structs,
-                                                                regression_type_ans,
-                                                                parallel_pool,
-                                                                NPKR_bandwidth,
-                                                                num_bootstraps_for_regression_plots_input,
                                                                 svg_image_scale,
                                                                 svg_image_width,
                                                                 svg_image_height,
-                                                                num_z_vals_to_evaluate_for_regression_plots
+                                                                general_plot_name_string
                                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -312,8 +316,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         bx_struct_roi = specific_bx_structure["ROI"]
 
         dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
-        pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["Radial pos (mm)"]
-
+        
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
         #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
 
@@ -322,15 +325,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
         quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
         
-        
-        
-        
-       
-        
-        # do non parametric kernel regression (local linear)
-        z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
-
-        
+          
         # can change the name of this dictionary to 'regression_colors_dict' to make all the regressions a different color
         regression_colors_dict_different = {"Q95":'rgba(255, 0, 0, 1)',
                                     "Q75":'rgba(0, 255, 255, 1)', 
@@ -355,6 +350,8 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                                     "Q5": '2,16,2',
                                     "Mean": 'solid'
         }
+
+
         fig = go.Figure([
             go.Scatter(
                 name='Mean',
@@ -413,13 +410,82 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         )
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - 2d_scatter_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
+
+
+
+        
+
+
+        
+def production_plot_axial_dose_distribution_quantile_regressions_by_patient(patient_sp_output_figures_dir_dict,
+                                                                patientUID,
+                                                                pydicom_item,
+                                                                bx_structs,
+                                                                regression_type_ans,
+                                                                parallel_pool,
+                                                                NPKR_bandwidth,
+                                                                num_bootstraps_for_regression_plots_input,
+                                                                svg_image_scale,
+                                                                svg_image_width,
+                                                                svg_image_height,
+                                                                num_z_vals_to_evaluate_for_regression_plots,
+                                                                general_plot_name_string
+                                                                ):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+
+        dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
+        pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["Radial pos (mm)"]
+
+        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+        #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+        mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
+        std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+        quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
+        
+        
+        
+        
+        # do non parametric kernel regression (local linear)
+        z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
+
+        
+        # can change the name of this dictionary to 'regression_colors_dict' to make all the regressions a different color
+        regression_colors_dict_different = {"Q95":'rgba(255, 0, 0, 1)',
+                                    "Q75":'rgba(0, 255, 255, 1)', 
+                                    "Q50":'rgba(255, 0, 255, 1)',
+                                    'Q25':'rgba(255, 255, 0, 1)',
+                                    "Q5":'rgba(0, 0, 255, 1)',
+                                    "Mean":'rgba(0, 255, 0, 1)'
+        }
+        # can change the name of this dictionary to 'regression_colors_dict' to make the paired regressions the same color
+        regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
+                                    "Q75":'rgba(0, 0, 255, 1)', 
+                                    "Q50":'rgba(255, 0, 255, 1)',
+                                    'Q25':'rgba(0, 0, 255, 1)',
+                                    "Q5":'rgba(255, 0, 0, 1)',
+                                    "Mean":'rgba(0, 255, 0, 1)'
+        }
+        
+        regression_line_styles_dict = {"Q95": '4,14',
+                                    "Q75": '10,10,10', 
+                                    "Q50": 'dot',
+                                    'Q25': '12,2,12',
+                                    "Q5": '2,16,2',
+                                    "Mean": 'solid'
+        }
+        
 
 
 
@@ -510,11 +576,11 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         )
         fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - 2d_regressions_quantiles_mean_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
@@ -574,23 +640,28 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         )
         fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - 2d_simple_regressions_quantiles_mean_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
 
 
-def production_plot_voxelized_axial_dose_distribution_box_violin_by_patient(patient_sp_output_figures_dir_dict,
+
+
+
+
+def production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patient_sp_output_figures_dir_dict,
                                                                             patientUID,
                                                                             pydicom_item,
                                                                             bx_structs,
                                                                             svg_image_scale,
                                                                             svg_image_width,
-                                                                            svg_image_height
+                                                                            svg_image_height,
+                                                                            general_plot_name_string
                                                                             ):
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -618,13 +689,43 @@ def production_plot_voxelized_axial_dose_distribution_box_violin_by_patient(pati
             hovermode="x unified"
         )
 
-        svg_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - voxelized_box_plot_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
+
+        
+
+
+
+def production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(patient_sp_output_figures_dir_dict,
+                                                                            patientUID,
+                                                                            pydicom_item,
+                                                                            bx_structs,
+                                                                            svg_image_scale,
+                                                                            svg_image_width,
+                                                                            svg_image_height,
+                                                                            general_plot_name_string
+                                                                            ):
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        # create box plots of voxelized data
+        stats_dose_val_all_MC_trials_voxelized = specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"]
+        dose_vals_in_voxel = stats_dose_val_all_MC_trials_voxelized["All dose vals in voxel list"]
+        z_range_of_voxel = stats_dose_val_all_MC_trials_voxelized["Voxel z range rounded"]
+
+        max_points_in_voxel = max(len(x) for x in dose_vals_in_voxel)
+
+        dose_output_voxelized_dict_for_pandas_data_frame = {str(z_range_of_voxel[i]): misc_tools.pad_or_truncate(dose_vals_in_voxel[i], max_points_in_voxel) for i in range(len(z_range_of_voxel))}
+        dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
+
+        specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Dose output voxelized"] = dose_output_voxelized_dict_for_pandas_data_frame
+
 
         # violin plot
         fig = px.violin(dose_output_voxelized_pandas_data_frame, box=True, points = False)
@@ -636,11 +737,11 @@ def production_plot_voxelized_axial_dose_distribution_box_violin_by_patient(pati
             hovermode="x unified"
         )
 
-        svg_dose_fig_name = bx_struct_roi + ' - voxelized_violin_plot_dose.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - voxelized_violin_plot_dose.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
 
@@ -654,7 +755,8 @@ def production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_outp
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                num_differential_dvh_plots_to_show
+                                                num_differential_dvh_plots_to_show,
+                                                general_plot_name_string
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -689,11 +791,11 @@ def production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_outp
         )
         fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
         
-        svg_differential_dvh_fig_name = bx_struct_roi + ' - differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials.svg'
+        svg_differential_dvh_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_differential_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_differential_dvh_fig_name)
         fig_global.write_image(svg_differential_dvh_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_differential_dvh_fig_name = bx_struct_roi + ' - differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials.html'
+        html_differential_dvh_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_differential_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(html_differential_dvh_fig_name) 
         fig_global.write_html(html_differential_dvh_fig_file_path)
 
@@ -704,7 +806,8 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
                                                 bx_structs,
                                                 svg_image_scale,
                                                 svg_image_width,
-                                                svg_image_height
+                                                svg_image_height,
+                                                general_plot_name_string
                                                 ):
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -733,11 +836,11 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
             hovermode="x unified"
         )
 
-        svg_dose_fig_name = bx_struct_roi + ' - differential_DVH_binned_box_plot.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - differential_DVH_binned_box_plot.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path)
 
@@ -749,7 +852,8 @@ def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                num_cumulative_dvh_plots_to_show
+                                                num_cumulative_dvh_plots_to_show,
+                                                general_plot_name_string
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -782,11 +886,11 @@ def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output
         )
         fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
         
-        svg_cumulative_dvh_fig_name = bx_struct_roi + ' - cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials.svg'
+        svg_cumulative_dvh_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_cumulative_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_cumulative_dvh_fig_name)
         fig_global.write_image(svg_cumulative_dvh_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_cumulative_dvh_fig_name = bx_struct_roi + ' - cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials.html'
+        html_cumulative_dvh_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_cumulative_dvh_fig_file_path = patient_sp_output_figures_dir.joinpath(html_cumulative_dvh_fig_name) 
         fig_global.write_html(html_cumulative_dvh_fig_file_path)
 
@@ -805,7 +909,8 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
                                                 num_bootstraps_for_regression_plots_input,
                                                 svg_image_scale,
                                                 svg_image_width,
-                                                svg_image_height
+                                                svg_image_height,
+                                                general_plot_name_string
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -932,11 +1037,11 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
         )
         fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
@@ -996,11 +1101,11 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
         )
         fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles_simplified.svg'
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
         fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + ' - cumulative_DVH_regressions_quantiles_simplified.html'
+        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
@@ -1016,9 +1121,11 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                                 NPKR_bandwidth,
                                                 num_bootstraps_for_regression_plots_input,
                                                 num_z_vals_to_evaluate_for_regression_plots,
+                                                tissue_class_probability_plot_type_list,
                                                 svg_image_scale,
                                                 svg_image_width,
-                                                svg_image_height
+                                                svg_image_height,
+                                                general_plot_name_string
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -1092,7 +1199,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
             all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[containment_structure_key_tuple] = containment_regressions_dict
         
         # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
-        plot_type_list = ['with_errors','']
+        plot_type_list = tissue_class_probability_plot_type_list
         done_regression_only = False                        
         for plot_type in plot_type_list:
             # one with error bars on binom est, one without error bars
@@ -1194,25 +1301,25 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
             fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
             
             if plot_type == 'with_errors':
-                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment_with_errors.svg'
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter_and_with_errors.svg'
             else:                       
-                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment.svg'
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter.svg'
             svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
             fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
             if plot_type == 'with_errors':
-                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment_with_errors.html'
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter_and_with_errors.html'
             else:
-                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_scatter_and_regression_all_MC_trials_containment.html'
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter.html'
             html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
             fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
             
             if done_regression_only == False:
-                svg_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.svg'
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
                 svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
                 fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-                html_all_MC_trials_containment_fig_name = bx_struct_roi + ' - 2d_regression_all_MC_trials_containment.html'
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'.html'
                 html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
                 fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
             
