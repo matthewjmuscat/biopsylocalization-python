@@ -122,8 +122,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
-    num_MC_containment_simulations_input = 20
-    num_MC_dose_simulations_input = 100
+    num_MC_containment_simulations_input = 50
+    num_MC_dose_simulations_input = 250
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     
@@ -2360,7 +2360,7 @@ def main():
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
                         
-                        processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)...".format(patientUID)
+                        processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials) [{}]...".format(patientUID)
                         patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
                         production_plots.production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
