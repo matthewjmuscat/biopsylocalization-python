@@ -74,6 +74,7 @@ from statsmodels.regression.quantile_regression import QuantRegResults
 import misc_tools
 import matplotlib.colors as mcolors
 import production_plots
+import pickle
 
 
 def main():
@@ -113,6 +114,9 @@ def main():
     uncertainty_file_extension = ".csv"
     spinner_type = 'line'
     output_folder_name = 'Output data'
+    preprocessed_data_folder_name = 'Preprocessed data'
+    preprocessed_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict'
+    preprocessed_master_structure_info_dict_for_export_name = 'master_structure_info_dict'
     lower_bound_dose_percent = 5
     color_flattening_deg = 3 
     interp_inter_slice_dist = 0.5
@@ -238,7 +242,8 @@ def main():
     modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
-
+    export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
+    skip_preprocessing = True # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
 
     # non-user changeable variables, but need to be initiatied:
     all_ref_key = "All ref"
@@ -255,7 +260,7 @@ def main():
                                           "Default sigma": dil_default_sigma
                                           } 
                                 }
-    structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work!
+    structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work! In fact the ordering of all entries must be maintained. 1. BX, 2. OAR, 3. DIL
     dose_ref = "Dose ref"
     plan_ref = "Plan ref"
     num_simulated_bxs_to_create = len(bx_sim_locations)
@@ -315,674 +320,755 @@ def main():
             uncertainty_dir = data_dir.joinpath(uncertainty_folder_name)
             output_dir = data_dir.joinpath(output_folder_name)
             input_dir = data_dir.joinpath(input_data_folder_name)
+            preprocessed_data_dir = data_dir.joinpath(preprocessed_data_folder_name)
 
-            misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir)
-            #data_dir.mkdir(parents=True, exist_ok=True)
-            #uncertainty_dir.mkdir(parents=True, exist_ok=True)
-            #output_dir.mkdir(parents=True, exist_ok=True)
-            #input_dir.mkdir(parents=True, exist_ok=True)
-            dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
-            important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
-            important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
-            
-            #live_display.stop()
-            num_dicoms = len(dicom_paths_list)
-            if num_dicoms == 0:
-                live_display.stop()
-                while num_dicoms == 0:
-                    print("The input folder is empty!")
-                    print("Reading dicom data from: "+ str(input_dir))
-                    print("Fill input folder with data then continue.")
-                    continue_programme = ques_funcs.ask_ok('> Continue?' )
-                    if continue_programme == False:
-                        sys.exit('> Programme exited.')
-                    else:
-                        dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm"))
-                        num_dicoms = len(dicom_paths_list)
-                live_display.start()
-
-            important_info.add_text_line("Found "+str(num_dicoms)+" dicom files.", live_display)
-            reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
-            reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
-            dicom_elems_modality_list = []
-            for dicom_path in dicom_paths_list:
-                with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item:
-                    dicom_elems_modality_list.append(copy.deepcopy(py_dicom_item[0x0008,0x0060].value))
-            #dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
-            indeterminate_progress_main.update(reading_dicoms_task_indeterminate, visible = False)
-            completed_progress.update(reading_dicoms_task_indeterminate_completed, advance = num_dicoms,visible = True)
-            live_display.refresh()
-
-            # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
-            # of dicom file 
-            #RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
-            #RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
-            #RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
-            
-            # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
-            # creation of the PatientUID, that is generally created from or referenced from here 
-            # throughout the programme, it is formed as "patientname (patientID)"
-            RTst_dcms_dict = {}
-            RTdose_dcms_dict = {}
-            RTplan_dcms_dict = {}
-            for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
-                if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
-                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
-                        RTst_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-                elif dicom_elems_modality_list[dicom_path_index] == modality_list[1]:
-                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
-                        RTdose_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-                elif dicom_elems_modality_list[dicom_path_index] == modality_list[2]:
-                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
-                        RTplan_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-
-            #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
-            #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
-            #live_display.stop()
-            num_RTst_dcms_entries = len(RTst_dcms_dict)
-            num_RTdose_dcms_entries = len(RTdose_dcms_dict)
-            num_RTplan_dcms_entries = len(RTplan_dcms_dict)
-            important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
-            important_info.add_text_line("Found "+str(num_RTdose_dcms_entries)+" unique patients with RT dose files.", live_display)
-            important_info.add_text_line("Found "+str(num_RTplan_dcms_entries)+" unique patients with RT plan files.", live_display)
+            misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir, preprocessed_data_dir)
 
 
-            # check if the found files make sense
-            num_RTst_neq_RTdose = False
-            num_RTst_neq_RTplan = False
-            num_RTdose_neq_RTplan = False
-            if num_RTst_dcms_entries != num_RTdose_dcms_entries:
-                num_RTst_neq_RTdose = True
-            if num_RTst_dcms_entries != num_RTplan_dcms_entries:
-                num_RTst_neq_RTplan = True
-            if num_RTdose_dcms_entries != num_RTplan_dcms_entries:
-                num_RTdose_neq_RTplan = True
 
-            if num_RTdose_neq_RTplan or num_RTst_neq_RTplan or num_RTst_neq_RTdose:
-                live_display.stop()
-                stopwatch.stop()
-                continue_programme = ques_funcs.ask_ok('>Unequal number of structure files('+str(num_RTst_dcms_entries)+ \
-                                                    ') dose files ('+str(num_RTdose_dcms_entries)+\
-                                                    '), to plan files ('+str(num_RTplan_dcms_entries)+\
-                                                    ') will encounter error later in the programme. Continue anyway?')
-                stopwatch.start()
-                if continue_programme == False:
-                    sys.exit('>Programme exited.')
-                else:
-                    important_info.add_text_line("There are NOT the same number of structure, dose and plan files.", live_display)
-            else: 
-                important_info.add_text_line("There are the same number of structure, dose and plan files.", live_display)   
-
-            
-            
-
-            # check if each patient has the correct files
-            num_RTst_neq_RTdose_keys = False
-            num_RTst_neq_RTplan_keys = False
-            num_RTdose_neq_RTplan_keys = False
-            if RTst_dcms_dict.keys() != RTdose_dcms_dict.keys():
-                num_RTst_neq_RTdose_keys = True
-            if RTst_dcms_dict.keys() != RTplan_dcms_dict.keys():
-                num_RTst_neq_RTplan_keys = True            
-            if RTdose_dcms_dict.keys() != RTplan_dcms_dict.keys():
-                num_RTdose_neq_RTplan_keys = True
-
-            if num_RTst_neq_RTdose_keys or num_RTst_neq_RTplan_keys or num_RTdose_neq_RTplan_keys:
-                live_display.stop()
-                stopwatch.stop()
-                exit_programme = ques_funcs.ask_ok('>Same number of structure files, dose files and plan files but there is an incongruency between them (file pairs do not match patients), will encounter error later in the programme. Continue anyway?' )
-                stopwatch.start()
-                if exit_programme == True:
-                    sys.exit('>Programme exited.')
-                else:
-                    important_info.add_text_line("Each patient does NOT contain a structure, dose and plan file.", live_display) 
-            else: 
-                important_info.add_text_line("Each patient contains a structure, dose and plan file.", live_display)    
-            
-            
-            # setting some variables for use in simulating biopsies
-            if len(bx_sim_locations) >= 1:
-                simulate_biopsies_relative_to_struct_type_list = [None]*len(simulate_biopsies_relative_to)
-                for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
-                    keyfound = False
-                    for struct_type_key in structs_referenced_dict.keys():
-                        if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]["Contour names"]:
-                            if keyfound == True:
-                                raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
-                            simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
-                            keyfound = True
-                    if keyfound == False:
-                        raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
-                important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
-                live_display.refresh()
-            else: 
-                important_info.add_text_line("Not creating any simulated biopsies.")          
-                live_display.refresh() 
-            
-            
-            
-            # patient dictionary creation
-            building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
-            building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-            master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, 
-                                                                                               RTdose_dcms_dict,
-                                                                                               RTplan_dcms_dict, 
-                                                                                               oaroi_contour_names,
-                                                                                               dil_contour_names,
-                                                                                               biopsy_contour_names,
-                                                                                               structs_referenced_list,
-                                                                                               dose_ref,
-                                                                                               plan_ref,
-                                                                                               all_ref_key,
-                                                                                               bx_sim_locations,
-                                                                                               bx_sim_ref_identifier,
-                                                                                               simulate_biopsies_relative_to,
-                                                                                               simulate_biopsies_relative_to_struct_type_list,
-                                                                                               bx_sample_pts_lattice_spacing)
-            indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
-            completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
-            important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
-            live_display.refresh()
-
-            
+            if skip_preprocessing == False:
 
 
+
+
+                dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
+                important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
+                important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
                 
-
-
-
-            # Now, we dont want to add the contour points to the structure list above,
-            # because the contour data is already stored in a data tree, which will allow
-            # for faster processing when accessed and iterated. update: I lied..... I ended up
-            # doing exactly this. I will implement a data tree for the purpose of a search
-            # algorithm when I do a nearest neighbour search
-            
-
-            # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
-            # update: fig_dict ended up being deprecated, put data directly into master_dict instead
-            # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
-            
-            # build a data dictionary to store the data we extract and build about the patient
-            # update: data_dict never ended up being used, put data directly into master_dict
-            # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
-
-            # instantiate the variables used for the loading bar
-            num_patients = master_structure_info_dict["Global"]["Num patients"]
-            num_general_structs = master_structure_info_dict["Global"]["Num structures"]
-
-
-            #important_info.add_text_line("important info will appear here1", live_display)
-            #rich_layout["main-right"].update(important_info_Text)
-           
-
-            patientUID_default = "Initializing"
-            processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
-            processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
-
-            processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=num_patients)
-            processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=num_patients, visible=False)
-
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
-                patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
-
-                dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
-                dose_pixel_slice_list = dose_ref_dict["Dose pixel arr"]
-                grid_frame_offset_vec_list = dose_ref_dict["Grid frame offset vector"]
-                num_dose_grid_slices = len(grid_frame_offset_vec_list)
-
-                image_orientation_patient = dose_ref_dict["Image orientation patient"]
-                Xx, Xy, Xz = image_orientation_patient[0:3]
-                Yx, Yy, Yz = image_orientation_patient[3:]
-
-                image_position_patient = dose_ref_dict["Image position patient"]
-                Sx, Sy, Sz = image_position_patient
-
-                dose_grid_scaling = dose_ref_dict["Dose grid scaling"]
-
-                pixel_spacing = dose_ref_dict["Pixel spacing"]
-                row_spacing_del_j = pixel_spacing[0]
-                column_spacing_del_i = pixel_spacing[1]
-
-                dose_first_slice_2darr = dose_pixel_slice_list[0]
-
-                conversion_matrix_pixel_2_physical = np.array([[Xx*column_spacing_del_i, Yx*row_spacing_del_j,0,Sx],
-                [Xy*column_spacing_del_i, Yy*row_spacing_del_j,0,Sy],
-                [Xz*column_spacing_del_i, Yz*row_spacing_del_j,0,Sz],
-                [0,0,0,1]])
-
-                pixel_ds_grid_num_rows = dose_first_slice_2darr.shape[0]
-                pixel_ds_grid_num_cols = dose_first_slice_2darr.shape[1]
-
-                phys_space_pixel_mapping_arr_ji_XY = np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,7), dtype=float)
-                # only need to do pixel to location conversion for one slice
-                for row_index_j in range(pixel_ds_grid_num_rows):
-                    for col_index_i in range(pixel_ds_grid_num_cols):
-                        pixel_vec = np.array([[col_index_i], [row_index_j], [0], [1]])
-                        phys_vec = np.matmul(conversion_matrix_pixel_2_physical,pixel_vec)
-                        current_index = row_index_j*pixel_ds_grid_num_cols + col_index_i
-                        # the entries below are as follows: slice, row index, col index, xval, yval, zval, dose, the first and last entry are populated later
-                        # and so are set to 0 for now
-                        current_pixel_map_entry = [0, row_index_j, col_index_i, phys_vec[0][0], phys_vec[1][0], phys_vec[2][0], 0]
-                        phys_space_pixel_mapping_arr_ji_XY[current_index] = current_pixel_map_entry
-                        
-
-                phys_space_dose_map_2d_arr_slice_wise_list = [np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,4), dtype=float)]*num_dose_grid_slices
-                for grid_frame_offset_cur_slice_index, grid_frame_offset_cur_slice in enumerate(grid_frame_offset_vec_list):
-                    phys_space_dose_map_current_slice_2d_arr = phys_space_pixel_mapping_arr_ji_XY.copy()
-                    phys_space_dose_map_current_slice_2d_arr[:,0] = grid_frame_offset_cur_slice_index
-                    phys_space_dose_map_current_slice_2d_arr[:,5] = phys_space_dose_map_current_slice_2d_arr[:,5] + grid_frame_offset_cur_slice
-                    current_slice_properly_scaled_dose_2d_arr = dose_pixel_slice_list[grid_frame_offset_cur_slice_index]*dose_grid_scaling
-                    current_slice_properly_scaled_dose_2d_arr_flattened = current_slice_properly_scaled_dose_2d_arr.flatten(order='C')
-                    phys_space_dose_map_current_slice_2d_arr[:,6] = current_slice_properly_scaled_dose_2d_arr_flattened
-                    phys_space_dose_map_2d_arr_slice_wise_list[grid_frame_offset_cur_slice_index] = phys_space_dose_map_current_slice_2d_arr
-                    
-                phys_space_dose_map_3d_arr = np.asarray(phys_space_dose_map_2d_arr_slice_wise_list)
-                #phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C')
-                dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
-
-                dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
-                
-                # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
-                #dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
-                
-                # plot labelled dose point cloud (note due to the number of labels, this is very buggy and doesnt display properly as of open3d 0.16.1)
-                """
-                patients_progress.stop_task(processing_patients_dose_task)
-                completed_progress.stop_task(processing_patients_dose_task_completed)
-                stopwatch.stop()
-                plotting_funcs.dose_point_cloud_with_dose_labels(phys_space_dose_map_3d_arr, paint_dose_with_color = True)
-                stopwatch.start()
-                patients_progress.start_task(processing_patients_dose_task)
-                completed_progress.start_task(processing_patients_dose_task_completed)
-                """
-                # plot dose point cloud cubic lattice (color only)
-                if show_3d_dose_renderings == True:
-                    patients_progress.stop_task(processing_patients_dose_task)
-                    completed_progress.stop_task(processing_patients_dose_task_completed)
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(dose_point_cloud)
-                    stopwatch.start()
-                    patients_progress.start_task(processing_patients_dose_task)
-                    completed_progress.start_task(processing_patients_dose_task_completed)
-
-                # user defined quantity moved to beginning of programme
-                thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
-                
-                # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
-                #dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
-                
-                # plot dose point cloud thresholded cubic lattice (color only)
-                if show_3d_dose_renderings == True:
-                    patients_progress.stop_task(processing_patients_dose_task)
-                    completed_progress.stop_task(processing_patients_dose_task_completed)
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
-                    stopwatch.start()
-                    patients_progress.start_task(processing_patients_dose_task)
-                    completed_progress.start_task(processing_patients_dose_task_completed)
-
-                patients_progress.update(processing_patients_dose_task, advance=1)
-                completed_progress.update(processing_patients_dose_task_completed, advance=1)
-            
-            patients_progress.update(processing_patients_dose_task, visible=False)
-            completed_progress.update(processing_patients_dose_task_completed, visible=True)
-
-
-
-
-
-            # create info for simulated biopsies
-            if num_simulated_bxs_to_create >= 1:
-                centroid_line_vec_list = [0,0,1]
-                centroid_first_pos_list = [0,0,0]
-                num_centroids_for_sim_bxs = 10
-                centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                simulated_bx_rad = 2
-                plot_simulated_cores_immediately = False
-
-
-            patientUID_default = "Initializing"
-            pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
-            pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
-            pulling_patients_task = patients_progress.add_task(pulling_patients_task_main_description, total=num_patients)
-            pulling_patients_task_completed = completed_progress.add_task(pulling_patients_task_completed_main_description, total=num_patients, visible = False) 
-                    
-            
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                pulling_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
-                patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
-
-                structureID_default = "Initializing"
-                num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
-                for structs in structs_referenced_list:
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
-                        
-                        # create points for simulated biopsies to create
-                        if bx_sim_ref_identifier in str(structure_reference_number):
-                            threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_list,centroid_first_pos_list,num_centroids_for_sim_bxs,centroid_sep_dist,simulated_bx_rad,plot_simulated_cores_immediately)
-                        # otherwise just read the data from dicoms
+                #live_display.stop()
+                num_dicoms = len(dicom_paths_list)
+                if num_dicoms == 0:
+                    live_display.stop()
+                    while num_dicoms == 0:
+                        print("The input folder is empty!")
+                        print("Reading dicom data from: "+ str(input_dir))
+                        print("Fill input folder with data then continue.")
+                        continue_programme = ques_funcs.ask_ok('> Continue?' )
+                        if continue_programme == False:
+                            sys.exit('> Programme exited.')
                         else:
-                            threeDdata_zslice_list = []
-                            with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
-                                for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
-                                    if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
-                                        structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
-                                        break
-                                    else:
-                                        pass
-                            for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                                contour_slice_points = slice_object.ContourData                       
-                                threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                                threeDdata_zslice_list.append(threeDdata_zslice)
+                            dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm"))
+                            num_dicoms = len(dicom_paths_list)
+                    live_display.start()
 
+                important_info.add_text_line("Found "+str(num_dicoms)+" dicom files.", live_display)
+                reading_dicoms_task_indeterminate = indeterminate_progress_main.add_task('[red]Reading dicom data from file...', total=None)
+                reading_dicoms_task_indeterminate_completed = completed_progress.add_task('[green]Reading dicom data from file', total=num_dicoms, visible = False)
+                dicom_elems_modality_list = []
+                for dicom_path in dicom_paths_list:
+                    with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item:
+                        dicom_elems_modality_list.append(copy.deepcopy(py_dicom_item[0x0008,0x0060].value))
+                #dicom_elems_list = list(map(pydicom.dcmread,dicom_paths_list)) # read all the found dicom file paths using pydicom to create a list of FileDataset instances 
+                indeterminate_progress_main.update(reading_dicoms_task_indeterminate, visible = False)
+                completed_progress.update(reading_dicoms_task_indeterminate_completed, advance = num_dicoms,visible = True)
+                live_display.refresh()
 
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        if isinstance(total_structure_points, int):
-                            pass
-                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
-                            total_structure_points = int(total_structure_points)
-                        elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
-                            raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                        else: 
-                            raise Exception("Something went wrong when calculating total number of points in structure!")
-                        
-                        # for non-biopsy only
-                        if structs != bx_ref:
-                            structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                            # find zslice-wise centroids
-                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):                           
-                                structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                                structure_centroids_array[index] = structure_zslice_centroid
-                            structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure global centroid"] = structure_global_centroid
-
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
-
-                        structures_progress.update(pulling_structures_task, advance=1)
-                structures_progress.remove_task(pulling_structures_task)
-                patients_progress.update(pulling_patients_task, advance=1)
-                completed_progress.update(pulling_patients_task_completed, advance=1)
-            patients_progress.update(pulling_patients_task, visible=False)
-            completed_progress.update(pulling_patients_task_completed,  visible=True)            
-
-
-            patientUID_default = "Initializing"
-            processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
-            processing_patients_task_completed_main_description = "[green]Processing patient structure data"
-            processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=num_patients)
-            processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=num_patients, visible = False)
-
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
-                patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                # The 0x0008,0x0060 dcm tag specifies the 'Modality', here it is used to identify the type
+                # of dicom file 
+                #RTst_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[0]]
+                #RTdose_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[1]]
+                #RTplan_dcms = [x for x in dicom_elems_list if x[0x0008,0x0060].value == modality_list[2]]
                 
-                structureID_default = "Initializing"
-                num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
-                for structs in structs_referenced_list:
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+                # the below is the first use of the UID_generator(pydicom_obj) function, which is used for the
+                # creation of the PatientUID, that is generally created from or referenced from here 
+                # throughout the programme, it is formed as "patientname (patientID)"
+                RTst_dcms_dict = {}
+                RTdose_dcms_dict = {}
+                RTplan_dcms_dict = {}
+                for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
+                    if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
+                        with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                            RTst_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[1]:
+                        with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                            RTdose_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[2]:
+                        with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                            RTplan_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
 
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(specific_structure["ROI"])
-                        #print(specific_structure["Ref #"])
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+                #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
+                #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
+                #live_display.stop()
+                num_RTst_dcms_entries = len(RTst_dcms_dict)
+                num_RTdose_dcms_entries = len(RTdose_dcms_dict)
+                num_RTplan_dcms_entries = len(RTplan_dcms_dict)
+                important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
+                important_info.add_text_line("Found "+str(num_RTdose_dcms_entries)+" unique patients with RT dose files.", live_display)
+                important_info.add_text_line("Found "+str(num_RTplan_dcms_entries)+" unique patients with RT plan files.", live_display)
 
-                        # can uncomment surrounding lines to time this particular process
-                        #st = time.time()
 
-                        # create vectors and info for simulated biopsies
-                        
+                # check if the found files make sense
+                num_RTst_neq_RTdose = False
+                num_RTst_neq_RTplan = False
+                num_RTdose_neq_RTplan = False
+                if num_RTst_dcms_entries != num_RTdose_dcms_entries:
+                    num_RTst_neq_RTdose = True
+                if num_RTst_dcms_entries != num_RTplan_dcms_entries:
+                    num_RTst_neq_RTplan = True
+                if num_RTdose_dcms_entries != num_RTplan_dcms_entries:
+                    num_RTdose_neq_RTplan = True
 
-                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-                        
-                        # transform simulated biopsies to location
-                        if structs == bx_ref and bx_sim_ref_identifier in str(structure_reference_number):
-                            # first extract the appropriate relative structure to transform biopsies to
-                            relative_structure_ref_num_from_bx_info = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Relative structure ref #"]
-                            for relative_struct_type in simulate_biopsies_relative_to_struct_type_list:
-                                for relative_specific_structure_index, relative_specific_structure in enumerate(master_structure_reference_dict[patientUID][relative_struct_type]):
-                                    if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
-                                        simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
-                                        simulate_biopsies_relative_to_specific_structure_struct_type = relative_struct_type
-                                        break
-                                    else:
-                                        pass
-                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
-                            threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
-                            simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
-                            translation_vector_to_relative_structure_centroid = relative_structure_for_sim_bx_global_centroid - simulated_bx_global_centroid_before_translation
-                            threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
-                            for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
-                                temp_bx_zslice_arr = bx_zslice_arr.copy()
-                                translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
-                                threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
-                            threeDdata_zslice_list = threeDdata_zslice_list_temp
-                            # at this point the created biopsy centroid has been shifted to the global centroid of the relative structure
-                            # now we want to move each created biopsy to the appropriate sub position within the relative structure
+                if num_RTdose_neq_RTplan or num_RTst_neq_RTplan or num_RTst_neq_RTdose:
+                    live_display.stop()
+                    stopwatch.stop()
+                    continue_programme = ques_funcs.ask_ok('>Unequal number of structure files('+str(num_RTst_dcms_entries)+ \
+                                                        ') dose files ('+str(num_RTdose_dcms_entries)+\
+                                                        '), to plan files ('+str(num_RTplan_dcms_entries)+\
+                                                        ') will encounter error later in the programme. Continue anyway?')
+                    stopwatch.start()
+                    if continue_programme == False:
+                        sys.exit('>Programme exited.')
+                    else:
+                        important_info.add_text_line("There are NOT the same number of structure, dose and plan files.", live_display)
+                else: 
+                    important_info.add_text_line("There are the same number of structure, dose and plan files.", live_display)   
+
+                
+                
+
+                # check if each patient has the correct files
+                num_RTst_neq_RTdose_keys = False
+                num_RTst_neq_RTplan_keys = False
+                num_RTdose_neq_RTplan_keys = False
+                if RTst_dcms_dict.keys() != RTdose_dcms_dict.keys():
+                    num_RTst_neq_RTdose_keys = True
+                if RTst_dcms_dict.keys() != RTplan_dcms_dict.keys():
+                    num_RTst_neq_RTplan_keys = True            
+                if RTdose_dcms_dict.keys() != RTplan_dcms_dict.keys():
+                    num_RTdose_neq_RTplan_keys = True
+
+                if num_RTst_neq_RTdose_keys or num_RTst_neq_RTplan_keys or num_RTdose_neq_RTplan_keys:
+                    live_display.stop()
+                    stopwatch.stop()
+                    exit_programme = ques_funcs.ask_ok('>Same number of structure files, dose files and plan files but there is an incongruency between them (file pairs do not match patients), will encounter error later in the programme. Continue anyway?' )
+                    stopwatch.start()
+                    if exit_programme == True:
+                        sys.exit('>Programme exited.')
+                    else:
+                        important_info.add_text_line("Each patient does NOT contain a structure, dose and plan file.", live_display) 
+                else: 
+                    important_info.add_text_line("Each patient contains a structure, dose and plan file.", live_display)    
+                
+                
+                # setting some variables for use in simulating biopsies
+                if len(bx_sim_locations) >= 1:
+                    simulate_biopsies_relative_to_struct_type_list = [None]*len(simulate_biopsies_relative_to)
+                    for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
+                        keyfound = False
+                        for struct_type_key in structs_referenced_dict.keys():
+                            if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]["Contour names"]:
+                                if keyfound == True:
+                                    raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
+                                simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
+                                keyfound = True
+                        if keyfound == False:
+                            raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
+                    important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
+                    live_display.refresh()
+                else: 
+                    important_info.add_text_line("Not creating any simulated biopsies.")          
+                    live_display.refresh() 
+                
+                
+                
+                # patient dictionary creation
+                building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
+                building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
+                master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, 
+                                                                                                RTdose_dcms_dict,
+                                                                                                RTplan_dcms_dict, 
+                                                                                                oaroi_contour_names,
+                                                                                                dil_contour_names,
+                                                                                                biopsy_contour_names,
+                                                                                                structs_referenced_list,
+                                                                                                dose_ref,
+                                                                                                plan_ref,
+                                                                                                all_ref_key,
+                                                                                                bx_sim_locations,
+                                                                                                bx_sim_ref_identifier,
+                                                                                                simulate_biopsies_relative_to,
+                                                                                                simulate_biopsies_relative_to_struct_type_list,
+                                                                                                )
+                indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
+                completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
+                important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
+                live_display.refresh()
+
+                
+
+
+                    
+
+
+
+                # Now, we dont want to add the contour points to the structure list above,
+                # because the contour data is already stored in a data tree, which will allow
+                # for faster processing when accessed and iterated. update: I lied..... I ended up
+                # doing exactly this. I will implement a data tree for the purpose of a search
+                # algorithm when I do a nearest neighbour search
+                
+
+                # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
+                # update: fig_dict ended up being deprecated, put data directly into master_dict instead
+                # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
+                
+                # build a data dictionary to store the data we extract and build about the patient
+                # update: data_dict never ended up being used, put data directly into master_dict
+                # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
+
+                # instantiate the variables used for the loading bar
+                #num_patients = master_structure_info_dict["Global"]["Num patients"]
+                #num_general_structs = master_structure_info_dict["Global"]["Num structures"]
+
+
+                #important_info.add_text_line("important info will appear here1", live_display)
+                #rich_layout["main-right"].update(important_info_Text)
+            
+
+                patientUID_default = "Initializing"
+                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
+                processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
+
+                processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+                processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
+
+                    dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
+                    dose_pixel_slice_list = dose_ref_dict["Dose pixel arr"]
+                    grid_frame_offset_vec_list = dose_ref_dict["Grid frame offset vector"]
+                    num_dose_grid_slices = len(grid_frame_offset_vec_list)
+
+                    image_orientation_patient = dose_ref_dict["Image orientation patient"]
+                    Xx, Xy, Xz = image_orientation_patient[0:3]
+                    Yx, Yy, Yz = image_orientation_patient[3:]
+
+                    image_position_patient = dose_ref_dict["Image position patient"]
+                    Sx, Sy, Sz = image_position_patient
+
+                    dose_grid_scaling = dose_ref_dict["Dose grid scaling"]
+
+                    pixel_spacing = dose_ref_dict["Pixel spacing"]
+                    row_spacing_del_j = pixel_spacing[0]
+                    column_spacing_del_i = pixel_spacing[1]
+
+                    dose_first_slice_2darr = dose_pixel_slice_list[0]
+
+                    conversion_matrix_pixel_2_physical = np.array([[Xx*column_spacing_del_i, Yx*row_spacing_del_j,0,Sx],
+                    [Xy*column_spacing_del_i, Yy*row_spacing_del_j,0,Sy],
+                    [Xz*column_spacing_del_i, Yz*row_spacing_del_j,0,Sz],
+                    [0,0,0,1]])
+
+                    pixel_ds_grid_num_rows = dose_first_slice_2darr.shape[0]
+                    pixel_ds_grid_num_cols = dose_first_slice_2darr.shape[1]
+
+                    phys_space_pixel_mapping_arr_ji_XY = np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,7), dtype=float)
+                    # only need to do pixel to location conversion for one slice
+                    for row_index_j in range(pixel_ds_grid_num_rows):
+                        for col_index_i in range(pixel_ds_grid_num_cols):
+                            pixel_vec = np.array([[col_index_i], [row_index_j], [0], [1]])
+                            phys_vec = np.matmul(conversion_matrix_pixel_2_physical,pixel_vec)
+                            current_index = row_index_j*pixel_ds_grid_num_cols + col_index_i
+                            # the entries below are as follows: slice, row index, col index, xval, yval, zval, dose, the first and last entry are populated later
+                            # and so are set to 0 for now
+                            current_pixel_map_entry = [0, row_index_j, col_index_i, phys_vec[0][0], phys_vec[1][0], phys_vec[2][0], 0]
+                            phys_space_pixel_mapping_arr_ji_XY[current_index] = current_pixel_map_entry
                             
-                            # CODE REMOVED: because after discussion with Nathan, simulating this 12 core pattern to compare to targeted biopsy is not as interesting to him 
-                            #If this code needs to be reinstated, it needs to be reworked, variables have changed.
-                            """
-                            relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
-                            threeD_data_zslice_list_relative_structure = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Raw contour pts zslice list"].copy()
-                            closest_zslice_index_of_relative_structure_to_its_global_centroid = misc_tools.find_closest_z_slice(threeD_data_zslice_list_relative_structure, relative_structure_for_sim_bx_global_centroid)
-                            closest_zslice_of_relative_structure_arr = threeD_data_zslice_list_relative_structure[closest_zslice_index_of_relative_structure_to_its_global_centroid]
-                            centroid_of_zslice_of_relative_structure = centroid_finder.centeroidfinder_numpy_3D(closest_zslice_of_relative_structure_arr)
-                            """
+
+                    phys_space_dose_map_2d_arr_slice_wise_list = [np.empty((pixel_ds_grid_num_rows*pixel_ds_grid_num_cols,4), dtype=float)]*num_dose_grid_slices
+                    for grid_frame_offset_cur_slice_index, grid_frame_offset_cur_slice in enumerate(grid_frame_offset_vec_list):
+                        phys_space_dose_map_current_slice_2d_arr = phys_space_pixel_mapping_arr_ji_XY.copy()
+                        phys_space_dose_map_current_slice_2d_arr[:,0] = grid_frame_offset_cur_slice_index
+                        phys_space_dose_map_current_slice_2d_arr[:,5] = phys_space_dose_map_current_slice_2d_arr[:,5] + grid_frame_offset_cur_slice
+                        current_slice_properly_scaled_dose_2d_arr = dose_pixel_slice_list[grid_frame_offset_cur_slice_index]*dose_grid_scaling
+                        current_slice_properly_scaled_dose_2d_arr_flattened = current_slice_properly_scaled_dose_2d_arr.flatten(order='C')
+                        phys_space_dose_map_current_slice_2d_arr[:,6] = current_slice_properly_scaled_dose_2d_arr_flattened
+                        phys_space_dose_map_2d_arr_slice_wise_list[grid_frame_offset_cur_slice_index] = phys_space_dose_map_current_slice_2d_arr
                         
+                    phys_space_dose_map_3d_arr = np.asarray(phys_space_dose_map_2d_arr_slice_wise_list)
+                    #phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C')
+                    dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
+
+                    dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
+                    
+                    # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
+                    #dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
+                    
+                    # plot labelled dose point cloud (note due to the number of labels, this is very buggy and doesnt display properly as of open3d 0.16.1)
+                    """
+                    patients_progress.stop_task(processing_patients_dose_task)
+                    completed_progress.stop_task(processing_patients_dose_task_completed)
+                    stopwatch.stop()
+                    plotting_funcs.dose_point_cloud_with_dose_labels(phys_space_dose_map_3d_arr, paint_dose_with_color = True)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_dose_task)
+                    completed_progress.start_task(processing_patients_dose_task_completed)
+                    """
+                    # plot dose point cloud cubic lattice (color only)
+                    if show_3d_dose_renderings == True:
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(dose_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+
+                    # user defined quantity moved to beginning of programme
+                    thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                    
+                    # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
+                    #dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+                    
+                    # plot dose point cloud thresholded cubic lattice (color only)
+                    if show_3d_dose_renderings == True:
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+
+                    patients_progress.update(processing_patients_dose_task, advance=1)
+                    completed_progress.update(processing_patients_dose_task_completed, advance=1)
+                
+                patients_progress.update(processing_patients_dose_task, visible=False)
+                completed_progress.update(processing_patients_dose_task_completed, visible=True)
+
+
+
+
+
+                # create info for simulated biopsies
+                if num_simulated_bxs_to_create >= 1:
+                    centroid_line_vec_list = [0,0,1]
+                    centroid_first_pos_list = [0,0,0]
+                    num_centroids_for_sim_bxs = 10
+                    centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
+                    simulated_bx_rad = 2
+                    plot_simulated_cores_immediately = False
+
+
+                patientUID_default = "Initializing"
+                pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
+                pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
+                pulling_patients_task = patients_progress.add_task(pulling_patients_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+                pulling_patients_task_completed = completed_progress.add_task(pulling_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible = False) 
                         
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])
-                        # for biopsy only
-                        if structs == bx_ref:
-                            structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                        lower_bound_index = 0  
-                        # build raw threeDdata
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
+                
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    pulling_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                    patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
+
+                    structureID_default = "Initializing"
+                    num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                    pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
+                    for structs in structs_referenced_list:
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
                             
+                            # create points for simulated biopsies to create
+                            if bx_sim_ref_identifier in str(structure_reference_number):
+                                threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_list,centroid_first_pos_list,num_centroids_for_sim_bxs,centroid_sep_dist,simulated_bx_rad,plot_simulated_cores_immediately)
+                            # otherwise just read the data from dicoms
+                            else:
+                                threeDdata_zslice_list = []
+                                with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
+                                    for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
+                                        if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
+                                            structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
+                                            break
+                                        else:
+                                            pass
+                                for index, slice_object in enumerate(structure_contour_points_raw_sequence):
+                                    contour_slice_points = slice_object.ContourData                       
+                                    threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
+                                    threeDdata_zslice_list.append(threeDdata_zslice)
+
+
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            if isinstance(total_structure_points, int):
+                                pass
+                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
+                                total_structure_points = int(total_structure_points)
+                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
+                                raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
+                            else: 
+                                raise Exception("Something went wrong when calculating total number of points in structure!")
+                            
+                            # for non-biopsy only
+                            if structs != bx_ref:
+                                structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                                # find zslice-wise centroids
+                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):                           
+                                    structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                                    structure_centroids_array[index] = structure_zslice_centroid
+                                structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure global centroid"] = structure_global_centroid
+
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
+
+                            structures_progress.update(pulling_structures_task, advance=1)
+                    structures_progress.remove_task(pulling_structures_task)
+                    patients_progress.update(pulling_patients_task, advance=1)
+                    completed_progress.update(pulling_patients_task_completed, advance=1)
+                patients_progress.update(pulling_patients_task, visible=False)
+                completed_progress.update(pulling_patients_task_completed,  visible=True)            
+
+
+                patientUID_default = "Initializing"
+                processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID_default)
+                processing_patients_task_completed_main_description = "[green]Processing patient structure data"
+                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible = False)
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                    
+                    structureID_default = "Initializing"
+                    num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
+                    for structs in structs_referenced_list:
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(specific_structure["ROI"])
+                            #print(specific_structure["Ref #"])
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                            # can uncomment surrounding lines to time this particular process
+                            #st = time.time()
+
+                            # create vectors and info for simulated biopsies
+                            
+
+                            threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+                            
+                            # transform simulated biopsies to location
+                            if structs == bx_ref and bx_sim_ref_identifier in str(structure_reference_number):
+                                # first extract the appropriate relative structure to transform biopsies to
+                                relative_structure_ref_num_from_bx_info = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Relative structure ref #"]
+                                for relative_struct_type in simulate_biopsies_relative_to_struct_type_list:
+                                    for relative_specific_structure_index, relative_specific_structure in enumerate(master_structure_reference_dict[patientUID][relative_struct_type]):
+                                        if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
+                                            simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
+                                            simulate_biopsies_relative_to_specific_structure_struct_type = relative_struct_type
+                                            break
+                                        else:
+                                            pass
+                                relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                                threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
+                                simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
+                                translation_vector_to_relative_structure_centroid = relative_structure_for_sim_bx_global_centroid - simulated_bx_global_centroid_before_translation
+                                threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
+                                for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
+                                    temp_bx_zslice_arr = bx_zslice_arr.copy()
+                                    translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
+                                    threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
+                                threeDdata_zslice_list = threeDdata_zslice_list_temp
+                                # at this point the created biopsy centroid has been shifted to the global centroid of the relative structure
+                                # now we want to move each created biopsy to the appropriate sub position within the relative structure
+                                
+                                # CODE REMOVED: because after discussion with Nathan, simulating this 12 core pattern to compare to targeted biopsy is not as interesting to him 
+                                #If this code needs to be reinstated, it needs to be reworked, variables have changed.
+                                """
+                                relative_structure_for_sim_bx_global_centroid = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
+                                threeD_data_zslice_list_relative_structure = master_structure_reference_dict[patientUID][simulate_biopsies_relative_to_specific_structure_struct_type][simulated_bx_relative_to_specific_structure_index]["Raw contour pts zslice list"].copy()
+                                closest_zslice_index_of_relative_structure_to_its_global_centroid = misc_tools.find_closest_z_slice(threeD_data_zslice_list_relative_structure, relative_structure_for_sim_bx_global_centroid)
+                                closest_zslice_of_relative_structure_arr = threeD_data_zslice_list_relative_structure[closest_zslice_index_of_relative_structure_to_its_global_centroid]
+                                centroid_of_zslice_of_relative_structure = centroid_finder.centeroidfinder_numpy_3D(closest_zslice_of_relative_structure_arr)
+                                """
+                            
+                            
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            threeDdata_array = np.empty([total_structure_points,3])
+                            # for biopsy only
                             if structs == bx_ref:
-                                structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                                structure_centroids_array[index] = structure_zslice_centroid
+                                structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
+                            lower_bound_index = 0  
+                            # build raw threeDdata
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points 
+                                
+                                if structs == bx_ref:
+                                    structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
+                                    structure_centroids_array[index] = structure_zslice_centroid
 
 
-                           
-                        # conduct INTER-slice interpolation
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+                            
+                            # conduct INTER-slice interpolation
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+                            
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
 
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        
-                        # SLOWER TO ANALYZE PARALLEL
-                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                            
+                            # SLOWER TO ANALYZE PARALLEL
+                            #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                            
 
-                        # FASTER TO ANALYZE SERIALLY
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
+                            # FASTER TO ANALYZE SERIALLY
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                            
 
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
 
-                        # fill in the end caps
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+                            # fill in the end caps
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                            interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
-                        
+                            
 
-                        # generate point cloud of raw threeDdata
-                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
-                        
-                        
+                            # generate point cloud of raw threeDdata
+                            threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                            
+                            
 
-                        # generate delaunay triangulations 
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+                            # generate delaunay triangulations 
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
 
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        #delaunay_global_convex_structure_obj.generate_lineset()
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            #delaunay_global_convex_structure_obj.generate_lineset()
 
-                        
-                        # Below is a sample simulation to test the containment algorithm:
-                        """
-                        print(specific_structure["ROI"])
-                        # zslice wise convex structure box simulation
-                        num_simulations = 500
-                        
-                        test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, threeDdata_point_cloud)
-                        test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
-                        # plot zslice wise delaunay in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
-                        #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
-                        
-                        line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
-                        inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
+                            
+                            # Below is a sample simulation to test the containment algorithm:
+                            """
+                            print(specific_structure["ROI"])
+                            # zslice wise convex structure box simulation
+                            num_simulations = 500
+                            
+                            test_points_results_zslice_delaunay, test_pts_point_cloud_zslice_delaunay = MC_simulator_convex.box_simulator_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, deulaunay_objs_zslice_wise_list, threeDdata_point_cloud)
+                            test_points_results_fully_concave, test_pts_point_cloud_concave_zslice_updated = point_containment_tools.plane_point_in_polygon_concave(test_points_results_zslice_delaunay,interslice_interpolation_information, test_pts_point_cloud_zslice_delaunay)
+                            # plot zslice wise delaunay in open3d ?
+                            #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_zslice_delaunay, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                            #plotting_funcs.plot_tri_immediately_efficient_multilineset(threeDdata_array, test_pts_point_cloud_concave_zslice_updated, deulaunay_objs_zslice_wise_list, label = specific_structure["ROI"])
+                            
+                            line_sets_of_threeDdata_equal_pt_zslices_list = anatomy_reconstructor_tools.create_lineset_all_zslices(interslice_interpolation_information.interpolated_pts_list)
+                            inter_zslice_interpolated_point_cloud = point_containment_tools.create_point_cloud(interslice_interpolation_information.interpolated_pts_np_arr)
 
-                        
-                        #plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
-                        # global convex structure box simulation
-                        num_simulations = 50
-                        test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, threeDdata_point_cloud)
-                        # plot delaunay global convex structure in open3d ?
-                        #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
+                            
+                            #plotting_funcs.plot_geometries(inter_zslice_interpolated_point_cloud, test_pts_point_cloud_concave_zslice_updated, *line_sets_of_threeDdata_equal_pt_zslices_list, label='Unknown')
+                            # global convex structure box simulation
+                            num_simulations = 50
+                            test_points_results_global_delaunay, test_pts_point_cloud_global_delaunay = MC_simulator_convex.box_simulator_delaunay_global_convex_structure_parallel(parallel_pool, num_simulations, delaunay_global_convex_structure_obj, threeDdata_point_cloud)
+                            # plot delaunay global convex structure in open3d ?
+                            #plotting_funcs.plot_tri_immediately_efficient(threeDdata_array, delaunay_global_convex_structure_obj.delaunay_line_set, test_pts_point_cloud_global_delaunay, label = specific_structure["ROI"])
 
-                        """
+                            """
 
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                        pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
-                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
-                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
-                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
-                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
+                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
+                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
+                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
+                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
 
-                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+                            # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
 
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
 
-                        
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
+                            
+                            
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
 
 
-                        # for biopsies only
-                        if structs == bx_ref:
-                            centroid_line = pca.linear_fitter(structure_centroids_array.T)
-                            centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
-                            slice_reconstruction_max_distance = 0.1
-                            num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length/slice_reconstruction_max_distance))
-                            centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line,3), dtype=float)
-                            centroid_line_sample[0,:] = centroid_line[0,:]
-                            travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
-                            for i in range(1,num_centroid_samples_of_centroid_line):
-                                init_point = centroid_line_sample[-1]
-                                new_point = init_point + travel_vec
-                                centroid_line_sample[i] = new_point
-    
-                            # conduct a nearest neighbour search of biopsy centroids
-
-                            #treescipy = scipy.spatial.KDTree(threeDdata_array)
-                            #nn = treescipy.query(centroid_line_sample[0])
-                            #nearest_neighbour = treescipy.data[nn[1]]
-
-                            list_travel_vec = np.squeeze(travel_vec).tolist()
-                            list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
-                            biopsy_reconstructed_cyl_z_length_from_contour_data = centroid_line_length
-                            drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec), biopsy_radius, False)
-                            drawn_biopsy_array = drawn_biopsy_array_transpose.T
-                            reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
-                            reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
-                            reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
-                            #reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
-                            #plot reconstructions?
-                            #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud, threeDdata_point_cloud)
-                            #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
+                            # plot two point clouds side by side ? 
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                            
 
 
-                        # plot only the biopsies
-                        if structs == bx_ref:
-                            specific_structure["Plot attributes"].plot_bool = True
+                            # for biopsies only
+                            if structs == bx_ref:
+                                centroid_line = pca.linear_fitter(structure_centroids_array.T)
+                                centroid_line_length = np.linalg.norm(centroid_line[0,:] - centroid_line[1,:])
+                                slice_reconstruction_max_distance = 0.1
+                                num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length/slice_reconstruction_max_distance))
+                                centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line,3), dtype=float)
+                                centroid_line_sample[0,:] = centroid_line[0,:]
+                                travel_vec = np.array([centroid_line[1]-centroid_line[0]])*1/num_centroid_samples_of_centroid_line
+                                for i in range(1,num_centroid_samples_of_centroid_line):
+                                    init_point = centroid_line_sample[-1]
+                                    new_point = init_point + travel_vec
+                                    centroid_line_sample[i] = new_point
+        
+                                # conduct a nearest neighbour search of biopsy centroids
+
+                                #treescipy = scipy.spatial.KDTree(threeDdata_array)
+                                #nn = treescipy.query(centroid_line_sample[0])
+                                #nearest_neighbour = treescipy.data[nn[1]]
+
+                                list_travel_vec = np.squeeze(travel_vec).tolist()
+                                list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
+                                biopsy_reconstructed_cyl_z_length_from_contour_data = centroid_line_length
+                                drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(list_travel_vec,list_centroid_line_first_point,num_centroid_samples_of_centroid_line,np.linalg.norm(travel_vec), biopsy_radius, False)
+                                drawn_biopsy_array = drawn_biopsy_array_transpose.T
+                                reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
+                                reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                                reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                                #reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
+                                #plot reconstructions?
+                                #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud, threeDdata_point_cloud)
+                                #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
+
+
+                            # plot only the biopsies
+                            if structs == bx_ref:
+                                specific_structure["Plot attributes"].plot_bool = True
 
 
 
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        if structs == bx_ref:
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
-                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                            if structs == bx_ref:
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
+                                #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
 
-                        structures_progress.update(processing_structures_task, advance=1)
-                structures_progress.remove_task(processing_structures_task)
-                patients_progress.update(processing_patients_task, advance=1)
-                completed_progress.update(processing_patients_task_completed, advance=1)
-            patients_progress.update(processing_patients_task, visible=False)
-            completed_progress.update(processing_patients_task_completed,  visible=True)                
+                            structures_progress.update(processing_structures_task, advance=1)
+                    structures_progress.remove_task(processing_structures_task)
+                    patients_progress.update(processing_patients_task, advance=1)
+                    completed_progress.update(processing_patients_task_completed, advance=1)
+                patients_progress.update(processing_patients_task, visible=False)
+                completed_progress.update(processing_patients_task_completed,  visible=True)                
 
+                
             
-            #live_display.stop()
-            ## Up until this point, the master structure reference dictionary contains only pickleable objects!
+                ## Up until this point, the master structure reference dictionary contains only pickleable objects!
 
-            #### Now can export master structure dict to file!
-            #with open('config.dictionary', 'wb') as config_dictionary_file:
-            #    pickle.dump(master_structure_reference_dict, config_dictionary_file)
+                # Now can export master structure dict to file!
+                if export_pickled_preprocessed_data == True:
+                    date_time_now = datetime.now()
+                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+                    global_num_structures = master_structure_info_dict["Global"]["Num structures"]
+                    specific_preprocessed_data_dir_name = str(master_structure_info_dict["Global"]["Num patients"])+' patients - '+str(global_num_structures)+' structures - '+date_time_now_file_name_format
+                    specific_preprocessed_data_dir = preprocessed_data_dir.joinpath(specific_preprocessed_data_dir_name)
+                    specific_preprocessed_data_dir.mkdir(parents=False, exist_ok=False)
+
+                    preprocessed_master_structure_ref_dict_path = specific_preprocessed_data_dir.joinpath(preprocessed_master_structure_ref_dict_for_export_name)
+                    with open(preprocessed_master_structure_ref_dict_path, 'wb') as master_structure_reference_dict_file:
+                        pickle.dump(master_structure_reference_dict, master_structure_reference_dict_file)
+
+                    preprocessed_master_structure_ref_info_path = specific_preprocessed_data_dir.joinpath(preprocessed_master_structure_info_dict_for_export_name)
+                    with open(preprocessed_master_structure_ref_info_path, 'wb') as master_structure_info_dict_file:
+                        pickle.dump(master_structure_info_dict, master_structure_info_dict_file)
+
+                    preprocessed_info_file_name = str(master_structure_info_dict["Global"]["Num patients"])+' patients - '+str(global_num_structures)+' structures.csv'
+                    preprocessed_info_file_path = specific_preprocessed_data_dir.joinpath(preprocessed_info_file_name)
+                    #master_structure_info_dict["By patient"]
+                    with open(preprocessed_info_file_path, 'w', newline='') as f:
+                        write = csv.writer(f)
+                        for patientUID,patient_info_dict in master_structure_info_dict["By patient"].items():
+                            write.writerow(['Patient UID (generated)',
+                                            'Patient name',
+                                            'Num biopsies', 
+                                            'Num OARs',
+                                            'Num DILs'
+                                            ])
+                            write.writerow([patient_info_dict["Patient UID (generated)"],
+                                            patient_info_dict["Patient Name"],
+                                            patient_info_dict[structs_referenced_list[0]]["Num structs"],
+                                            patient_info_dict[structs_referenced_list[1]]["Num structs"],
+                                            patient_info_dict[structs_referenced_list[2]]["Num structs"]
+                                            ])
+                            write.writerow([' '])
+                            write.writerow(["Biopsy names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[0]]])
+                            write.writerow(["OAR names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[1]]])
+                            write.writerow(["DIL names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[2]]])
+                            write.writerow(['___','___','___'])
             
+            elif skip_preprocessing == True:
+                live_display.stop()
+                live_display.console.print("[bold red]User input required:")
+                preprocessed_file_ready = False
+                while preprocessed_file_ready == False:
+                    stopwatch.stop()
+                    preprocessed_file_ready = ques_funcs.ask_ok('> You indicated to skip data preprocessing. Would you like to select the preprocessed dataset?') 
+                    stopwatch.start()
+                    if preprocessed_file_ready == True:
+                        print('> Please indicate the location of master_structure_reference_dict.')
+                        root = tk.Tk() # these two lines are to get rid of errant tkinter window
+                        root.withdraw() # these two lines are to get rid of errant tkinter window
+                        # this is a user defined quantity
+                        preprocessed_master_structure_reference_dict_path_str = fd.askopenfilename(title='Open the master_structure_reference_dict file', initialdir=preprocessed_data_dir)
+                        with open(preprocessed_master_structure_reference_dict_path_str, "rb") as preprocessed_master_structure_reference_dict_file:
+                            master_structure_reference_dict = pickle.load(preprocessed_master_structure_reference_dict_file)
+                        
+                        print('> Please indicate the location of master_structure_info_dict.')
+                        preprocessed_master_structure_reference_dict_path = pathlib.Path(preprocessed_master_structure_reference_dict_path_str)
+                        preprocessed_master_structure_reference_dict_path_parent = preprocessed_master_structure_reference_dict_path.parents[0]
+                        preprocessed_master_structure_info_dict_path_str = fd.askopenfilename(title='Open the master_structure_info_dict file', initialdir=preprocessed_master_structure_reference_dict_path_parent)
+                        with open(preprocessed_master_structure_info_dict_path_str, "rb") as preprocessed_master_structure_info_dict_file:
+                            master_structure_info_dict = pickle.load(preprocessed_master_structure_info_dict_file)
+                    else:
+                        print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.', uncertainties_file)
+                        stopwatch.stop()
+                        ask_to_quit = ques_funcs.ask_ok('> Would you like to quit the programme?')
+                        stopwatch.start()
+                        if ask_to_quit == True:
+                            sys.exit("> You have quit the programme.")
+                        else:
+                            preprocessed_file_ready = True
+                                
+                live_display.start()
+                important_info.add_text_line("Loaded master_structure_reference_dict from: "+ preprocessed_master_structure_reference_dict_path_str, live_display)
+                important_info.add_text_line("Loaded master_structure_info_dict from: "+ preprocessed_master_structure_info_dict_path_str, live_display)
+
+                
+
             # create non-pickleable objects concerning the background dose data
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 dose_ref_dict = pydicom_item[dose_ref]
@@ -1110,15 +1196,13 @@ def main():
             ## uniformly sample points from biopsies
             #st = time.time()
             args_list = []
-            num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-            #num_sample_pts_per_bx = num_sample_pts_per_bx_input
-            #master_structure_info_dict["Global"]["MC info"]["Num sample pts per BX core"] = num_sample_pts_per_bx
+            master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"] = bx_sample_pts_lattice_spacing
 
             patientUID_default = "Initializing"
             processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID_default)
-            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_parallel_computing_main_description, total = num_patients)
+            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_parallel_computing_main_description, total = master_structure_info_dict["Global"]["Num patients"])
             processing_patient_parallel_computing_main_description_completed = "Preparing patient for parallel processing"
-            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=num_patients, visible=False)
+            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_parallel_computing_main_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 bx_structs = bx_ref
@@ -1159,11 +1243,11 @@ def main():
         
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
-            sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = num_patients)
+            sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = master_structure_info_dict["Global"]["Num patients"])
             parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
-            completed_progress.update(sampling_points_task_indeterminate_completed, advance = num_patients, visible = True, refresh = True)
+            completed_progress.update(sampling_points_task_indeterminate_completed, advance = master_structure_info_dict["Global"]["Num patients"], visible = True, refresh = True)
             live_display.refresh()
 
            
@@ -1229,9 +1313,9 @@ def main():
 
             patientUID_default = "Initializing"
             processing_patient_rotating_bx_main_description = "Creating biopsy oriented coordinate system [{}]...".format(patientUID_default)
-            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_rotating_bx_main_description, total = num_patients)
+            processing_patients_task = patients_progress.add_task("[red]"+processing_patient_rotating_bx_main_description, total = master_structure_info_dict["Global"]["Num patients"])
             processing_patient_rotating_bx_main_description_completed = "Creating biopsy oriented coordinate system"
-            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_rotating_bx_main_description_completed, total=num_patients, visible=False)
+            processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_rotating_bx_main_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
             # rotating pointclouds to create bx oriented frame of reference
             for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1371,6 +1455,8 @@ def main():
             date_time_now = datetime.now()
             date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
             uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
+            
+            num_general_structs = master_structure_info_dict["Global"]["Num structures"]
 
             uncertainty_file_writer.uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, 
                                                                                  master_structure_reference_dict, 
@@ -1417,8 +1503,8 @@ def main():
 
 
             # Transfer read uncertainty data to master_reference
-            num_general_structs = int(pandas_read_uncertainties.values[1][0])
-            for specific_structure_index in range(num_general_structs):
+            num_general_structs_from_uncertainty_file = int(pandas_read_uncertainties.values[1][0])
+            for specific_structure_index in range(num_general_structs_from_uncertainty_file):
                 structure_row_num_start = specific_structure_index*5+3
                 patientUID = pandas_read_uncertainties.values[structure_row_num_start+1][0]
                 structure_type = pandas_read_uncertainties.values[structure_row_num_start+1][1]
@@ -1450,7 +1536,7 @@ def main():
            
             #live_display.stop()
             # Run MC simulation
-            master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, 
+            master_structure_reference_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
                                                                                         live_display,
                                                                                         stopwatch, 
                                                                                         layout_groups, 
@@ -1479,7 +1565,8 @@ def main():
                                                                                         spinner_type)
             
 
-
+            live_display.start(refresh=True)
+            
             # Create the specific output directory folder
             date_time_now = datetime.now()
             date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
@@ -1526,9 +1613,9 @@ def main():
                 
                 patientUID_default = "Initializing"
                 processing_patient_csv_writing_description = "Writing containment CSVs to file [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = num_patients)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num patients"])
                 processing_patient_csv_writing_description_completed = "Writing containment CSVs to file"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=num_patients, visible=False)
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -1600,9 +1687,9 @@ def main():
 
                 patientUID_default = "Initializing"
                 processing_patient_csv_writing_voxelized_description = "Writing containment CSVs (voxelized) to file [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = num_patients)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num patients"])
                 processing_patient_csv_writing_voxelized_description_completed = "Writing containment CSVs (voxelized) to file"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=num_patients, visible=False)
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -1666,9 +1753,9 @@ def main():
 
                 patientUID_default = "Initializing"
                 processing_patient_csv_writing_description = "Writing dosimetry CSVs to file [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = num_patients)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num patients"])
                 processing_patient_csv_writing_description_completed = "Writing dosimetry CSVs to file"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=num_patients, visible=False)
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -1764,9 +1851,9 @@ def main():
 
                 patientUID_default = "Initializing"
                 processing_patient_csv_writing_voxelized_description = "Writing dosimetry CSVs (voxelized) to file [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = num_patients)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num patients"])
                 processing_patient_csv_writing_voxelized_description_completed = "Writing dosimetry CSVs (voxelized) to file"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=num_patients, visible=False)
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -1872,9 +1959,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating box plots of sampled rigid shift vectors"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1912,9 +1999,9 @@ def main():
                 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating axial dose distribution scatter plot (all trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating axial dose distribution scatter plot (all trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1956,9 +2043,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating (3D) scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating (3D) scatter axial/radial dose distribution plot (all trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1993,9 +2080,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating (2D) colored scatter axial/radial dose distribution plot (all trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2033,9 +2120,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating axial dose distribution quantile scatter plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile scatter plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2075,9 +2162,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile regression plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2118,9 +2205,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating voxelized axial dose distribution box plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating voxelized axial dose distribution box plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2156,9 +2243,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating voxelized axial dose distribution violin plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating voxelized axial dose distribution violin plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2194,9 +2281,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating differential DVH plots ("+str(num_differential_dvh_plots_to_show)+" trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2232,9 +2319,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating box plots of differential DVH data (all trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating box plots of differential DVH data (all trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2270,9 +2357,9 @@ def main():
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials) [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating cumulative DVH plots ("+str(num_cumulative_dvh_plots_to_show)+" trials)"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2309,9 +2396,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating cumulative DVH quantile regression plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating cumulative DVH quantile regression plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2352,9 +2439,9 @@ def main():
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = num_patients)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
                     processing_patient_production_plot_description_completed = "Creating containment probability plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=num_patients, visible=False)
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -2410,8 +2497,7 @@ def structure_referencer(structure_dcm_dict,
                          bx_sim_locations_list,
                          bx_sim_ref_identifier_str,
                          sim_bx_relative_to_list,
-                         sim_bx_relative_to_struct_type, 
-                         bx_sample_pt_lattice_spacing
+                         sim_bx_relative_to_struct_type
                          ):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
@@ -2611,22 +2697,24 @@ def structure_referencer(structure_dcm_dict,
             global_total_num_structs = global_total_num_structs + patient_total_num_structs
             global_num_patients = global_num_patients + 1
 
-            master_st_ds_ref_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
-                                          "Patient Name": str(structure_item[0x0010,0x0010].value),
-                                          st_ref_list[0]: bpsy_ref, 
-                                          st_ref_list[1]: OAR_ref, 
-                                          st_ref_list[2]: DIL_ref,
-                                          all_ref_key: all_ref,
-                                          "Ready to plot data list": None
-                                          }
+            master_st_ds_ref_dict[UID] = {"Patient UID (generated)": str(UID),
+                                            "Patient ID (from dicom)": str(structure_item[0x0010,0x0020].value),
+                                            "Patient Name": str(structure_item[0x0010,0x0010].value),
+                                            st_ref_list[0]: bpsy_ref, 
+                                            st_ref_list[1]: OAR_ref, 
+                                            st_ref_list[2]: DIL_ref,
+                                            all_ref_key: all_ref,
+                                            "Ready to plot data list": None
+                                        }
             
-            master_st_ds_info_dict[UID] = {"Patient ID": str(structure_item[0x0010,0x0020].value),
-                                           "Patient Name": str(structure_item[0x0010,0x0010].value),
-                                           st_ref_list[0]: bpsy_info, 
-                                           st_ref_list[1]: OAR_info, 
-                                           st_ref_list[2]: DIL_info, 
-                                           "All ref": all_structs_info
-                                           }
+            master_st_ds_info_dict[UID] = {"Patient UID (generated)": str(UID),
+                                            "Patient ID (from dicom)": str(structure_item[0x0010,0x0020].value),
+                                            "Patient Name": str(structure_item[0x0010,0x0010].value),
+                                            st_ref_list[0]: bpsy_info, 
+                                            st_ref_list[1]: OAR_info, 
+                                            st_ref_list[2]: DIL_info, 
+                                            "All ref": all_structs_info
+                                        }
     
     for UID, dose_item_path in dose_dcm_dict.items():
         with pydicom.dcmread(dose_item_path, defer_size = '2 MB') as dose_item: 
@@ -2666,7 +2754,7 @@ def structure_referencer(structure_dcm_dict,
     mc_info = {"Num MC containment simulations": None, 
                "Num MC dose simulations": None, 
                "Num sample pts per BX core": None, 
-               "BX sample pt lattice spacing": bx_sample_pt_lattice_spacing}
+               "BX sample pt lattice spacing": None}
     
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, 
                                                "Num structures": global_total_num_structs, 

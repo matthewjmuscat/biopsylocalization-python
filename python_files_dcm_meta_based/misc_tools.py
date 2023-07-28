@@ -30,3 +30,5 @@ def find_closest_z_slice(threeD_data_zslice_list,z_val):
 
 def pad_or_truncate(some_list, target_len):
     return some_list[:target_len] + [float('NaN')]*(target_len - len(some_list))
+
+

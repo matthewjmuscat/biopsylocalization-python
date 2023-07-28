@@ -853,7 +853,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
         
 
-        return master_structure_reference_dict
+        return master_structure_reference_dict, live_display
 
 
 def normal_distribution_MLE_parallel(parallel_pool, data_2d_list):
