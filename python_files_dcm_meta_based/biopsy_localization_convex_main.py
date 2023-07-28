@@ -105,6 +105,9 @@ def main():
     oaroi_contour_names = ['Prostate'] # consider prostate only for OARs! If the first position is the prostate, the simulated biopsies will be generated relative to this structure
     biopsy_contour_names = ['Bx']
     dil_contour_names = ['DIL']
+    oar_default_sigma = 1 # default sigma in mm
+    biopsy_default_sigma = 2 # default sigma in mm
+    dil_default_sigma = 3 # default sigma in mm
     uncertainty_folder_name = 'Uncertainty data'
     uncertainty_file_name = "uncertainties_file_auto_generated"
     uncertainty_file_extension = ".csv"
@@ -122,8 +125,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
-    num_MC_containment_simulations_input = 50
-    num_MC_dose_simulations_input = 250
+    num_MC_containment_simulations_input = 5
+    num_MC_dose_simulations_input = 10
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     
@@ -185,15 +188,15 @@ def main():
                                              "Plot name": " - dose-scatter-all_trials_axial_dose_distribution"
                                              },
                                         "Axial and radial (3D, surface) dose distribution": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-scatter-axial_and_radial_3D_surface_dose_distribution"
                                              },
                                         "Axial and radial (2D, color) dose distribution": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-scatter-axial_and_radial_2D_color_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles scatter plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles regression plot": \
@@ -209,7 +212,7 @@ def main():
                                              "Plot name": " - dose-violin_plot-voxelized_axial_dose_distribution"
                                              },
                                         "Differential DVH showing N trials plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": ' - dose-DVH-differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials'
                                              },
                                         "Differential DVH dose binned all trials box plot": \
@@ -217,7 +220,7 @@ def main():
                                              "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot'
                                              },
                                         "Cumulative DVH showing N trials plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": ' - dose-DVH-cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials'
                                              },
                                         "Cumulative DVH quantile regression all trials plot": \
@@ -231,17 +234,32 @@ def main():
                                         }
     
 
+    # other parameters
+    modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
+    write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
+    write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
+
 
     # non-user changeable variables, but need to be initiatied:
     all_ref_key = "All ref"
     bx_ref = "Bx ref"
     oar_ref = "OAR ref"
     dil_ref = "DIL ref"
-    structs_referenced_dict = {bx_ref: biopsy_contour_names, oar_ref: oaroi_contour_names, dil_ref: dil_contour_names} 
+    structs_referenced_dict = { bx_ref: {"Contour names": biopsy_contour_names, 
+                                        "Default sigma": biopsy_default_sigma
+                                        }, 
+                                oar_ref: {"Contour names": oaroi_contour_names,
+                                          "Default sigma": oar_default_sigma
+                                          }, 
+                                dil_ref: {"Contour names": dil_contour_names,
+                                          "Default sigma": dil_default_sigma
+                                          } 
+                                }
     structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work!
     dose_ref = "Dose ref"
     plan_ref = "Plan ref"
     num_simulated_bxs_to_create = len(bx_sim_locations)
+    create_at_least_one_production_plot = any([x["Plot bool"] for x in production_plots_input_dictionary.values()]) # will produce True if at least one plot bool in the production_plots_input_dictionary is true, otherwise will be false if all are false 
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -428,7 +446,7 @@ def main():
                 for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
                     keyfound = False
                     for struct_type_key in structs_referenced_dict.keys():
-                        if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]:
+                        if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]["Contour names"]:
                             if keyfound == True:
                                 raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
                             simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
@@ -564,7 +582,9 @@ def main():
                 dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
 
                 dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
-                dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
+                
+                # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
+                #dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
                 
                 # plot labelled dose point cloud (note due to the number of labels, this is very buggy and doesnt display properly as of open3d 0.16.1)
                 """
@@ -588,7 +608,9 @@ def main():
 
                 # user defined quantity moved to beginning of programme
                 thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
-                dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+                
+                # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
+                #dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
                 
                 # plot dose point cloud thresholded cubic lattice (color only)
                 if show_3d_dose_renderings == True:
@@ -605,6 +627,9 @@ def main():
             
             patients_progress.update(processing_patients_dose_task, visible=False)
             completed_progress.update(processing_patients_dose_task_completed, visible=True)
+
+
+
 
 
             # create info for simulated biopsies
@@ -821,7 +846,7 @@ def main():
                         zslice1 = threeDdata_array[0,2]
                         zslice2 = threeDdata_array[-1,2]
                         delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        delaunay_global_convex_structure_obj.generate_lineset()
+                        #delaunay_global_convex_structure_obj.generate_lineset()
 
                         
                         # Below is a sample simulation to test the containment algorithm:
@@ -912,7 +937,7 @@ def main():
                             reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
                             reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
                             reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, reconstructed_bx_pcd_color)
-                            reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
+                            #reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
                             #plot reconstructions?
                             #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud, threeDdata_point_cloud)
                             #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
@@ -931,15 +956,15 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         if structs == bx_ref:
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
 
@@ -951,8 +976,99 @@ def main():
             completed_progress.update(processing_patients_task_completed,  visible=True)                
 
             
+            #live_display.stop()
+            ## Up until this point, the master structure reference dictionary contains only pickleable objects!
+
+            #### Now can export master structure dict to file!
+            #with open('config.dictionary', 'wb') as config_dictionary_file:
+            #    pickle.dump(master_structure_reference_dict, config_dictionary_file)
+            
+            # create non-pickleable objects concerning the background dose data
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                dose_ref_dict = pydicom_item[dose_ref]
+                phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+
+                # create dose point cloud and thresholded dose point cloud
+                dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
+                thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                
+                dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
+                dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+
+                master_structure_reference_dict[patientUID][dose_ref] = dose_ref_dict
+
+                # plot dose point cloud cubic lattice (color only)
+                if show_3d_dose_renderings == True:
+                    patients_progress.stop_task(processing_patients_dose_task)
+                    completed_progress.stop_task(processing_patients_dose_task_completed)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(dose_point_cloud)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_dose_task)
+                    completed_progress.start_task(processing_patients_dose_task_completed)
+
+                # plot dose point cloud thresholded cubic lattice (color only)
+                if show_3d_dose_renderings == True:
+                    patients_progress.stop_task(processing_patients_dose_task)
+                    completed_progress.stop_task(processing_patients_dose_task_completed)
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                    stopwatch.start()
+                    patients_progress.start_task(processing_patients_dose_task)
+                    completed_progress.start_task(processing_patients_dose_task_completed)
             
             
+            
+            
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                for structs in structs_referenced_list:
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        # Creating pointcloud dictionary of the interpolation done
+                        interslice_interpolation_information = pydicom_item[structs][specific_structure_index]["Inter-slice interpolation information"]
+                        interpolation_information = pydicom_item[structs][specific_structure_index]["Intra-slice interpolation information"]
+                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                        pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
+                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
+                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
+                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
+                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+
+                        # creating pointcloud of the raw contour points
+                        threeDdata_array = pydicom_item[structs][specific_structure_index]["Raw contour pts"]
+                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+
+                        # creating the lineset of the delaunay global convex structure
+                        delaunay_global_convex_structure_obj = pydicom_item[structs][specific_structure_index]["Delaunay triangulation global structure"]
+                        delaunay_global_convex_structure_obj.generate_lineset()
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+
+                        # creating lineset of the zslice wise delaunay convex structure
+                        delaunay_triangulation_obj_zslicewise_list = pydicom_item[structs][specific_structure_index]["Delaunay triangulation zslice-wise list"]
+                        for delaunay_obj in delaunay_triangulation_obj_zslicewise_list:
+                            delaunay_obj.generate_lineset()
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = delaunay_triangulation_obj_zslicewise_list
+
+                        # For biopsies only
+                        if structs == bx_ref:
+                            # creating pointcloud of the reconstructed biopsy
+                            drawn_biopsy_array = pydicom_item[structs][specific_structure_index]["Reconstructed structure pts arr"] 
+                            reconstructed_bx_pcd_color = np.random.uniform(0, 0.7, size=3)
+                            reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, reconstructed_bx_pcd_color)
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
+
+                            # creating lineset of the reconstructed biopsy global delaunay object
+                            reconstructed_bx_delaunay_global_convex_structure_obj = pydicom_item[structs][specific_structure_index]["Reconstructed structure delaunay global"]
+                            reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
+
+
+            
+            #live_display.stop()
             
             live_display.refresh()
 
@@ -988,123 +1104,7 @@ def main():
                     plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
 
                 
-            #et = time.time()
-            #elapsed_time = et - st
-            #print('\n Execution time:', elapsed_time, 'seconds')
-
-            """
-
             
-            with loading_tools.Loader(num_patients,"Generating KD trees and conducting nearest neighbour searches...") as loader:
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    Bx_structs = bx_ref
-                    for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]): 
-                        BX_centroid_line_sample = specific_BX_structure["Centroid line sample pts"]
-                        for non_BX_structs in structs_referenced_list[1:]:
-                            for specific_non_BX_structs_index, specific_non_BX_structs in enumerate(pydicom_item[non_BX_structs]):
-                                
-                                # create a KDtree for all non BX structures
-                                non_BX_struct_threeDdata_array = specific_non_BX_structs["Raw contour pts"]
-                                non_BX_struct_KDtree = scipy.spatial.KDTree(non_BX_struct_threeDdata_array)
-                                master_structure_reference_dict[patientUID][non_BX_structs][specific_non_BX_structs_index]["KDtree"] = non_BX_struct_KDtree
-                                
-                                # conduct NN search
-                                nearest_neighbours = non_BX_struct_KDtree.query(BX_centroid_line_sample)
-                                
-                                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Nearest neighbours objects"].append(nearest_neighbour_parent(specific_BX_structure["ROI"],specific_non_BX_structs["ROI"],non_BX_structs,non_BX_struct_threeDdata_array,BX_centroid_line_sample,nearest_neighbours))
-                                
-                    loader.iterator = loader.iterator + 1
-
-            
-            global_data_list = []
-            disp_figs = ques_funcs.ask_ok('Do you want to open any figures now?')
-            
-            if disp_figs == True:
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    global_data_list_per_patient = []
-                    global_patient_info = {}
-                    for structs in structs_referenced_list:
-                        for specific_structure in pydicom_item[structs]:
-                            plot_fig_bool = specific_structure["Plot attributes"].plot_bool
-                            if plot_fig_bool == True:
-                                threeDdata_array = specific_structure["Raw contour pts"]
-                                threeDdata_array_transpose = threeDdata_array.T
-                                threeDdata_list = threeDdata_array_transpose.tolist()
-                                threeDdata_list_and_color = threeDdata_list
-                                threeDdata_list_and_color.append((random(), random(), random()))
-                                threeDdata_list_and_color.append('o')
-                                global_data_list_per_patient.append(threeDdata_list_and_color)
-
-                                if structs == bx_ref:
-                                    centroid_line_sample = specific_structure["Centroid line sample pts"] 
-                                    structure_centroids_array = specific_structure["Structure centroid pts"]
-                                    centroid_line = specific_structure["Best fit line of centroid pts"] 
-                                    drawn_biopsy_array = specific_structure["Reconstructed structure pts"] 
-
-                                    centroid_line_sample_transpose = centroid_line_sample.T
-                                    centroid_line_sample_list = centroid_line_sample_transpose.tolist()
-                                    centroid_line_sample_list_and_color = centroid_line_sample_list
-                                    centroid_line_sample_list_and_color.append('y')
-                                    centroid_line_sample_list_and_color.append('x')
-                                    
-                                    drawn_biopsy_array_transpose = drawn_biopsy_array.T
-                                    drawn_biopsy_list = drawn_biopsy_array_transpose.tolist()
-                                    drawn_biopsy_list_and_color = drawn_biopsy_list
-                                    drawn_biopsy_list_and_color.append('m')
-                                    drawn_biopsy_list_and_color.append('+')
-                                    
-                                    structure_centroids_array_transpose = structure_centroids_array.T
-                                    structure_centroids_list = structure_centroids_array_transpose.tolist()
-                                    structure_centroids_list_and_color = structure_centroids_list
-                                    structure_centroids_list_and_color.append('b')
-                                    structure_centroids_list_and_color.append('o')
-
-                                    global_data_list_per_patient.append(centroid_line_sample_list_and_color)
-                                    global_data_list_per_patient.append(drawn_biopsy_list_and_color)
-                                    global_data_list_per_patient.append(structure_centroids_list_and_color)
-
-
-                                info = specific_structure
-                                info["Patient Name"] = pydicom_item["Patient Name"]
-                                info["Patient ID"] = pydicom_item["Patient ID"]
-                                #specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter(*global_data_list_per_patient,**info)
-                                specific_structure_fig = plotting_funcs.arb_threeD_scatter_plotter_list(*global_data_list_per_patient, **info)
-                                specific_structure_fig = plotting_funcs.add_line(specific_structure_fig,centroid_line)
-                            
-                                #specific_structure_fig.show()
-
-
-                                
-                    global_data_list.append(global_data_list_per_patient)
-
-                close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close all figures")
-                plt.close('all')
-            else:
-                pass
-            
-
-            if disp_figs == True:
-                disp_figs_global = ques_funcs.ask_ok('Do you want to open the global data figure too?')
-                if disp_figs_global == True:
-                    figure_global = plotting_funcs.arb_threeD_scatter_plotter_global(global_data_list[0])
-                    figure_global.show()
-                    close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
-                    plt.close('all')
-
-            
-            if disp_figs == True:
-                disp_figs_DIL_NN = ques_funcs.ask_ok('Do you want to show the NN plots?')
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    info = {}
-                    info["Patient Name"] = pydicom_item["Patient Name"]
-                    info["Patient ID"] = pydicom_item["Patient ID"]
-                    figure_global_per_patient = plotting_funcs.plot_general_per_patient(pydicom_item, structs_referenced_list, OAR_plot_attr=[], DIL_plot_attr=['raw'], **info)
-                    figure_global_per_patient.show()
-                    close_figs = ques_funcs.ask_to_continue("Press carriage return when you wish to close the figure")
-                    plt.close('all')
-            
-
-            """
 
 
             ## uniformly sample points from biopsies
@@ -1352,77 +1352,69 @@ def main():
 
 
 
-            live_display.stop()
-            live_display.console.print("[bold red]User input required:")
+            #live_display.stop()
+            #live_display.console.print("[bold red]User input required:")
             ## begin simulation section
-            """
-            created_dir = False
-            while created_dir == False:
-                
-                print('>Must create an uncertainties folder at ', uncertainty_dir, '. If the folder already exists it will NOT be overwritten.')
-                stopwatch.stop()
-                uncertainty_dir_generate = ques_funcs.ask_ok('>Continue?')
-                stopwatch.start()
-
-                if uncertainty_dir_generate == True:
-                    if os.path.isdir(uncertainty_dir) == True:
-                        print('>Directory already exists')
-                        created_dir = True
-                    else:
-                        os.mkdir(uncertainty_dir)
-                        print('>Directory: ', uncertainty_dir, ' created.')
-                        created_dir = True
-                else:
-                    stopwatch.stop()
-                    exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
-                    stopwatch.start()
-                    if exit_programme == True:
-                        sys.exit('>Programme exited.')
-                    else: 
-                        pass
-            """
             
-            stopwatch.stop()
-            uncertainty_template_generate = ques_funcs.ask_ok('>Do you want to generate an uncertainty file template for this patient data repo?')
-            stopwatch.start()
-            if uncertainty_template_generate == True:
-                # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
-                stopwatch.stop()
-                default_sigma = ques_funcs.ask_for_float_question('> Enter the default sigma value to generate for all structures:')
-                stopwatch.start()
+            # first question
+            #stopwatch.stop()
+            #uncertainty_template_generate = ques_funcs.ask_ok('>Do you want to generate an uncertainty file template for this patient data repo?')
+            #stopwatch.start()
+            
+            # create a blank uncertainties file filled with the proper patient data, it is uniquely IDd by including the date and time in the file name
+            #stopwatch.stop()
+            #default_sigma = ques_funcs.ask_for_float_question('> Enter the default sigma value to generate for all structures:')
+            #stopwatch.start()
 
-                date_time_now = datetime.now()
-                date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
 
-                uncertainty_file_writer.uncertainty_file_preper(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, default_sigma)
-            else:
-                pass
+            # generate uncertainty file
+            date_time_now = datetime.now()
+            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+            uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
 
-            uncertainty_file_ready = False
-            while uncertainty_file_ready == False:
-                stopwatch.stop()
-                uncertainty_file_ready = ques_funcs.ask_ok('>Is the uncertainty file prepared/filled out?') 
-                stopwatch.start()
-                if uncertainty_file_ready == True:
-                    print('>Please select the file with the dialog box')
-                    root = tk.Tk() # these two lines are to get rid of errant tkinter window
-                    root.withdraw() # these two lines are to get rid of errant tkinter window
-                    # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-                    uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
-                    with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-                        uncertainties_filled = uncertainties_file_filled_csv
-                    pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
-                    print(pandas_read_uncertainties)
-                else:
-                    print('>Please fill out the generated uncertainties file generated at ', uncertainties_file)
+            uncertainty_file_writer.uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, 
+                                                                                 master_structure_reference_dict, 
+                                                                                 structs_referenced_list, 
+                                                                                 num_general_structs, 
+                                                                                 structs_referenced_dict
+                                                                                 )
+            
+            if modify_generated_uncertainty_template == True:
+                live_display.stop()
+                live_display.console.print("[bold red]User input required:")
+                uncertainty_file_ready = False
+                while uncertainty_file_ready == False:
                     stopwatch.stop()
-                    ask_to_quit = ques_funcs.ask_ok('>Would you like to quit the programme instead?')
+                    uncertainty_file_ready = ques_funcs.ask_ok('>You indicated in launch params that you would like to modify the uncertainty file. Is the uncertainty file prepared/filled out?') 
                     stopwatch.start()
-                    if ask_to_quit == True:
-                        sys.exit(">You have quit the programme.")
+                    if uncertainty_file_ready == True:
+                        print('>Please select the file with the dialog box')
+                        root = tk.Tk() # these two lines are to get rid of errant tkinter window
+                        root.withdraw() # these two lines are to get rid of errant tkinter window
+                        # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
+                        uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
+                        with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
+                            uncertainties_filled = uncertainties_file_filled_csv
+                        pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+                        print(pandas_read_uncertainties)
                     else:
-                        pass
+                        print('>Please fill out the generated uncertainties file generated at ', uncertainties_file)
+                        stopwatch.stop()
+                        ask_to_quit = ques_funcs.ask_ok('>Would you like to quit the programme instead?')
+                        stopwatch.start()
+                        if ask_to_quit == True:
+                            sys.exit(">You have quit the programme.")
+                        else:
+                            pass
+            else:
+                # this is run if the uncertainty file is not to be modified by the user before running the simulation
+                uncertainties_file_filled = uncertainties_file
+                pandas_read_uncertainties = pandas.read_csv(uncertainties_file_filled, names = [0, 1, 2, 3, 4, 5])  
+                
+            
+
+           
+
 
             # Transfer read uncertainty data to master_reference
             num_general_structs = int(pandas_read_uncertainties.values[1][0])
@@ -1450,108 +1442,99 @@ def main():
                 uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
                 master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
-            stopwatch.stop()
-            simulation_ans = ques_funcs.ask_ok('>Uncertainty data collected. Begin Monte Carlo simulation?')
-            stopwatch.start()
+            
 
             
             master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"] = num_MC_containment_simulations_input
             master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"] = num_MC_dose_simulations_input
-            if simulation_ans ==  True:
-                print('>Beginning simulation')
-                master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, 
-                                                                                         live_display,
-                                                                                         stopwatch, 
-                                                                                         layout_groups, 
-                                                                                         master_structure_reference_dict, 
-                                                                                         structs_referenced_list,
-                                                                                         bx_ref,
-                                                                                         oar_ref,
-                                                                                         dil_ref, 
-                                                                                         dose_ref,
-                                                                                         plan_ref, 
-                                                                                         master_structure_info_dict, 
-                                                                                         biopsy_z_voxel_length, 
-                                                                                         num_dose_calc_NN, 
-                                                                                         num_dose_NN_to_show_for_animation_plotting,
-                                                                                         dose_views_jsons_paths_list,
-                                                                                         containment_views_jsons_paths_list,
-                                                                                         show_NN_dose_demonstration_plots,
-                                                                                         show_containment_demonstration_plots,
-                                                                                         biopsy_needle_compartment_length,
-                                                                                         simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
-                                                                                         plot_uniform_shifts_to_check_plotly,
-                                                                                         differential_dvh_resolution,
-                                                                                         cumulative_dvh_resolution,
-                                                                                         volume_DVH_percent_dose,
-                                                                                         plot_translation_vectors_pointclouds,
-                                                                                         spinner_type)
-            else: 
-                pass
+           
+            #live_display.stop()
+            # Run MC simulation
+            master_structure_reference_dict = MC_simulator_convex.simulator_parallel(parallel_pool, 
+                                                                                        live_display,
+                                                                                        stopwatch, 
+                                                                                        layout_groups, 
+                                                                                        master_structure_reference_dict, 
+                                                                                        structs_referenced_list,
+                                                                                        bx_ref,
+                                                                                        oar_ref,
+                                                                                        dil_ref, 
+                                                                                        dose_ref,
+                                                                                        plan_ref, 
+                                                                                        master_structure_info_dict, 
+                                                                                        biopsy_z_voxel_length, 
+                                                                                        num_dose_calc_NN, 
+                                                                                        num_dose_NN_to_show_for_animation_plotting,
+                                                                                        dose_views_jsons_paths_list,
+                                                                                        containment_views_jsons_paths_list,
+                                                                                        show_NN_dose_demonstration_plots,
+                                                                                        show_containment_demonstration_plots,
+                                                                                        biopsy_needle_compartment_length,
+                                                                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                                                                        plot_uniform_shifts_to_check_plotly,
+                                                                                        differential_dvh_resolution,
+                                                                                        cumulative_dvh_resolution,
+                                                                                        volume_DVH_percent_dose,
+                                                                                        plot_translation_vectors_pointclouds,
+                                                                                        spinner_type)
+            
 
-            live_display.stop()
-            live_display.console.print("[bold green]Simulation complete.")
-            live_display.console.print("[bold red]User input required:")
 
-            stopwatch.stop()
-            write_containment_to_file_ans = ques_funcs.ask_ok('>Save containment output to file?')
-            stopwatch.start()
-            created_output_dir = False
-            specific_output_dir_exists = False
-            if write_containment_to_file_ans ==  True:
-                while created_output_dir == False:
+            # Create the specific output directory folder
+            date_time_now = datetime.now()
+            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
+            specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
+            specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+            specific_output_dir.mkdir(parents=False, exist_ok=True)
+
+            # copy uncertainty file used for simulation to output folder 
+            shutil.copy(uncertainties_file_filled, specific_output_dir)
+
+            # If writing containment or dose csvs to file or producing at least one production plot, create the directory
+            if any([write_containment_to_file_ans, write_dose_to_file_ans, create_at_least_one_production_plot]):
+                if any([write_containment_to_file_ans, write_dose_to_file_ans]):
+                    # create global csv output folder
+                    csv_output_folder_name = 'Output CSVs'
+                    csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
+                    csv_output_dir.mkdir(parents=True, exist_ok=True)
                     
-                    print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
-                    stopwatch.stop()
-                    output_dir_generate = ques_funcs.ask_ok('>Continue?')
-                    stopwatch.start()
+                    # create patient specific output directories for csv files
+                    patient_sp_output_csv_dir_dict = {}
+                    for patientUID in master_structure_reference_dict.keys():
+                        patient_sp_output_csv_dir = csv_output_dir.joinpath(patientUID)
+                        patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
+                        patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
 
-                    if output_dir_generate == True:
-                        if os.path.isdir(output_dir) == True:
-                            print('>Directory already exists')
-                            created_output_dir = True
-                        else:
-                            os.mkdir(output_dir)
-                            print('>Directory: ', output_dir, ' created.')
-                            created_output_dir = True
-                    else:
-                        stopwatch.stop()
-                        exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
-                        stopwatch.start()
-                        if exit_programme == True:
-                            sys.exit('>Programme exited.')
-                        else: 
-                            pass
+                if create_at_least_one_production_plot == True:
+                    # make output figures directory
+                    figures_output_dir_name = 'Output figures'
+                    output_figures_dir = specific_output_dir.joinpath(figures_output_dir_name)
+                    output_figures_dir.mkdir(parents=True, exist_ok=True)
 
-                date_time_now = datetime.now()
-                date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
-                specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+                    # generate and store patient directory folders for saving
+                    patient_sp_output_figures_dir_dict = {}
+                    for patientUID in master_structure_reference_dict.keys():
+                        patient_sp_output_figures_dir = output_figures_dir.joinpath(patientUID)
+                        patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
+                        patient_sp_output_figures_dir_dict[patientUID] = patient_sp_output_figures_dir
 
-                print('>Creating specific output directory.')
-                if os.path.isdir(specific_output_dir) == True:
-                    print('>Directory already exists.')
-                    specific_output_dir_exists = True
-                else:
-                    os.mkdir(specific_output_dir)
-                    print('>Directory: ', specific_output_dir, ' created.')
-                    specific_output_dir_exists = True
-
-
-                #create global csv output folder
-                csv_output_folder_name = 'Output CSVs'
-                csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
-                csv_output_dir.mkdir(parents=True, exist_ok=True)
                 
-                # create patient specific output directories for csv files
-                patient_sp_output_csv_dir_dict = {}
-                for patientUID in master_structure_reference_dict.keys():
-                    patient_sp_output_csv_dir = csv_output_dir.joinpath(patientUID)
-                    patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
-                    patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
-
+                
+            
+            if write_containment_to_file_ans ==  True:
+                important_info.add_text_line("Writing containment CSVs to file.", live_display)
+                
+                patientUID_default = "Initializing"
+                processing_patient_csv_writing_description = "Writing containment CSVs to file [{}]...".format(patientUID_default)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = num_patients)
+                processing_patient_csv_writing_description_completed = "Writing containment CSVs to file"
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=num_patients, visible=False)
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                    processing_patient_csv_writing_description = "Writing containment CSVs to file [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_csv_writing_description)
+
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -1605,10 +1588,27 @@ def main():
                                 write.writerow(containment_structure_stand_err_with_cont_anat_ROI_row)
                                 write.writerow(containment_structure_conf_int_with_cont_anat_ROI_row)
 
+
+                    patients_progress.update(processing_patients_task, advance = 1)
+                    completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                patients_progress.update(processing_patients_task, visible = False)
+                completed_progress.update(processing_patients_completed_task, visible = True)
+
                                 
 
 
+                patientUID_default = "Initializing"
+                processing_patient_csv_writing_voxelized_description = "Writing containment CSVs (voxelized) to file [{}]...".format(patientUID_default)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = num_patients)
+                processing_patient_csv_writing_voxelized_description_completed = "Writing containment CSVs (voxelized) to file"
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=num_patients, visible=False)
+                
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                    processing_patient_csv_writing_voxelized_description = "Writing containment CSVs (voxelized) to file [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_csv_writing_voxelized_description)
+
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -1648,68 +1648,33 @@ def main():
                                 write.writerow(num_sample_pts_in_voxel_row)
                                 write.writerow(arth_mean_binomial_estimator_row)
                                 write.writerow(std_dev_binomial_estimator_row)
-                                write.writerow([''])
-                
-                # copy uncertainty file used for simulation to output folder 
-                shutil.copy(uncertainties_file_filled, specific_output_dir)
-                
+                                write.writerow([''])        
 
+
+                    patients_progress.update(processing_patients_task, advance = 1)
+                    completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                patients_progress.update(processing_patients_task, visible = False)
+                completed_progress.update(processing_patients_completed_task, visible = True)
             else:
                 pass
 
 
-            stopwatch.stop()
-            write_dose_to_file_ans = ques_funcs.ask_ok('>Save dose output to file?')
-            stopwatch.start()
 
             if write_dose_to_file_ans ==  True:
-                if created_output_dir == False:
-                    while created_output_dir == False:
-                        
-                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
-                        stopwatch.stop()
-                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
-                        stopwatch.start()
+                important_info.add_text_line("Writing dosimetry CSVs to file.", live_display)
 
-                        if output_dir_generate == True:
-                            if os.path.isdir(output_dir) == True:
-                                print('>Directory already exists')
-                                created_output_dir = True
-                            else:
-                                os.mkdir(output_dir)
-                                print('>Directory: ', output_dir, ' created.')
-                                created_output_dir = True
-                        else:
-                            stopwatch.stop()
-                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
-                            stopwatch.start()
-                            if exit_programme == True:
-                                sys.exit('>Programme exited.')
-                            else: 
-                                pass
-                else:
-                    pass
-                if specific_output_dir_exists == False:
-                    date_time_now = datetime.now()
-                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
-                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
-
-                    print('>Creating specific output directory.')
-                    if os.path.isdir(specific_output_dir) == True:
-                        print('>Directory already exists.')
-                        specific_output_dir_exists = True
-                    else:
-                        os.mkdir(specific_output_dir)
-                        print('>Directory: ', specific_output_dir, ' created.')
-                        specific_output_dir_exists = True
-                else:
-                    pass
+                patientUID_default = "Initializing"
+                processing_patient_csv_writing_description = "Writing dosimetry CSVs to file [{}]...".format(patientUID_default)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = num_patients)
+                processing_patient_csv_writing_description_completed = "Writing dosimetry CSVs to file"
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=num_patients, visible=False)
                 
-                
-                
-                # write csv files
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                    processing_patient_csv_writing_description = "Writing dosimetry CSVs to file [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_csv_writing_description)
+
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -1790,8 +1755,24 @@ def main():
                                 write.writerow(['V'+str(vol_DVH_percent)+'%']+dvh_metric_all_MC_trials)
                                 write.writerow(['V'+str(vol_DVH_percent)+'% mean', dvh_metric_mean, 'V'+str(vol_DVH_percent)+'% STD', dvh_metric_std])
 
+                    patients_progress.update(processing_patients_task, advance = 1)
+                    completed_progress.update(processing_patients_completed_task, advance = 1)
 
+                patients_progress.update(processing_patients_task, visible = False)
+                completed_progress.update(processing_patients_completed_task, visible = True)
+
+
+                patientUID_default = "Initializing"
+                processing_patient_csv_writing_voxelized_description = "Writing dosimetry CSVs (voxelized) to file [{}]...".format(patientUID_default)
+                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = num_patients)
+                processing_patient_csv_writing_voxelized_description_completed = "Writing dosimetry CSVs (voxelized) to file"
+                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=num_patients, visible=False)
+                
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                    processing_patient_csv_writing_voxelized_description = "Writing dosimetry CSVs (voxelized) to file [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_csv_writing_voxelized_description)
+
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
@@ -1844,84 +1825,20 @@ def main():
                                 dose_vals_in_voxel_row = voxel_dict['All dose vals in voxel list'].copy()
                                 dose_vals_in_voxel_row.insert(0,voxel_index)
                                 write.writerow(dose_vals_in_voxel_row)
+
+                    patients_progress.update(processing_patients_task, advance = 1)
+                    completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                patients_progress.update(processing_patients_task, visible = False)
+                completed_progress.update(processing_patients_completed_task, visible = True)
             else:
                 pass
             
-            
-            stopwatch.stop()
-            create_dose_probability_plots_ans = ques_funcs.ask_ok('>Generate dose and containment plots?')
-            stopwatch.start()
 
-            if create_dose_probability_plots_ans ==  True:
-                if created_output_dir == False:
-                    while created_output_dir == False:
-                        
-                        print('>Must create an output folder at ', output_dir, '. If the folder already exists it will NOT be overwritten.')
-                        stopwatch.stop()
-                        output_dir_generate = ques_funcs.ask_ok('>Continue?')
-                        stopwatch.start()
 
-                        if output_dir_generate == True:
-                            if os.path.isdir(output_dir) == True:
-                                print('>Directory already exists')
-                                created_output_dir = True
-                            else:
-                                os.mkdir(output_dir)
-                                print('>Directory: ', output_dir, ' created.')
-                                created_output_dir = True
-                        else:
-                            stopwatch.stop()
-                            exit_programme = ques_funcs.ask_ok('>This directory must be created. Do you want to exit the programme?' )
-                            stopwatch.start()
-                            if exit_programme == True:
-                                sys.exit('>Programme exited.')
-                            else: 
-                                pass
-                else:
-                    pass
-                if specific_output_dir_exists == False:
-                    date_time_now = datetime.now()
-                    date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                    specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
-                    specific_output_dir = output_dir.joinpath(specific_output_dir_name)
+            if create_at_least_one_production_plot == True:
 
-                    print('>Creating specific output directory.')
-                    if os.path.isdir(specific_output_dir) == True:
-                        print('>Directory already exists.')
-                        specific_output_dir_exists = True
-                    else:
-                        os.mkdir(specific_output_dir)
-                        print('>Directory: ', specific_output_dir, ' created.')
-                        specific_output_dir_exists = True
-                else:
-                    pass
-
-                # make output figures directory
-                figures_output_dir_name = 'Output figures'
-                output_figures_dir = specific_output_dir.joinpath(figures_output_dir_name)
-                os.mkdir(output_figures_dir)
-                print('>Directory: ', output_figures_dir, ' created.')
-
-                """
-                stopwatch.stop()
-                regression_type_input = ques_funcs.multi_choice_question('> Type of regression (LOWESS = 1, NPKR = 0)?')
-                stopwatch.start()
-                stopwatch.stop()
-                global_regression_input = ques_funcs.ask_ok('> Perform regression on global data?')
-                stopwatch.start()
-                """
-
-                live_display.start()
                 important_info.add_text_line("Creating production plots.", live_display)
-
-                # generate and store patient directory folders for saving
-                patient_sp_output_figures_dir_dict = {}
-                for patientUID in master_structure_reference_dict.keys():
-                    bx_structs = bx_ref
-                    patient_sp_output_figures_dir = output_figures_dir.joinpath(patientUID)
-                    patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
-                    patient_sp_output_figures_dir_dict[patientUID] = patient_sp_output_figures_dir
-
 
                 # generate a pandas data frame that is used in numerous production plot functions
                 for patientUID,pydicom_item in master_structure_reference_dict.items():

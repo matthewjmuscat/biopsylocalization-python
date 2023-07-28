@@ -30,8 +30,8 @@ def adjacent_slice_delaunay_parallel(parallel_pool, threeD_data_zlsice_list):
     pool = parallel_pool
     adjacent_zslice_threeD_data_list = [(threeD_data_zlsice_list[j],threeD_data_zlsice_list[j+1]) for j in range(0, len(threeD_data_zlsice_list)-1)]
     delaunay_triangulation_obj_zslicewise_list = pool.map(adjacent_zslice_delaunay_triangulation, adjacent_zslice_threeD_data_list)
-    for delaunay_obj in delaunay_triangulation_obj_zslicewise_list:
-        delaunay_obj.generate_lineset()
+    #for delaunay_obj in delaunay_triangulation_obj_zslicewise_list:
+    #    delaunay_obj.generate_lineset()
     return delaunay_triangulation_obj_zslicewise_list
 
 def adjacent_zslice_delaunay_triangulation(adjacent_zslice_threeD_data_list):
