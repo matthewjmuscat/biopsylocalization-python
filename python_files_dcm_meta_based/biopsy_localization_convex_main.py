@@ -243,7 +243,7 @@ def main():
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
     export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
-    skip_preprocessing = True # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
+    skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
 
     # non-user changeable variables, but need to be initiatied:
     all_ref_key = "All ref"
@@ -1054,7 +1054,7 @@ def main():
                         with open(preprocessed_master_structure_info_dict_path_str, "rb") as preprocessed_master_structure_info_dict_file:
                             master_structure_info_dict = pickle.load(preprocessed_master_structure_info_dict_file)
                     else:
-                        print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.', uncertainties_file)
+                        print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.')
                         stopwatch.stop()
                         ask_to_quit = ques_funcs.ask_ok('> Would you like to quit the programme?')
                         stopwatch.start()

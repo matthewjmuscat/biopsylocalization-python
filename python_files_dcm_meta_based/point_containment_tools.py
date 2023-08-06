@@ -12,10 +12,10 @@ import time
 #from pathos.multiprocessing import ProcessingPool
 #import dill
 
-def create_point_cloud(data_arr, color = np.array([0,0,0])):
+def create_point_cloud(data_arr, color = np.array([0,0,0]), random_color = False):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(data_arr)
-    if color == 'random':
+    if random_color == True:
         pcd_color = np.random.uniform(0, 0.9, size=3)
     else:
         pcd_color = color
