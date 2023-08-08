@@ -169,7 +169,7 @@ def main():
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
-    show_containment_demonstration_plots = True
+    show_containment_demonstration_plots = False
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = True
     show_processed_3d_datasets_renderings_plotly = False
@@ -2598,7 +2598,8 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: Total rigid shift vectors arr": None, 
                          "MC data: bx only shifted 3darr": None, 
                          "MC data: bx and structure shifted dict": None, 
-                         "MC data: MC sim translation results dict": None, 
+                         "MC data: MC sim translation results dict": None,
+                         "MC data: MC sim containment raw results dataframe": None, 
                          "MC data: compiled sim results": None, 
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
@@ -2655,7 +2656,8 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: Total rigid shift vectors arr": None, 
                          "MC data: bx only shifted 3darr": None, 
                          "MC data: bx and structure shifted dict": None, 
-                         "MC data: MC sim translation results dict": None, 
+                         "MC data: MC sim translation results dict": None,
+                         "MC data: MC sim containment raw results dataframe": None,
                          "MC data: compiled sim results": None, 
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 

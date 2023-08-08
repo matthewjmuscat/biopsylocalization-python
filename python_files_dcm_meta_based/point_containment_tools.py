@@ -230,7 +230,8 @@ def cuspatial_points_contained(polygons_geoseries,
                                nearest_zslices_indices_arr,
                                nearest_zslices_vals_arr, 
                                num_sample_pts_in_bx,
-                               num_MC_containment_simulations):
+                               num_MC_containment_simulations,
+                               structure_info):
     
     num_zslices = len(polygons_geoseries)
     total_num_points = len(test_points_geoseries) # note that this is the total number of points num_MC_containment_sims*num_sampled_pts_in_bx
@@ -256,7 +257,10 @@ def cuspatial_points_contained(polygons_geoseries,
     contain_bool_arr = containment_results_grand_dataframe.values[points_arr_index,nearest_zslices_indices_arr]
     contain_color_arr = color_by_bool_by_arr(cp.asnumpy(contain_bool_arr))
     trial_number_list = [int(i+1) for i in range(num_MC_containment_simulations) for j in range(num_sample_pts_in_bx)]
-    results_dictionary = {"Original pt index": points_arr_index,
+    results_dictionary = {"Relative structure ROI": structure_info[0],
+                          "Relative structure type": structure_info[1],
+                          "Relative structure index": structure_info[3],
+                          "Original pt index": points_arr_index,
                           "Pt contained bool": contain_bool_arr,
                           "Nearest zslice zval": nearest_zslices_vals_arr,
                           "Nearest zslice index": nearest_zslices_indices_arr,

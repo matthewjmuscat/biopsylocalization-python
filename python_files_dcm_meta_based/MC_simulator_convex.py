@@ -17,6 +17,7 @@ import copy
 import cuspatial
 from shapely.geometry import Point, Polygon
 import geopandas
+import cudf
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -292,7 +293,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
         """
 
-        live_display.stop()
+        #live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -317,6 +318,7 @@ def simulator_parallel(parallel_pool,
                 testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
                 structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
                 MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                relative_structure_containment_results_data_frames_list = []
                 for structure_info,shifted_bx_data_3darr in structure_shifted_bx_data_dict.items():
                     structure_roi = structure_info[0]
                     non_bx_structure_type = structure_info[1]
@@ -325,8 +327,8 @@ def simulator_parallel(parallel_pool,
 
                     structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi))
 
-                    non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
-                    non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
+                    #non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
+                    #non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
                     non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
@@ -334,8 +336,8 @@ def simulator_parallel(parallel_pool,
                     prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
                     prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
                     
-                    testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
-                    all_trials_POP_test_results_and_point_clouds_tuple = []
+                    #testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
+                    #all_trials_POP_test_results_and_point_clouds_tuple = []
 
                     shifted_bx_data_3darr_num_MC_containment_sims_cutoff = shifted_bx_data_3darr[0:num_MC_containment_simulations]
                     shifted_bx_data_stacked_2darr_from_all_trials_3darray = np.reshape(shifted_bx_data_3darr_num_MC_containment_sims_cutoff,(-1,3))
@@ -360,9 +362,11 @@ def simulator_parallel(parallel_pool,
                                nearest_interpolated_zslice_index_array,
                                nearest_interpolated_zslice_vals_array, 
                                num_sample_pts_in_bx,
-                               num_MC_containment_simulations)
+                               num_MC_containment_simulations,
+                               structure_info)
 
-                    
+                    relative_structure_containment_results_data_frames_list.append(containment_info_grand_cudf_dataframe)
+
                     if (show_containment_demonstration_plots == True) & (non_bx_structure_type == 'DIL ref'):
                         for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr_num_MC_containment_sims_cutoff):
                             bx_test_pts_color_R = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
@@ -381,9 +385,12 @@ def simulator_parallel(parallel_pool,
                     structures_progress.update(testing_each_non_bx_structure_containment_task, advance=1)
                 
                 structures_progress.remove_task(testing_each_non_bx_structure_containment_task)
+                # concatenate containment results into a single dataframe
+                containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
                 # Update the master dictionary
                 #master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] = MC_translation_results_for_fixed_bx_dict
-
+                
+                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe
 
                 biopsies_progress.update(testing_biopsy_containment_task, advance=1)
             biopsies_progress.remove_task(testing_biopsy_containment_task)
@@ -395,7 +402,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
-
+        #live_display.stop()
         structure_specific_results_dict_empty = {"Total successes (containment) list": None, "Binomial estimator list": None, "Confidence interval 95 (containment) list": None, "Standard error (containment) list": None}
         compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)
         compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
@@ -406,20 +413,37 @@ def simulator_parallel(parallel_pool,
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             compiling_results_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
-                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
+                num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
-                MC_translation_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] 
+                containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] 
                 MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 
                 sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
                 compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
-                for structureID,structure_MC_results in MC_translation_results_for_fixed_bx_dict.items():
-                    structures_progress.update(compiling_results_each_non_bx_structure_containment_task, description = "[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structureID), total=sp_patient_total_num_non_BXs)
+                for structure_info in MC_compiled_results_for_fixed_bx_dict.keys():
+                    
+                    structure_roi = structure_info[0]
+                    non_bx_structure_type = structure_info[1]
+                    structure_refnum = structure_info[2]
+                    structure_index = structure_info[3]
+
+                    structures_progress.update(compiling_results_each_non_bx_structure_containment_task, description = "[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=sp_patient_total_num_non_BXs)
+                    
                     structure_specific_results_dict = structure_specific_results_dict_empty.copy()
+
+                    bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_cudf_dataframe[(containment_info_grand_cudf_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                                                           & (containment_info_grand_cudf_dataframe["Relative structure index"] == structure_index)
+                                                                                                           & (containment_info_grand_cudf_dataframe["Pt contained bool"] == True)
+                                                                                                           & (containment_info_grand_cudf_dataframe["Original pt index"] == pt_index)
+                                                                                                           ])
+                                                                                                           for pt_index in range(num_sample_pts_in_bx)
+                                                                                                           ]
+                    structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list
                     # counter list needs to be reset for every structure 
+                    """
                     bx_containment_counter_by_org_pt_ind_list = [0]*num_sample_pts_per_bx    
                     compiling_results_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial...", total=num_MC_containment_simulations)
                     for MC_trial in structure_MC_results:
@@ -442,9 +466,10 @@ def simulator_parallel(parallel_pool,
                         MC_trial_progress.update(compiling_results_each_trial_task, advance=1) 
                     MC_trial_progress.remove_task(compiling_results_each_trial_task)
                     structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list
+                    """
                     bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_MC_containment_simulations for x in bx_containment_counter_by_org_pt_ind_list]
                     structure_specific_results_dict["Binomial estimator list"] = bx_containment_binomial_estimator_by_org_pt_ind_list
-                    MC_compiled_results_for_fixed_bx_dict[structureID] = structure_specific_results_dict
+                    MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
                     structures_progress.update(compiling_results_each_non_bx_structure_containment_task, advance=1)
                 structures_progress.remove_task(compiling_results_each_non_bx_structure_containment_task)
                 biopsies_progress.update(compiling_results_biopsy_containment_task, advance = 1) 
