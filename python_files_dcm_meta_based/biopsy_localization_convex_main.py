@@ -129,8 +129,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
-    num_MC_containment_simulations_input = 5
-    num_MC_dose_simulations_input = 10
+    num_MC_containment_simulations_input = 1000
+    num_MC_dose_simulations_input = 20
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     
@@ -169,7 +169,7 @@ def main():
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
-    show_containment_demonstration_plots = False
+    show_containment_demonstration_plots = True
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = True
     show_processed_3d_datasets_renderings_plotly = False

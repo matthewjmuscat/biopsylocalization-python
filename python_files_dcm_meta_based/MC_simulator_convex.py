@@ -14,7 +14,9 @@ import scipy
 import math
 import statistics
 import copy
-
+import cuspatial
+from shapely.geometry import Point, Polygon
+import geopandas
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -200,7 +202,7 @@ def simulator_parallel(parallel_pool,
 
 
 
-        
+        """
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -214,6 +216,7 @@ def simulator_parallel(parallel_pool,
             bx_structure_type = bx_ref
             testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total = sp_patient_total_num_BXs)           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
                 biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
@@ -243,7 +246,6 @@ def simulator_parallel(parallel_pool,
                     
                     testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
                     all_trials_POP_test_results_and_point_clouds_tuple = []
-                    
                     for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr):
                         # cutoff the number of simulations for containment since it is slow
                         if trial_num > (num_MC_containment_simulations-1):
@@ -288,6 +290,111 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(testing_biopsy_containment_patient_task, visible = False)
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
+        """
+
+        live_display.stop()
+        testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures (cuspatial)...", total=num_patients)
+        testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures (cuspatial)", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+            patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment in all anatomical structures (cuspatial) [{}]...".format(patientUID))
+            bx_structure_type = bx_ref
+            testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total = sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+                num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
+                biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
+                
+                # paint the unshifted bx sampled points purple for later viewing
+                unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+                testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
+                structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
+                MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                for structure_info,shifted_bx_data_3darr in structure_shifted_bx_data_dict.items():
+                    structure_roi = structure_info[0]
+                    non_bx_structure_type = structure_info[1]
+                    structure_refnum = structure_info[2]
+                    structure_index = structure_info[3]
+
+                    structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi))
+
+                    non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
+                    non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
+                    non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                    non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                    non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+                    prostate_interslice_interpolation_information = master_structure_reference_dict[patientUID]['OAR ref'][0]["Inter-slice interpolation information"]
+                    prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
+                    prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
+                    
+                    testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
+                    all_trials_POP_test_results_and_point_clouds_tuple = []
+
+                    shifted_bx_data_3darr_num_MC_containment_sims_cutoff = shifted_bx_data_3darr[0:num_MC_containment_simulations]
+                    shifted_bx_data_stacked_2darr_from_all_trials_3darray = np.reshape(shifted_bx_data_3darr_num_MC_containment_sims_cutoff,(-1,3))
+                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY = shifted_bx_data_stacked_2darr_from_all_trials_3darray[:,0:2]
+                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_Z = shifted_bx_data_stacked_2darr_from_all_trials_3darray[:,2]
+
+                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY_interleaved_1darr = shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY.flatten()
+                    shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY_interleaved_1darr)
+
+
+                    interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list    
+                    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,shifted_bx_data_stacked_2darr_from_all_trials_3darray_Z)
+
+                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
+                    non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
+                    non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+
+                    
+                    containment_info_grand_cudf_dataframe = point_containment_tools.cuspatial_points_contained(non_bx_struct_zslices_polygons_cuspatial_geoseries,
+                               shifted_bx_data_XY_cuspatial_geoseries_points, 
+                               shifted_bx_data_stacked_2darr_from_all_trials_3darray, 
+                               nearest_interpolated_zslice_index_array,
+                               nearest_interpolated_zslice_vals_array, 
+                               num_sample_pts_in_bx,
+                               num_MC_containment_simulations)
+
+                    
+                    if (show_containment_demonstration_plots == True) & (non_bx_structure_type == 'DIL ref'):
+                        for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr_num_MC_containment_sims_cutoff):
+                            bx_test_pts_color_R = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
+                            bx_test_pts_color_G = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
+                            bx_test_pts_color_B = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
+                            bx_test_pts_color_arr = np.empty([num_sample_pts_in_bx,3])
+                            bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+                            bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+                            bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+                            structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud_with_colors_array(single_trial_shifted_bx_data_arr, bx_test_pts_color_arr)
+                            plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                            #plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
+                            #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
+                            #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
+                    
+                    structures_progress.update(testing_each_non_bx_structure_containment_task, advance=1)
+                
+                structures_progress.remove_task(testing_each_non_bx_structure_containment_task)
+                # Update the master dictionary
+                #master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] = MC_translation_results_for_fixed_bx_dict
+
+
+                biopsies_progress.update(testing_biopsy_containment_task, advance=1)
+            biopsies_progress.remove_task(testing_biopsy_containment_task)
+
+            patients_progress.update(testing_biopsy_containment_patient_task, advance = 1)
+            completed_progress.update(testing_biopsy_containment_patient_task_completed, advance = 1)
+        patients_progress.update(testing_biopsy_containment_patient_task, visible = False)
+        completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
+        live_display.refresh()
+
+
 
         structure_specific_results_dict_empty = {"Total successes (containment) list": None, "Binomial estimator list": None, "Confidence interval 95 (containment) list": None, "Standard error (containment) list": None}
         compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)

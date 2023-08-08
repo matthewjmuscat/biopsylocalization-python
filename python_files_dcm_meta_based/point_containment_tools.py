@@ -4,7 +4,9 @@ import open3d as o3d
 from shapely.geometry import Point, Polygon
 from bisect import bisect_left
 import time
-
+import cuspatial
+import cudf
+import cupy as cp
 
 #import multiprocess
 #import dill
@@ -21,6 +23,14 @@ def create_point_cloud(data_arr, color = np.array([0,0,0]), random_color = False
         pcd_color = color
     point_cloud.paint_uniform_color(pcd_color)
     return point_cloud
+
+
+def create_point_cloud_with_colors_array(data_arr, rgb_color_arr):
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(data_arr)
+    point_cloud.colors = o3d.utility.Vector3dVector(rgb_color_arr)
+    return point_cloud
+
 
 def adjacent_slice_delaunay_parallel(parallel_pool, threeD_data_zlsice_list):
     """
@@ -213,6 +223,80 @@ def plane_point_in_polygon_concave(test_points_results,interslice_interpolation_
     return test_points_results, test_pts_point_cloud_concave_zlsice_updated
 
 
+
+def cuspatial_points_contained(polygons_geoseries,
+                               test_points_geoseries, 
+                               test_points_array, 
+                               nearest_zslices_indices_arr,
+                               nearest_zslices_vals_arr, 
+                               num_sample_pts_in_bx,
+                               num_MC_containment_simulations):
+    
+    num_zslices = len(polygons_geoseries)
+    total_num_points = len(test_points_geoseries) # note that this is the total number of points num_MC_containment_sims*num_sampled_pts_in_bx
+    current_index = 0
+    next_index = 0
+    results_dataframes_list = []
+    while next_index < num_zslices:
+        if num_zslices - current_index > 30:
+            next_index = current_index + 30
+        else:
+            next_index = num_zslices
+        containment_results_grand_dataframe_polygon_subset = cuspatial.point_in_polygon(test_points_geoseries,
+                                        polygons_geoseries[current_index:next_index]                   
+                                        )
+        results_dataframes_list.append(containment_results_grand_dataframe_polygon_subset)
+        current_index = next_index
+        
+    containment_results_grand_dataframe = cudf.concat(results_dataframes_list,axis=1)
+
+    #contain_bool_by_point_list = [containment_results_grand_dataframe.values[list_ind % num_sample_pts_in_bx, polygon_ind] for list_ind,polygon_ind in enumerate(nearest_zslices_indices_arr)]
+    #contain_bool_arr = cp.array(contain_bool_by_point_list)
+    points_arr_index = np.array([list_ind % num_sample_pts_in_bx for list_ind in range(total_num_points)])
+    contain_bool_arr = containment_results_grand_dataframe.values[points_arr_index,nearest_zslices_indices_arr]
+    contain_color_arr = color_by_bool_by_arr(cp.asnumpy(contain_bool_arr))
+    trial_number_list = [int(i+1) for i in range(num_MC_containment_simulations) for j in range(num_sample_pts_in_bx)]
+    results_dictionary = {"Original pt index": points_arr_index,
+                          "Pt contained bool": contain_bool_arr,
+                          "Nearest zslice zval": nearest_zslices_vals_arr,
+                          "Nearest zslice index": nearest_zslices_indices_arr,
+                          "Pt clr R": contain_color_arr[:,0],
+                          "Pt clr G": contain_color_arr[:,1],
+                          "Pt clr B": contain_color_arr[:,2],
+                          "Test pt X":test_points_array[:,0],
+                          "Test pt Y":test_points_array[:,1],
+                          "Test pt Z":test_points_array[:,2],
+                          "Trial num": trial_number_list
+                          }
+
+
+    grand_cudf_dataframe = cudf.DataFrame.from_dict(results_dictionary)
+    
+    return grand_cudf_dataframe
+
+
+
+
+def color_by_bool_by_arr(contain_bool_arr):
+    color_arr = np.empty([len(contain_bool_arr),3])
+    for index,element_bool in enumerate(contain_bool_arr):
+        if element_bool == True:
+            color = np.array([0,1,0]) # green
+        else:
+            color = np.array([1,0,0]) # red
+        color_arr[index,:] = color
+    return color_arr
+
+
+
+def color_by_bool(bool_val):
+    if bool_val == True:
+        color = np.array([0,1,0],dtype=float)
+    elif bool_val == False:
+        color = np.array([1,0,0],dtype=float)
+
+    return color
+
 def take_closest(myList_org, myNumber):
     """
     Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
@@ -249,6 +333,58 @@ def take_closest(myList_org, myNumber):
             return len(myList) - 1 - pos, after
         else:
             return len(myList) - pos, before
+        
+def take_closest_index_only(myList_org, myNumber):
+    """
+    Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    myList = myList_org.copy()
+    if myList[0] > myList[1]:
+        myList.reverse()
+        list_reversed = True
+    else:
+        list_reversed = False
+    if list_reversed == False:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return 0
+        if pos == len(myList):
+            return pos-1
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return pos
+        else:
+            return pos - 1
+    elif list_reversed == True:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return len(myList)-1
+        if pos == len(myList):
+            return 0
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return len(myList) - 1 - pos
+        else:
+            return len(myList) - pos
+        
+
+
+def take_closest_array_input(myList, myArray):
+    """
+    Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number. Takes an array as input and vectorizes the 'take_closest_index_only' function. 
+
+    Returns an array of the indices of the original list that contains the value that is closest to each element of the given array.
+    """
+
+    take_closest_index_only_vectorized = np.vectorize(take_closest, excluded=['myList_org'])
+    closest_vals_indices_array, closest_vals_array = take_closest_index_only_vectorized(myList_org = myList,myNumber = myArray)
+    return closest_vals_indices_array, closest_vals_array
 
 
 def convex_bx_structure_global_test_point_containment(global_delaunay_tri,test_point):
