@@ -130,7 +130,7 @@ def main():
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.2
     num_MC_containment_simulations_input = 1000
-    num_MC_dose_simulations_input = 20
+    num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     
@@ -660,18 +660,18 @@ def main():
                         
                 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pulling_patients_task_main_description = "[red]Processing patient structure data [{}]...".format(patientUID)
+                    pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID)
                     patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
 
                     structureID_default = "Initializing"
                     num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                    pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                    pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID_default)
                     pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
                     for structs in structs_referenced_list:
                         for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                             structureID = specific_structure["ROI"]
                             structure_reference_number = specific_structure["Ref #"]
-                            pulling_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                            pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
                             
                             # create points for simulated biopsies to create
@@ -991,6 +991,8 @@ def main():
 
                 # Now can export master structure dict to file!
                 if export_pickled_preprocessed_data == True:
+                    export_preprocessed_data_task_indeterminate = indeterminate_progress_main.add_task("[red]Exporting preprocessed data...", total=None)
+                    export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False)
                     date_time_now = datetime.now()
                     date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
                     global_num_structures = master_structure_info_dict["Global"]["Num structures"]
@@ -1029,6 +1031,19 @@ def main():
                             write.writerow(["OAR names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[1]]])
                             write.writerow(["DIL names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[2]]])
                             write.writerow(['___','___','___'])
+
+
+                    indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate, visible = False, refresh = True)
+                    completed_progress.update(export_preprocessed_data_task_indeterminate_completed, visible = True, refresh = True)
+                    live_display.refresh()
+                else:
+                    export_preprocessed_data_task_indeterminate_skipped = indeterminate_progress_main.add_task("[red]Exporting preprocessed data [SKIPPED]...", total=None)
+                    export_preprocessed_data_task_indeterminate_skipped_completed = completed_progress.add_task("[green]Exporting preprocessed data [SKIPPED]", visible = False)
+
+                    indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate_skipped, visible = False, refresh = True)
+                    completed_progress.update(export_preprocessed_data_task_indeterminate_skipped_completed, visible = True, refresh = True)
+                    live_display.refresh()
+
             
             elif skip_preprocessing == True:
                 live_display.stop()
@@ -1070,7 +1085,16 @@ def main():
                 
 
             # create non-pickleable objects concerning the background dose data
+            patientUID_default = "Initializing"
+            pickling_dose_patients_task_main_description = "[red]Pickling patient dose data [{}]...".format(patientUID_default)
+            pickling_dose_patients_task_completed_main_description = "[green]Pickling patient dose data"
+            pickling_dose_patients_task = patients_progress.add_task(pickling_dose_patients_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+            pickling_dose_patients_task_completed = completed_progress.add_task(pickling_dose_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible = False)
+
             for patientUID,pydicom_item in master_structure_reference_dict.items():
+                pickling_dose_patients_task_main_description = "[red]Pickling patient dose data [{}]...".format(patientUID)
+                patients_progress.update(pickling_dose_patients_task, description = pickling_dose_patients_task_main_description)
+                
                 dose_ref_dict = pydicom_item[dose_ref]
                 phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
 
@@ -1083,30 +1107,53 @@ def main():
 
                 master_structure_reference_dict[patientUID][dose_ref] = dose_ref_dict
 
-                # plot dose point cloud cubic lattice (color only)
-                if show_3d_dose_renderings == True:
-                    patients_progress.stop_task(processing_patients_dose_task)
-                    completed_progress.stop_task(processing_patients_dose_task_completed)
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(dose_point_cloud)
-                    stopwatch.start()
-                    patients_progress.start_task(processing_patients_dose_task)
-                    completed_progress.start_task(processing_patients_dose_task_completed)
+                
 
-                # plot dose point cloud thresholded cubic lattice (color only)
-                if show_3d_dose_renderings == True:
-                    patients_progress.stop_task(processing_patients_dose_task)
-                    completed_progress.stop_task(processing_patients_dose_task_completed)
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
-                    stopwatch.start()
-                    patients_progress.start_task(processing_patients_dose_task)
-                    completed_progress.start_task(processing_patients_dose_task_completed)
+                patients_progress.update(pickling_dose_patients_task, advance=1)
+                completed_progress.update(pickling_dose_patients_task_completed, advance=1)
+            patients_progress.update(pickling_dose_patients_task, visible=False)
+            completed_progress.update(pickling_dose_patients_task_completed,  visible=True)        
             
+            live_display.refresh()
             
+            # plot dose point cloud cubic lattice (color only)
+            if show_3d_dose_renderings == True:
+                dose_point_cloud_list = []
+                for patientUID,pydicom_item in master_structure_reference_dict.keys():
+                    dose_point_cloud = master_structure_reference_dict[patientUID][dose_ref]["Dose grid point cloud"]
+                    dose_point_cloud_list.append(dose_point_cloud)
+                
+                stopwatch.stop()
+                plotting_funcs.plot_geometries(*dose_point_cloud_list)
+                stopwatch.start()
+                
+                del dose_point_cloud_list
             
+
+            # plot dose point cloud thresholded cubic lattice (color only)
+            if show_3d_dose_renderings == True:
+                dose_point_cloud_thresholded_list = []
+                for patientUID,pydicom_item in master_structure_reference_dict.keys():
+                    dose_point_cloud_thresholded = master_structure_reference_dict[patientUID][dose_ref]["Dose grid point cloud thresholded"]
+                    dose_point_cloud_thresholded_list.append(dose_point_cloud_thresholded)
+                
+                stopwatch.stop()
+                plotting_funcs.plot_geometries(*dose_point_cloud_thresholded_list)
+                stopwatch.start()
+                
+                del dose_point_cloud_thresholded_list
             
+
+            
+            patientUID_default = "Initializing"
+            pickling_structure_patients_task_main_description = "[red]Pickling patient structure data [{}]...".format(patientUID_default)
+            pickling_structure_patients_task_completed_main_description = "[green]Pickling patient structure data"
+            pickling_structure_patients_task = patients_progress.add_task(pickling_structure_patients_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+            pickling_structure_patients_task_completed = completed_progress.add_task(pickling_structure_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible = False)
+
             for patientUID,pydicom_item in master_structure_reference_dict.items():
+                pickling_structure_patients_task_main_description = "[red]Pickling patient structure data [{}]...".format(patientUID)
+                patients_progress.update(pickling_structure_patients_task, description = pickling_structure_patients_task_main_description)
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                         # Creating pointcloud dictionary of the interpolation done
@@ -1152,10 +1199,11 @@ def main():
                             reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
 
+                patients_progress.update(pickling_structure_patients_task, advance=1)
+                completed_progress.update(pickling_structure_patients_task_completed, advance=1)
+            patients_progress.update(pickling_structure_patients_task, visible=False)
+            completed_progress.update(pickling_structure_patients_task_completed,  visible=True)  
 
-            
-            #live_display.stop()
-            
             live_display.refresh()
 
             # displays 3d renderings of patient contour data and dose data

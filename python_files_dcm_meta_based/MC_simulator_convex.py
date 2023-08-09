@@ -434,10 +434,10 @@ def simulator_parallel(parallel_pool,
                     
                     structure_specific_results_dict = structure_specific_results_dict_empty.copy()
 
-                    bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_cudf_dataframe[(containment_info_grand_cudf_dataframe["Relative structure ROI"] == structure_roi)  
-                                                                                                           & (containment_info_grand_cudf_dataframe["Relative structure index"] == structure_index)
-                                                                                                           & (containment_info_grand_cudf_dataframe["Pt contained bool"] == True)
-                                                                                                           & (containment_info_grand_cudf_dataframe["Original pt index"] == pt_index)
+                    bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                                                           & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
+                                                                                                           & (containment_info_grand_all_structures_cudf_dataframe["Pt contained bool"] == True)
+                                                                                                           & (containment_info_grand_all_structures_cudf_dataframe["Original pt index"] == pt_index)
                                                                                                            ])
                                                                                                            for pt_index in range(num_sample_pts_in_bx)
                                                                                                            ]
@@ -723,7 +723,7 @@ def simulator_parallel(parallel_pool,
 
         bx_structure_type = bx_ref
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
-        compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients)
+        compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(compile_results_dose_NN_biopsy_containment_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
@@ -751,7 +751,7 @@ def simulator_parallel(parallel_pool,
         #live_display.stop()
         bx_structure_type = bx_ref
         calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
-        calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients)
+        calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calculate_biopsy_DVH_quantities_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
@@ -851,7 +851,7 @@ def simulator_parallel(parallel_pool,
 
         bx_structure_type = bx_ref
         computing_MLE_statistics_dose_task = patients_progress.add_task("[red]Computing dosimetric localization statistics (MLE) [{}]...".format("initializing"), total=num_patients)
-        computing_MLE_statistics_dose_task_complete = completed_progress.add_task("[green]Computing dosimetric localization statistics (MLE)", total=num_patients)
+        computing_MLE_statistics_dose_task_complete = completed_progress.add_task("[green]Computing dosimetric localization statistics (MLE)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(computing_MLE_statistics_dose_task, description = "[red]Computing dosimetric localization statistics (MLE) [{}]...".format(patientUID))
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
@@ -886,7 +886,7 @@ def simulator_parallel(parallel_pool,
 
         # voxelize dose results
         biopsy_voxelize_dose_task = patients_progress.add_task("[red]Voxelizing dose results [{}]...".format("initializing"), total=num_patients)
-        biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients)
+        biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
             bx_structure_type = bx_ref           
