@@ -992,7 +992,7 @@ def main():
                 # Now can export master structure dict to file!
                 if export_pickled_preprocessed_data == True:
                     export_preprocessed_data_task_indeterminate = indeterminate_progress_main.add_task("[red]Exporting preprocessed data...", total=None)
-                    export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False)
+                    export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False, total=master_structure_info_dict["Global"]["Num patients"])
                     date_time_now = datetime.now()
                     date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
                     global_num_structures = master_structure_info_dict["Global"]["Num structures"]
@@ -1034,11 +1034,11 @@ def main():
 
 
                     indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate, visible = False, refresh = True)
-                    completed_progress.update(export_preprocessed_data_task_indeterminate_completed, visible = True, refresh = True)
+                    completed_progress.update(export_preprocessed_data_task_indeterminate_completed, visible = True, refresh = True, advance=master_structure_info_dict["Global"]["Num patients"])
                     live_display.refresh()
                 else:
                     export_preprocessed_data_task_indeterminate_skipped = indeterminate_progress_main.add_task("[red]Exporting preprocessed data [SKIPPED]...", total=None)
-                    export_preprocessed_data_task_indeterminate_skipped_completed = completed_progress.add_task("[green]Exporting preprocessed data [SKIPPED]", visible = False)
+                    export_preprocessed_data_task_indeterminate_skipped_completed = completed_progress.add_task("[green]Exporting preprocessed data [SKIPPED]", visible = False, total=None)
 
                     indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate_skipped, visible = False, refresh = True)
                     completed_progress.update(export_preprocessed_data_task_indeterminate_skipped_completed, visible = True, refresh = True)
