@@ -7,6 +7,8 @@ import time
 import cuspatial
 import cudf
 import cupy as cp
+import point_containment_tools
+import plotting_funcs
 
 #import multiprocess
 #import dill
@@ -228,10 +230,16 @@ def cuspatial_points_contained(polygons_geoseries,
                                test_points_geoseries, 
                                test_points_array, 
                                nearest_zslices_indices_arr,
-                               nearest_zslices_vals_arr, 
+                               nearest_zslices_vals_arr,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval,  
                                num_sample_pts_in_bx,
                                num_MC_containment_simulations,
-                               structure_info):
+                               structure_info,
+                               unshifted_bx_sampled_pts_copy_pcd,
+                               non_bx_struct_interpolated_pts_pcd,
+                               plot_cupy_containment_results
+                               ):
     
     num_zslices = len(polygons_geoseries)
     total_num_points = len(test_points_geoseries) # note that this is the total number of points num_MC_containment_sims*num_sampled_pts_in_bx
@@ -253,14 +261,20 @@ def cuspatial_points_contained(polygons_geoseries,
 
     #contain_bool_by_point_list = [containment_results_grand_dataframe.values[list_ind % num_sample_pts_in_bx, polygon_ind] for list_ind,polygon_ind in enumerate(nearest_zslices_indices_arr)]
     #contain_bool_arr = cp.array(contain_bool_by_point_list)
-    points_arr_index = np.array([list_ind % num_sample_pts_in_bx for list_ind in range(total_num_points)])
-    contain_bool_arr = containment_results_grand_dataframe.to_numpy()[points_arr_index,nearest_zslices_indices_arr]
+    points_arr_org_index = np.array([list_ind % num_sample_pts_in_bx for list_ind in range(total_num_points)])
+    points_arr_index = np.arange(0,total_num_points)
+    contain_bool_arr_step_1 = containment_results_grand_dataframe.to_cupy()[points_arr_index,nearest_zslices_indices_arr]
+    # further set points that are outside z-range to False
+    pts_contained_below_max_zval = cp.array((test_points_array[:,2] < non_bx_struct_max_zval))
+    pts_contained_above_min_zval = cp.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_between_zvals = cp.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
+    contain_bool_arr = cp.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
     contain_color_arr = color_by_bool_by_arr(cp.asnumpy(contain_bool_arr))
     trial_number_list = [int(i+1) for i in range(num_MC_containment_simulations) for j in range(num_sample_pts_in_bx)]
     results_dictionary = {"Relative structure ROI": structure_info[0],
                           "Relative structure type": structure_info[1],
                           "Relative structure index": structure_info[3],
-                          "Original pt index": points_arr_index,
+                          "Original pt index": points_arr_org_index,
                           "Pt contained bool": contain_bool_arr,
                           "Nearest zslice zval": nearest_zslices_vals_arr,
                           "Nearest zslice index": nearest_zslices_indices_arr,
@@ -273,9 +287,30 @@ def cuspatial_points_contained(polygons_geoseries,
                           "Trial num": trial_number_list
                           }
 
-
-    grand_cudf_dataframe = cudf.DataFrame.from_dict(results_dictionary)
     
+    grand_cudf_dataframe = cudf.DataFrame.from_dict(results_dictionary)
+
+    if plot_cupy_containment_results == True:
+        bx_test_pts_color_R = grand_cudf_dataframe["Pt clr R"].to_numpy()
+        bx_test_pts_color_G = grand_cudf_dataframe["Pt clr G"].to_numpy()
+        bx_test_pts_color_B = grand_cudf_dataframe["Pt clr B"].to_numpy()
+        bx_test_pts_color_arr = np.empty([test_points_array.shape[0],3])
+        bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+        bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+        bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+
+        bx_test_pts_X = grand_cudf_dataframe["Test pt X"].to_numpy()
+        bx_test_pts_Y = grand_cudf_dataframe["Test pt Y"].to_numpy()
+        bx_test_pts_Z = grand_cudf_dataframe["Test pt Z"].to_numpy()
+        bx_test_pts_arr = np.empty([test_points_array.shape[0],3])
+        bx_test_pts_arr[:,0] = bx_test_pts_X
+        bx_test_pts_arr[:,1] = bx_test_pts_Y
+        bx_test_pts_arr[:,2] = bx_test_pts_Z
+
+        structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud_with_colors_array(bx_test_pts_arr, bx_test_pts_color_arr)
+        plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+
+
     return grand_cudf_dataframe
 
 

@@ -128,7 +128,7 @@ def main():
     # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
-    bx_sample_pts_lattice_spacing = 0.2
+    bx_sample_pts_lattice_spacing = 0.3
     num_MC_containment_simulations_input = 1000
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
@@ -171,11 +171,13 @@ def main():
     show_NN_dose_demonstration_plots = False
     show_containment_demonstration_plots = False
     show_3d_dose_renderings = False
-    show_processed_3d_datasets_renderings = True
+    show_processed_3d_datasets_renderings = False
     show_processed_3d_datasets_renderings_plotly = False
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     plot_translation_vectors_pointclouds = False
+    plot_cupy_containment_results = False # nice because it shows all trials at once
+    plot_shifted_biopsies = False
 
     # Final production plots to create:
     regression_type_input = 0 # LOWESS = 1 or True, NPKR = 0 or False, this concerns the type of non parametric kernel regression that is performed
@@ -1610,7 +1612,10 @@ def main():
                                                                                         cumulative_dvh_resolution,
                                                                                         volume_DVH_percent_dose,
                                                                                         plot_translation_vectors_pointclouds,
-                                                                                        spinner_type)
+                                                                                        plot_cupy_containment_results,
+                                                                                        plot_shifted_biopsies,
+                                                                                        spinner_type,
+                                                                                        )
             
 
             live_display.start(refresh=True)

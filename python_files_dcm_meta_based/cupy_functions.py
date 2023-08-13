@@ -125,7 +125,7 @@ def MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_cupy(pyd
             bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr = bx_only_shifted_randomly_sampled_bx_pts_3Darr + non_bx_struct_cp_arr_for_bx_shift_3d_arr_for_vectorization
 
             structure_shifted_bx_data_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_struct_index] = bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr
-
+        
     return structure_shifted_bx_data_dict
 
 

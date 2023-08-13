@@ -5,6 +5,7 @@ import numpy as np
 import math_funcs as mf
 import plotly.graph_objects as go
 import misc_tools
+import cupy as cp
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -25,14 +26,14 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
             structure_reference_number = specific_structure["Ref #"]
             if structs == bx_structs:
                 sampled_rigid_shifts_from_normal_and_uniform_distribution = specific_structure["MC data: Total rigid shift vectors arr"]
-                sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude = np.linalg.norm(sampled_rigid_shifts_from_normal_and_uniform_distribution, axis = 1)
+                sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude = cp.linalg.norm(sampled_rigid_shifts_from_normal_and_uniform_distribution, axis = 1)
                 sample_description = 'Total translation (length uncertainty + normal)'
-                structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude
+                structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = cp.asnumpy(sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude)
             # create box plots of sampled rigid shifts for each structure                      
             sampled_rigid_shifts_from_normal_distribution = specific_structure['MC data: Generated normal dist random samples arr']
-            sampled_rigid_shifts_from_normal_distribution_magnitude = np.linalg.norm(sampled_rigid_shifts_from_normal_distribution, axis = 1)
+            sampled_rigid_shifts_from_normal_distribution_magnitude = cp.linalg.norm(sampled_rigid_shifts_from_normal_distribution, axis = 1)
             sample_description = 'Rigid translation (normal)'
-            structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = sampled_rigid_shifts_from_normal_distribution_magnitude
+            structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = cp.asnumpy(sampled_rigid_shifts_from_normal_distribution_magnitude)
     
     structure_name_and_shift_type_dict_pandas_data_frame = pandas.DataFrame(data=structure_name_and_shift_type_dict_for_pandas_data_frame)
     pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["All shift vector magnitudes by structure and shift type"] = structure_name_and_shift_type_dict_pandas_data_frame
