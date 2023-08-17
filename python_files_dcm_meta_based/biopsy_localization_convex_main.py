@@ -165,6 +165,7 @@ def main():
     num_cumulative_dvh_plots_to_show = 25
     num_differential_dvh_plots_to_show = 25
     volume_DVH_percent_dose = [100,125,150,200,300]
+    volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
 
 
     # plots to show:
@@ -176,7 +177,7 @@ def main():
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     plot_translation_vectors_pointclouds = False
-    plot_cupy_containment_results = False # nice because it shows all trials at once
+    plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
     plot_shifted_biopsies = False
 
     # Final production plots to create:
@@ -187,7 +188,8 @@ def main():
     tissue_class_probability_plot_type_list = ['with_errors','']
     production_plots_input_dictionary = {"Sampled translation vector magnitudes box plots": \
                                             {"Plot bool": True, 
-                                             "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials"
+                                             "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials",
+                                             "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
                                         "Axial dose distribution all trials and global regression": \
                                             {"Plot bool": True, 
@@ -211,11 +213,13 @@ def main():
                                              },
                                         "Axial dose distribution voxelized box plot": \
                                             {"Plot bool": True, 
-                                             "Plot name": " - dose-box_plot-voxelized_axial_dose_distribution"
+                                             "Plot name": " - dose-box_plot-voxelized_axial_dose_distribution",
+                                             "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Axial dose distribution voxelized violin plot": \
                                             {"Plot bool": True, 
-                                             "Plot name": " - dose-violin_plot-voxelized_axial_dose_distribution"
+                                             "Plot name": " - dose-violin_plot-voxelized_axial_dose_distribution",
+                                             "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Differential DVH showing N trials plot": \
                                             {"Plot bool": False, 
@@ -223,15 +227,21 @@ def main():
                                              },
                                         "Differential DVH dose binned all trials box plot": \
                                             {"Plot bool": True, 
-                                             "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot'
+                                             "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot',
+                                             "Box plot color": 'rgba(0, 92, 171, 1)',
+                                             "Nominal point color": 'rgba(227, 27, 35, 1)'
                                              },
                                         "Cumulative DVH showing N trials plot": \
                                             {"Plot bool": False, 
                                              "Plot name": ' - dose-DVH-cumulative_dvh_showing_'+str(num_cumulative_dvh_plots_to_show)+'_trials'
                                              },
-                                        "Cumulative DVH quantile regression all trials plot": \
+                                        "Cumulative DVH quantile regression all trials plot regression only": \
+                                            {"Plot bool": False, 
+                                             "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_regression_only'
+                                             },
+                                        "Cumulative DVH quantile regression all trials plot colorwash": \
                                             {"Plot bool": True, 
-                                             "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles'
+                                             "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_colorwash'
                                              },
                                         "Tissue classification scatter and regression probabilities all trials plot": \
                                             {"Plot bool": True, 
@@ -244,7 +254,7 @@ def main():
     modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
-    export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
+    export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
     skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
 
     # non-user changeable variables, but need to be initiatied:
@@ -329,10 +339,6 @@ def main():
 
 
             if skip_preprocessing == False:
-
-
-
-
                 dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
                 important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
                 important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
@@ -495,11 +501,6 @@ def main():
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
                 live_display.refresh()
-
-                
-
-
-                    
 
 
 
@@ -1039,10 +1040,8 @@ def main():
                     completed_progress.update(export_preprocessed_data_task_indeterminate_completed, visible = True, refresh = True, advance=master_structure_info_dict["Global"]["Num patients"])
                     live_display.refresh()
                 else:
-                    export_preprocessed_data_task_indeterminate_skipped = indeterminate_progress_main.add_task("[red]Exporting preprocessed data [SKIPPED]...", total=None)
                     export_preprocessed_data_task_indeterminate_skipped_completed = completed_progress.add_task("[green]Exporting preprocessed data [SKIPPED]", visible = False, total=None)
-
-                    indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate_skipped, visible = False, refresh = True)
+                    completed_progress.stop_task(export_preprocessed_data_task_indeterminate_skipped_completed)
                     completed_progress.update(export_preprocessed_data_task_indeterminate_skipped_completed, visible = True, refresh = True)
                     live_display.refresh()
 
@@ -1611,15 +1610,17 @@ def main():
                                                                                         differential_dvh_resolution,
                                                                                         cumulative_dvh_resolution,
                                                                                         volume_DVH_percent_dose,
+                                                                                        volume_DVH_quantiles_to_calculate,
                                                                                         plot_translation_vectors_pointclouds,
-                                                                                        plot_cupy_containment_results,
+                                                                                        plot_cupy_containment_distribution_results,
                                                                                         plot_shifted_biopsies,
-                                                                                        spinner_type,
+                                                                                        spinner_type
                                                                                         )
             
 
             live_display.start(refresh=True)
-            
+            #live_display.stop()
+
             # Create the specific output directory folder
             date_time_now = datetime.now()
             date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
@@ -1682,7 +1683,7 @@ def main():
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
                         bx_points_bx_coords_sys_arr_row = bx_points_bx_coords_sys_arr_list.copy()
-                        bx_points_bx_coords_sys_arr_row.insert(0,'')
+                        bx_points_bx_coords_sys_arr_row.insert(0,'Sampled point vector (Bx coord sys) (mm)')
                         containment_output_file_name = patientUID+','+specific_bx_structure['ROI']+',n_MC_c='+str(num_MC_containment_simulations_input)+',n_bx='+str(num_sample_pts_per_bx)+'-containment_out.csv'
                         containment_output_csv_file_path = patient_sp_output_csv_dir.joinpath(containment_output_file_name)
                         with open(containment_output_csv_file_path, 'w', newline='') as f:
@@ -1696,39 +1697,47 @@ def main():
                             write.writerow(['Col ->','Fixed bx point'])
                             write.writerow(bx_points_bx_coords_sys_arr_row)
                             x_vals_row = [point_vec[0] for point_vec in bx_points_bx_coords_sys_arr_list]
-                            x_vals_row.insert(0,'')
+                            x_vals_row.insert(0,'X coord (mm)')
                             y_vals_row = [point_vec[1] for point_vec in bx_points_bx_coords_sys_arr_list]
-                            y_vals_row.insert(0,'')
+                            y_vals_row.insert(0,'Y coord (mm)')
                             z_vals_row = [point_vec[2] for point_vec in bx_points_bx_coords_sys_arr_list]
-                            z_vals_row.insert(0,'')
+                            z_vals_row.insert(0,'Z coord (mm)')
                             pt_radius_bx_coord_sys_row = [np.linalg.norm(point_vec[0:2]) for point_vec in bx_points_bx_coords_sys_arr_list]
-                            pt_radius_bx_coord_sys_row.insert(0,'')
+                            pt_radius_bx_coord_sys_row.insert(0,'Cyl coord radius (mm)')
                             write.writerow(x_vals_row)
                             write.writerow(y_vals_row)
                             write.writerow(z_vals_row)
                             write.writerow(pt_radius_bx_coord_sys_row)
                             
+                            rows_to_write_list = []
                             for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
                                 containment_structure_ROI = containment_structure_key_tuple[0]
+
+                                containment_structure_nominal_list = containment_structure_dict['Nominal containment list']
+                                containment_structure_nominal_with_cont_anat_ROI_row = [containment_structure_ROI + ' Nominal containment (0 or 1)']+containment_structure_nominal_list
+                                rows_to_write_list.append(containment_structure_nominal_with_cont_anat_ROI_row)
                                 
                                 containment_structure_successes_list = containment_structure_dict['Total successes (containment) list']
                                 containment_structure_successes_with_cont_anat_ROI_row = [containment_structure_ROI + ' Total successes']+containment_structure_successes_list
+                                rows_to_write_list.append(containment_structure_successes_with_cont_anat_ROI_row)
 
                                 containment_structure_binom_est_list = containment_structure_dict["Binomial estimator list"]
                                 containment_structure_binom_est_with_cont_anat_ROI_row = [containment_structure_ROI + ' Mean probability']+containment_structure_binom_est_list
-                                
+                                rows_to_write_list.append(containment_structure_binom_est_with_cont_anat_ROI_row)
+
                                 containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
                                 containment_structure_stand_err_with_cont_anat_ROI_row = [containment_structure_ROI + ' STD']+containment_structure_stand_err_list
+                                rows_to_write_list.append(containment_structure_stand_err_with_cont_anat_ROI_row)
 
                                 containment_structure_conf_int_list = containment_structure_dict["Confidence interval 95 (containment) list"]
                                 containment_structure_conf_int_with_cont_anat_ROI_row = [containment_structure_ROI + ' 95% CI']+containment_structure_conf_int_list
+                                rows_to_write_list.append(containment_structure_conf_int_with_cont_anat_ROI_row)
+
+                            for row_to_write in rows_to_write_list:
+                                write.writerow(row_to_write)
+                            
+                            del rows_to_write_list
                                 
-                                write.writerow(containment_structure_successes_with_cont_anat_ROI_row)
-                                write.writerow(containment_structure_binom_est_with_cont_anat_ROI_row)
-                                write.writerow(containment_structure_stand_err_with_cont_anat_ROI_row)
-                                write.writerow(containment_structure_conf_int_with_cont_anat_ROI_row)
-
-
                     patients_progress.update(processing_patients_task, advance = 1)
                     completed_progress.update(processing_patients_completed_task, advance = 1)
 
@@ -1840,15 +1849,36 @@ def main():
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
                             write.writerow(['Row ->','Fixed bx pt'])
                             write.writerow(['Col ->','Fixed MC trial'])
-                            write.writerow(['Vector (mm)','X (mm)', 'Y (mm)', 'Z (mm)', 'r (mm)', 'Mean (Gy)', 'STD (Gy)', 'All MC trials doses (Gy) -->'])
+                            write.writerow(['Vector (mm)',
+                                            'X (mm)', 
+                                            'Y (mm)', 
+                                            'Z (mm)', 
+                                            'r (mm)',
+                                            'Nominal (Gy)', 
+                                            'Mean (Gy)', 
+                                            'STD (Gy)', 
+                                            'All MC trials doses (Gy) -->'
+                                            ])
+                            
                             stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-                            for pt_index, dose_vals_row in enumerate(specific_bx_structure['MC data: Dose vals for each sampled bx pt list']):
+                            for pt_index in range(num_sample_pts_per_bx):
                                 #dose_vals_row_with_point = dose_vals_row.copy()
                                 pt_radius_bx_coord_sys = np.linalg.norm(bx_points_bx_coords_sys_arr_list[pt_index][0:2])
                                 mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"][pt_index]
                                 std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"][pt_index]
-                                info_row_part = [bx_points_bx_coords_sys_arr_list[pt_index], bx_points_bx_coords_sys_arr_list[pt_index][0], bx_points_bx_coords_sys_arr_list[pt_index][1], bx_points_bx_coords_sys_arr_list[pt_index][2], pt_radius_bx_coord_sys, mean_dose_val_specific_bx_pt, std_dose_val_specific_bx_pt]
-                                complete_dose_vals_row = info_row_part + dose_vals_row
+                                nominal_dose_val_specific_bx_pt = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal)'][pt_index]
+                                info_row_part = [bx_points_bx_coords_sys_arr_list[pt_index], 
+                                                 bx_points_bx_coords_sys_arr_list[pt_index][0], 
+                                                 bx_points_bx_coords_sys_arr_list[pt_index][1], 
+                                                 bx_points_bx_coords_sys_arr_list[pt_index][2], 
+                                                 pt_radius_bx_coord_sys, 
+                                                 nominal_dose_val_specific_bx_pt,
+                                                 mean_dose_val_specific_bx_pt, 
+                                                 std_dose_val_specific_bx_pt
+                                                 ]
+                                dose_vals_row_arr = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (all MC trials)'][pt_index]
+                                dose_vals_row_list = dose_vals_row_arr.tolist()
+                                complete_dose_vals_row = info_row_part + dose_vals_row_list
                                 write.writerow(complete_dose_vals_row)
 
 
@@ -1868,32 +1898,52 @@ def main():
                                 differential_dvh_dose_bin_edges_1darr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
                                                             
                                 write.writerow(['___'])
-                                write.writerow(['Differential DVH info'])
+                                write.writerow(['Differential DVH info '+dvh_display_as_str])
                                 write.writerow(['Each row is a fixed MC trial'])
-                                write.writerow(['Lower bin edge']+differential_dvh_dose_bin_edges_1darr.tolist()[0:-1])
-                                write.writerow(['Upper bin edge']+differential_dvh_dose_bin_edges_1darr.tolist()[1:])
-                                for mc_trial in range(num_MC_dose_simulations_input):
-                                    write.writerow(['']+differential_dvh_histogram_counts_by_MC_trial_arr[mc_trial,:].tolist())
+                                write.writerow(['Lower dose bin edge (across)']+differential_dvh_dose_bin_edges_1darr.tolist()[0:-1])
+                                write.writerow(['Upper dose bin edge (across)']+differential_dvh_dose_bin_edges_1darr.tolist()[1:])
+                                write.writerow(['Trial number (down)'])
+                                for mc_trial in range(differential_dvh_histogram_counts_by_MC_trial_arr.shape[0]):
+                                    if mc_trial == 0:
+                                        mc_trial_desc = 'Nominal'
+                                    else:
+                                        mc_trial_desc = str(mc_trial)
+                                    write.writerow([mc_trial_desc]+differential_dvh_histogram_counts_by_MC_trial_arr[mc_trial,:].tolist())
 
 
                                 cumulative_dvh_dose_vals_by_MC_trial_1darr = cumulative_dvh_dict["Dose vals arr (Gy)"]
                                 
                                 write.writerow(['___'])
-                                write.writerow(['Cumulative DVH info'])
+                                write.writerow(['Cumulative DVH info '+dvh_display_as_str])
                                 write.writerow(['Each row is a fixed MC trial'])
-                                write.writerow(['Dose value']+cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist())
-                                for mc_trial in range(num_MC_dose_simulations_input):
-                                    write.writerow(['']+cumulative_dvh_counts_by_MC_trial_arr[mc_trial,:].tolist())
+                                write.writerow(['Dose value (across)']+cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist())
+                                write.writerow(['Trial number (down)'])
+                                for mc_trial in range(cumulative_dvh_counts_by_MC_trial_arr.shape[0]):
+                                    if mc_trial == 0:
+                                        mc_trial_desc = 'Nominal'
+                                    else:
+                                        mc_trial_desc = str(mc_trial)
+                                    write.writerow([mc_trial_desc]+cumulative_dvh_counts_by_MC_trial_arr[mc_trial,:].tolist())
 
                             write.writerow(['___'])
                             write.writerow(['DVH metrics, percentages are relative to CTV target dose'])
                             write.writerow(['Each row is a fixed DVH metric, each column is a fixed MC trial'])
                             for vol_DVH_percent in volume_DVH_percent_dose:
-                                dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["All trials list"]
+                                dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["All MC trials list"]
+                                dvh_metric_nominal = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Nominal"]
                                 dvh_metric_mean = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Mean"]
                                 dvh_metric_std = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["STD"]
+                                dvh_metric_quantiles_dict = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Quantiles"]
+                                all_MC_trial_number_list = np.arange(1,len(dvh_metric_all_MC_trials)).tolist()
+                                nominal_and_all_MC_trial_number_list = ["Nominal"]+all_MC_trial_number_list
+                                write.writerow([' ']) 
+                                write.writerow(['Trial number (across)']+nominal_and_all_MC_trial_number_list)
+                                write.writerow(['DVH quantity (down)'])
                                 write.writerow(['V'+str(vol_DVH_percent)+'%']+dvh_metric_all_MC_trials)
-                                write.writerow(['V'+str(vol_DVH_percent)+'% mean', dvh_metric_mean, 'V'+str(vol_DVH_percent)+'% STD', dvh_metric_std])
+                                write.writerow(['V'+str(vol_DVH_percent)+'% mean', dvh_metric_mean]) 
+                                write.writerow(['V'+str(vol_DVH_percent)+'% STD', dvh_metric_std])
+                                for q,q_val in dvh_metric_quantiles_dict.items():
+                                    write.writerow(['V'+str(vol_DVH_percent)+'% '+str(q), q_val])
 
                     patients_progress.update(processing_patients_task, advance = 1)
                     completed_progress.update(processing_patients_completed_task, advance = 1)
@@ -1991,7 +2041,11 @@ def main():
                         bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
                         pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
 
-                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean dose (Gy)": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
+                                                                  "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
+                                                                  "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
+                                                                  "STD dose": std_dose_val_specific_bx_pt
+                                                                  }
                         dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
                         dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
                         
@@ -2009,6 +2063,7 @@ def main():
                 if production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot name"]
+                    box_plot_color = production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot color"]
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID_default)
@@ -2032,6 +2087,7 @@ def main():
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
+                                                box_plot_color,
                                                 general_plot_name_string
                                                 )
                         
@@ -2255,6 +2311,7 @@ def main():
                 if production_plots_input_dictionary["Axial dose distribution voxelized box plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Axial dose distribution voxelized box plot"]["Plot name"]
+                    box_plot_color = production_plots_input_dictionary["Axial dose distribution voxelized box plot"]["Plot color"]
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating voxelized axial dose distribution box plots [{}]...".format(patientUID_default)
@@ -2275,6 +2332,7 @@ def main():
                                                                             svg_image_scale,
                                                                             svg_image_width,
                                                                             svg_image_height,
+                                                                            box_plot_color,
                                                                             general_plot_name_string
                                                                             )
                         
@@ -2293,6 +2351,7 @@ def main():
                 if production_plots_input_dictionary["Axial dose distribution voxelized violin plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Axial dose distribution voxelized violin plot"]["Plot name"]
+                    violin_plot_color = production_plots_input_dictionary["Axial dose distribution voxelized violin plot"]["Plot color"]
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating voxelized axial dose distribution violin plots [{}]...".format(patientUID_default)
@@ -2313,6 +2372,7 @@ def main():
                                                                             svg_image_scale,
                                                                             svg_image_width,
                                                                             svg_image_height,
+                                                                            violin_plot_color,
                                                                             general_plot_name_string
                                                                             )
                         
@@ -2369,7 +2429,9 @@ def main():
                 if production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Plot name"]
-                    
+                    box_plot_color = production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Box plot color"]
+                    nominal_pt_color = production_plots_input_dictionary["Differential DVH dose binned all trials box plot"]["Nominal point color"]
+
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating box plots of differential DVH data (all trials) [{}]...".format(patientUID_default)
                     processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
@@ -2389,6 +2451,8 @@ def main():
                                                     svg_image_scale,
                                                     svg_image_width,
                                                     svg_image_height,
+                                                    box_plot_color,
+                                                    nominal_pt_color,
                                                     general_plot_name_string
                                                     ) 
                         
@@ -2443,9 +2507,14 @@ def main():
 
                 # show quantile regression plots of cumulative DVH data from all trials
 
-                if production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot"]["Plot bool"] == True:
+                if (production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot regression only"]["Plot bool"] == True) or \
+                    (production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot colorwash"]["Plot bool"] == True):
                     
-                    general_plot_name_string = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot"]["Plot name"]
+                    general_plot_name_string_regression_only = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot regression only"]["Plot name"]
+                    general_plot_name_string_colorwash = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot colorwash"]["Plot name"]
+
+                    plot_colorwash_bool = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot colorwash"]["Plot bool"]
+                    plot_regression_only_bool = production_plots_input_dictionary["Cumulative DVH quantile regression all trials plot regression only"]["Plot bool"]
 
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating cumulative DVH quantile regression plots [{}]...".format(patientUID_default)
@@ -2471,7 +2540,10 @@ def main():
                                                     svg_image_scale,
                                                     svg_image_width,
                                                     svg_image_height,
-                                                    general_plot_name_string
+                                                    plot_regression_only_bool,
+                                                    plot_colorwash_bool,
+                                                    general_plot_name_string_regression_only,
+                                                    general_plot_name_string_colorwash
                                                     )
                         
                         patients_progress.update(processing_patients_task, advance = 1)
@@ -2485,7 +2557,7 @@ def main():
 
 
                 # perform containment probabilities plots and regressions
-
+                live_display.stop()
                 if production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot name"]
@@ -2657,8 +2729,10 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
-                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None,
+                         "MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
+                         "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None, 
+                         "MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
+                         "MC data: Dose vals for each sampled bx pt arr (nominal)": None,
                          "MC data: Differential DVH dict": None,
                          "MC data: Cumulative DVH dict": None,
                          "MC data: dose volume metrics dict": None, 
@@ -2715,8 +2789,10 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
-                         "MC data: Dose NN child obj for each sampled bx pt list": None, 
-                         "MC data: Dose vals for each sampled bx pt list": None,
+                         "MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
+                         "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
+                         "MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
+                         "MC data: Dose vals for each sampled bx pt arr (nominal)": None,
                          "MC data: Differential DVH dict": None,
                          "MC data: Cumulative DVH dict": None,
                          "MC data: dose volume metrics dict": None,
@@ -2807,7 +2883,7 @@ def structure_referencer(structure_dcm_dict,
             master_st_ds_ref_dict[UID][pln_ref] = plan_ref_dict
 
     mc_info = {"Num MC containment simulations": None, 
-               "Num MC dose simulations": None, 
+               "Num MC dose simulations and nominal": None, 
                "Num sample pts per BX core": None, 
                "BX sample pt lattice spacing": None}
     

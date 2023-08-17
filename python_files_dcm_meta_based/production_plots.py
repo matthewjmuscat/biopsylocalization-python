@@ -16,6 +16,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               svg_image_scale,
                                               svg_image_width,
                                               svg_image_height,
+                                              box_plot_color,
                                               general_plot_name_string):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -41,6 +42,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     
     # box plot
     fig = px.box(structure_name_and_shift_type_dict_pandas_data_frame, points = False)
+    fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
     fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
     fig.update_layout(
         yaxis_title='Sampled shift magnitude (mm)',
@@ -89,21 +91,28 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
 
 
         # create a 2d scatter plot with all MC trials on plot
-        dose_vals_all_MC_trials_by_sampled_bx_pt_list = specific_bx_structure['MC data: Dose vals for each sampled bx pt list']
+        dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
+        dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_list = dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_arr.tolist()
         pt_radius_point_wise_for_pd_data_frame_list = []
         axial_Z_point_wise_for_pd_data_frame_list = []
         dose_vals_point_wise_for_pd_data_frame_list = []
         MC_trial_index_point_wise_for_pd_data_frame_list = []
-        for pt_index, specific_pt_all_MC_dose_vals in enumerate(dose_vals_all_MC_trials_by_sampled_bx_pt_list):
-            pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + [pt_radius_bx_coord_sys]*len(specific_pt_all_MC_dose_vals)
-            axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + [bx_points_bx_coords_sys_arr[pt_index,2]]*len(specific_pt_all_MC_dose_vals)
+        num_nominal_and_all_MC_trials = dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_arr.shape[1]
+        for pt_index, specific_pt_all_MC_dose_vals in enumerate(dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_list):
+            pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + [pt_radius_bx_coord_sys]*num_nominal_and_all_MC_trials
+            axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + [bx_points_bx_coords_sys_arr[pt_index,2]]*num_nominal_and_all_MC_trials
             dose_vals_point_wise_for_pd_data_frame_list = dose_vals_point_wise_for_pd_data_frame_list + specific_pt_all_MC_dose_vals
-            MC_trial_index_point_wise_for_pd_data_frame_list = MC_trial_index_point_wise_for_pd_data_frame_list + list(range(1,len(specific_pt_all_MC_dose_vals) + 1))
+            MC_trial_index_point_wise_for_pd_data_frame_list = MC_trial_index_point_wise_for_pd_data_frame_list + list(range(0,num_nominal_and_all_MC_trials))
         
-        dose_output_dict_by_MC_trial_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, "Dose (Gy)": dose_vals_point_wise_for_pd_data_frame_list, "MC trial num": MC_trial_index_point_wise_for_pd_data_frame_list}
+        # Note that the 0th MC trial num index is the nominal value
+        dose_output_dict_by_MC_trial_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, 
+                                                              "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
+                                                              "Dose (Gy)": dose_vals_point_wise_for_pd_data_frame_list, 
+                                                              "MC trial num": MC_trial_index_point_wise_for_pd_data_frame_list
+                                                              }
         
-        dose_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data = dose_output_dict_by_MC_trial_for_pandas_data_frame)
-        specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = dose_output_by_MC_trial_pandas_data_frame
+        dose_output_nominal_and_all_MC_trials_pandas_data_frame = pandas.DataFrame.from_dict(data = dose_output_dict_by_MC_trial_for_pandas_data_frame)
+        specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = dose_output_nominal_and_all_MC_trials_pandas_data_frame
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
@@ -131,8 +140,8 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
         
         
         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
-                                
-        fig_global = px.scatter(dose_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
+        dose_output_all_MC_trials_pandas_data_frame = dose_output_nominal_and_all_MC_trials_pandas_data_frame[dose_output_nominal_and_all_MC_trials_pandas_data_frame["MC trial num"] != 0]
+        fig_global = px.scatter(dose_output_all_MC_trials_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
         if global_regression_ans == True:
             fig_global.add_trace(
                 go.Scatter(
@@ -455,7 +464,10 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
         quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
         
-        
+        # Extract nominal values 
+        dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
+        dose_vals_nominal_by_sampled_bx_pt_arr = dose_vals_nominal_and_all_MC_trials_by_sampled_bx_pt_arr[:,0]
+        dose_vals_nominal_by_sampled_bx_pt_list = dose_vals_nominal_by_sampled_bx_pt_arr.tolist()
         
         
         # do non parametric kernel regression (local linear)
@@ -471,15 +483,16 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                                     "Mean":'rgba(0, 255, 0, 1)'
         }
         # can change the name of this dictionary to 'regression_colors_dict' to make the paired regressions the same color
-        regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
-                                    "Q75":'rgba(0, 0, 255, 1)', 
-                                    "Q50":'rgba(255, 0, 255, 1)',
-                                    'Q25':'rgba(0, 0, 255, 1)',
-                                    "Q5":'rgba(255, 0, 0, 1)',
-                                    "Mean":'rgba(0, 255, 0, 1)'
+        regression_colors_dict = {"Q95":'rgba(0, 0, 0, 1)',
+                                    "Q75":'rgba(0, 0, 0, 1)', 
+                                    "Q50":'rgba(255, 0, 0, 1)',
+                                    'Q25':'rgba(0, 0, 0, 1)',
+                                    "Q5":'rgba(0, 0, 0, 1)',
+                                    "Mean":'rgba(255, 0, 0, 1)',
+                                    "Nominal":'rgba(255, 0, 0, 1)'
         }
         
-        regression_line_styles_dict = {"Q95": '4,14',
+        regression_line_styles_alternate_dict = {"Q95": '4,14',
                                     "Q75": '10,10,10', 
                                     "Q50": 'dot',
                                     'Q25': '12,2,12',
@@ -487,15 +500,25 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                                     "Mean": 'solid'
         }
         
+        regression_line_styles_dict = {"Q95": 'dashdot',
+                                    "Q75": 'dashdot', 
+                                    "Q50": 'longdash',
+                                    'Q25': 'dashdot',
+                                    "Q5": 'dashdot',
+                                    "Mean": 'dot',
+                                    "Nominal": 'solid'
+        }
+
+        nominal_scatter_marker = 'cross-thin'
 
 
 
         # perform non parametric kernel regression through conditional quantiles and conditional mean doses
-        dose_output_dict_for_regression = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt}
+        dose_output_dict_for_regression = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt, "Nominal": dose_vals_nominal_by_sampled_bx_pt_list}
         dose_output_dict_for_regression.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
         non_parametric_kernel_regressions_dict = {}
         data_for_non_parametric_kernel_regressions_dict = {}
-        data_keys_to_regress = ["Q95","Q5","Q50","Mean","Q75","Q25"]
+        data_keys_to_regress = ["Q95","Q5","Q50","Mean","Q75","Q25","Nominal"]
         #num_bootstraps_mean_and_quantile_data = 15
         for data_key in data_keys_to_regress:
             data_for_non_parametric_kernel_regressions_dict[data_key]=dose_output_dict_for_regression[data_key].copy()
@@ -567,6 +590,18 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                     showlegend=False
                 )
             )
+        fig_regressions_only_quantiles_and_mean.add_trace(
+                go.Scatter(
+                    name='Nominal',
+                    x=dose_output_dict_for_regression["Axial pos Z (mm)"],
+                    y=dose_output_dict_for_regression["Nominal"],
+                    marker=dict(line_color=regression_colors_dict["Nominal"],
+                                symbol = nominal_scatter_marker,
+                                line_width = 1,),
+                    mode='markers',
+                    showlegend=True
+                )
+            )
             
         
         fig_regressions_only_quantiles_and_mean.update_layout(
@@ -632,6 +667,48 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                 showlegend=True
             )
         )
+
+        mean_key = "Mean"
+        mean_dose_regression_tuple = non_parametric_kernel_regressions_dict[mean_key]
+        fig_regressions_dose_quantiles_simple.add_trace(
+            go.Scatter(
+                name=mean_key+' regression',
+                x=z_vals_to_evaluate,
+                y=mean_dose_regression_tuple[0],
+                mode="lines",
+                line=dict(color=regression_colors_dict[mean_key], dash = regression_line_styles_dict[mean_key]),
+                showlegend=True
+            )
+        )
+
+        nominal_key = "Nominal"
+        nominal_dose_regression_tuple = non_parametric_kernel_regressions_dict[nominal_key]
+        fig_regressions_dose_quantiles_simple.add_trace(
+            go.Scatter(
+                name=nominal_key+' regression',
+                x=z_vals_to_evaluate,
+                y=nominal_dose_regression_tuple[0],
+                mode="lines",
+                line=dict(color=regression_colors_dict[nominal_key], dash = regression_line_styles_dict[nominal_key]),
+                showlegend=True
+            )
+        )
+        
+        
+        fig_regressions_dose_quantiles_simple.add_trace(
+                go.Scatter(
+                    name='Nominal',
+                    x=dose_output_dict_for_regression["Axial pos Z (mm)"],
+                    y=dose_output_dict_for_regression["Nominal"],
+                    marker=dict(line_color=regression_colors_dict["Nominal"],
+                                symbol = nominal_scatter_marker,
+                                line_width = 1,
+                                ),
+                    mode='markers',
+                    showlegend=True
+                )
+            )
+
         
         fig_regressions_dose_quantiles_simple.update_layout(
             yaxis_title='Dose (Gy)',
@@ -662,6 +739,7 @@ def production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patien
                                                                             svg_image_scale,
                                                                             svg_image_width,
                                                                             svg_image_height,
+                                                                            box_plot_color,
                                                                             general_plot_name_string
                                                                             ):
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -682,6 +760,7 @@ def production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patien
 
         # box plot
         fig = px.box(dose_output_voxelized_pandas_data_frame, points = False)
+        fig = fig.update_traces(marker_color = box_plot_color)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='Dose (Gy)',
@@ -709,6 +788,7 @@ def production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(pat
                                                                             svg_image_scale,
                                                                             svg_image_width,
                                                                             svg_image_height,
+                                                                            violin_plot_color,
                                                                             general_plot_name_string
                                                                             ):
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -730,6 +810,7 @@ def production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(pat
 
         # violin plot
         fig = px.violin(dose_output_voxelized_pandas_data_frame, box=True, points = False)
+        fig = fig.update_traces(marker_color = violin_plot_color)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='Dose (Gy)',
@@ -808,8 +889,11 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
+                                                box_plot_color,
+                                                nominal_pt_color,
                                                 general_plot_name_string
                                                 ):
+    nominal_scatter_marker = 'circle'
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
@@ -827,6 +911,7 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
         specific_bx_structure["Output data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_pandas_data_frame
         specific_bx_structure["Output dicts for data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_for_pandas_data_frame
         
+        """
         # box plot
         fig = px.box(percent_volume_binned_dict_pandas_data_frame, points = False)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
@@ -836,14 +921,49 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
             title='Differential DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
+        """
+
+        differential_dvh_dose_bins_list_strings = [str(i) for i in differential_dvh_dose_bins_list]
+        differential_dvh_dose_bins_list_all = differential_dvh_dose_bins_list*differential_dvh_histogram_percent_by_dose_bin_arr.shape[1]
+        differential_dvh_dose_bins_list_all_strings = [str(i) for i in differential_dvh_dose_bins_list_all]
+        fig_global = go.Figure()
+        fig_global.add_trace(
+                    go.Box(
+                        x=differential_dvh_dose_bins_list_all_strings,
+                        y=differential_dvh_histogram_percent_by_dose_bin_arr.flatten('F'),
+                        marker_color = box_plot_color,
+                        boxpoints=False,
+                        name='Differential DVH distribution'
+                    )
+                )
+        fig_global.add_trace(
+            go.Scatter(
+                name='Nominal',
+                x=differential_dvh_dose_bins_list_strings,
+                y=differential_dvh_histogram_percent_by_dose_bin_arr[:,0],
+                mode="markers",
+                marker=dict(line_color = nominal_pt_color,
+                                symbol = nominal_scatter_marker
+                            ),
+                showlegend=True
+                )
+        )
+
+        fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = False)
+        fig_global.update_layout(
+            yaxis_title='Percent volume',
+            xaxis_title='Dose (Gy)',
+            title='Differential DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+            hovermode="x unified"
+        )
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+        fig_global.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
         html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig.write_html(html_dose_fig_file_path)
+        fig_global.write_html(html_dose_fig_file_path)
 
 
 def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
@@ -911,7 +1031,10 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                general_plot_name_string
+                                                plot_regression_only_bool,
+                                                plot_colorwash_bool,
+                                                general_plot_name_string_regression_only,
+                                                general_plot_name_string_colorwash
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -923,11 +1046,12 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
         # perform non parametric kernel regression through conditional quantiles and conditional mean cumulative DVH plot
         dose_vals_to_evaluate = np.linspace(min(cumulative_dvh_dose_vals_by_MC_trial_1darr), max(cumulative_dvh_dose_vals_by_MC_trial_1darr), num = num_z_vals_to_evaluate_for_regression_plots)
         quantiles_cumulative_dvh_dict = cumulative_dvh_dict["Quantiles percent dict"]
-        cumulative_dvh_output_dict_for_regression = {"Dose pts (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr}
+        cumulative_dvh_percent_by_MC_trial_arr = cumulative_dvh_dict["Percent arr"]
+        cumulative_dvh_output_dict_for_regression = {"Dose pts (Gy)": cumulative_dvh_dose_vals_by_MC_trial_1darr, "Nominal": cumulative_dvh_percent_by_MC_trial_arr[0,:]}
         cumulative_dvh_output_dict_for_regression.update(quantiles_cumulative_dvh_dict)
         non_parametric_kernel_regressions_dict = {}
         data_for_non_parametric_kernel_regressions_dict = {}
-        data_keys_to_regress = ["Q95","Q5","Q50","Q75","Q25"]
+        data_keys_to_regress = ["Q95","Q5","Q50","Q75","Q25","Nominal"]
         #num_bootstraps_mean_and_quantile_data = 15
         for data_key in data_keys_to_regress:
             data_for_non_parametric_kernel_regressions_dict[data_key]=cumulative_dvh_output_dict_for_regression[data_key].copy()
@@ -973,6 +1097,42 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
                                     "Mean":'rgba(0, 255, 0, 1)'
         }
         # can change the name of this dictionary to 'regression_colors_dict' to make the paired regressions the same color
+        regression_colors_dict = {"Q95":'rgba(0, 0, 0, 1)',
+                                    "Q75":'rgba(0, 0, 0, 1)', 
+                                    "Q50":'rgba(255, 0, 0, 1)',
+                                    'Q25':'rgba(0, 0, 0, 1)',
+                                    "Q5":'rgba(0, 0, 0, 1)',
+                                    "Mean":'rgba(255, 0, 0, 1)',
+                                    "Nominal":'rgba(255, 0, 0, 1)'
+        }
+        
+        regression_line_styles_alternate_dict = {"Q95": '4,14',
+                                    "Q75": '10,10,10', 
+                                    "Q50": 'dot',
+                                    'Q25': '12,2,12',
+                                    "Q5": '2,16,2',
+                                    "Mean": 'solid'
+        }
+        
+        regression_line_styles_dict = {"Q95": 'dashdot',
+                                    "Q75": 'dashdot', 
+                                    "Q50": 'longdash',
+                                    'Q25': 'dashdot',
+                                    "Q5": 'dashdot',
+                                    "Mean": 'dot',
+                                    "Nominal": 'solid'
+        }
+
+        """
+        # can change the name of this dictionary to 'regression_colors_dict' to make all the regressions a different color
+        regression_colors_dict_different = {"Q95":'rgba(255, 0, 0, 1)',
+                                    "Q75":'rgba(0, 255, 255, 1)', 
+                                    "Q50":'rgba(255, 0, 255, 1)',
+                                    'Q25':'rgba(255, 255, 0, 1)',
+                                    "Q5":'rgba(0, 0, 255, 1)',
+                                    "Mean":'rgba(0, 255, 0, 1)'
+        }
+        # can change the name of this dictionary to 'regression_colors_dict' to make the paired regressions the same color
         regression_colors_dict = {"Q95":'rgba(255, 0, 0, 1)',
                                     "Q75":'rgba(0, 0, 255, 1)', 
                                     "Q50":'rgba(255, 0, 255, 1)',
@@ -988,127 +1148,140 @@ def production_plot_cumulative_DVH_quantile_regression_by_patient(patient_sp_out
                                     "Q5": '2,16,2',
                                     "Mean": 'solid'
         }
+        """
 
 
-
-
-        fig_regressions_only_quantiles_and_mean = go.Figure()
-        for data_key,regression_tuple in non_parametric_kernel_regressions_dict.items(): 
-            fig_regressions_only_quantiles_and_mean.add_trace(
-                go.Scatter(
-                    name=data_key+' regression',
-                    x=dose_vals_to_evaluate,
-                    y=regression_tuple[0],
-                    mode="lines",
-                    line=dict(color = regression_colors_dict[data_key], dash = regression_line_styles_dict[data_key]),
-                    showlegend=True
+        if plot_regression_only_bool == True:
+            fig_regressions_only_quantiles_and_mean = go.Figure()
+            for data_key,regression_tuple in non_parametric_kernel_regressions_dict.items(): 
+                fig_regressions_only_quantiles_and_mean.add_trace(
+                    go.Scatter(
+                        name=data_key+' regression',
+                        x=dose_vals_to_evaluate,
+                        y=regression_tuple[0],
+                        mode="lines",
+                        line=dict(color = regression_colors_dict[data_key], dash = regression_line_styles_dict[data_key]),
+                        showlegend=True
+                        )
+                )
+                fig_regressions_only_quantiles_and_mean.add_trace(
+                    go.Scatter(
+                        name=data_key+': Upper 95% CI',
+                        x=dose_vals_to_evaluate,
+                        y=regression_tuple[2],
+                        mode='lines',
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        showlegend=False
                     )
-            )
-            fig_regressions_only_quantiles_and_mean.add_trace(
-                go.Scatter(
-                    name=data_key+': Upper 95% CI',
-                    x=dose_vals_to_evaluate,
-                    y=regression_tuple[2],
-                    mode='lines',
-                    marker=dict(color="#444"),
-                    line=dict(width=0),
-                    showlegend=False
                 )
-            )
-            fig_regressions_only_quantiles_and_mean.add_trace(
-                go.Scatter(
-                    name=data_key+': Lower 95% CI',
-                    x=dose_vals_to_evaluate,
-                    y=regression_tuple[1],
-                    marker=dict(color="#444"),
-                    line=dict(width=0),
-                    mode='lines',
-                    fillcolor='rgba(0, 100, 20, 0.3)',
-                    fill='tonexty',
-                    showlegend=False
+                fig_regressions_only_quantiles_and_mean.add_trace(
+                    go.Scatter(
+                        name=data_key+': Lower 95% CI',
+                        x=dose_vals_to_evaluate,
+                        y=regression_tuple[1],
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        mode='lines',
+                        fillcolor='rgba(0, 100, 20, 0.3)',
+                        fill='tonexty',
+                        showlegend=False
+                    )
                 )
-            )
+                
             
-        
-        fig_regressions_only_quantiles_and_mean.update_layout(
-            yaxis_title='Percent volume',
-            xaxis_title='Dose (Gy)',
-            title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
-            hovermode="x unified"
-        )
-        fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
+            fig_regressions_only_quantiles_and_mean.update_layout(
+                yaxis_title='Percent volume',
+                xaxis_title='Dose (Gy)',
+                title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
+                hovermode="x unified"
+            )
+            fig_regressions_only_quantiles_and_mean = plotting_funcs.fix_plotly_grid_lines(fig_regressions_only_quantiles_and_mean, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+            svg_dose_fig_name = bx_struct_roi + general_plot_name_string_regression_only+'.svg'
+            svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+            fig_regressions_only_quantiles_and_mean.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'.html'
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
+            html_dose_fig_name = bx_struct_roi + general_plot_name_string_regression_only+'.html'
+            html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+            fig_regressions_only_quantiles_and_mean.write_html(html_dose_fig_file_path)
 
-
-        # create simplified regression figure
-        quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 255, 0.3)')] # must be organized where first element is lower and second element is upper bound
-        fig_regressions_dose_quantiles_simple = go.Figure()
-        for quantile_pair_tuple in quantile_pairs_list: 
-            lower_regression_key = quantile_pair_tuple[0]
-            upper_regression_key = quantile_pair_tuple[1]
-            fill_color = quantile_pair_tuple[2]
-            lower_regression_tuple = non_parametric_kernel_regressions_dict[lower_regression_key]
-            upper_regression_tuple = non_parametric_kernel_regressions_dict[upper_regression_key]
+        if plot_colorwash_bool == True:
+            # create simplified regression figure
+            quantile_pairs_list = [("Q5","Q95", 'rgba(0, 255, 0, 0.3)'), ("Q25","Q75", 'rgba(0, 0, 255, 0.3)')] # must be organized where first element is lower and second element is upper bound
+            fig_regressions_dose_quantiles_simple = go.Figure()
+            for quantile_pair_tuple in quantile_pairs_list: 
+                lower_regression_key = quantile_pair_tuple[0]
+                upper_regression_key = quantile_pair_tuple[1]
+                fill_color = quantile_pair_tuple[2]
+                lower_regression_tuple = non_parametric_kernel_regressions_dict[lower_regression_key]
+                upper_regression_tuple = non_parametric_kernel_regressions_dict[upper_regression_key]
+                fig_regressions_dose_quantiles_simple.add_trace(
+                    go.Scatter(
+                        name=upper_regression_key+' regression',
+                        x=dose_vals_to_evaluate,
+                        y=upper_regression_tuple[0],
+                        mode='lines',
+                        marker=dict(color="#444"),
+                        line=dict(color=regression_colors_dict[upper_regression_key], dash = regression_line_styles_dict[upper_regression_key]),
+                        showlegend=True
+                    )
+                )
+                fig_regressions_dose_quantiles_simple.add_trace(
+                    go.Scatter(
+                        name=lower_regression_key+' regression',
+                        x=dose_vals_to_evaluate,
+                        y=lower_regression_tuple[0],
+                        marker=dict(color="#444"),
+                        line=dict(color=regression_colors_dict[lower_regression_key], dash = regression_line_styles_dict[lower_regression_key]),
+                        mode='lines',
+                        fillcolor=fill_color,
+                        fill='tonexty',
+                        showlegend=True
+                    )
+                )
+                
+            median_key = "Q50"
+            median_dose_regression_tuple = non_parametric_kernel_regressions_dict[median_key]
             fig_regressions_dose_quantiles_simple.add_trace(
                 go.Scatter(
-                    name=upper_regression_key+' regression',
+                    name=median_key+' regression',
                     x=dose_vals_to_evaluate,
-                    y=upper_regression_tuple[0],
-                    mode='lines',
-                    marker=dict(color="#444"),
-                    line=dict(color=regression_colors_dict[upper_regression_key], dash = regression_line_styles_dict[upper_regression_key]),
+                    y=median_dose_regression_tuple[0],
+                    mode="lines",
+                    line=dict(color=regression_colors_dict[median_key], dash = regression_line_styles_dict[median_key]),
                     showlegend=True
                 )
             )
+
+            nominal_key = "Nominal"
+            median_dose_regression_tuple = non_parametric_kernel_regressions_dict[nominal_key]
             fig_regressions_dose_quantiles_simple.add_trace(
                 go.Scatter(
-                    name=lower_regression_key+' regression',
+                    name=nominal_key+' regression',
                     x=dose_vals_to_evaluate,
-                    y=lower_regression_tuple[0],
-                    marker=dict(color="#444"),
-                    line=dict(color=regression_colors_dict[lower_regression_key], dash = regression_line_styles_dict[lower_regression_key]),
-                    mode='lines',
-                    fillcolor=fill_color,
-                    fill='tonexty',
+                    y=median_dose_regression_tuple[0],
+                    mode="lines",
+                    line=dict(color=regression_colors_dict[nominal_key], dash = regression_line_styles_dict[nominal_key]),
                     showlegend=True
                 )
             )
             
-        median_key = "Q50"
-        median_dose_regression_tuple = non_parametric_kernel_regressions_dict[median_key]
-        fig_regressions_dose_quantiles_simple.add_trace(
-            go.Scatter(
-                name=median_key+' regression',
-                x=dose_vals_to_evaluate,
-                y=median_dose_regression_tuple[0],
-                mode="lines",
-                line=dict(color=regression_colors_dict[median_key], dash = regression_line_styles_dict[median_key]),
-                showlegend=True
+            fig_regressions_dose_quantiles_simple.update_layout(
+                yaxis_title='Percent volume',
+                xaxis_title='Dose (Gy)',
+                title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
+                hovermode="x unified"
             )
-        )
-        
-        fig_regressions_dose_quantiles_simple.update_layout(
-            yaxis_title='Percent volume',
-            xaxis_title='Dose (Gy)',
-            title='Quantile regression of cumulative DVH (' + patientUID +', '+ bx_struct_roi+')',
-            hovermode="x unified"
-        )
-        fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
+            fig_regressions_dose_quantiles_simple = plotting_funcs.fix_plotly_grid_lines(fig_regressions_dose_quantiles_simple, y_axis = True, x_axis = True)
 
-        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.svg'
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+            svg_dose_fig_name = bx_struct_roi + general_plot_name_string_colorwash+'.svg'
+            svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+            fig_regressions_dose_quantiles_simple.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = bx_struct_roi + general_plot_name_string+'_colorwash.html'
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
+            html_dose_fig_name = bx_struct_roi + general_plot_name_string_colorwash+'.html'
+            html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+            fig_regressions_dose_quantiles_simple.write_html(html_dose_fig_file_path)
 
 
 
@@ -1144,6 +1317,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
         std_err_point_wise_for_pd_data_frame_list = []
         MC_trial_index_point_wise_for_pd_data_frame_list = []
         ROI_name_point_wise_for_pd_data_frame_list = []
+        nominal_point_wise_dor_pd_data_frame_list = []
                 
         for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
             containment_structure_ROI = containment_structure_key_tuple[0]
@@ -1151,9 +1325,11 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
             containment_structure_successes_list = containment_structure_dict['Total successes (containment) list']
             containment_structure_binom_est_list = containment_structure_dict["Binomial estimator list"]
             containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
+            containment_structure_nominal_list = containment_structure_dict["Nominal containment list"]
             total_successes_point_wise_for_pd_data_frame_list = total_successes_point_wise_for_pd_data_frame_list + containment_structure_successes_list
             binom_est_point_wise_for_pd_data_frame_list = binom_est_point_wise_for_pd_data_frame_list + containment_structure_binom_est_list
             std_err_point_wise_for_pd_data_frame_list = std_err_point_wise_for_pd_data_frame_list + containment_structure_stand_err_list
+            nominal_point_wise_dor_pd_data_frame_list = nominal_point_wise_dor_pd_data_frame_list + containment_structure_nominal_list
             
             pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + pt_radius_bx_coord_sys.tolist()
             axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + bx_points_bx_coords_sys_arr[:,2].tolist()     
@@ -1163,7 +1339,9 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                                                      "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
                                                                      "Mean probability (binom est)": binom_est_point_wise_for_pd_data_frame_list, 
                                                                      "Total successes": total_successes_point_wise_for_pd_data_frame_list, 
-                                                                     "STD err": std_err_point_wise_for_pd_data_frame_list}
+                                                                     "STD err": std_err_point_wise_for_pd_data_frame_list,
+                                                                     "Nominal containment": nominal_point_wise_dor_pd_data_frame_list
+                                                                     }
         
         containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
 
@@ -1201,14 +1379,63 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
         
         # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
         plot_type_list = tissue_class_probability_plot_type_list
-        done_regression_only = False                        
+        done_regression_only = False
+        nominal_containment_symbols_dict = {0: 'x-thin' , 1: 'circle-open'} # ie. nominal pts that are not contained (0) corresponds to circle-open, and contained (1) corresponds to asterisk               
         for plot_type in plot_type_list:
             # one with error bars on binom est, one without error bars
             if plot_type == 'with_errors':
-                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", error_y = "STD err", width  = svg_image_width, height = svg_image_height)
+                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
+                                        x="Axial pos Z (mm)", 
+                                        y="Mean probability (binom est)", 
+                                        color = "Structure ROI", 
+                                        symbol = "Nominal containment",
+                                        symbol_map = nominal_containment_symbols_dict,
+                                        error_y = "STD err", 
+                                        width  = svg_image_width, 
+                                        height = svg_image_height
+                                        )
             if plot_type == '':
-                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, x="Axial pos Z (mm)", y="Mean probability (binom est)", color = "Structure ROI", width  = svg_image_width, height = svg_image_height)
+                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
+                                        x="Axial pos Z (mm)", 
+                                        y="Mean probability (binom est)", 
+                                        color = "Structure ROI",
+                                        symbol = "Nominal containment",
+                                        symbol_map = nominal_containment_symbols_dict, 
+                                        width  = svg_image_width, 
+                                        height = svg_image_height
+                                        )
             
+            # marker_line_width = nonzero is necessary in order to see "thin" markers, and must be done by update_traces method
+            fig_global = fig_global.update_traces(marker_line_width = 2,
+                                                  #marker_line_color = 'black',
+                                                  marker_size = 10
+                                                  ) 
+
+            # the below for_each_trace method sets the line color of the markers to the marker color, 
+            # which was set by the dataframe columns, there is no way to do this directly from the
+            # plotly express function call like you can for coloring markers
+            fig_global.for_each_trace(lambda trace: trace.update(marker_line_color=trace.marker.color)) 
+
+
+            # Build dataframe for plotting regression by px.scatter so that we can color by structure
+
+            relative_structure_list = []
+            mean_regression_vals_list = []
+            z_vals_to_eval_list = []
+            for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
+                containment_structure_ROI = containment_structure_key_tuple[0]
+                sp_structure_mean_regression_list = containment_structure_regressions_dict["Mean regression"].tolist()
+                sp_relative_structure_list = [containment_structure_ROI]*len(sp_structure_mean_regression_list)
+                mean_regression_vals_list = mean_regression_vals_list + sp_structure_mean_regression_list
+                relative_structure_list = relative_structure_list + sp_relative_structure_list
+                z_vals_to_eval_list = z_vals_to_eval_list + z_vals_to_evaluate.tolist()
+
+            containment_regression_dictionary_for_pandas_data_frame = {"Mean regression": mean_regression_vals_list,
+                                                                       "Z vals to eval": z_vals_to_eval_list,
+                                                                       "Relative containment structure": relative_structure_list}
+            
+            containment_regression_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_regression_dictionary_for_pandas_data_frame)
+
             fig_regression_only = go.Figure()
             for containment_structure_key_tuple, containment_structure_regressions_dict in all_MC_trials_containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
                 regression_color = 'rgb'+str(tuple(np.random.randint(low=0,high=225,size=3)))
@@ -1216,6 +1443,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                 mean_regression = containment_structure_regressions_dict["Mean regression"]
                 lower95_regression = containment_structure_regressions_dict["Lower 95 regression"]
                 upper95_regression = containment_structure_regressions_dict["Upper 95 regression"]
+                """
                 fig_global.add_trace(
                     go.Scatter(
                         name=containment_structure_ROI+' regression',
@@ -1226,6 +1454,19 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                         showlegend=True
                         )
                 )
+                """
+                regression_fig = px.line(containment_regression_pandas_data_frame, 
+                                        x="Z vals to eval", 
+                                        y="Mean regression", 
+                                        color = "Relative containment structure",
+                                        width  = svg_image_width, 
+                                        height = svg_image_height
+                                        )
+                
+                # add all regressions to the global scatter figure, colored by relative structure
+                for i in range(0,len(regression_fig.data)):
+                    fig_global.add_trace(regression_fig.data[i])
+                
                 fig_global.add_trace(
                     go.Scatter(
                         name=containment_structure_ROI+' upper 95% CI',

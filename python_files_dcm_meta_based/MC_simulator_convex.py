@@ -96,8 +96,9 @@ def simulator_parallel(parallel_pool,
                        differential_dvh_resolution,
                        cumulative_dvh_resolution,
                        volume_DVH_percent_dose,
+                       volume_DVH_quantiles_to_calculate,
                        plot_translation_vectors_pointclouds,
-                       plot_cupy_containment_results,
+                       plot_cupy_containment_distribution_results,
                        plot_shifted_biopsies,
                        spinner_type
                        ):
@@ -216,22 +217,21 @@ def simulator_parallel(parallel_pool,
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
             # set structure type to BX 
-            bx_structure_type = bx_ref
-            local_patient_num_biopsies = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            translating_bx_and_structure_relative_main_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing")
+            local_patient_num_biopsies = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            translating_bx_and_structure_relative_main_desc = "[cyan]~For each biopsy [{}]...".format("initializing")
             translating_biopsy_relative_to_structures_task = biopsies_progress.add_task(translating_bx_and_structure_relative_main_desc, total=local_patient_num_biopsies)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 num_sampled_sp_bx_pts = specific_bx_structure["Num sampled bx pts"]
-                translating_bx_and_structure_relative_main_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
+                translating_bx_and_structure_relative_main_desc = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi)
                 biopsies_progress.update(translating_biopsy_relative_to_structures_task, description = translating_bx_and_structure_relative_main_desc)
                 
-                indeterminate_sub_desc_bx_shift = "[cyan]~~Shifting biopsy structure (BX shift) [{},{}]".format(patientUID, specific_bx_structure_roi)
+                indeterminate_sub_desc_bx_shift = "[cyan]~~Shifting biopsy structure (BX shift) [{}]".format(specific_bx_structure_roi)
                 indeterminate_sub_bx_shift_task = indeterminate_progress_sub.add_task(indeterminate_sub_desc_bx_shift, total=None)
                 bx_only_shifted_randomly_sampled_bx_pts_3Darr = cupy_functions.MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_cupy(specific_bx_structure, simulate_uniform_bx_shifts_due_to_bx_needle_compartment, plot_uniform_shifts_to_check_plotly, num_sampled_sp_bx_pts, max_simulations)
                 indeterminate_progress_sub.update(indeterminate_sub_bx_shift_task, visible = False)
                 
-                indeterminate_sub_desc_bx_shift = "[cyan]~~Shifting biopsy structure (relative OAR and DIL shifts) [{},{}]".format(patientUID, specific_bx_structure_roi)
+                indeterminate_sub_desc_bx_shift = "[cyan]~~Shifting biopsy structure (relative OAR and DIL shifts) [{}]".format(specific_bx_structure_roi)
                 indeterminate_sub_bx_shift_task = indeterminate_progress_sub.add_task(indeterminate_sub_desc_bx_shift, total=None)
                 structure_shifted_bx_data_dict = cupy_functions.MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_cupy(pydicom_item, structs_referenced_list, bx_only_shifted_randomly_sampled_bx_pts_3Darr, structure_organized_for_bx_data_blank_dict, max_simulations, num_sampled_sp_bx_pts)
                 indeterminate_progress_sub.update(indeterminate_sub_bx_shift_task, visible = False)
@@ -239,8 +239,8 @@ def simulator_parallel(parallel_pool,
                 for relative_structure_key, cupy_array in structure_shifted_bx_data_dict.items():
                     structure_shifted_bx_data_dict[relative_structure_key] = cp.asnumpy(cupy_array)
                 
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] = structure_shifted_bx_data_dict
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx and structure shifted dict"] = structure_shifted_bx_data_dict
 
                 if plot_shifted_biopsies == True:
                     for relative_structure_key, bx_and_structure_shifted_bx_pts_3darray in structure_shifted_bx_data_dict.items():
@@ -272,7 +272,7 @@ def simulator_parallel(parallel_pool,
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 for structs in structs_referenced_list:
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        if structs == bx_structure_type:
+                        if structs == bx_ref:
                             total_rigid_shift_vectors_arr = cp.asnumpy(specific_structure["MC data: Total rigid shift vectors arr"])
                             #randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
                             plotting_funcs.plot_point_clouds(total_rigid_shift_vectors_arr)
@@ -283,10 +283,9 @@ def simulator_parallel(parallel_pool,
                             plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([total_rigid_shift_vectors_arr], title_text = str(patientUID) + str(specific_structure["ROI"]))
 
 
-
         """
-        testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment in all anatomical structures...", total=num_patients)
-        testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment in all anatomical structures", total=num_patients, visible = False)
+        testing_nominal_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing nominal biopsy containment...", total=num_patients)
+        testing_nominal_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing nominal biopsy containment", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
@@ -294,31 +293,34 @@ def simulator_parallel(parallel_pool,
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
-            patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment in all anatomical structures [{}]...".format(patientUID))
+            patients_progress.update(testing_nominal_biopsy_containment_patient_task, description = "[red]Testing nominal biopsy containment...[{}]...".format(patientUID))
             bx_structure_type = bx_ref
-            testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total = sp_patient_total_num_BXs)           
+            testing_biopsy_nominal_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
-                biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
+                bx_specific_biopsy_nominal_containment_desc = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi)
+                biopsies_progress.update(testing_biopsy_nominal_containment_task, description = bx_specific_biopsy_nominal_containment_desc)
                 
-                # paint the unshifted bx sampled points purple for later viewing
-                unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
-                unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
-                testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                unshifted_bx_sampled_pts_arr_XY = unshifted_bx_sampled_pts_arr[:,0:2]
+                unshifted_bx_sampled_pts_arr_Z = unshifted_bx_sampled_pts_arr[:,2]
+
+                unshifted_bx_sampled_pts_arr_XY_interleaved_1darr = unshifted_bx_sampled_pts_arr_XY.flatten()
+                unshifted_bx_sampled_pts_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(unshifted_bx_sampled_pts_arr_XY_interleaved_1darr)
+
+                testing_each_non_bx_structure_nominal_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
                 structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
-                MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
-                for structure_info,shifted_bx_data_3darr in structure_shifted_bx_data_dict.items():
+                nominal_containment_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                relative_structure_nominal_containment_results_data_frames_list = []
+                for structure_info in nominal_containment_results_for_fixed_bx_dict.keys():
                     structure_roi = structure_info[0]
                     non_bx_structure_type = structure_info[1]
                     structure_refnum = structure_info[2]
                     structure_index = structure_info[3]
+                    
+                    structures_progress.update(testing_each_non_bx_structure_nominal_containment_task, description = "[cyan]~~For each non-BX structure [{}]...".format(structure_roi))
 
-                    structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi))
-
-                    non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
-                    non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
                     non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
@@ -326,53 +328,64 @@ def simulator_parallel(parallel_pool,
                     prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
                     prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
                     
-                    testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
-                    all_trials_POP_test_results_and_point_clouds_tuple = []
-                    for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr):
-                        # cutoff the number of simulations for containment since it is slow
-                        if trial_num > (num_MC_containment_simulations-1):
-                            break
-                        else:
-                            pass
-                        #single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_delaunay_zslice_wise_parallel(parallel_pool, num_simulations, non_bx_struct_deulaunay_obj_global_convex, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
-                        single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple = point_containment_test_axis_aligned_bounding_box_and_zslice_wise_2d_PIP_parallel(parallel_pool, non_bx_struct_interpolated_pts_np_arr, non_bx_struct_interslice_interpolation_information, single_trial_shifted_bx_data_arr)
-                        all_trials_POP_test_results_and_point_clouds_tuple.append(single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple)
-                        
-                        
-                        # plot results to make sure everything is working properly, containment structure is blue, shifted and tested pcd should be red and green
-                        if show_containment_demonstration_plots == True:
-                            if non_bx_structure_type == 'DIL ref':
-                                bx_test_pts_results = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
-                                bx_test_pts_results_pcd = single_trial_shifted_bx_data_results_fully_concave_and_point_cloud_tuple[1]
-                                structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud(single_trial_shifted_bx_data_arr)
-                                plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
-                                plotting_funcs.plot_geometries(bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
-                                plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
-                                plotting_funcs.plot_two_views_side_by_side([bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [bx_test_pts_results_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
-                        
-                        
-                        MC_trial_progress.update(testing_each_trial_task, advance=1)
-                        
+                    interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
+                    non_bx_struct_max_zval = max(interpolated_zvlas_list)
+                    non_bx_struct_min_zval = min(interpolated_zvlas_list)
+                    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,unshifted_bx_sampled_pts_arr_Z)
+
+                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
+                    non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
+                    non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+
+                    nominal_containment_info_grand_cudf_dataframe = point_containment_tools.cuspatial_points_contained(non_bx_struct_zslices_polygons_cuspatial_geoseries,
+                               unshifted_bx_sampled_pts_XY_cuspatial_geoseries_points, 
+                               unshifted_bx_sampled_pts_arr, 
+                               nearest_interpolated_zslice_index_array,
+                               nearest_interpolated_zslice_vals_array,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval, 
+                               num_sample_pts_in_bx,
+                               None, 
+                               structure_info,
+                               None,
+                               non_bx_struct_interpolated_pts_pcd,
+                               plot_cupy_nominal_containment_results,
+                               True
+                               )
+
+                    relative_structure_nominal_containment_results_data_frames_list.append(nominal_containment_info_grand_cudf_dataframe)
                     
-                    MC_trial_progress.remove_task(testing_each_trial_task)
-                    MC_translation_results_for_fixed_bx_dict[structure_info] = all_trials_POP_test_results_and_point_clouds_tuple
-
-                    structures_progress.update(testing_each_non_bx_structure_containment_task, advance=1)
+                    if (show_nominal_containment_demonstration_plots == True) & (non_bx_structure_type == 'DIL ref'):
+                        bx_test_pts_color_R = nominal_containment_info_grand_cudf_dataframe[nominal_containment_info_grand_cudf_dataframe["Trial num"] == "Nominal"]["Pt clr R"].to_numpy()
+                        bx_test_pts_color_G = nominal_containment_info_grand_cudf_dataframe[nominal_containment_info_grand_cudf_dataframe["Trial num"] == "Nominal"]["Pt clr G"].to_numpy()
+                        bx_test_pts_color_B = nominal_containment_info_grand_cudf_dataframe[nominal_containment_info_grand_cudf_dataframe["Trial num"] == "Nominal"]["Pt clr B"].to_numpy()
+                        bx_test_pts_color_arr = np.empty([num_sample_pts_in_bx,3])
+                        bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+                        bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+                        bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+                        unshifted_bx_sampled_pts_containment_pcd = point_containment_tools.create_point_cloud_with_colors_array(unshifted_bx_sampled_pts_arr, bx_test_pts_color_arr)
+                        plotting_funcs.plot_geometries(unshifted_bx_sampled_pts_containment_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                            
+                    structures_progress.update(testing_each_non_bx_structure_nominal_containment_task, advance=1)
                 
-                structures_progress.remove_task(testing_each_non_bx_structure_containment_task)
+                structures_progress.remove_task(testing_each_non_bx_structure_nominal_containment_task)
+                
+                # concatenate containment results into a single dataframe
+                nominal_containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_nominal_containment_results_data_frames_list, ignore_index=True)
+                
                 # Update the master dictionary
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] = MC_translation_results_for_fixed_bx_dict
+                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: Nominal containment raw results dataframe"] = nominal_containment_info_grand_all_structures_cudf_dataframe
 
+                biopsies_progress.update(testing_biopsy_nominal_containment_task, advance=1)
+            biopsies_progress.remove_task(testing_biopsy_nominal_containment_task)
 
-                biopsies_progress.update(testing_biopsy_containment_task, advance=1)
-            biopsies_progress.remove_task(testing_biopsy_containment_task)
-
-            patients_progress.update(testing_biopsy_containment_patient_task, advance = 1)
-            completed_progress.update(testing_biopsy_containment_patient_task_completed, advance = 1)
-        patients_progress.update(testing_biopsy_containment_patient_task, visible = False)
-        completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
+            patients_progress.update(testing_nominal_biopsy_containment_patient_task, advance = 1)
+            completed_progress.update(testing_nominal_biopsy_containment_patient_task_completed, advance = 1)
+        patients_progress.update(testing_nominal_biopsy_containment_patient_task, visible = False)
+        completed_progress.update(testing_nominal_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
         """
+        
 
         #live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
@@ -381,24 +394,28 @@ def simulator_parallel(parallel_pool,
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
             patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (cuspatial) [{}]...".format(patientUID))
-            bx_structure_type = bx_ref
-            testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total = sp_patient_total_num_BXs)           
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi)
+                bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi)
                 biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
+
+                # For nominal position containment test
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
                 
                 # paint the unshifted bx sampled points purple for later viewing
                 unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
                 unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
-                testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
-                structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
-                MC_translation_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+
+                testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
+                
+                structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
+                
                 relative_structure_containment_results_data_frames_list = []
                 for structure_info,shifted_bx_data_3darr_cp in structure_shifted_bx_data_dict.items():
                     structure_roi = structure_info[0]
@@ -406,52 +423,49 @@ def simulator_parallel(parallel_pool,
                     structure_refnum = structure_info[2]
                     structure_index = structure_info[3]
                     shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_cp)
-                    structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi))
+                    structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{}]...".format(structure_roi))
 
-                    #non_bx_struct_deulaunay_objs_zslice_wise_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation zslice-wise list"] 
-                    #non_bx_struct_deulaunay_obj_global_convex = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Delaunay triangulation global structure"] 
+                    # Extract and calcualte relative structure info
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                    interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
+                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
+                    non_bx_struct_max_zval = max(interpolated_zvlas_list)
+                    non_bx_struct_min_zval = min(interpolated_zvlas_list)
+                    non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
+                    non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+
+                    # Point clouds
                     non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
                     prostate_interslice_interpolation_information = master_structure_reference_dict[patientUID]['OAR ref'][0]["Inter-slice interpolation information"]
                     prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
                     prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
-                    
-                    #testing_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=num_MC_containment_simulations)
-                    #all_trials_POP_test_results_and_point_clouds_tuple = []
 
+                    # Shifted
                     shifted_bx_data_3darr_num_MC_containment_sims_cutoff = shifted_bx_data_3darr[0:num_MC_containment_simulations]
                     shifted_bx_data_stacked_2darr_from_all_trials_3darray = np.reshape(shifted_bx_data_3darr_num_MC_containment_sims_cutoff,(-1,3))
-                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY = shifted_bx_data_stacked_2darr_from_all_trials_3darray[:,0:2]
-                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_Z = shifted_bx_data_stacked_2darr_from_all_trials_3darray[:,2]
 
-                    shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY_interleaved_1darr = shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY.flatten()
-                    shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(shifted_bx_data_stacked_2darr_from_all_trials_3darray_XY_interleaved_1darr)
-
-
-                    interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
-                    non_bx_struct_max_zval = max(interpolated_zvlas_list)
-                    non_bx_struct_min_zval = min(interpolated_zvlas_list)
-                    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,shifted_bx_data_stacked_2darr_from_all_trials_3darray_Z)
-
-                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
-                    non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
-                    non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+                    # Combine nominal and shifted
+                    combined_nominal_and_shifted_bx_pts_2d_arr_XYZ = np.vstack((unshifted_bx_sampled_pts_arr,shifted_bx_data_stacked_2darr_from_all_trials_3darray))
+                    combined_nominal_and_shifted_bx_pts_2d_arr_XY = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,0:2]
+                    combined_nominal_and_shifted_bx_pts_2d_arr_Z = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,2]
+                    
+                    combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,combined_nominal_and_shifted_bx_pts_2d_arr_Z)
+                    
+                    combined_nominal_and_shifted_bx_data_XY_interleaved_1darr = combined_nominal_and_shifted_bx_pts_2d_arr_XY.flatten()
+                    combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(combined_nominal_and_shifted_bx_data_XY_interleaved_1darr)
 
                     
                     containment_info_grand_cudf_dataframe = point_containment_tools.cuspatial_points_contained(non_bx_struct_zslices_polygons_cuspatial_geoseries,
-                               shifted_bx_data_XY_cuspatial_geoseries_points, 
-                               shifted_bx_data_stacked_2darr_from_all_trials_3darray, 
-                               nearest_interpolated_zslice_index_array,
-                               nearest_interpolated_zslice_vals_array,
+                               combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points, 
+                               combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, 
+                               combined_nominal_and_shifted_nearest_interpolated_zslice_index_array,
+                               combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array,
                                non_bx_struct_max_zval,
                                non_bx_struct_min_zval, 
                                num_sample_pts_in_bx,
                                num_MC_containment_simulations,
-                               structure_info,
-                               unshifted_bx_sampled_pts_copy_pcd,
-                               non_bx_struct_interpolated_pts_pcd,
-                               plot_cupy_containment_results
+                               structure_info
                                )
 
                     relative_structure_containment_results_data_frames_list.append(containment_info_grand_cudf_dataframe)
@@ -474,12 +488,12 @@ def simulator_parallel(parallel_pool,
                     structures_progress.update(testing_each_non_bx_structure_containment_task, advance=1)
                 
                 structures_progress.remove_task(testing_each_non_bx_structure_containment_task)
+                
                 # concatenate containment results into a single dataframe
                 containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
-                # Update the master dictionary
-                #master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim translation results dict"] = MC_translation_results_for_fixed_bx_dict
                 
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe
+                # Update the master dictionary
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe
 
                 biopsies_progress.update(testing_biopsy_containment_task, advance=1)
             biopsies_progress.remove_task(testing_biopsy_containment_task)
@@ -490,39 +504,100 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
 
+        
+        if plot_cupy_containment_distribution_results == True:
+            plotting_biopsy_containment_cuspatial_patient_task = patients_progress.add_task("[red]Plotting containment (cuspatial) results...", total=num_patients)
+            plotting_biopsy_containment_cuspatial_patient_task_completed = completed_progress.add_task("[green]Plotting containment (cuspatial) results", total=num_patients, visible = False)
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (cuspatial) [{}]...".format(patientUID))
+                for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                    containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"]
+                    for relative_structure_info in structure_organized_for_bx_data_blank_dict.keys():
+                        structure_roi = relative_structure_info[0]
+                        non_bx_structure_type = relative_structure_info[1]
+                        structure_index = relative_structure_info[3]
+
+                        grand_cudf_dataframe = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                        & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
+                                                                        ].reset_index()
+
+                        # Extract and rebuild pts color data
+                        bx_test_pts_color_R = grand_cudf_dataframe["Pt clr R"].to_numpy()
+                        bx_test_pts_color_G = grand_cudf_dataframe["Pt clr G"].to_numpy()
+                        bx_test_pts_color_B = grand_cudf_dataframe["Pt clr B"].to_numpy()
+                        bx_test_pts_color_arr = np.empty([len(grand_cudf_dataframe.index),3])
+                        bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+                        bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+                        bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+
+                        # Extract and rebuild pts vector data
+                        bx_test_pts_X = grand_cudf_dataframe["Test pt X"].to_numpy()
+                        bx_test_pts_Y = grand_cudf_dataframe["Test pt Y"].to_numpy()
+                        bx_test_pts_Z = grand_cudf_dataframe["Test pt Z"].to_numpy()
+                        bx_test_pts_arr = np.empty([len(grand_cudf_dataframe.index),3])
+                        bx_test_pts_arr[:,0] = bx_test_pts_X
+                        bx_test_pts_arr[:,1] = bx_test_pts_Y
+                        bx_test_pts_arr[:,2] = bx_test_pts_Z
+
+                        # Create point cloud
+                        colored_bx_test_pts_pcd = point_containment_tools.create_point_cloud_with_colors_array(bx_test_pts_arr, bx_test_pts_color_arr)
+
+                        # Extract relative structure point cloud
+                        non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                        non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                        non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+
+                        patients_progress.stop_task(plotting_biopsy_containment_cuspatial_patient_task)
+                        completed_progress.stop_task(plotting_biopsy_containment_cuspatial_patient_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(colored_bx_test_pts_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                        stopwatch.start()
+                        patients_progress.start_task(plotting_biopsy_containment_cuspatial_patient_task)
+                        completed_progress.start_task(plotting_biopsy_containment_cuspatial_patient_task_completed)
+                
+                patients_progress.update(plotting_biopsy_containment_cuspatial_patient_task, advance = 1)
+                completed_progress.update(plotting_biopsy_containment_cuspatial_patient_task_completed, advance = 1)
+            patients_progress.update(plotting_biopsy_containment_cuspatial_patient_task, visible = False)
+            completed_progress.update(plotting_biopsy_containment_cuspatial_patient_task_completed, visible = True)
+            live_display.refresh()
+
+
 
         #live_display.stop()
-        structure_specific_results_dict_empty = {"Total successes (containment) list": None, "Binomial estimator list": None, "Confidence interval 95 (containment) list": None, "Standard error (containment) list": None}
+        structure_specific_results_dict_empty = {"Total successes (containment) list": None, 
+                                                 "Binomial estimator list": None, 
+                                                 "Confidence interval 95 (containment) list": None, 
+                                                 "Standard error (containment) list": None,
+                                                 "Nominal containment list": None
+                                                 }
         compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)
         compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(compiling_results_patient_containment_task, description = "[red]Compiling MC results [{}]...".format(patientUID), total=num_patients)
-            bx_structure_type = bx_ref
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)           
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            compiling_results_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            compiling_results_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
-                containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] 
+                biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] 
                 MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 
                 sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-                sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+                sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
-                compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,"initializing"), total=sp_patient_total_num_non_BXs)
+                compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
                 for structure_info in MC_compiled_results_for_fixed_bx_dict.keys():
-                    
                     structure_roi = structure_info[0]
                     non_bx_structure_type = structure_info[1]
-                    structure_refnum = structure_info[2]
                     structure_index = structure_info[3]
 
-                    structures_progress.update(compiling_results_each_non_bx_structure_containment_task, description = "[cyan]~~For each structure [{},{},{}]...".format(patientUID,specific_bx_structure_roi,structure_roi), total=sp_patient_total_num_non_BXs)
+                    structures_progress.update(compiling_results_each_non_bx_structure_containment_task, description = "[cyan]~~For each structure [{}]...".format(structure_roi), total=sp_patient_total_num_non_BXs)
                     
                     structure_specific_results_dict = structure_specific_results_dict_empty.copy()
 
+                    # Much slower code commented out, list comprehension can be very slow!
                     """
                     st = time.time()
                     bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
@@ -535,49 +610,38 @@ def simulator_parallel(parallel_pool,
                     et = time.time()
                     print("Org: "+str(et-st))
                     """
+
+                    # Shifted, note that the nominal position is indicated by Trial num = 0
                     bx_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
                                                                         & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
-                                                                        ][
+                                                                        & (containment_info_grand_all_structures_cudf_dataframe["Trial num"] != 0)
+                                                                        ].reset_index()[
                                                                             ["Pt contained bool","Original pt index"]
                                                                             ].groupby(["Original pt index"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()
-                    structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list
-                    # counter list needs to be reset for every structure 
-                    """
-                    bx_containment_counter_by_org_pt_ind_list = [0]*num_sample_pts_per_bx    
-                    compiling_results_each_trial_task = MC_trial_progress.add_task("[cyan]~~~For each MC trial...", total=num_MC_containment_simulations)
-                    for MC_trial in structure_MC_results:
-                        MC_trial_BX_pts_result_list = MC_trial[0]
-                        for bx_pt_index, bx_point_result in enumerate(MC_trial_BX_pts_result_list):
-                            pt_contained = None
-                            if bx_point_result[0] == None:
-                                pt_contained = False
-                            elif bx_point_result[0][0] == False:
-                                pt_contained = False
-                            elif bx_point_result[0][0] == True:
-                                pt_contained = True
-                            else:
-                                print('Something went wrong!')
-                                sys.exit('Programme exited.')
-                            if pt_contained == True:
-                                bx_containment_counter_by_org_pt_ind_list[bx_pt_index] = bx_containment_counter_by_org_pt_ind_list[bx_pt_index] + 1
-                            else: 
-                                pass 
-                        MC_trial_progress.update(compiling_results_each_trial_task, advance=1) 
-                    MC_trial_progress.remove_task(compiling_results_each_trial_task)
-                    structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list
-                    """
+                    structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list                    
                     bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_MC_containment_simulations for x in bx_containment_counter_by_org_pt_ind_list]
                     structure_specific_results_dict["Binomial estimator list"] = bx_containment_binomial_estimator_by_org_pt_ind_list
+                    
+                    # Nominal, note that the nominal position is indicated by Trial num = 0
+                    bx_nominal_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                        & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
+                                                                        & (containment_info_grand_all_structures_cudf_dataframe["Trial num"] == 0)
+                                                                        ].reset_index()[
+                                                                            ["Pt contained bool","Original pt index"]
+                                                                            ].groupby(["Original pt index"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()
+                    
+                    structure_specific_results_dict["Nominal containment list"] = bx_nominal_containment_counter_by_org_pt_ind_list        
+
                     MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
 
                     structures_progress.update(compiling_results_each_non_bx_structure_containment_task, advance=1)
                 
                 del containment_info_grand_all_structures_cudf_dataframe
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = 'Deleted'
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = 'Deleted'
 
                 structures_progress.remove_task(compiling_results_each_non_bx_structure_containment_task)
                 biopsies_progress.update(compiling_results_biopsy_containment_task, advance = 1) 
-                master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
             biopsies_progress.remove_task(compiling_results_biopsy_containment_task) 
             patients_progress.update(compiling_results_patient_containment_task, advance = 1) 
             completed_progress.update(compiling_results_patient_containment_task_completed, advance = 1)
@@ -590,17 +654,16 @@ def simulator_parallel(parallel_pool,
         calc_MC_stat_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating MC statistics", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calc_MC_stat_biopsy_containment_task, description = "[red]Calculating MC statistics [{}]...".format(patientUID))
-            bx_structure_type = bx_ref           
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
-            calc_MC_stat_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
-                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: compiled sim results"] 
+            calc_MC_stat_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(calc_MC_stat_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
+                biopsies_progress.update(calc_MC_stat_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
                 for structureID,structure_specific_results_dict in specific_bx_results_dict.items():
                     bx_containment_binomial_estimator_by_org_pt_ind_list = structure_specific_results_dict["Binomial estimator list"]
@@ -628,18 +691,17 @@ def simulator_parallel(parallel_pool,
         biopsy_voxelize_containment_task_complete = completed_progress.add_task("[green]Voxelizing containment results", total=num_patients)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing containment results [{}]...".format(patientUID))
-            bx_structure_type = bx_ref           
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
-            biopsy_voxelize_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
-                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]["MC data: compiled sim results"] 
+            biopsy_voxelize_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
                 voxelized_containment_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 voxelized_containment_results_for_fixed_bx_dict_alt = structure_organized_for_bx_data_blank_dict.copy()
@@ -763,18 +825,23 @@ def simulator_parallel(parallel_pool,
             lattice_dose_pcd = dose_ref_dict["Dose grid point cloud"]
             thresholded_lattice_dose_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
 
-
-            bx_structure_type = bx_ref
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total=sp_patient_total_num_BXs)           
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
+                biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
                 
                 bx_only_shifted_3darr = cp.asnumpy(specific_bx_structure["MC data: bx only shifted 3darr"]) # note that the 3rd dimension slices are each MC trial
-                dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{},{}]...".format(patientUID, specific_bx_structure_roi), total = None)
-                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
+                bx_only_shifted_3darr_cutoff = bx_only_shifted_3darr[0:num_MC_dose_simulations]
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                unshifted_bx_sampled_pts_arr_3darr = np.expand_dims(unshifted_bx_sampled_pts_arr, axis=0)
+                nominal_and_bx_only_shifted_3darr = np.concatenate((unshifted_bx_sampled_pts_arr_3darr,bx_only_shifted_3darr_cutoff))
+
+                
+                dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{}]...".format(specific_bx_structure_roi), total = None)
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, nominal_and_bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
                 
                 if show_NN_dose_demonstration_plots == True:
                     # plot everything to make sure its working properly!
@@ -812,7 +879,7 @@ def simulator_parallel(parallel_pool,
                 else:
                     pass
 
-                specific_bx_structure['MC data: bx to dose NN search objects list'] = dosimetric_localization_all_MC_trials_list
+                specific_bx_structure['MC data: bx to dose NN search objects list'] = dosimetric_localization_all_MC_trials_list # Note that entry 0 is the nominal position
                 indeterminate_progress_sub.remove_task(dosimetric_calc_parallel_task)
 
                 biopsies_progress.update(dosimetric_calc_biopsy_task, advance=1)
@@ -824,24 +891,43 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
                     
 
-
-        bx_structure_type = bx_ref
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(compile_results_dose_NN_biopsy_containment_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
-                dosimetric_localization_all_MC_trials_list = specific_bx_structure['MC data: bx to dose NN search objects list']
-                dosimetric_localization_all_MC_trials_list_NN_lists_only = [NN_parent_obj.NN_data_list for NN_parent_obj in dosimetric_localization_all_MC_trials_list]
-                dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list = list(zip(*dosimetric_localization_all_MC_trials_list_NN_lists_only))
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = [[NN_child_obj.nearest_dose for NN_child_obj in fixed_bx_pt_NN_objs_list] for fixed_bx_pt_NN_objs_list in dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list]
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                dosimetric_localization_nominal_and_all_MC_trials_list = specific_bx_structure['MC data: bx to dose NN search objects list']
+                
+                # Split NN dose output into nominal and MC trials
+                """
+                dosimetric_localization_nominal_NN_parent_obj = dosimetric_localization_nominal_and_all_MC_trials_list[0]
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_nominal_and_all_MC_trials_list[1:]
+                """
 
-                specific_bx_structure["MC data: Dose NN child obj for each sampled bx pt list"] = dosimetric_localization_NN_child_objs_by_bx_point_all_trials_list
-                specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] = dosimetric_localization_dose_vals_by_bx_point_all_trials_list
+                # MC trials
+                dosimetric_localization_nominal_and_all_MC_trials_list_NN_lists_only = [NN_parent_obj.NN_data_list for NN_parent_obj in dosimetric_localization_nominal_and_all_MC_trials_list]
+                dosimetric_localization_NN_child_objs_by_bx_point_nominal_and_all_trials_list = list(zip(*dosimetric_localization_nominal_and_all_MC_trials_list_NN_lists_only))
+                dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_list = [[NN_child_obj.nearest_dose for NN_child_obj in fixed_bx_pt_NN_objs_list] for fixed_bx_pt_NN_objs_list in dosimetric_localization_NN_child_objs_by_bx_point_nominal_and_all_trials_list]
+                dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = np.array(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_list)
+                # Nominal
+                """
+                dosimetric_localization_NN_child_objs_by_bx_point_nominal_list = dosimetric_localization_nominal_NN_parent_obj.NN_data_list
+                dosimetric_localization_dose_vals_by_bx_point_nominal_list = [nn_dose_child_obj.nearest_dose for nn_dose_child_obj in dosimetric_localization_NN_child_objs_by_bx_point_nominal_list]
+                """
+
+                # Update master dictionary
+                # MC trials only
+                specific_bx_structure["MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)"] = dosimetric_localization_NN_child_objs_by_bx_point_nominal_and_all_trials_list
+                specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,1:]
+                # Nominal and MC trials
+                #specific_bx_structure["MC data: Dose NN child obj for each sampled bx pt list (nominal)"] = dosimetric_localization_NN_child_objs_by_bx_point_nominal_and_all_trials_list[0]
+                specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,0]
+                specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr
+                
 
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
             biopsies_progress.remove_task(compile_results_dose_NN_biopsy_containment_by_biopsy_task)    
@@ -853,63 +939,77 @@ def simulator_parallel(parallel_pool,
 
 
         #live_display.stop()
-        bx_structure_type = bx_ref
         calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
         calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calculate_biopsy_DVH_quantities_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            calculate_biopsy_DVH_quantities_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            calculate_biopsy_DVH_quantities_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
             ctv_dose = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
 
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
+                biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
                 num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"].copy()
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = np.array(dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
-                max_dose_val_all_MC_trials = np.amax(dosimetric_localization_dose_vals_by_bx_point_all_trials_arr)
+                
+                dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
+                max_dose_val_all_MC_trials = np.amax(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr)
                 minimum_dose_val = 0
                 differential_dvh_range = (minimum_dose_val,max_dose_val_all_MC_trials)
+                num_nominal_and_all_dose_trials = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr.shape[1]
                 #differential_DVH_bin_length = (max_dose_val_all_MC_trials-minimum_dose_val)/differential_dvh_resolution
                 #differential_DVH_bins_list = [[minimum_dose_val+j*differential_DVH_bin_length,minimum_dose_val+(j+1)*differential_DVH_bin_length]for j in range(differential_dvh_resolution)]
-                differential_dvh_histogram_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution]) # each row is a specific MC simulation, each column corresponds to the number of counts in that bin index 
-                differential_dvh_histogram_edges_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the bin edge 
+                differential_dvh_histogram_counts_by_MC_trial_arr = np.empty([num_nominal_and_all_dose_trials, differential_dvh_resolution]) # each row is a specific MC simulation, each column corresponds to the number of counts in that bin index 
+                differential_dvh_histogram_edges_by_MC_trial_arr = np.empty([num_nominal_and_all_dose_trials, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the bin edge 
                 #cumulative_dvh_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the number of counts that satisfy the bound provided by the dose value bin edge of the same index of the differential_dvh_histogram_edges_by_MC_trial_arr
                 dvh_metric_vol_dose_percent_dict = {}
                 for vol_dose_percent in volume_DVH_percent_dose:
-                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = {"All trials list": [], "Mean": None, "STD": None}
-                for MC_trial_index in range(num_MC_dose_simulations):
-                    dosimetric_localization_dose_vals_all_pts_specific_MC_trial = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr[:,MC_trial_index]
-                    differential_dvh_histogram_counts_specific_MC_trial, differential_dvh_histogram_edges_specific_MC_trial = np.histogram(dosimetric_localization_dose_vals_all_pts_specific_MC_trial, bins = differential_dvh_resolution, range = differential_dvh_range)
-                    differential_dvh_histogram_counts_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_counts_specific_MC_trial
-                    differential_dvh_histogram_edges_by_MC_trial_arr[MC_trial_index,:] = differential_dvh_histogram_edges_specific_MC_trial
+                    dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = {"Nominal": None, 
+                                                                               "All MC trials list": [], 
+                                                                               "Mean": None, 
+                                                                               "STD": None, 
+                                                                               "Quantiles": None
+                                                                               }
                     
-                    # find specific DVH metrics
+                for trial_index in range(num_nominal_and_all_dose_trials):
+                    dosimetric_localization_dose_vals_all_pts_specific_MC_trial = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,trial_index]
+                    differential_dvh_histogram_counts_specific_MC_trial, differential_dvh_histogram_edges_specific_MC_trial = np.histogram(dosimetric_localization_dose_vals_all_pts_specific_MC_trial, bins = differential_dvh_resolution, range = differential_dvh_range)
+                    differential_dvh_histogram_counts_by_MC_trial_arr[trial_index,:] = differential_dvh_histogram_counts_specific_MC_trial
+                    differential_dvh_histogram_edges_by_MC_trial_arr[trial_index,:] = differential_dvh_histogram_edges_specific_MC_trial
+                    
+                
+                    # find specific DVH metrics for nominal and all MC trials
                     for vol_dose_percent in volume_DVH_percent_dose:
                         dose_threshold = (vol_dose_percent/100)*ctv_dose
                         counts_for_vol_dose_percent = dosimetric_localization_dose_vals_all_pts_specific_MC_trial[dosimetric_localization_dose_vals_all_pts_specific_MC_trial > dose_threshold].shape[0]
                         percent_for_vol_dose_percent = (counts_for_vol_dose_percent/num_sampled_bx_pts)*100
-                        dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"].append(percent_for_vol_dose_percent)
+                        if trial_index == 0:
+                            dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Nominal"] = percent_for_vol_dose_percent
+                        else:
+                            dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All MC trials list"].append(percent_for_vol_dose_percent)
 
                 
                 for vol_dose_percent in volume_DVH_percent_dose:
-                    dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All trials list"]) 
+                    dvh_metric_vol_dose_percent_MC_trials_only_list = dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All MC trials list"]
+                    dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_MC_trials_only_list) 
                     mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)
                     std_of_dvh_metric = np.std(dvh_metric_all_trials_arr)
-                    quantiles_of_dvh_metric = {'Q'+str(q): np.quantile(dvh_metric_all_trials_arr, q/100) for q in range(5,100,5)}
+                    quantiles_of_dvh_metric = {'Q'+str(q): np.quantile(dvh_metric_all_trials_arr, q/100) for q in volume_DVH_quantiles_to_calculate}
                     dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"] = mean_of_dvh_metric
                     dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["STD"] = std_of_dvh_metric
                     dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Quantiles"] = quantiles_of_dvh_metric
 
+
                 differential_dvh_histogram_volume_by_MC_trial_arr = differential_dvh_histogram_counts_by_MC_trial_arr*bx_sample_pts_volume_element
                 differential_dvh_histogram_percent_by_MC_trial_arr = (differential_dvh_histogram_counts_by_MC_trial_arr/num_sampled_bx_pts)*100
                 
-                differential_dvh_histogram_counts_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_counts_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
-                differential_dvh_histogram_volume_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_volume_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
-                differential_dvh_histogram_percent_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_percent_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                # Note that the nominal is excluded from the quantiles calculation
+                differential_dvh_histogram_counts_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_counts_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
+                differential_dvh_histogram_volume_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_volume_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
+                differential_dvh_histogram_percent_quantiles_by_dose_bin = {'Q'+str(q): np.quantile(differential_dvh_histogram_percent_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
 
+                # Note that the 0th index is the nominal value for the counts, percent and volumes arrays
                 differential_dvh_dict = {"Counts arr": differential_dvh_histogram_counts_by_MC_trial_arr, 
                                        "Percent arr": differential_dvh_histogram_percent_by_MC_trial_arr, 
                                        "Volume arr (cubic mm)": differential_dvh_histogram_volume_by_MC_trial_arr, 
@@ -927,10 +1027,12 @@ def simulator_parallel(parallel_pool,
                 
                 cumulative_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_histogram_edges_by_MC_trial_arr[0].copy()
 
-                cumulative_dvh_histogram_counts_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_counts_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
-                cumulative_dvh_histogram_volume_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_volume_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
-                cumulative_dvh_histogram_percent_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_percent_by_MC_trial_arr, q/100,axis=0) for q in range(5,100,5)}
+                # Note that the nominal is excluded from the calculation
+                cumulative_dvh_histogram_counts_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_counts_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
+                cumulative_dvh_histogram_volume_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_volume_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
+                cumulative_dvh_histogram_percent_quantiles_by_dose_val = {'Q'+str(q): np.quantile(cumulative_dvh_percent_by_MC_trial_arr[1:], q/100,axis=0) for q in range(5,100,5)}
                 
+                # Note that the 0th index is the nominal value for the counts, percent and volumes arrays
                 cumulative_dvh_dict = {"Counts arr": cumulative_dvh_counts_by_MC_trial_arr, 
                                        "Percent arr": cumulative_dvh_percent_by_MC_trial_arr, 
                                        "Volume arr (cubic mm)": cumulative_dvh_volume_by_MC_trial_arr, 
@@ -953,18 +1055,18 @@ def simulator_parallel(parallel_pool,
 
 
 
-        bx_structure_type = bx_ref
         computing_MLE_statistics_dose_task = patients_progress.add_task("[red]Computing dosimetric localization statistics (MLE) [{}]...".format("initializing"), total=num_patients)
         computing_MLE_statistics_dose_task_complete = completed_progress.add_task("[green]Computing dosimetric localization statistics (MLE)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(computing_MLE_statistics_dose_task, description = "[red]Computing dosimetric localization statistics (MLE) [{}]...".format(patientUID))
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
-            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID, "initializing"), total = sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID, specific_bx_structure_roi))
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = specific_bx_structure["MC data: Dose vals for each sampled bx pt list"] 
-                
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] 
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_list = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr.tolist()
+
                 dosimetric_MLE_statistics_all_bx_pts_list = normal_distribution_MLE_parallel(parallel_pool, dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
                 mu_se_var_all_bx_pts_list = [bx_point_stats[0] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
                 confidence_intervals_all_bx_pts_list = [bx_point_stats[1] for bx_point_stats in dosimetric_MLE_statistics_all_bx_pts_list]
@@ -993,17 +1095,17 @@ def simulator_parallel(parallel_pool,
         biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
-            bx_structure_type = bx_ref           
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
-            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
-            biopsy_voxelize_each_bx_structure_dose_task = biopsies_progress.add_task("[cyan]~For each biopsy [{},{}]...".format(patientUID,"initializing"), total=sp_patient_total_num_BXs)
-            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structure_type]):
-                specific_bx_dose_results_list = master_structure_reference_dict[patientUID][bx_structure_type][specific_bx_structure_index]['MC data: Dose vals for each sampled bx pt list'] 
+            biopsy_voxelize_each_bx_structure_dose_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                specific_bx_dose_results_arr = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] 
+                specific_bx_dose_results_list = specific_bx_dose_results_arr.tolist()
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
-                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, description = "[cyan]~For each biopsy [{},{}]...".format(patientUID,specific_bx_structure_roi))
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
                 randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
                 biopsy_cyl_z_length = specific_bx_structure["Reconstructed biopsy cylinder length (from contour data)"]
@@ -1028,7 +1130,7 @@ def simulator_parallel(parallel_pool,
                     dose_vals_in_voxel_by_sampled_pt_index_arr = np.take(specific_bx_dose_results_list, sample_pts_indices_in_voxel_arr, axis = 0)[0]
                     dose_vals_in_voxel_list = dose_vals_in_voxel_by_sampled_pt_index_arr.flatten(order='C').tolist()
                     
-                    total_num_MC_trials_in_voxel = num_sample_pts_in_voxel*num_MC_dose_simulations
+                    total_num_MC_trials_in_voxel = len(dose_vals_in_voxel_list)
                     if total_num_MC_trials_in_voxel < 1:
                         arithmetic_mean_dose_in_voxel = 'No data'
                     else:
@@ -1115,17 +1217,20 @@ def normal_distribution_MLE(data_1d_arr):
 
 
 
-def dosimetric_localization_parallel(parallel_pool, num_MC_dose_simulations, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
+def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
     # build args list
-    args_list = [None]*num_MC_dose_simulations
+    num_trials = bx_only_shifted_3darr.shape[0]
+    args_list = [None]*(num_trials) 
     dose_ref_dict_roi = dose_ref_dict["Dose ID"]
     specific_bx_structure_roi = specific_bx_structure["ROI"]
     dose_data_KDtree = dose_ref_dict["KDtree"]
     for single_MC_trial_slice_index, bx_only_shifted_single_MC_trial_slice in enumerate(bx_only_shifted_3darr):
+        """
         if single_MC_trial_slice_index > (num_MC_dose_simulations-1):
             break
         else:
             pass 
+        """
         single_MC_trial_arg = (dose_data_KDtree, bx_only_shifted_single_MC_trial_slice, specific_bx_structure_roi, dose_ref_dict_roi, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
         args_list[single_MC_trial_slice_index] = single_MC_trial_arg
     
