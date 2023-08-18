@@ -504,7 +504,7 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
 
-        
+        #live_display.stop()
         if plot_cupy_containment_distribution_results == True:
             plotting_biopsy_containment_cuspatial_patient_task = patients_progress.add_task("[red]Plotting containment (cuspatial) results...", total=num_patients)
             plotting_biopsy_containment_cuspatial_patient_task_completed = completed_progress.add_task("[green]Plotting containment (cuspatial) results", total=num_patients, visible = False)

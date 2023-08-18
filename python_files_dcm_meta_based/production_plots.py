@@ -1391,8 +1391,8 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                         symbol = "Nominal containment",
                                         symbol_map = nominal_containment_symbols_dict,
                                         error_y = "STD err", 
-                                        width  = svg_image_width, 
-                                        height = svg_image_height
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
                                         )
             if plot_type == '':
                 fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
@@ -1401,8 +1401,8 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                         color = "Structure ROI",
                                         symbol = "Nominal containment",
                                         symbol_map = nominal_containment_symbols_dict, 
-                                        width  = svg_image_width, 
-                                        height = svg_image_height
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
                                         )
             
             # marker_line_width = nonzero is necessary in order to see "thin" markers, and must be done by update_traces method
@@ -1459,8 +1459,8 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                         x="Z vals to eval", 
                                         y="Mean regression", 
                                         color = "Relative containment structure",
-                                        width  = svg_image_width, 
-                                        height = svg_image_height
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
                                         )
                 
                 # add all regressions to the global scatter figure, colored by relative structure

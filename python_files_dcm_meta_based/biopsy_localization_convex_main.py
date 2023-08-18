@@ -138,7 +138,7 @@ def main():
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
     pio.templates.default = "plotly_white"
-    svg_image_scale = 3
+    svg_image_scale = 1 # setting this value to something not equal to 1 produces misaligned plots with multiple traces!
     NPKR_bandwidth = 0.5
     svg_image_height = 1080
     svg_image_width = 1920
@@ -2557,7 +2557,7 @@ def main():
 
 
                 # perform containment probabilities plots and regressions
-                live_display.stop()
+                #live_display.stop()
                 if production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot name"]
