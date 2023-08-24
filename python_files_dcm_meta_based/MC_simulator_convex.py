@@ -1746,10 +1746,11 @@ class nearest_neighbour_parent_dose:
 
     def NN_list_builder(self,comparison_structure_points_that_made_KDtree):
         comparison_structure_NN_distances = self.NN_search_output[0]
+        comparison_structure_NN_distances_reciprocal = np.reciprocal(comparison_structure_NN_distances)
         comparison_structure_NN_indices = self.NN_search_output[1]
         nearest_points_on_comparison_struct = comparison_structure_points_that_made_KDtree[comparison_structure_NN_indices]
         nearest_doses_list = self.dose_arr[comparison_structure_NN_indices]
-        nearest_doses_weighted_mean_list = np.average(nearest_doses_list, axis=1,weights = comparison_structure_NN_distances).tolist()
+        nearest_doses_weighted_mean_list = np.average(nearest_doses_list, axis=1,weights = comparison_structure_NN_distances_reciprocal).tolist()
         NN_data_list = [nearest_neighbour_child_dose(self.queried_Bx_points[index], nearest_points_on_comparison_struct[index], nearest_doses_list[index], comparison_structure_NN_distances[index], nearest_doses_weighted_mean_list[index]) for index in range(0,len(self.queried_Bx_points))]
         #NN_data_list = [{"Queried BX pt": self.queried_Bx_points[index], "NN pt on comparison struct": nearest_points_on_comparison_struct[index], "Euclidean distance": comparison_structure_NN_distances[index]} for index in range(0,len(self.queried_Bx_points))]
         return NN_data_list
