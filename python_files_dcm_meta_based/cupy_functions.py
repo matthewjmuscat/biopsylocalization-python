@@ -14,12 +14,7 @@ def MC_simulator_shift_biopsy_structures_uniform_generator_cupy(patient_dict, bx
         generated_shifts_info_list = [bx_ref, specific_bx_structure_index, structure_uniform_dist_shift_samples_arr]
         sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list.append(generated_shifts_info_list)
 
-    # update the patient dictionary
-    for generated_shifts_info_list in sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list:
-        structure_type = generated_shifts_info_list[0]
-        specific_structure_index = generated_shifts_info_list[1]
-        specific_structure_structure_uniform_dist_shift_samples_arr = generated_shifts_info_list[2]
-        patient_dict[structure_type][specific_structure_index]["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"] = specific_structure_structure_uniform_dist_shift_samples_arr
+    return sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list
 
 
 
@@ -46,12 +41,7 @@ def MC_simulator_shift_all_structures_generator_cupy(patient_dict, structs_refer
             sp_structure_normal_dist_shift_samples_and_structure_reference_list.append(generated_shifts_info_list)
     
 
-    # update the patient dictionary
-    for generated_shifts_info_list in sp_structure_normal_dist_shift_samples_and_structure_reference_list:
-        structure_type = generated_shifts_info_list[0]
-        specific_structure_index = generated_shifts_info_list[1]
-        specific_structure_structure_normal_dist_shift_samples_arr = generated_shifts_info_list[2]
-        patient_dict[structure_type][specific_structure_index]["MC data: Generated normal dist random samples arr"] = specific_structure_structure_normal_dist_shift_samples_arr
+    return sp_structure_normal_dist_shift_samples_and_structure_reference_list
 
 
 
@@ -127,5 +117,65 @@ def MC_simulator_translate_sampled_bx_points_3darr_structure_only_shift_cupy(pyd
             structure_shifted_bx_data_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_struct_index] = bx_data_both_non_bx_structure_shifted_and_bx_structure_shifted_3darr
         
     return structure_shifted_bx_data_dict
+
+
+
+
+
+
+
+def fanova_translate_sampled_bx_points_arr_bx_only_shift_cupy(specific_bx_structure, 
+                                                              simulate_uniform_bx_shifts_due_to_bx_needle_compartment, 
+                                                              plot_uniform_shifts_to_check_plotly, 
+                                                              num_sampled_bx_pts, 
+                                                              max_simulations, 
+                                                              fanova_bx_shift_samples_2d_arr,
+                                                              matrix_key):
+    """
+    create a 3d array that stores all the shifted bx data where each 3d slice is the shifted bx data for 
+    a fixed sampled bx shift, ie each slice is a sampled bx shift trial. Note though that if the uniform 
+    compartment shifts are done, these are still slices of constant shift vectors, but they are now 
+    composed of two shifts, ie each slice is the result of a unique uniform shift vector plus a unique norm shift vector 
+    applied to each bx point (row).
+    """
+    
+    randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+    randomly_sampled_bx_pts_cp_arr = cp.array(randomly_sampled_bx_pts_arr) # convert numpy array to cp array
+    # prep the sampled biopsy points to be added via vectorization
+    randomly_sampled_bx_pts_cp_arr_resized_3darr = cp.resize(randomly_sampled_bx_pts_cp_arr,(1,num_sampled_bx_pts,3))
+    randomly_sampled_bx_pts_cp_arr_3darr = cp.repeat(randomly_sampled_bx_pts_cp_arr_resized_3darr,max_simulations,0)
+
+    randomly_sampled_normal_bx_shifts_cp_arr = fanova_bx_shift_samples_2d_arr[:,0:3]
+    
+    if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
+        random_uniformly_sampled_bx_shifts_cp_arr = fanova_bx_shift_samples_2d_arr[:,3]
+        #num_uniform_shifts = random_uniformly_sampled_bx_shifts_cp_arr.shape[0]
+        # notice the minus sign below!!
+        bx_needle_centroid_vec_tip_to_handle_unit_vec = -specific_bx_structure["Centroid line unit vec (bx needle base to bx needle tip)"]
+        bx_needle_centroid_vec_tip_to_handle_unit_cp_vec = cp.array(bx_needle_centroid_vec_tip_to_handle_unit_vec)
+        bx_needle_centroid_vec_tip_to_handle_unit_cp_arr = cp.tile(bx_needle_centroid_vec_tip_to_handle_unit_cp_vec,(max_simulations,1))
+        bx_needle_uniform_compartment_shift_vectors_cp_array = cp.multiply(bx_needle_centroid_vec_tip_to_handle_unit_cp_arr,random_uniformly_sampled_bx_shifts_cp_arr[...,None]) # The [...,None] converts the row vector to a column vector for proper element-wise multiplication
+        specific_bx_structure["FANOVA: Generated uniform (biopsy needle compartment) random vectors samples arr dict"][matrix_key] = bx_needle_uniform_compartment_shift_vectors_cp_array
+        total_rigid_shift_vectors_cp_arr = bx_needle_uniform_compartment_shift_vectors_cp_array + randomly_sampled_normal_bx_shifts_cp_arr
+        specific_bx_structure["FANOVA: Total rigid shift vectors arr dict"][matrix_key] = total_rigid_shift_vectors_cp_arr
+
+        if plot_uniform_shifts_to_check_plotly == True:
+            bx_needle_uniform_compartment_shift_vectors_cp_arr_reshaped_for_vectorization = cp.reshape(bx_needle_uniform_compartment_shift_vectors_cp_array,(max_simulations,1,3))
+            bx_needle_uniform_compartment_shift_vectors_cp_arr_3d_arr_for_vectorization = cp.tile(bx_needle_uniform_compartment_shift_vectors_cp_arr_reshaped_for_vectorization,(1,num_sampled_bx_pts,1))
+            
+            randomly_sampled_bx_pts_arr_bx_uniform_compartment_only_shift_cp_3d_arr = randomly_sampled_bx_pts_cp_arr_3darr + bx_needle_uniform_compartment_shift_vectors_cp_arr_3d_arr_for_vectorization
+            for uniform_only_shifted_slice in randomly_sampled_bx_pts_arr_bx_uniform_compartment_only_shift_cp_3d_arr: 
+                uniform_only_shifted_slice_np_arr = cp.asnumpy(uniform_only_shifted_slice)
+                plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([uniform_only_shifted_slice_np_arr, randomly_sampled_bx_pts_arr], colors_for_arrays_list = ['blue','red'], aspect_mode_input = 'data')
+        
+    else:
+        total_rigid_shift_vectors_cp_arr = randomly_sampled_normal_bx_shifts_cp_arr
+
+    total_rigid_shift_vectors_cp_arr_reshaped_for_vectorization = cp.reshape(total_rigid_shift_vectors_cp_arr,(max_simulations,1,3))
+    total_rigid_shift_vectors_cp_arr_3d_arr_for_vectorization = cp.tile(total_rigid_shift_vectors_cp_arr_reshaped_for_vectorization,(1,num_sampled_bx_pts,1))
+
+    randomly_sampled_bx_pts_arr_bx_only_shift_cp_3Darr = randomly_sampled_bx_pts_cp_arr_3darr + total_rigid_shift_vectors_cp_arr_3d_arr_for_vectorization
+
+    return randomly_sampled_bx_pts_arr_bx_only_shift_cp_3Darr
 
 

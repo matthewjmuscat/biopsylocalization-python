@@ -75,6 +75,7 @@ import misc_tools
 import matplotlib.colors as mcolors
 import production_plots
 import pickle
+import fanova
 
 
 def main():
@@ -129,8 +130,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.3
-    num_MC_containment_simulations_input = 1000
-    num_MC_dose_simulations_input = 1000
+    num_MC_containment_simulations_input = 100
+    num_MC_dose_simulations_input = 100
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 8
     
@@ -166,7 +167,16 @@ def main():
     num_differential_dvh_plots_to_show = 25
     volume_DVH_percent_dose = [100,125,150,200,300]
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
-
+    
+    #fanova
+    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work
+    num_FANOVA_dose_simulations_input = 100
+    perform_fanova = True
+    show_fanova_containment_demonstration_plots = False
+    plot_cupy_fanova_containment_distribution_results = False
+    fanova_plot_uniform_shifts_to_check_plotly = False
+    num_sobol_bootstraps = 100
+    sobol_indices_bootstrap_conf_interval = 0.95
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -1618,6 +1628,26 @@ def main():
                                                                                         spinner_type
                                                                                         )
             
+            if perform_fanova == True:
+                fanova.fanova_analysis(
+                    parallel_pool, 
+                    live_display,
+                    stopwatch, 
+                    layout_groups, 
+                    master_structure_reference_dict, 
+                    master_structure_info_dict,
+                    structs_referenced_list,
+                    bx_ref,
+                    biopsy_needle_compartment_length,
+                    simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                    num_FANOVA_containment_simulations_input,
+                    num_FANOVA_dose_simulations_input,
+                    fanova_plot_uniform_shifts_to_check_plotly,
+                    show_fanova_containment_demonstration_plots,
+                    plot_cupy_fanova_containment_distribution_results,
+                    num_sobol_bootstraps,
+                    sobol_indices_bootstrap_conf_interval
+                    )
 
             live_display.start(refresh=True)
             #live_display.stop()

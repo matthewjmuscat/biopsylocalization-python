@@ -291,6 +291,73 @@ def cuspatial_points_contained(polygons_geoseries,
     return grand_cudf_dataframe
 
 
+def cuspatial_points_contained_FANOVA(polygons_geoseries,
+                               test_points_geoseries, 
+                               test_points_array, 
+                               nearest_zslices_indices_arr,
+                               nearest_zslices_vals_arr,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval,  
+                               num_sample_pts_in_bx,
+                               num_FANOVA_containment_simulations,
+                               structure_info,
+                               matrix_key
+                               ):
+    
+    num_zslices = len(polygons_geoseries)
+    total_num_points = len(test_points_geoseries) # note that this is the total number of points num_FANOVA_containment_sims*num_sampled_pts_in_bx
+    current_index = 0
+    next_index = 0
+    results_dataframes_list = []
+    while next_index < num_zslices:
+        if num_zslices - current_index > 30:
+            next_index = current_index + 30
+        else:
+            next_index = num_zslices
+        containment_results_grand_dataframe_polygon_subset = cuspatial.point_in_polygon(test_points_geoseries,
+                                        polygons_geoseries[current_index:next_index]                   
+                                        )
+        results_dataframes_list.append(containment_results_grand_dataframe_polygon_subset)
+        current_index = next_index
+        
+    containment_results_grand_dataframe = cudf.concat(results_dataframes_list,axis=1)
+
+    #contain_bool_by_point_list = [containment_results_grand_dataframe.values[list_ind % num_sample_pts_in_bx, polygon_ind] for list_ind,polygon_ind in enumerate(nearest_zslices_indices_arr)]
+    #contain_bool_arr = cp.array(contain_bool_by_point_list)
+    points_arr_org_index = np.array([list_ind % num_sample_pts_in_bx for list_ind in range(total_num_points)])
+    points_arr_index = np.arange(0,total_num_points)
+    contain_bool_arr_step_1 = containment_results_grand_dataframe.to_cupy()[points_arr_index,nearest_zslices_indices_arr]
+    # further set points that are outside z-range to False
+    pts_contained_below_max_zval = cp.array((test_points_array[:,2] < non_bx_struct_max_zval))
+    pts_contained_above_min_zval = cp.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_between_zvals = cp.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
+    contain_bool_arr = cp.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
+    contain_color_arr = color_by_bool_by_arr(cp.asnumpy(contain_bool_arr))
+    #contain_color_arr[0:num_sample_pts_in_bx,2] = 1 # set the nominal points to turn on blue for contained color, therefore False = pink and True = Cyan
+    trial_number_list = [int(i+1) for i in range(num_FANOVA_containment_simulations) for j in range(num_sample_pts_in_bx)]
+    results_dictionary = {"Relative structure ROI": structure_info[0],
+                          "Relative structure type": structure_info[1],
+                          "Relative structure index": structure_info[3],
+                          "Matrix key": matrix_key,
+                          "Original pt index": points_arr_org_index,
+                          "Pt contained bool": contain_bool_arr,
+                          "Nearest zslice zval": nearest_zslices_vals_arr,
+                          "Nearest zslice index": nearest_zslices_indices_arr,
+                          "Pt clr R": contain_color_arr[:,0],
+                          "Pt clr G": contain_color_arr[:,1],
+                          "Pt clr B": contain_color_arr[:,2],
+                          "Test pt X": test_points_array[:,0],
+                          "Test pt Y": test_points_array[:,1],
+                          "Test pt Z": test_points_array[:,2],
+                          "Trial num": trial_number_list
+                          }
+
+    
+    grand_cudf_dataframe = cudf.DataFrame.from_dict(results_dictionary)
+
+    return grand_cudf_dataframe
+
+
 
 
 def color_by_bool_by_arr(contain_bool_arr):
