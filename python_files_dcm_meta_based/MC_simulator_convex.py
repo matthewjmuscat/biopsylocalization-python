@@ -20,6 +20,7 @@ import geopandas
 import cudf
 import cupy_functions
 import cupy as cp
+import itertools
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -100,6 +101,7 @@ def simulator_parallel(parallel_pool,
                        plot_translation_vectors_pointclouds,
                        plot_cupy_containment_distribution_results,
                        plot_shifted_biopsies,
+                       structure_miss_probability_roi,
                        spinner_type
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -450,9 +452,11 @@ def simulator_parallel(parallel_pool,
                 
                 # concatenate containment results into a single dataframe
                 containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
-                
+                # free up GPU memory
+                del containment_info_grand_cudf_dataframe
+                del relative_structure_containment_results_data_frames_list
                 # Update the master dictionary
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
 
                 biopsies_progress.update(testing_biopsy_containment_task, advance=1)
             biopsies_progress.remove_task(testing_biopsy_containment_task)
@@ -471,7 +475,7 @@ def simulator_parallel(parallel_pool,
                 structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
                 patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (cuspatial) [{}]...".format(patientUID))
                 for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                    containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"]
+                    containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"])
                     for relative_structure_info in structure_organized_for_bx_data_blank_dict.keys():
                         structure_roi = relative_structure_info[0]
                         non_bx_structure_type = relative_structure_info[1]
@@ -530,6 +534,12 @@ def simulator_parallel(parallel_pool,
                                                  "Standard error (containment) list": None,
                                                  "Nominal containment list": None
                                                  }
+        mutual_structure_specific_results_dict_empty = {"Total successes (containment) list": None, 
+                                                 "Binomial estimator list": None, 
+                                                 "Confidence interval 95 (containment) list": None, 
+                                                 "Standard error (containment) list": None,
+                                                 "Nominal containment list": None
+                                                 }
         compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)
         compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -541,7 +551,7 @@ def simulator_parallel(parallel_pool,
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
-                containment_info_grand_all_structures_cudf_dataframe = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] 
+                containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"])
                 MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 
                 sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
@@ -570,7 +580,7 @@ def simulator_parallel(parallel_pool,
                     et = time.time()
                     print("Org: "+str(et-st))
                     """
-
+                    # compute independent probabilities
                     # Shifted, note that the nominal position is indicated by Trial num = 0
                     bx_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
                                                                         & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
@@ -581,6 +591,8 @@ def simulator_parallel(parallel_pool,
                     structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list                    
                     bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_MC_containment_simulations for x in bx_containment_counter_by_org_pt_ind_list]
                     structure_specific_results_dict["Binomial estimator list"] = bx_containment_binomial_estimator_by_org_pt_ind_list
+
+                    
                     
                     # Nominal, note that the nominal position is indicated by Trial num = 0
                     bx_nominal_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
@@ -595,13 +607,42 @@ def simulator_parallel(parallel_pool,
                     MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
 
                     structures_progress.update(compiling_results_each_non_bx_structure_containment_task, advance=1)
+
+
+                # compute mutual probabilities
+                #unique_non_bx_structures_roi_list = containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"].unique() # generates a unique list of structure ROIs from the dataframe!
+                #mutual_probabilities_dict = {}
+                non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
+                structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
+                mutual_MC_compiled_results_for_fixed_bx_dict = {}
+                for structure_info_combination_tuple in structure_info_combinations_list:
+                    roi_combination_list = [struct_info[0] for struct_info in structure_info_combination_tuple]
+                    struct_index_combination_list = [struct_info[3] for struct_info in structure_info_combination_tuple]
+                    
+                    combination_structure_specific_results_dict = mutual_structure_specific_results_dict_empty.copy()
+
+                    # Note needed to convert cudf dataframe to pandas dataframe since cudf dataframe groupby object has no method "all()"
+                    containment_info_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
+                    bx_mutual_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"].isin(roi_combination_list))  
+                                                                        & (containment_info_grand_all_structures_pandas_dataframe["Relative structure index"].isin(struct_index_combination_list))
+                                                                        ].reset_index()[
+                                                                            ["Pt contained bool","Original pt index","Trial num"]
+                                                                            ].groupby(["Original pt index","Trial num"]).all().sort_index().groupby(["Original pt index"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()
+                    
+                    combination_structure_specific_results_dict["Total successes (containment) list"] = bx_mutual_containment_counter_by_org_pt_ind_list
+                    bx_containment_combination_binomial_estimator_by_org_pt_ind_list = [x/num_MC_containment_simulations for x in bx_mutual_containment_counter_by_org_pt_ind_list]
+                    combination_structure_specific_results_dict["Binomial estimator list"] = bx_containment_combination_binomial_estimator_by_org_pt_ind_list
+
+                    mutual_MC_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple] = combination_structure_specific_results_dict
                 
                 del containment_info_grand_all_structures_cudf_dataframe
+                del containment_info_grand_all_structures_pandas_dataframe
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = 'Deleted'
 
                 structures_progress.remove_task(compiling_results_each_non_bx_structure_containment_task)
                 biopsies_progress.update(compiling_results_biopsy_containment_task, advance = 1) 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
             biopsies_progress.remove_task(compiling_results_biopsy_containment_task) 
             patients_progress.update(compiling_results_patient_containment_task, advance = 1) 
             completed_progress.update(compiling_results_patient_containment_task_completed, advance = 1)
@@ -636,6 +677,18 @@ def simulator_parallel(parallel_pool,
                     structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
                     structure_specific_results_dict["Standard error (containment) list"] = standard_err_list
 
+                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+                for structureID,mutual_structure_specific_results_dict in mutual_MC_compiled_results_for_fixed_bx_dict.items():
+                    bx_containment_binomial_estimator_by_org_pt_ind_list = mutual_structure_specific_results_dict["Binomial estimator list"]
+                    bx_containment_counter_by_org_pt_ind_list = mutual_structure_specific_results_dict["Total successes (containment) list"] 
+                    probability_estimator_list = bx_containment_binomial_estimator_by_org_pt_ind_list
+                    num_successes_list = bx_containment_counter_by_org_pt_ind_list
+                    num_trials = num_MC_containment_simulations
+                    confidence_interval_list = calculate_binomial_containment_conf_intervals_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
+                    standard_err_list = calculate_binomial_containment_stand_err_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
+                    mutual_structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
+                    mutual_structure_specific_results_dict["Standard error (containment) list"] = standard_err_list
+
                     
                 biopsies_progress.update(calc_MC_stat_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(calc_MC_stat_each_bx_structure_containment_task)
@@ -645,6 +698,158 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(calc_MC_stat_biopsy_containment_task_complete,visible = True)
         live_display.refresh()
 
+
+        specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est arr": None, 
+                                            "Tumor tissue standard error arr": None, 
+                                            "Tumor tissue confidence interval 95 arr": None, 
+                                            "Tumor tissue nominal arr": None
+                                            }
+        
+        specific_bx_structure_relative_OAR_miss_dict_empty = {"OAR miss structure info": None,
+                            "OAR tissue miss binomial est arr": None,
+                            "OAR tissue standard error arr": None, 
+                            "OAR tissue miss confidence interval 95 2d arr": None,
+                            "OAR tissue miss nominal arr": None
+                            }
+        
+        calc_mutual_probabilities_stat_biopsy_containment_task = patients_progress.add_task("[red]Calculating mutual probabilities [{}]...".format("initializing"), total=num_patients)
+        calc_mutual_probabilities_stat_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating mutual probabilities ", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, description = "[red]Calculating mutual probabilities  [{}]...".format(patientUID))
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+            sp_patient_num_dils = master_structure_info_dict["By patient"][patientUID][dil_ref]["Num structs"]
+
+            calc_mutual_probabilities_stat_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_tumor_tissue_dict = copy.deepcopy(specific_bx_structure_tumor_tissue_dict_empty)
+                specific_bx_structure_relative_OAR_dict = copy.deepcopy(specific_bx_structure_relative_OAR_miss_dict_empty)
+
+                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+            
+                ## calc probability tumor tissue
+                # create an array to keep track of the sum of independent probabilities
+                probability_sum_of_independent_pt_wise_dil_tissue_arr = np.empty((num_sample_pts_in_bx))
+                probability_sum_of_independent_pt_wise_dil_tissue_arr.fill(0)
+
+                # create a 2d array to accumulate the standard errors of each binomial estimator  
+                mutual_MC_compiled_results_for_fixed_bx_exclusively_dils_only_dict = copy.deepcopy(mutual_MC_compiled_results_for_fixed_bx_dict)
+                for mutual_struct_combo_key in mutual_MC_compiled_results_for_fixed_bx_dict.keys():
+                    for struct_key in mutual_struct_combo_key:
+                        struct_type = struct_key[1]
+                        if struct_type != dil_ref:
+                            mutual_MC_compiled_results_for_fixed_bx_exclusively_dils_only_dict.pop(mutual_struct_combo_key)
+                            break
+                num_mutual_combinations_involving_dils_only = len(mutual_MC_compiled_results_for_fixed_bx_exclusively_dils_only_dict)
+                num_combinations_involving_dils_only = num_mutual_combinations_involving_dils_only + sp_patient_num_dils
+
+                probabilities_standard_err_2d_arr = np.empty((num_combinations_involving_dils_only,num_sample_pts_in_bx))
+                probabilities_standard_err_2d_arr.fill(0)
+
+                # create nominal array for dil tissue
+                bx_nominal_containment_counter_by_org_pt_ind_2d_arr = np.empty((sp_patient_num_dils,num_sample_pts_in_bx))
+
+                # get independent probabilities and standard errors 
+                index_for_se_arr = 0
+                for structureID,structure_specific_results_dict in specific_bx_results_dict.items(): 
+                    non_bx_structure_type = structureID[1]
+                    # only accumulate dil probabilities
+                    if non_bx_structure_type != dil_ref:
+                        continue
+                    specific_dil_structure_binomial_est_arr = np.array(structure_specific_results_dict["Binomial estimator list"])
+                    probability_sum_of_independent_pt_wise_dil_tissue_arr = probability_sum_of_independent_pt_wise_dil_tissue_arr + specific_dil_structure_binomial_est_arr
+                    
+                    specific_dil_structure_binomial_se_est_arr = np.array(structure_specific_results_dict["Standard error (containment) list"])
+                    probabilities_standard_err_2d_arr[index_for_se_arr,:] = specific_dil_structure_binomial_se_est_arr
+                    
+                    bx_nominal_containment_counter_by_org_pt_ind_arr = np.array(structure_specific_results_dict["Nominal containment list"])
+                    bx_nominal_containment_counter_by_org_pt_ind_2d_arr[index_for_se_arr,:] = bx_nominal_containment_counter_by_org_pt_ind_arr
+
+                    index_for_se_arr = index_for_se_arr + 1
+
+                # calculate nominal containment 
+                bx_nominal_containment_dil_exclusive_by_org_pt_ind_arr = np.any(bx_nominal_containment_counter_by_org_pt_ind_2d_arr, axis = 0)
+                specific_bx_structure_tumor_tissue_dict["Tumor tissue nominal arr"] = bx_nominal_containment_dil_exclusive_by_org_pt_ind_arr
+
+                # create an array to keep track of the sum of mutual probabilities
+                probability_sum_of_mutual_pt_wise_dil_tissue_arr = np.empty((num_sample_pts_in_bx))
+                probability_sum_of_mutual_pt_wise_dil_tissue_arr.fill(0)
+
+                # get mutual probabilities and standard errors
+                for mutual_structure_specific_results_dict in mutual_MC_compiled_results_for_fixed_bx_exclusively_dils_only_dict.values():
+                    mutual_structure_specific_exlusively_dils_binomial_est_arr = np.array(mutual_structure_specific_results_dict["Binomial estimator list"])
+                    probability_sum_of_mutual_pt_wise_dil_tissue_arr = probability_sum_of_mutual_pt_wise_dil_tissue_arr + mutual_structure_specific_exlusively_dils_binomial_est_arr
+                    
+                    specific_dil_structure_binomial_se_est_arr = np.array(structure_specific_results_dict["Standard error (containment) list"])
+                    probabilities_standard_err_2d_arr[index_for_se_arr,:] = specific_dil_structure_binomial_se_est_arr
+                    index_for_se_arr = index_for_se_arr + 1
+
+                # create total probability pt wise array
+                probability_pt_wise_dil_tissue_arr = np.empty((num_sample_pts_in_bx))
+                probability_pt_wise_dil_tissue_arr.fill(0)
+
+                probability_pt_wise_dil_tissue_arr = probability_sum_of_independent_pt_wise_dil_tissue_arr - probability_sum_of_mutual_pt_wise_dil_tissue_arr
+                
+                
+                specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est arr"] = probability_pt_wise_dil_tissue_arr
+
+                # calculate the standard error of the tumor tissue pt wise binomeial estimator
+                probabilities_standard_err_arr = np.linalg.norm(probabilities_standard_err_2d_arr, axis=0, keepdims=False)
+                specific_bx_structure_tumor_tissue_dict["Tumor tissue standard error arr"] = probabilities_standard_err_arr
+
+                # calculate 95 CI 
+                probabilities_CI_arr = mf.confidence_intervals_95_from_calculated_SE(probability_pt_wise_dil_tissue_arr, probabilities_standard_err_arr)
+                specific_bx_structure_tumor_tissue_dict["Tumor tissue confidence interval 95 arr"] = probabilities_CI_arr
+
+
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tumor tissue probability"] = specific_bx_structure_tumor_tissue_dict
+
+                # calculate miss probability
+                for structure_info, structure_specific_results_dict in specific_bx_results_dict.items():
+                    structure_roi = structure_info[0]
+                    non_bx_structure_type = structure_info[1]
+                    # only consider the miss structure
+                    if (non_bx_structure_type != oar_ref) or (structure_roi != structure_miss_probability_roi):
+                        continue
+                    
+                    non_bx_structure_binom_est_arr = np.array(structure_specific_results_dict["Binomial estimator list"])
+                    miss_structure_binom_est_arr = 1 - non_bx_structure_binom_est_arr
+
+                    miss_structure_standard_err_arr = np.array(structure_specific_results_dict["Standard error (containment) list"])
+                    
+                    non_bx_structure_CI_2d_arr = np.array(structure_specific_results_dict["Confidence interval 95 (containment) list"]).T
+                    miss_structure_CI_2d_arr = 1 - non_bx_structure_CI_2d_arr
+                    miss_structure_CI_2d_arr[[0,1]] = miss_structure_CI_2d_arr[[1,0]] # swap lower and upper rows as performing 1-A to get the complemeny swaps the upper and lower CIs
+
+                    non_bx_structure_nominal_arr = np.array(structure_specific_results_dict["Nominal containment list"])
+                    miss_structure_nominal_arr = 1- non_bx_structure_nominal_arr
+                    
+                    specific_bx_structure_relative_OAR_dict["OAR miss structure info"] = structure_info
+                    specific_bx_structure_relative_OAR_dict["OAR tissue miss binomial est arr"] = miss_structure_binom_est_arr
+                    specific_bx_structure_relative_OAR_dict["OAR tissue standard error arr"] = miss_structure_standard_err_arr
+                    specific_bx_structure_relative_OAR_dict["OAR tissue miss confidence interval 95 2d arr"] = miss_structure_CI_2d_arr
+                    specific_bx_structure_relative_OAR_dict["OAR tissue miss nominal arr"] = miss_structure_nominal_arr
+
+                    break
+
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: miss structure tissue probability"] = specific_bx_structure_relative_OAR_dict
+                
+                biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, advance = 1)
+            biopsies_progress.remove_task(calc_mutual_probabilities_stat_each_bx_structure_containment_task)
+            patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, advance = 1)
+            completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete, advance = 1)
+        patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, visible = False)
+        completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete,visible = True)
+        live_display.refresh()
+        
         
         # voxelize containment results
         biopsy_voxelize_containment_task = patients_progress.add_task("[red]Voxelizing containment results [{}]...".format("initializing"), total=num_patients)
@@ -1670,7 +1875,72 @@ def grid_point_sampler_from_global_delaunay_convex_structure_parallel(grid_separ
     
     return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, num_bx_sample_pts_after_exclusions, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
     
+
+def grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel(grid_separation_distance, 
+                                                                              delaunay_global_convex_structure_tri, 
+                                                                              reconstructed_bx_arr, 
+                                                                              patientUID, 
+                                                                              structure_type, 
+                                                                              specific_structure_index,
+                                                                              z_axis_to_centroid_vec_rotation_matrix
+                                                                              ):
     
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    reconstructed_bx_point_cloud_color = np.array([0,0,1])
+    reconstructed_bx_point_cloud.paint_uniform_color(reconstructed_bx_point_cloud_color)
+
+    
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    bounding_box_color = np.array([0,0,0], dtype=float)
+    axis_aligned_bounding_box.color = bounding_box_color
+    max_bounds = np.amax(axis_aligned_bounding_box_points_arr, axis=0)
+    min_bounds = np.amin(axis_aligned_bounding_box_points_arr, axis=0)
+
+    lattice_sizex = int(math.ceil(abs(max_bounds[0]-min_bounds[0])/grid_separation_distance) + 1)
+    lattice_sizey = int(math.ceil(abs(max_bounds[1]-min_bounds[1])/grid_separation_distance) + 1)
+    lattice_sizez = int(math.ceil(abs(max_bounds[2]-min_bounds[2])/grid_separation_distance) + 1)
+    origin = min_bounds
+
+    bx_samples_arr_unrotated = generate_cubic_lattice(grid_separation_distance, lattice_sizex,lattice_sizey,lattice_sizez,origin)
+    bx_samples_arr_rotated = (z_axis_to_centroid_vec_rotation_matrix @ bx_samples_arr_unrotated.T).T
+    grid_sample_rotated_pcd = point_containment_tools.create_point_cloud(bx_samples_arr_rotated)
+    grid_sample_rotated_pcd.paint_uniform_color(np.array([1,0,0]))
+    reconstructed_bx_point_cloud_global_center_arr = reconstructed_bx_point_cloud.get_center()
+    grid_sample_point_cloud_global_center_arr = grid_sample_rotated_pcd.get_center()
+    grid_sample_to_biopsy_translation_vec = reconstructed_bx_point_cloud_global_center_arr - grid_sample_point_cloud_global_center_arr
+    bx_samples_arr = bx_samples_arr_rotated + grid_sample_to_biopsy_translation_vec
+
+
+    grid_sample_final_pcd = point_containment_tools.create_point_cloud(bx_samples_arr)
+    grid_sample_final_pcd.paint_uniform_color(np.array([1,0,1]))
+
+    grid_sample_nonrotated_pcd = point_containment_tools.create_point_cloud(bx_samples_arr_unrotated)
+    grid_sample_nonrotated_pcd.paint_uniform_color(np.array([0,1,0]))
+    
+    
+    #plotting_funcs.plot_geometries(grid_sample_rotated_pcd,grid_sample_final_pcd,reconstructed_bx_point_cloud)
+
+
+    list_of_passed_indices = []
+    for test_point_index, test_point in enumerate(bx_samples_arr):
+        containment_result_bool = point_containment_tools.convex_bx_structure_global_test_point_containment(delaunay_global_convex_structure_tri,test_point)
+        if containment_result_bool == True:
+            list_of_passed_indices.append(test_point_index)
+        else:
+            pass
+    num_pts_contained = len(list_of_passed_indices)
+    bx_samples_arr_within_bx = np.empty((num_pts_contained,3),dtype=float)
+
+    for index_for_new_arr,index_in_org_array in enumerate(list_of_passed_indices):
+        bx_samples_arr_within_bx[index_for_new_arr] = bx_samples_arr[index_in_org_array]
+
+    num_bx_sample_pts_after_exclusions = bx_samples_arr_within_bx.shape[0]
+
+    bx_samples_arr_point_cloud_color = np.random.uniform(0, 0.7, size=3)
+    bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr_within_bx, bx_samples_arr_point_cloud_color)
+    
+    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, num_bx_sample_pts_after_exclusions, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
 
 
 def generate_cubic_lattice(distance, sizex,sizey,sizez,origin):

@@ -104,7 +104,14 @@ def main():
     input_data_folder_name = "Input data"
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
     #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
-    oaroi_contour_names = ['Prostate'] # consider prostate only for OARs! If the first position is the prostate, the simulated biopsies will be generated relative to this structure
+    """
+    Consider prostate only for OARs! If the first position is the prostate, the simulated biopsies 
+    will be generated relative to this structure.
+
+    -- Also the first structure in the below list is the structure specified to plot probability of missing this structure!
+    """
+    oaroi_contour_names = ['Prostate']
+    structure_miss_probability_roi = oaroi_contour_names[0]
     biopsy_contour_names = ['Bx']
     dil_contour_names = ['DIL']
     oar_default_sigma = 1 # default sigma in mm
@@ -129,11 +136,11 @@ def main():
     # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
-    bx_sample_pts_lattice_spacing = 0.3
-    num_MC_containment_simulations_input = 100
-    num_MC_dose_simulations_input = 100
+    bx_sample_pts_lattice_spacing = 0.25
+    num_MC_containment_simulations_input = 1000
+    num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
-    num_dose_calc_NN = 8
+    num_dose_calc_NN = 4
     
     
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -157,7 +164,7 @@ def main():
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
     
-    bx_sim_locations = ["centroid"] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies.
+    bx_sim_locations = [] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
     bx_sim_ref_identifier = "sim"
     simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
     differential_dvh_resolution = 100 # the number of bins
@@ -169,14 +176,15 @@ def main():
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
     
     #fanova
-    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work
-    num_FANOVA_dose_simulations_input = 100
-    perform_fanova = True
+    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work, 2^10 is good
+    num_FANOVA_dose_simulations_input = 2**10
+    perform_fanova = False
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
     num_sobol_bootstraps = 100
     sobol_indices_bootstrap_conf_interval = 0.95
+    show_NN_FANOVA_dose_demonstration_plots = False
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -256,8 +264,47 @@ def main():
                                         "Tissue classification scatter and regression probabilities all trials plot": \
                                             {"Plot bool": True, 
                                              "Plot name": ' - tissue_class-regression-probabilities'
+                                             },
+                                        "Tissue classification mutual probabilities plot": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - tissue_class_mutual-regression-probabilities',
+                                             "Structure miss ROI": structure_miss_probability_roi
+                                             },
+                                        "Tissue classification Sobol indices global plot": \
+                                            {"Plot bool dict": {"Global FO": True,
+                                                                "Global TO": True,
+                                                                "Global FO, sim vs non sim": True
+                                                                }, 
+                                             "Plot name dict": {"Global FO": 'FANOVA_global_tissue_class_first_order_sobol',
+                                                                "Global TO": 'FANOVA_global_tissue_class_total_order_sobol',
+                                                                "Global FO, sim vs non sim": 'FANOVA_global_tissue_class_first_order_sim_v_non_sim_sobol'
+                                                                },
+                                             "Structure miss ROI": structure_miss_probability_roi,
+                                             "Box plot points option": 'all' # can be 'all', 'outliers' or False
+                                             },
+                                        "Dosimetry Sobol indices global plot": \
+                                            {"Plot bool dict": {"Global FO": True,
+                                                                "Global FO by function output": True,
+                                                                "Global TO": True,
+                                                                "Global TO by function output": True,
+                                                                "Global FO, sim only": True,
+                                                                "Global FO, sim only by function output": True,
+                                                                "Global FO, non-sim only": True,
+                                                                "Global FO, non-sim only by function output": True
+                                                                }, 
+                                             "Plot name dict": {"Global FO": 'FANOVA_global_dose_first_order_sobol',
+                                                                "Global FO by function output": 'FANOVA_global_dose_first_order_sobol_by_function_output',
+                                                                "Global TO": 'FANOVA_global_dose_total_order_sobol',
+                                                                "Global TO by function output": 'FANOVA_global_dose_total_order_sobol_by_function_output',
+                                                                "Global FO, sim only": 'FANOVA_global_dose_first_order_sim_only_sobol',
+                                                                "Global FO, sim only by function output": 'FANOVA_global_dose_first_order_sim_only_by_function_output_sobol',
+                                                                "Global FO, non-sim only": 'FANOVA_global_dose_first_order_non-sim_only_sobol',
+                                                                "Global FO, non-sim only by function output": 'FANOVA_global_dose_first_order_non-sim_only_by_function_output_sobol'
+                                                                },
+                                             "Box plot points option": 'all' # can be 'all', 'outliers' or False
                                              }
                                         }
+    
     
 
     # other parameters
@@ -286,7 +333,17 @@ def main():
     dose_ref = "Dose ref"
     plan_ref = "Plan ref"
     num_simulated_bxs_to_create = len(bx_sim_locations)
+    if len(bx_sim_locations) == 0:
+        simulate_biopsies_relative_to = []
+    # note below two lines are necessary since we have plot bool dict instead of plot bool for this entry, this will need to be done for any entries that have a plot bool dict 
+    production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] = any(production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool dict"].values())
+    production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool"] = any(production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool dict"].values())
     create_at_least_one_production_plot = any([x["Plot bool"] for x in production_plots_input_dictionary.values()]) # will produce True if at least one plot bool in the production_plots_input_dictionary is true, otherwise will be false if all are false 
+    if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
+        fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
+    else:
+        fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z'] # the order is important!
+
 
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
@@ -484,7 +541,8 @@ def main():
                     important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
                     live_display.refresh()
                 else: 
-                    important_info.add_text_line("Not creating any simulated biopsies.")          
+                    simulate_biopsies_relative_to_struct_type_list = []
+                    important_info.add_text_line("Not creating any simulated biopsies.", live_display)          
                     live_display.refresh() 
                 
                 
@@ -506,6 +564,7 @@ def main():
                                                                                                 bx_sim_ref_identifier,
                                                                                                 simulate_biopsies_relative_to,
                                                                                                 simulate_biopsies_relative_to_struct_type_list,
+                                                                                                fanova_sobol_indices_names_by_index
                                                                                                 )
                 indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
@@ -965,6 +1024,20 @@ def main():
                                 #plotting_funcs.plot_geometries(reconstructed_biopsy_point_cloud, threeDdata_point_cloud)
                                 #plotting_funcs.plot_tri_immediately_efficient(drawn_biopsy_array, reconstructed_bx_delaunay_global_convex_structure_obj.delaunay_line_set, label = specific_structure["ROI"])
 
+                                # calculate biopsy vectors
+                                vec_with_largest_z_val_index = centroid_line[:,2].argmax()
+                                vec_with_largest_z_val = centroid_line[vec_with_largest_z_val_index,:]
+                                base_sup_vec_bx_centroid_arr = vec_with_largest_z_val
+
+                                vec_with_smallest_z_val_index = centroid_line[:,2].argmin()
+                                vec_with_smallest_z_val = centroid_line[vec_with_smallest_z_val_index,:]
+                                apex_inf_vec_bx_centroid_arr = vec_with_smallest_z_val
+
+                                translation_vec_bx_coord_sys_origin = -apex_inf_vec_bx_centroid_arr
+                                apex_to_base_bx_best_fit_vec = base_sup_vec_bx_centroid_arr - apex_inf_vec_bx_centroid_arr
+                                apex_to_base_bx_best_fit_vec_length = np.linalg.norm(apex_to_base_bx_best_fit_vec)
+                                apex_to_base_bx_best_fit_unit_vec = apex_to_base_bx_best_fit_vec/apex_to_base_bx_best_fit_vec_length
+
 
                             # plot only the biopsies
                             if structs == bx_ref:
@@ -985,6 +1058,9 @@ def main():
                                 master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
                                 master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed biopsy cylinder length (from contour data)"] = biopsy_reconstructed_cyl_z_length_from_contour_data
                                 master_structure_reference_dict[patientUID][structs][specific_structure_index]["Best fit line of centroid pts"] = centroid_line
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line unit vec (bx needle base to bx needle tip)"] = apex_to_base_bx_best_fit_unit_vec
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line vec (bx needle base to bx needle tip)"] = apex_to_base_bx_best_fit_vec
+                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line vec length (bx needle base to bx needle tip)"] = apex_to_base_bx_best_fit_vec_length
                                 master_structure_reference_dict[patientUID][structs][specific_structure_index]["Centroid line sample pts"] = centroid_line_sample
                                 master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure pts arr"] = drawn_biopsy_array
                                 #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
@@ -1281,7 +1357,12 @@ def main():
                     reconstructed_biopsy_point_cloud = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure pts arr"]
                     reconstructed_delaunay_global_convex_structure_obj = master_structure_reference_dict[patientUID][bx_structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                    args_list.append((bx_sample_pts_lattice_spacing, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, bx_structs, specific_structure_index))
+                    
+                    z_axis_np_vec = np.array([0,0,1],dtype=float)
+                    apex_to_base_bx_best_fit_vec = specific_structure["Centroid line vec (bx needle base to bx needle tip)"]
+                    z_axis_to_centroid_vec_rotation_matrix = mf.rotation_matrix_from_vectors(z_axis_np_vec,apex_to_base_bx_best_fit_vec)
+                    
+                    args_list.append((bx_sample_pts_lattice_spacing, reconstructed_delaunay_global_convex_structure_obj.delaunay_triangulation, reconstructed_biopsy_arr, patientUID, bx_structs, specific_structure_index,z_axis_to_centroid_vec_rotation_matrix))
                     biopsies_progress.update(processing_biopsies_task, advance=1)
                 
                 biopsies_progress.update(processing_biopsies_task, visible = False)
@@ -1303,7 +1384,8 @@ def main():
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
             sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = master_structure_info_dict["Global"]["Num patients"])
-            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+            #parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel, args_list)
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
             completed_progress.update(sampling_points_task_indeterminate_completed, advance = master_structure_info_dict["Global"]["Num patients"], visible = True, refresh = True)
@@ -1400,10 +1482,8 @@ def main():
                     apex_inf_vec_bx_centroid_arr = vec_with_smallest_z_val
 
                     translation_vec_bx_coord_sys_origin = -apex_inf_vec_bx_centroid_arr
-                    apex_to_base_bx_best_fit_vec = base_sup_vec_bx_centroid_arr - apex_inf_vec_bx_centroid_arr
-                    apex_to_base_bx_best_fit_unit_vec = apex_to_base_bx_best_fit_vec/np.linalg.norm(apex_to_base_bx_best_fit_vec)
-
-                    specific_structure["Centroid line unit vec (bx needle base to bx needle tip)"] = apex_to_base_bx_best_fit_unit_vec
+                    apex_to_base_bx_best_fit_vec = specific_structure["Centroid line vec (bx needle base to bx needle tip)"]
+                    
                     reconstructed_biopsy_point_cloud = specific_structure["Reconstructed structure point cloud"]
                     reconstructed_biopsy_arr = specific_structure["Reconstructed structure pts arr"]
                     sampled_bx_points_pcd = specific_structure["Random uniformly sampled volume pts pcd"]
@@ -1625,6 +1705,7 @@ def main():
                                                                                         plot_translation_vectors_pointclouds,
                                                                                         plot_cupy_containment_distribution_results,
                                                                                         plot_shifted_biopsies,
+                                                                                        structure_miss_probability_roi,
                                                                                         spinner_type
                                                                                         )
             
@@ -1638,6 +1719,7 @@ def main():
                     master_structure_info_dict,
                     structs_referenced_list,
                     bx_ref,
+                    dose_ref,
                     biopsy_needle_compartment_length,
                     simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                     num_FANOVA_containment_simulations_input,
@@ -1646,7 +1728,10 @@ def main():
                     show_fanova_containment_demonstration_plots,
                     plot_cupy_fanova_containment_distribution_results,
                     num_sobol_bootstraps,
-                    sobol_indices_bootstrap_conf_interval
+                    sobol_indices_bootstrap_conf_interval,
+                    show_NN_FANOVA_dose_demonstration_plots,
+                    num_dose_calc_NN,
+                    dose_views_jsons_paths_list
                     )
 
             live_display.start(refresh=True)
@@ -1690,7 +1775,10 @@ def main():
                         patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                         patient_sp_output_figures_dir_dict[patientUID] = patient_sp_output_figures_dir
 
-                
+                    # create a global folder
+                    patient_sp_output_figures_dir = output_figures_dir.joinpath('Global')
+                    patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
+                    patient_sp_output_figures_dir_dict["Global"] = patient_sp_output_figures_dir
                 
             
             if write_containment_to_file_ans ==  True:
@@ -1724,6 +1812,48 @@ def main():
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
                             write.writerow(['Num MC containment sims ->',num_MC_containment_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            
+                            # global
+                            write.writerow(['---'])
+                            write.writerow(['Global'])
+                            write.writerow(['---'])
+                            rows_to_write_list = []
+                            for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+                                containment_structure_ROI = containment_structure_key_tuple[0]
+                                containment_structure_nominal_list = containment_structure_dict['Nominal containment list']
+                                containment_structure_nominal_num_contained = sum(containment_structure_nominal_list)
+                                containment_structure_nominal_percent_contained = (containment_structure_nominal_num_contained/len(containment_structure_nominal_list))*100
+                                containment_structure_nominal_percent_contained_with_cont_anat_ROI_row = [containment_structure_ROI + ' Nominal percent volume contained',containment_structure_nominal_percent_contained]
+                                rows_to_write_list.append(containment_structure_nominal_percent_contained_with_cont_anat_ROI_row)
+                                
+
+                                containment_structure_binom_est_arr = np.array(containment_structure_dict["Binomial estimator list"])
+                                containment_structure_binom_est_global_mean = np.mean(containment_structure_binom_est_arr)
+                                containment_structure_binom_est_std = np.std(containment_structure_binom_est_arr)
+                                containment_structure_binom_est_std_err = containment_structure_binom_est_std / np.sqrt(np.size(containment_structure_binom_est_arr))
+                                containment_structure_binom_est_CI = mf.normal_CI_estimator(containment_structure_binom_est_global_mean, containment_structure_binom_est_std_err)
+                                containment_structure_binom_est_global_mean_with_cont_anat_ROI_row = [containment_structure_ROI + ' Mean probability', containment_structure_binom_est_global_mean]
+                                containment_structure_binom_est_global_std_with_cont_anat_ROI_row = [containment_structure_ROI + ' STD', containment_structure_binom_est_std]
+                                containment_structure_binom_est_global_std_err_with_cont_anat_ROI_row = [containment_structure_ROI + ' STD err in mean', containment_structure_binom_est_std_err]
+                                containment_structure_binom_est_global_mean_CI_with_cont_anat_ROI_row = [containment_structure_ROI + ' Mean CI', containment_structure_binom_est_CI]
+                                
+                                rows_to_write_list.append(containment_structure_binom_est_global_mean_with_cont_anat_ROI_row)
+                                rows_to_write_list.append(containment_structure_binom_est_global_std_with_cont_anat_ROI_row)
+                                rows_to_write_list.append(containment_structure_binom_est_global_std_err_with_cont_anat_ROI_row)
+                                rows_to_write_list.append(containment_structure_binom_est_global_mean_CI_with_cont_anat_ROI_row)
+                                
+
+                            for row_to_write in rows_to_write_list:
+                                write.writerow(row_to_write)
+                            
+                            del rows_to_write_list
+
+                            
+                            # Point wise
+                            write.writerow(['---'])
+                            write.writerow(['Point-wise'])
+                            write.writerow(['---'])
+                            
                             write.writerow(['Row ->','Fixed containment structure'])
                             write.writerow(['Col ->','Fixed bx point'])
                             write.writerow(bx_points_bx_coords_sys_arr_row)
@@ -1768,6 +1898,9 @@ def main():
                                 write.writerow(row_to_write)
                             
                             del rows_to_write_list
+
+
+
                                 
                     patients_progress.update(processing_patients_task, advance = 1)
                     completed_progress.update(processing_patients_completed_task, advance = 1)
@@ -1878,6 +2011,46 @@ def main():
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
                             write.writerow(['Num MC dose sims ->',num_MC_dose_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            
+                            
+
+                            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+                            # global
+                            
+                            write.writerow(['---'])
+                            write.writerow(['Global'])
+                            write.writerow(['---'])
+                            nominal_dose_by_bx_pt_arr = np.array(specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal)'])
+                            nominal_mean_dose = np.mean(nominal_dose_by_bx_pt_arr)
+                            nominal_std_dose = np.std(nominal_dose_by_bx_pt_arr)
+                            nominal_std_err_dose = nominal_std_dose / np.sqrt(np.size(nominal_dose_by_bx_pt_arr))
+                            nominal_dose_mean_CI = mf.normal_CI_estimator(nominal_mean_dose, nominal_std_err_dose)
+
+                            global_dose_by_bx_pt_arr = np.array(stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"])
+                            global_mean_dose = np.mean(global_dose_by_bx_pt_arr)
+                            global_std_dose = np.std(global_dose_by_bx_pt_arr)
+                            global_std_err_dose = global_std_dose / np.sqrt(np.size(global_dose_by_bx_pt_arr))
+                            global_dose_mean_CI = mf.normal_CI_estimator(global_mean_dose, global_std_err_dose)
+                            
+                            write.writerow(['Nominal mean dose',nominal_mean_dose])
+                            write.writerow(['Nominal std dose',nominal_std_dose])
+                            write.writerow(['Nominal std err dose',nominal_std_err_dose])
+                            write.writerow(['Nominal mean CI dose',nominal_dose_mean_CI])
+
+                            write.writerow(['Global mean dose',global_mean_dose])
+                            write.writerow(['Global std dose',global_std_dose])
+                            write.writerow(['Global std err dose',global_std_err_dose])
+                            write.writerow(['Global mean CI dose',global_dose_mean_CI])
+
+                            
+                            
+                            
+                            # point-wise
+
+                            write.writerow(['---'])
+                            write.writerow(['Point-wise'])
+                            write.writerow(['---'])
+                            
                             write.writerow(['Row ->','Fixed bx pt'])
                             write.writerow(['Col ->','Fixed MC trial'])
                             write.writerow(['Vector (mm)',
@@ -1891,7 +2064,7 @@ def main():
                                             'All MC trials doses (Gy) -->'
                                             ])
                             
-                            stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+                            
                             for pt_index in range(num_sample_pts_per_bx):
                                 #dose_vals_row_with_point = dose_vals_row.copy()
                                 pt_radius_bx_coord_sys = np.linalg.norm(bx_points_bx_coords_sys_arr_list[pt_index][0:2])
@@ -2593,6 +2766,7 @@ def main():
                     
                     general_plot_name_string = production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot name"]
 
+
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating containment probability plots [{}]...".format(patientUID_default)
                     processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
@@ -2628,6 +2802,115 @@ def main():
                     completed_progress.update(processing_patients_completed_task, visible = True)  
                 else:
                     pass
+
+
+                # perform containment probabilities plots and regressions
+                #live_display.stop()
+                if production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot name"]
+                    structure_miss_probability_roi = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Structure miss ROI"]
+
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
+                    processing_patient_production_plot_description_completed = "Creating mutual containment probability plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        
+                        production_plots.production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_structs,
+                                                    regression_type_input,
+                                                    parallel_pool,
+                                                    NPKR_bandwidth,
+                                                    num_bootstraps_for_regression_plots_input,
+                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                    tissue_class_probability_plot_type_list,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string,
+                                                    structure_miss_probability_roi
+                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass
+
+
+
+                if perform_fanova == True:
+                    #live_display.stop()
+                    if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
+                        
+                        tissue_class_sobol_global_plot_bool_dict = production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool dict"]
+                        general_plot_name_string_dict = production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot name dict"]
+                        structure_miss_probability_roi = production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Structure miss ROI"]
+                        box_plot_points_option = production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Box plot points option"]
+                        
+                        global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting global Sobol indices (containment)...', total=None)
+                        global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting global Sobol indices (containment)', total=1, visible = False)
+
+                        production_plots.production_plot_sobol_indices_global_containment(patient_sp_output_figures_dir_dict,
+                                                master_structure_reference_dict,
+                                                master_structure_info_dict,
+                                                bx_structs,
+                                                dil_ref,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string_dict,
+                                                structure_miss_probability_roi,
+                                                tissue_class_sobol_global_plot_bool_dict,
+                                                box_plot_points_option
+                                                )
+
+                        indeterminate_progress_main.update(global_sobol_plots_task_indeterminate, visible = False)
+                        completed_progress.update(global_sobol_plots_task_indeterminate_completed, advance = 1,visible = True)
+                        live_display.refresh()
+                    else:
+                        pass
+
+
+                    if production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool"] == True:
+                        
+                        dose_sobol_global_plot_bool_dict = production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool dict"]
+                        general_plot_name_string_dict = production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot name dict"]
+                        box_plot_points_option = production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Box plot points option"]
+                        
+                        global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting global Sobol indices (dose)...', total=None)
+                        global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting global Sobol indices (dose)', total=1, visible = False)
+
+                        production_plots.production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir_dict,
+                                                master_structure_reference_dict,
+                                                master_structure_info_dict,
+                                                bx_structs,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string_dict,
+                                                dose_sobol_global_plot_bool_dict,
+                                                box_plot_points_option
+                                                )
+
+                        indeterminate_progress_main.update(global_sobol_plots_task_indeterminate, visible = False)
+                        completed_progress.update(global_sobol_plots_task_indeterminate_completed, advance = 1,visible = True)
+                        live_display.refresh()
+                    else:
+                        pass
                     
                     
 
@@ -2653,7 +2936,8 @@ def structure_referencer(structure_dcm_dict,
                          bx_sim_locations_list,
                          bx_sim_ref_identifier_str,
                          sim_bx_relative_to_list,
-                         sim_bx_relative_to_struct_type
+                         sim_bx_relative_to_struct_type,
+                         fanova_sobol_indices_names_by_index
                          ):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
@@ -2721,8 +3005,9 @@ def structure_referencer(structure_dcm_dict,
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
             
-            bpsy_ref = [{"ROI":x.ROIName, 
-                         "Ref #":x.ROINumber, 
+            bpsy_ref = [{"ROI": x.ROIName, 
+                         "Ref #": x.ROINumber, 
+                         "Simulated bool": False,
                          "Reconstructed biopsy cylinder length (from contour data)": None, 
                          "Raw contour pts zslice list": None,
                          "Raw contour pts": None, 
@@ -2757,6 +3042,9 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: MC sim translation results dict": None,
                          "MC data: MC sim containment raw results dataframe": None, 
                          "MC data: compiled sim results": None, 
+                         "MC data: mutual compiled sim results": None,
+                         "MC data: tumor tissue probability": None,
+                         "MC data: miss structure tissue probability": None,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
@@ -2781,6 +3069,7 @@ def structure_referencer(structure_dcm_dict,
             
             bpsy_ref_simulated = [{"ROI": "Bx_Tr_"+bx_sim_ref_identifier_str+" " + x.ROIName, 
                          "Ref #": bx_sim_ref_identifier_str +" "+ x.ROIName, 
+                         "Simulated bool": True,
                          "Relative structure name": x.ROIName,
                          "Relative structure ref #": x.ROINumber, 
                          "Reconstructed biopsy cylinder length (from contour data)": None, 
@@ -2816,7 +3105,10 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: bx and structure shifted dict": None, 
                          "MC data: MC sim translation results dict": None,
                          "MC data: MC sim containment raw results dataframe": None,
-                         "MC data: compiled sim results": None, 
+                         "MC data: compiled sim results": None,
+                         "MC data: mutual compiled sim results": None, 
+                         "MC data: tumor tissue probability": None,
+                         "MC data: miss structure tissue probability": None,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
@@ -2923,7 +3215,10 @@ def structure_referencer(structure_dcm_dict,
                                                "Num biopsies": global_num_biopsies, 
                                                "Num DILs": global_num_DIL, 
                                                "Num OARs": global_num_OAR, 
-                                               "MC info": mc_info}
+                                               "MC info": mc_info,
+                                               "FANOVA: num variance vars": None,
+                                               "FANOVA: sobol var names by index": fanova_sobol_indices_names_by_index
+                                               }
     
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
     return master_st_ds_ref_dict, master_st_ds_info_global_dict

@@ -28,15 +28,22 @@ def binomial_log_likelihood_2nd_der(p, num_trials, num_successes):
         log_likelihood_2nd_der = (-y/(p**2)) - ((n-y)/(1-p)**2)
     return log_likelihood_2nd_der
 
-def binomial_variance_estimator(probability_estimator, num_trials, num_successes):
+def binomial_variance_estimator(probability_estimator, num_trials, num_successes, method = None):
+    """
+    Note that the method can be selected to be log-likelihood, but according to statistics theory
+    both of these methods should be mathematically equivalent.
+    """
     p_hat = probability_estimator
     n = num_trials
     y = num_successes
-    log_likelihood_2nd_der = binomial_log_likelihood_2nd_der(p_hat, n, y)
-    if log_likelihood_2nd_der == 0.:
-        p_hat_variance = 0.
-    else:
-        p_hat_variance = -1/log_likelihood_2nd_der
+    if method == 'log-likelihood':
+        log_likelihood_2nd_der = binomial_log_likelihood_2nd_der(p_hat, n, y)
+        if log_likelihood_2nd_der == 0.:
+            p_hat_variance = 0.
+        else:
+            p_hat_variance = -1/log_likelihood_2nd_der
+    else: 
+        p_hat_variance = p_hat*(1-p_hat)/n
     return p_hat_variance
 
 def binomial_se_estimator(probability_estimator, num_trials, num_successes):
@@ -265,3 +272,13 @@ def non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
 def non_param_LOWESS_regression(x, y, eval_x):
     NPLR_fit_vals = sm.nonparametric.lowess(exog=x, endog=y, xvals=eval_x)
     return NPLR_fit_vals
+
+
+
+def confidence_intervals_95_from_calculated_SE(values_arr, se_arr):
+    z0975=1.96
+    lower = values_arr - z0975*se_arr
+    upper = values_arr + z0975*se_arr
+    conf_int_arr = np.array([lower,upper])
+
+    return conf_int_arr

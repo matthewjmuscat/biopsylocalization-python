@@ -21,6 +21,7 @@ def fanova_analysis(
             master_structure_info_dict,
             structs_referenced_list,
             bx_ref,
+            dose_ref,
             biopsy_needle_compartment_length,
             simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
             num_FANOVA_containment_simulations_input,
@@ -29,7 +30,10 @@ def fanova_analysis(
             show_fanova_containment_demonstration_plots,
             plot_cupy_fanova_containment_distribution_results,
             num_sobol_bootstraps,
-            sobol_indices_bootstrap_conf_interval
+            sobol_indices_bootstrap_conf_interval,
+            show_NN_FANOVA_dose_demonstration_plots,
+            num_dose_calc_NN,
+            dose_views_jsons_paths_list
             ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -147,6 +151,9 @@ def fanova_analysis(
         patients_progress.update(processing_patients_task, visible = False, refresh = True)
         completed_progress.update(processing_patients_task_completed, visible = True, refresh = True)
         live_display.refresh()
+        
+        # Save the number of FANOVA variance vars
+        master_structure_info_dict["Global"]["FANOVA: num variance vars"] = num_variance_vars
 
         default_output = "Initializing"
         processing_patients_task_main_description = "[red]Generating FANOVA arrays [{}]...".format(default_output)
@@ -320,9 +327,9 @@ def fanova_analysis(
                 
                 # concatenate containment results into a single dataframe
                 containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
-                
+                del relative_structure_containment_results_data_frames_list
                 # Update the master dictionary
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
 
                 structures_progress.remove_task(testing_each_fanova_matrix_containment_task)
                 
@@ -345,7 +352,7 @@ def fanova_analysis(
                 patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (cuspatial) [{}]...".format(patientUID))
                 for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                     shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
-                    containment_info_grand_all_structures_cudf_dataframe = specific_bx_structure["FANOVA: sim containment raw results dataframe"]
+                    containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
                     for relative_structure_info in structure_organized_for_bx_data_blank_dict.keys():
                         structure_roi = relative_structure_info[0]
                         non_bx_structure_type = relative_structure_info[1]
@@ -418,7 +425,7 @@ def fanova_analysis(
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
-                containment_info_grand_all_structures_cudf_dataframe = specific_bx_structure["FANOVA: sim containment raw results dataframe"] 
+                containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
                 shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
                 fanova_compiled_results_for_fixed_bx_dict = copy.deepcopy(structure_organized_for_bx_data_blank_dict)
                 
@@ -469,7 +476,7 @@ def fanova_analysis(
 
         
         
-        live_display.stop()
+        #live_display.stop()
         calculating_sobol_containment_patient_task = patients_progress.add_task("[red]Calculating Sobol indices (containment) ...", total=num_patients)
         calculating_sobol_containment_patient_task_completed = completed_progress.add_task("[green]Calculating Sobol indices (containment)", total=num_patients, visible = False)  
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -540,6 +547,89 @@ def fanova_analysis(
         patients_progress.update(calculating_sobol_containment_patient_task, visible = False) 
         completed_progress.update(calculating_sobol_containment_patient_task_completed, visible = True)
         live_display.refresh()
+
+
+        #live_display.stop()
+        creating_sobol_containment_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol containment DFs ...", total=num_patients)
+        creating_sobol_containment_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol containment DFs", total=num_patients, visible = False)  
+        num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
+        fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+        for patientUID,pydicom_item in master_structure_reference_dict.items():  
+            patients_progress.update(creating_sobol_containment_dataframes_patient_task, description = "[red]Creating Sobol containment DFs...".format(patientUID), total=num_patients)
+
+            for specific_bx_structure in pydicom_item[bx_ref]:
+                bx_struct_roi = specific_bx_structure["ROI"]
+                simulated_bx_bool =  specific_bx_structure["Simulated bool"]
+                fanova_sobol_indices_for_fixed_bx_containment_dict = specific_bx_structure["FANOVA: sobol indices (containment)"]
+
+                num_rel_structures_in_in_sp_bx = len(fanova_sobol_indices_for_fixed_bx_containment_dict)
+                
+                cumulative_containment_sobol_indices_first_order_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_first_order_se_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_first_order_boot_low_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_first_order_boot_high_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+
+                cumulative_containment_sobol_indices_total_order_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_total_order_se_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_total_order_boot_low_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                cumulative_containment_sobol_indices_total_order_boot_high_arr = np.empty((num_rel_structures_in_in_sp_bx,num_variance_vars))
+                
+                associated_relative_structure_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+                associated_relative_structure_index_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+                associated_relative_structure_type_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+
+                
+                #specific_bx_structure["FANOVA: sobol indices (dose)"] = fanova_sobol_indices_for_fixed_bx_dict
+                for rel_struct_index, (structure_info, fanova_containment_indices_for_fixed_bx_for_fixed_relative_structure_dict) in enumerate(fanova_sobol_indices_for_fixed_bx_containment_dict.items()):
+                    structure_roi = structure_info[0]
+                    non_bx_structure_type = structure_info[1]
+                    structure_index = structure_info[3]
+                    
+                    sp_indices = fanova_containment_indices_for_fixed_bx_for_fixed_relative_structure_dict["Indices result"]
+                    sp_bootstrap = fanova_containment_indices_for_fixed_bx_for_fixed_relative_structure_dict["Bootstrap result"]
+                    
+                    cumulative_containment_sobol_indices_first_order_arr[rel_struct_index,:] = sp_indices.first_order
+                    cumulative_containment_sobol_indices_first_order_se_arr[rel_struct_index,:] = sp_bootstrap.first_order.standard_error
+                    cumulative_containment_sobol_indices_first_order_boot_low_arr[rel_struct_index,:] = sp_bootstrap.first_order.confidence_interval.low                   
+                    cumulative_containment_sobol_indices_first_order_boot_high_arr[rel_struct_index,:] = sp_bootstrap.first_order.confidence_interval.high   
+                    
+                    cumulative_containment_sobol_indices_total_order_arr[rel_struct_index,:] = sp_indices.total_order
+                    cumulative_containment_sobol_indices_total_order_se_arr[rel_struct_index,:] = sp_bootstrap.total_order.standard_error
+                    cumulative_containment_sobol_indices_total_order_boot_low_arr[rel_struct_index,:] = sp_bootstrap.total_order.confidence_interval.low                   
+                    cumulative_containment_sobol_indices_total_order_boot_high_arr[rel_struct_index,:] = sp_bootstrap.total_order.confidence_interval.high  
+                    
+                    associated_relative_structure_by_row_index_list[rel_struct_index] = structure_roi
+                    associated_relative_structure_index_by_row_index_list[rel_struct_index] = structure_index
+                    associated_relative_structure_type_by_row_index_list[rel_struct_index] = non_bx_structure_type
+
+                sp_bx_sobol_containment_for_dataframe_dict = {"Patient": patientUID,
+                                                            "Bx ROI": bx_struct_roi,
+                                                            "Simulated bx bool": simulated_bx_bool,
+                                                            "Relative structure ROI": associated_relative_structure_by_row_index_list,
+                                                            "Relative structure index": associated_relative_structure_index_by_row_index_list,
+                                                            "Relative structure type": associated_relative_structure_type_by_row_index_list
+                                                            }
+                
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO': cumulative_containment_sobol_indices_first_order_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO': cumulative_containment_sobol_indices_total_order_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO SE': cumulative_containment_sobol_indices_first_order_se_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO SE': cumulative_containment_sobol_indices_total_order_se_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO CI low': cumulative_containment_sobol_indices_first_order_boot_low_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO CI high': cumulative_containment_sobol_indices_first_order_boot_high_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO CI low': cumulative_containment_sobol_indices_total_order_boot_low_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO CI high': cumulative_containment_sobol_indices_total_order_boot_high_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+
+                sp_bx_sobol_containment_dataframe = cudf.DataFrame(sp_bx_sobol_containment_for_dataframe_dict)
+                sp_bx_sobol_containment_dataframe_no_na = sp_bx_sobol_containment_dataframe.fillna(0)
+
+                specific_bx_structure["FANOVA: sobol containment dataframe"] = sp_bx_sobol_containment_dataframe_no_na 
+
+            patients_progress.update(creating_sobol_containment_dataframes_patient_task, advance = 1) 
+            completed_progress.update(creating_sobol_containment_dataframes_patient_task_completed, advance = 1)
+        patients_progress.update(creating_sobol_containment_dataframes_patient_task, visible = False) 
+        completed_progress.update(creating_sobol_containment_dataframes_patient_task_completed, visible = True)
+        live_display.refresh()
+
 
         """
         calculating_sobol_containment_patient_task = patients_progress.add_task("[red]Calculating Sobol indices (containment) ...", total=num_patients)
@@ -691,5 +781,371 @@ def fanova_analysis(
         live_display.refresh()
         """
 
+
+
+        #live_display.stop()
+        calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]FANOVA NN dosimetric localization [{}]...".format("initializing"), total=num_patients)
+        calc_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]FANOVA NN dosimetric localization", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, description = "[red]FANOVA NN dosimetric localization [{}]...".format(patientUID))
+            # create KDtree for dose data
+            dose_ref_dict = pydicom_item[dose_ref]
+            phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+            phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
+            phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
+            phys_space_dose_map_dose_2d_arr = phys_space_dose_map_3d_arr_flattened[:,6] 
+            dose_data_KDtree = scipy.spatial.KDTree(phys_space_dose_map_phys_coords_2d_arr)
+            dose_ref_dict["KDtree"] = dose_data_KDtree
+            
+
+            # code for the plotting of the below NN search of sampled bx pts
+            lattice_dose_pcd = dose_ref_dict["Dose grid point cloud"]
+            thresholded_lattice_dose_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
+
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
+                
+                #bx_only_shifted_3darr = cp.asnumpy(specific_bx_structure["MC data: bx only shifted 3darr"]) # note that the 3rd dimension slices are each MC trial
+                #bx_only_shifted_3darr_cutoff = bx_only_shifted_3darr[0:num_FANOVA_dose_simulations_input]
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                #unshifted_bx_sampled_pts_arr_3darr = np.expand_dims(unshifted_bx_sampled_pts_arr, axis=0)
+                #nominal_and_bx_only_shifted_3darr = np.concatenate((unshifted_bx_sampled_pts_arr_3darr,bx_only_shifted_3darr_cutoff))
+
+                
+                ###
+                testing_each_fanova_matrix_dose_task = structures_progress.add_task("[cyan]~~For each FANOVA matrix [{}]...".format("initializing"), total=len(shifted_bx_data_dict))
+
+                shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
+                fanova_NN_search_objects_by_matrix_dict = {}
+                for matrix_key, shifted_bx_data_3darr_cp in shifted_bx_data_dict.items():
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, description = "[cyan]~~For each FANOVA matrix [{}]...".format(matrix_key))
+
+                    shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_cp)  
+                    shifted_bx_data_3darr_num_FANOVA_containment_sims_cutoff = shifted_bx_data_3darr[0:num_FANOVA_dose_simulations_input]
+
+                    dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{}]...".format(specific_bx_structure_roi), total = None)
+                    dosimetric_localization_all_MC_trials_list = MC_simulator_convex.dosimetric_localization_parallel(parallel_pool, 
+                                                                                                                      shifted_bx_data_3darr_num_FANOVA_containment_sims_cutoff, 
+                                                                                                                      specific_bx_structure, 
+                                                                                                                      dose_ref_dict, 
+                                                                                                                      dose_ref, 
+                                                                                                                      phys_space_dose_map_phys_coords_2d_arr, 
+                                                                                                                      phys_space_dose_map_dose_2d_arr, 
+                                                                                                                      num_dose_calc_NN
+                                                                                                                      )
+                    indeterminate_progress_sub.remove_task(dosimetric_calc_parallel_task)
+                    
+                    fanova_NN_search_objects_by_matrix_dict[matrix_key] = dosimetric_localization_all_MC_trials_list
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, advance=1)
+                
+                
+                if show_NN_FANOVA_dose_demonstration_plots == True:
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+                    for matrix_key, dosimetric_localization_all_MC_trials_list in fanova_NN_search_objects_by_matrix_dict:
+                        # plot everything to make sure its working properly!
+                        for mc_trial_NN_parent_dose_obj in dosimetric_localization_all_MC_trials_list:
+                            NN_data_list_for_one_MC_trial = mc_trial_NN_parent_dose_obj.NN_data_list
+                            NN_pts_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx,3])
+                            NN_doses_on_comparison_struct_for_all_points_concatenated = np.empty([num_dose_calc_NN*num_sample_pts_per_bx])
+                            queried_bx_pts_arr_concatenated = np.empty([num_sample_pts_per_bx,3])
+                            queried_bx_pts_assigned_doses_arr_concatenated = np.empty([num_sample_pts_per_bx])
+                            for sampled_pt_index,NN_child_dose_obj in enumerate(NN_data_list_for_one_MC_trial):
+                                NN_pts_array_on_dose_lattice = NN_child_dose_obj.NN_pt_on_comparison_struct
+                                NN_dose_array_on_dose_lattice = NN_child_dose_obj.NN_dose_on_comparison_struct
+                                queried_bx_pt_instance = NN_child_dose_obj.queried_BX_pt
+                                queried_bx_pt_assigned_dose_instance = NN_child_dose_obj.nearest_dose
+                                NN_pts_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN,:] = NN_pts_array_on_dose_lattice
+                                NN_doses_on_comparison_struct_for_all_points_concatenated[sampled_pt_index*num_dose_calc_NN:sampled_pt_index*num_dose_calc_NN+num_dose_calc_NN] = NN_dose_array_on_dose_lattice
+                                queried_bx_pts_arr_concatenated[sampled_pt_index] = queried_bx_pt_instance
+                                queried_bx_pts_assigned_doses_arr_concatenated[sampled_pt_index] = queried_bx_pt_assigned_dose_instance
+                            
+                            patients_progress.stop_task(calc_dose_NN_biopsy_containment_task)
+                            completed_progress.stop_task(calc_dose_NN_biopsy_containment_task_complete)
+                            stopwatch.stop()
+                            #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                            geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                            geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                            plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
+                            plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
+                            plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = False, axes_visible=True)
+                            plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = True, axes_visible=True)
+                            stopwatch.start()
+                            patients_progress.start_task(calc_dose_NN_biopsy_containment_task)
+                            completed_progress.start_task(calc_dose_NN_biopsy_containment_task_complete)
+                else:
+                    pass
+                
+                
+                specific_bx_structure['FANOVA: bx to dose NN search objects dict of lists'] = fanova_NN_search_objects_by_matrix_dict 
+
+                structures_progress.remove_task(testing_each_fanova_matrix_dose_task)
+                biopsies_progress.update(dosimetric_calc_biopsy_task, advance=1)
+            biopsies_progress.remove_task(dosimetric_calc_biopsy_task)
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, advance = 1)
+            completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, advance = 1)
+        patients_progress.update(calc_dose_NN_biopsy_containment_task, visible = False)
+        completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, visible = True)
+        live_display.refresh()
+
+
+
+
+        compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
+        compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(compile_results_dose_NN_biopsy_containment_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                fanova_NN_search_objects_by_matrix_dict = specific_bx_structure['FANOVA: bx to dose NN search objects dict of lists'] 
+                
+                testing_each_fanova_matrix_dose_task = structures_progress.add_task("[cyan]~~For each FANOVA matrix [{}]...".format("initializing"), total=len(shifted_bx_data_dict))
+
+                dose_vals_by_fanova_matrix_dict = {}
+                nn_objs_by_fanova_matrix_dict = {}
+
+                for matrix_key, dosimetric_localization_sp_matrix_all_trials_list in fanova_NN_search_objects_by_matrix_dict.items():
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, description = "[cyan]~~For each FANOVA matrix [{}]...".format(matrix_key))
+                
+                    dosimetric_localization_all_MC_trials_list_NN_lists_only = [NN_parent_obj.NN_data_list for NN_parent_obj in dosimetric_localization_sp_matrix_all_trials_list]
+                    dosimetric_localization_NN_child_objs_by_bx_point_sp_matrix_all_trials_list = list(zip(*dosimetric_localization_all_MC_trials_list_NN_lists_only))
+                    dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_list = [[NN_child_obj.nearest_dose for NN_child_obj in fixed_bx_pt_NN_objs_list] for fixed_bx_pt_NN_objs_list in dosimetric_localization_NN_child_objs_by_bx_point_sp_matrix_all_trials_list]
+                    dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr = np.array(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_list)
+               
+                    nn_objs_by_fanova_matrix_dict[matrix_key] = dosimetric_localization_NN_child_objs_by_bx_point_sp_matrix_all_trials_list
+                    dose_vals_by_fanova_matrix_dict[matrix_key] = dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, advance=1)
+
+
+                # Update master dictionary
+                specific_bx_structure["FANOVA: Dose NN child obj for each sampled bx pt dict of lists (all trials)"] = nn_objs_by_fanova_matrix_dict
+                specific_bx_structure["FANOVA: Dose vals for each sampled bx pt dict of arrays (all trials)"] = dose_vals_by_fanova_matrix_dict
+                
+                
+                structures_progress.remove_task(testing_each_fanova_matrix_dose_task)
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
+            biopsies_progress.remove_task(compile_results_dose_NN_biopsy_containment_by_biopsy_task)    
+            patients_progress.update(compile_results_dose_NN_biopsy_containment_task, advance=1)
+            completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, advance=1)
+        patients_progress.update(compile_results_dose_NN_biopsy_containment_task, visible = False)
+        completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, visible = True)
+        live_display.refresh()
+
                         
-    
+        compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Computing dosimetric FANOVA statistics [{}]...".format("initializing"), total=num_patients)
+        compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Computing dosimetric FANOVA statistics ", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(compile_results_dose_NN_biopsy_containment_task, description = "[red]Computing dosimetric FANOVA statistics  [{}]...".format(patientUID))
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                fanova_NN_search_objects_by_matrix_dict = specific_bx_structure['FANOVA: bx to dose NN search objects dict of lists'] 
+                
+                testing_each_fanova_matrix_dose_task = structures_progress.add_task("[cyan]~~For each FANOVA matrix [{}]...".format("initializing"), total=len(shifted_bx_data_dict))
+
+                dose_vals_by_fanova_matrix_dict = specific_bx_structure["FANOVA: Dose vals for each sampled bx pt dict of arrays (all trials)"]
+                randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
+                
+                ouput_function_dose_by_fanova_matrix = {}
+                for matrix_key, dosimetric_localization_sp_matrix_all_trials_list in fanova_NN_search_objects_by_matrix_dict.items():
+                    ouput_function_by_fanova_trial_sp_matrix_dict = {}
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, description = "[cyan]~~For each FANOVA matrix [{}]...".format(matrix_key))
+
+                    # columns are trials, rows are a fixed bx point           
+                    dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr = dose_vals_by_fanova_matrix_dict[matrix_key] 
+                    
+                    max_dose_val_of_each_trial_arr = np.max(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr, axis = 0)
+                    min_dose_val_of_each_trial_arr = np.min(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr, axis = 0)
+                    
+                    max_min_difference_of_each_trial_arr = max_dose_val_of_each_trial_arr - min_dose_val_of_each_trial_arr
+                    
+                    bx_pt_index_of_max_dose_val_of_each_trial_arr = np.argmax(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr, axis = 0)
+                    bx_pt_zval_of_max_dose_val_of_each_trial_arr = randomly_sampled_bx_pts_bx_coord_sys_arr[bx_pt_index_of_max_dose_val_of_each_trial_arr, 2]
+                    
+                    bx_pt_index_of_min_dose_val_of_each_trial_arr = np.argmin(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr, axis = 0)
+                    bx_pt_zval_of_min_dose_val_of_each_trial_arr = randomly_sampled_bx_pts_bx_coord_sys_arr[bx_pt_index_of_min_dose_val_of_each_trial_arr, 2]
+
+                    mean_dose_of_each_trial_arr = np.mean(dosimetric_localization_dose_vals_by_bx_point_sp_matrix_all_trials_arr, axis = 0)
+
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Mean dose arr"] = mean_dose_of_each_trial_arr
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Z-val of max dose arr"] = bx_pt_zval_of_max_dose_val_of_each_trial_arr
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Z-val of min dose arr"] = bx_pt_zval_of_min_dose_val_of_each_trial_arr
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Max-min dose arr"] = max_min_difference_of_each_trial_arr
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Max dose arr"] = max_dose_val_of_each_trial_arr
+                    ouput_function_by_fanova_trial_sp_matrix_dict["Min dose arr"] = min_dose_val_of_each_trial_arr
+
+                    ouput_function_dose_by_fanova_matrix[matrix_key] = ouput_function_by_fanova_trial_sp_matrix_dict
+
+                    structures_progress.update(testing_each_fanova_matrix_dose_task, advance=1)
+
+
+                # Update master dictionary
+                specific_bx_structure["FANOVA: Dose function outputs dict"] = ouput_function_dose_by_fanova_matrix
+                
+                structures_progress.remove_task(testing_each_fanova_matrix_dose_task)
+                biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, advance = 1)
+            biopsies_progress.remove_task(compile_results_dose_NN_biopsy_containment_by_biopsy_task)    
+            patients_progress.update(compile_results_dose_NN_biopsy_containment_task, advance=1)
+            completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, advance=1)
+        patients_progress.update(compile_results_dose_NN_biopsy_containment_task, visible = False)
+        completed_progress.update(compile_results_dose_NN_biopsy_containment_task_complete, visible = True)
+        live_display.refresh()
+
+        #live_display.stop()
+        calculating_sobol_dose_patient_task = patients_progress.add_task("[red]Calculating Sobol indices (dosimetry) ...", total=num_patients)
+        calculating_sobol_dose_patient_task_completed = completed_progress.add_task("[green]Calculating Sobol indices (dosimetry)", total=num_patients, visible = False)  
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calculating_sobol_dose_patient_task, description = "[red]Calculating Sobol indices (dosimetry) [{}]...".format(patientUID), total=num_patients)
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            calculating_sobol_dose_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            
+
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(calculating_sobol_dose_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+                
+                calculating_sobol_dose_each_non_bx_structure_task = structures_progress.add_task("[cyan]~~For each structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
+                
+                ouput_function_dosimetry_by_fanova_matrix = specific_bx_structure["FANOVA: Dose function outputs dict"]
+                 
+                
+            
+                ga_dict = ouput_function_dosimetry_by_fanova_matrix['A']
+                ga_arr = np.empty((len(ga_dict),num_FANOVA_dose_simulations_input))
+                ouput_keys_by_matrix_dict = {}
+                ouput_keys_by_index_list = [None]*len(ga_dict)
+                for index,(output_func_key,output_func_arr) in enumerate(ga_dict.items()):
+                    ouput_keys_by_index_list[index] = output_func_key
+                    ga_arr[index,:] = output_func_arr
+                ouput_keys_by_matrix_dict['A'] = ouput_keys_by_index_list
+                
+                gb_dict = ouput_function_dosimetry_by_fanova_matrix['B']
+                ouput_keys_by_index_list = [None]*len(gb_dict)
+                gb_arr = np.empty((len(gb_dict),num_FANOVA_dose_simulations_input))
+                for index,(output_func_key,output_func_arr) in enumerate(gb_dict.items()):
+                    ouput_keys_by_index_list[index] = output_func_key
+                    gb_arr[index,:] = output_func_arr
+                ouput_keys_by_matrix_dict['B'] = ouput_keys_by_index_list
+ 
+                # for the scipy sobol indices function, the dictionary below is fed to it, and the arrays must have very specific shapes
+                fanova_dosimetry_for_scipy_sobol_func_dict = {'f_A': ga_arr,
+                                                                'f_B': gb_arr,
+                                                                }
+                    
+                ouput_function_dosimetry_by_fanova_matrix_subset = copy.deepcopy(ouput_function_dosimetry_by_fanova_matrix)
+                ouput_function_dosimetry_by_fanova_matrix_subset.pop('A')
+                ouput_function_dosimetry_by_fanova_matrix_subset.pop('B')
+                gab_arr = np.empty((len(ouput_function_dosimetry_by_fanova_matrix_subset),len(gb_dict),num_FANOVA_dose_simulations_input))
+                    
+                for matrix_key, fanova_compiled_dose_results_sp_matrix in ouput_function_dosimetry_by_fanova_matrix_subset.items():     
+                    gab_constant_matrix_output_slice = np.empty((len(fanova_compiled_dose_results_sp_matrix),num_FANOVA_dose_simulations_input))
+                    ouput_keys_by_index_list = [None]*len(fanova_compiled_dose_results_sp_matrix)
+                    for index,(output_func_key,output_func_arr) in enumerate(fanova_compiled_dose_results_sp_matrix.items()):
+                        ouput_keys_by_index_list[index] = output_func_key
+                        gab_constant_matrix_output_slice[index,:] = output_func_arr
+                    
+                    ouput_keys_by_matrix_dict[matrix_key] = ouput_keys_by_index_list
+                    gab_arr[int(matrix_key)] = gab_constant_matrix_output_slice  
+                    
+                fanova_dosimetry_for_scipy_sobol_func_dict['f_AB'] = gab_arr
+
+                sobol_indices = scipy.stats.sobol_indices(func = fanova_dosimetry_for_scipy_sobol_func_dict, n=num_FANOVA_dose_simulations_input)
+                bootstrap_sobol_indices = sobol_indices.bootstrap(confidence_level = sobol_indices_bootstrap_conf_interval, 
+                                                                      n_resamples = num_sobol_bootstraps
+                                                                      )
+                    
+                fanova_sobol_indices_for_fixed_bx_dict = {"Indices result": sobol_indices,
+                                                            "Bootstrap result": bootstrap_sobol_indices,
+                                                            "Output results key index dict": ouput_keys_by_matrix_dict
+                                                            }
+
+                structures_progress.update(calculating_sobol_dose_each_non_bx_structure_task, advance=1)
+                
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sobol indices (dose)"] = fanova_sobol_indices_for_fixed_bx_dict
+
+                structures_progress.remove_task(calculating_sobol_dose_each_non_bx_structure_task)
+                biopsies_progress.update(calculating_sobol_dose_biopsy_task, advance = 1) 
+            biopsies_progress.remove_task(calculating_sobol_dose_biopsy_task) 
+            patients_progress.update(calculating_sobol_dose_patient_task, advance = 1) 
+            completed_progress.update(calculating_sobol_dose_patient_task_completed, advance = 1)
+        patients_progress.update(calculating_sobol_dose_patient_task, visible = False) 
+        completed_progress.update(calculating_sobol_dose_patient_task_completed, visible = True)
+        live_display.refresh()
+
+
+
+        creating_sobol_dosimetry_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol dosimetry DFs ...", total=num_patients)
+        creating_sobol_dosimetry_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol dosimetry DFs", total=num_patients, visible = False)  
+        num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
+        fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+        for patientUID,pydicom_item in master_structure_reference_dict.items():  
+            patients_progress.update(creating_sobol_dosimetry_dataframes_patient_task, description = "[red]Creating Sobol dosimetry DFs...".format(patientUID), total=num_patients)
+
+            for specific_bx_structure in pydicom_item[bx_ref]:
+                bx_struct_roi = specific_bx_structure["ROI"]
+                simulated_bx_bool =  specific_bx_structure["Simulated bool"]
+                fanova_sobol_indices_for_fixed_bx_dose_dict = specific_bx_structure["FANOVA: sobol indices (dose)"]
+
+                dose_indices_result = fanova_sobol_indices_for_fixed_bx_dose_dict["Indices result"]
+                dose_bootstrap_result = fanova_sobol_indices_for_fixed_bx_dose_dict["Bootstrap result"]
+                output_result_by_matrix_key_dict = fanova_sobol_indices_for_fixed_bx_dose_dict["Output results key index dict"] # note each key value should be identical
+                output_result_key_list = list(output_result_by_matrix_key_dict.values())[0] # just pick the first one since theyre all equal 
+
+                cumulative_dose_sobol_indices_first_order_arr = dose_indices_result.first_order
+                cumulative_dose_sobol_indices_first_order_se_arr = dose_bootstrap_result.first_order.standard_error
+                cumulative_dose_sobol_indices_first_order_boot_low_arr = dose_bootstrap_result.first_order.confidence_interval.low
+                cumulative_dose_sobol_indices_first_order_boot_high_arr = dose_bootstrap_result.first_order.confidence_interval.high
+
+                cumulative_dose_sobol_indices_total_order_arr = dose_indices_result.total_order
+                cumulative_dose_sobol_indices_total_order_se_arr = dose_bootstrap_result.total_order.standard_error
+                cumulative_dose_sobol_indices_total_order_boot_low_arr = dose_bootstrap_result.total_order.confidence_interval.low
+                cumulative_dose_sobol_indices_total_order_boot_high_arr = dose_bootstrap_result.total_order.confidence_interval.high
+                
+                associated_relative_structure_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+                associated_relative_structure_index_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+                associated_relative_structure_type_by_row_index_list = [None]*num_rel_structures_in_in_sp_bx
+                    
+                associated_relative_structure_by_row_index_list[rel_struct_index] = structure_roi
+                associated_relative_structure_index_by_row_index_list[rel_struct_index] = structure_index
+                associated_relative_structure_type_by_row_index_list[rel_struct_index] = non_bx_structure_type
+
+                sp_bx_sobol_dose_for_dataframe_dict = {"Patient": patientUID,
+                                                            "Bx ROI": bx_struct_roi,
+                                                            "Simulated bx bool": simulated_bx_bool,
+                                                            "Function output key": output_result_key_list
+                                                            }
+                
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' FO': cumulative_dose_sobol_indices_first_order_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' TO': cumulative_dose_sobol_indices_total_order_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' FO SE': cumulative_dose_sobol_indices_first_order_se_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' TO SE': cumulative_dose_sobol_indices_total_order_se_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' FO CI low': cumulative_dose_sobol_indices_first_order_boot_low_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' FO CI high': cumulative_dose_sobol_indices_first_order_boot_high_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' TO CI low': cumulative_dose_sobol_indices_total_order_boot_low_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                sp_bx_sobol_dose_for_dataframe_dict.update({name+' TO CI high': cumulative_dose_sobol_indices_total_order_boot_high_arr[:,index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+
+                sp_bx_sobol_dose_dataframe = cudf.DataFrame(sp_bx_sobol_dose_for_dataframe_dict)
+                sp_bx_sobol_dose_dataframe_no_na = sp_bx_sobol_dose_dataframe.fillna(0)
+
+                specific_bx_structure["FANOVA: sobol dose dataframe"] = sp_bx_sobol_dose_dataframe_no_na 
+
+            patients_progress.update(creating_sobol_dosimetry_dataframes_patient_task, advance = 1) 
+            completed_progress.update(creating_sobol_dosimetry_dataframes_patient_task_completed, advance = 1)
+        patients_progress.update(creating_sobol_dosimetry_dataframes_patient_task, visible = False) 
+        completed_progress.update(creating_sobol_dosimetry_dataframes_patient_task_completed, visible = True)
+        live_display.refresh()

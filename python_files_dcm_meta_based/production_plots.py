@@ -6,6 +6,7 @@ import math_funcs as mf
 import plotly.graph_objects as go
 import misc_tools
 import cupy as cp
+import cudf
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -1299,7 +1300,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                general_plot_name_string
+                                                general_plot_name_string                                            
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
@@ -1568,3 +1569,719 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                 done_regression_only = True
             else: 
                 pass
+
+
+
+def production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_structs,
+                                                regression_type_ans,
+                                                parallel_pool,
+                                                NPKR_bandwidth,
+                                                num_bootstraps_for_regression_plots_input,
+                                                num_z_vals_to_evaluate_for_regression_plots,
+                                                tissue_class_probability_plot_type_list,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string,
+                                                structure_miss_probability_roi
+                                                ):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+        bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
+        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+        
+
+        tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+        tumor_tissue_bionomial_se_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue standard error arr"]
+        tumor_tissue_conf_int_2d_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue confidence interval 95 arr"]
+        tumor_tissue_nominal_containment_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue nominal arr"]
+        tumor_tissue_conf_int_lower_arr = tumor_tissue_conf_int_2d_arr[0,:]
+        tumor_tissue_conf_int_upper_arr = tumor_tissue_conf_int_2d_arr[1,:]
+
+        pt_radius_point_wise_for_pd_data_frame_list = pt_radius_bx_coord_sys.tolist()
+        axial_Z_point_wise_for_pd_data_frame_list = bx_points_bx_coords_sys_arr[:,2].tolist()
+        binom_est_point_wise_for_pd_data_frame_list = tumor_tissue_bionomial_est_arr.tolist()
+        std_err_point_wise_for_pd_data_frame_list = tumor_tissue_bionomial_se_arr.tolist()
+        ROI_name_point_wise_for_pd_data_frame_list = ['DIL']*len(bx_points_bx_coords_sys_arr_list)
+        nominal_point_wise_for_pd_data_frame_list = tumor_tissue_nominal_containment_arr.tolist()
+        binom_est_lower_CI_point_wise_for_pd_data_frame_list = tumor_tissue_conf_int_lower_arr.tolist()
+        binom_est_upper_CI_point_wise_for_pd_data_frame_list = tumor_tissue_conf_int_upper_arr.tolist()
+              
+        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+            containment_structure_ROI = containment_structure_key_tuple[0]
+            if structure_miss_probability_roi not in containment_structure_ROI:
+                continue
+            
+            ROI_name_point_wise_for_pd_data_frame_list = ROI_name_point_wise_for_pd_data_frame_list + [containment_structure_ROI]*len(bx_points_bx_coords_sys_arr_list)
+            containment_structure_binom_est_list = containment_structure_dict["Binomial estimator list"]
+            containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
+            containment_structure_CI_list_of_tuples = containment_structure_dict["Confidence interval 95 (containment) list"]
+            conf_int_lower_list = [upper_lower_tup[0] for upper_lower_tup in containment_structure_CI_list_of_tuples]
+            conf_int_upper_list = [upper_lower_tup[1] for upper_lower_tup in containment_structure_CI_list_of_tuples]
+            containment_structure_nominal_list = containment_structure_dict["Nominal containment list"]
+            binom_est_point_wise_for_pd_data_frame_list = binom_est_point_wise_for_pd_data_frame_list + containment_structure_binom_est_list
+            std_err_point_wise_for_pd_data_frame_list = std_err_point_wise_for_pd_data_frame_list + containment_structure_stand_err_list
+            binom_est_lower_CI_point_wise_for_pd_data_frame_list = binom_est_lower_CI_point_wise_for_pd_data_frame_list + conf_int_lower_list
+            binom_est_upper_CI_point_wise_for_pd_data_frame_list = binom_est_upper_CI_point_wise_for_pd_data_frame_list + conf_int_upper_list
+            nominal_point_wise_for_pd_data_frame_list = nominal_point_wise_for_pd_data_frame_list + containment_structure_nominal_list
+            
+            pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + pt_radius_bx_coord_sys.tolist()
+            axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + bx_points_bx_coords_sys_arr[:,2].tolist() 
+
+        # include complemenet of miss structure        
+        specific_bx_structure_relative_OAR_dict = specific_bx_structure["MC data: miss structure tissue probability"]
+        miss_structure_binom_est_list = specific_bx_structure_relative_OAR_dict["OAR tissue miss binomial est arr"].tolist()
+        miss_structure_standard_err_list = specific_bx_structure_relative_OAR_dict["OAR tissue standard error arr"].tolist()
+        miss_structure_CI_2d_arr = specific_bx_structure_relative_OAR_dict["OAR tissue miss confidence interval 95 2d arr"]
+        miss_structure_CI_lower_list = miss_structure_CI_2d_arr[0,:].tolist()
+        miss_structure_CI_upper_list = miss_structure_CI_2d_arr[1,:].tolist()
+        miss_structure_nominal_list = specific_bx_structure_relative_OAR_dict["OAR tissue miss nominal arr"].tolist()
+
+        ROI_name_point_wise_for_pd_data_frame_list = ROI_name_point_wise_for_pd_data_frame_list + [structure_miss_probability_roi+' complement']*len(bx_points_bx_coords_sys_arr_list)
+        pt_radius_point_wise_for_pd_data_frame_list = pt_radius_point_wise_for_pd_data_frame_list + pt_radius_bx_coord_sys.tolist()
+        axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + bx_points_bx_coords_sys_arr[:,2].tolist() 
+        binom_est_point_wise_for_pd_data_frame_list = binom_est_point_wise_for_pd_data_frame_list + miss_structure_binom_est_list
+        std_err_point_wise_for_pd_data_frame_list = std_err_point_wise_for_pd_data_frame_list + miss_structure_standard_err_list
+        binom_est_lower_CI_point_wise_for_pd_data_frame_list = binom_est_lower_CI_point_wise_for_pd_data_frame_list + miss_structure_CI_lower_list
+        binom_est_upper_CI_point_wise_for_pd_data_frame_list = binom_est_upper_CI_point_wise_for_pd_data_frame_list + miss_structure_CI_upper_list
+        nominal_point_wise_for_pd_data_frame_list = nominal_point_wise_for_pd_data_frame_list + miss_structure_nominal_list
+            
+        containment_output_dict_by_MC_trial_for_pandas_data_frame = {"Structure ROI": ROI_name_point_wise_for_pd_data_frame_list, 
+                                                                    "Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, 
+                                                                    "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
+                                                                    "Mean probability (binom est)": binom_est_point_wise_for_pd_data_frame_list, 
+                                                                    "STD err": std_err_point_wise_for_pd_data_frame_list,
+                                                                    "Nominal containment": nominal_point_wise_for_pd_data_frame_list,
+                                                                    "CI lower vals": binom_est_lower_CI_point_wise_for_pd_data_frame_list,
+                                                                    "CI upper vals": binom_est_upper_CI_point_wise_for_pd_data_frame_list
+                                                                    }
+        
+        containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
+
+        specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Mutual containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+
+        # do non parametric kernel regression (local linear)
+        z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
+        containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict = {}
+        
+        unique_ROIs_list = containment_output_by_MC_trial_pandas_data_frame["Structure ROI"].unique().tolist()
+
+        for roi_to_regress in unique_ROIs_list:
+            if regression_type_ans == True:
+                miss_structure_probability_vs_axial_Z_NPKR_binom_est_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Mean probability (binom est)"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
+                )
+                miss_structure_probability_vs_axial_Z_NPKR_lower_CI_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI lower vals"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
+                )
+                miss_structure_probability_vs_axial_Z_NPKR_upper_CI_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI upper vals"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
+                )
+            elif regression_type_ans == False:
+                miss_structure_probability_vs_axial_Z_NPKR_binom_est_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Mean probability (binom est)"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
+                )
+                miss_structure_probability_vs_axial_Z_NPKR_lower_CI_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI lower vals"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
+                )
+                miss_structure_probability_vs_axial_Z_NPKR_upper_CI_fit, \
+                bootstrap_lower, \
+                bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
+                    parallel_pool,
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI upper vals"], 
+                    eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
+                )
+
+            containment_regressions_dict = {"Mean regression": miss_structure_probability_vs_axial_Z_NPKR_binom_est_fit, 
+                "Lower 95 regression": miss_structure_probability_vs_axial_Z_NPKR_lower_CI_fit, 
+                "Upper 95 regression": miss_structure_probability_vs_axial_Z_NPKR_upper_CI_fit
+                }
+
+            containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict[roi_to_regress] = containment_regressions_dict
+
+        # create 2d scatter dose plot axial (z) vs all containment probabilities from all MC trials with regressions
+        plot_type_list = tissue_class_probability_plot_type_list
+        done_regression_only = False
+        nominal_containment_symbols_dict = {0: 'x-thin' , 1: 'circle-open'} # ie. nominal pts that are not contained (0) corresponds to circle-open, and contained (1) corresponds to asterisk               
+        for plot_type in plot_type_list:
+            # one with error bars on binom est, one without error bars
+            if plot_type == 'with_errors':
+                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
+                                        x="Axial pos Z (mm)", 
+                                        y="Mean probability (binom est)", 
+                                        color = "Structure ROI", 
+                                        symbol = "Nominal containment",
+                                        symbol_map = nominal_containment_symbols_dict,
+                                        error_y = "STD err", 
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
+                                        )
+            if plot_type == '':
+                fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
+                                        x="Axial pos Z (mm)", 
+                                        y="Mean probability (binom est)", 
+                                        color = "Structure ROI",
+                                        symbol = "Nominal containment",
+                                        symbol_map = nominal_containment_symbols_dict, 
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
+                                        )
+            
+            # marker_line_width = nonzero is necessary in order to see "thin" markers, and must be done by update_traces method
+            fig_global = fig_global.update_traces(marker_line_width = 2,
+                                                  #marker_line_color = 'black',
+                                                  marker_size = 10
+                                                  ) 
+
+            # the below for_each_trace method sets the line color of the markers to the marker color, 
+            # which was set by the dataframe columns, there is no way to do this directly from the
+            # plotly express function call like you can for coloring markers
+            fig_global.for_each_trace(lambda trace: trace.update(marker_line_color=trace.marker.color)) 
+
+
+            # Build dataframe for plotting regression by px.scatter so that we can color by structure
+
+            relative_structure_list = []
+            mean_regression_vals_list = []
+            z_vals_to_eval_list = []
+            for containment_structure_ROI, containment_structure_regressions_dict in containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
+                sp_structure_mean_regression_list = containment_structure_regressions_dict["Mean regression"].tolist()
+                sp_relative_structure_list = [containment_structure_ROI]*len(sp_structure_mean_regression_list)
+                mean_regression_vals_list = mean_regression_vals_list + sp_structure_mean_regression_list
+                relative_structure_list = relative_structure_list + sp_relative_structure_list
+                z_vals_to_eval_list = z_vals_to_eval_list + z_vals_to_evaluate.tolist()
+
+            containment_regression_dictionary_for_pandas_data_frame = {"Mean regression": mean_regression_vals_list,
+                                                                       "Z vals to eval": z_vals_to_eval_list,
+                                                                       "Relative containment structure": relative_structure_list}
+            
+            containment_regression_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_regression_dictionary_for_pandas_data_frame)
+
+
+            regression_fig = px.line(containment_regression_pandas_data_frame, 
+                                        x="Z vals to eval", 
+                                        y="Mean regression", 
+                                        color = "Relative containment structure",
+                                        #width  = svg_image_width, 
+                                        #height = svg_image_height
+                                        )
+                
+            # add all regressions to the global scatter figure, colored by relative structure
+            for i in range(0,len(regression_fig.data)):
+                fig_global.add_trace(regression_fig.data[i])
+
+
+
+            fig_regression_only = go.Figure()
+            for containment_structure_ROI, containment_structure_regressions_dict in containment_vs_axial_Z_non_parametric_regression_fit_lower_upper_dict.items():
+                regression_color = 'rgb'+str(tuple(np.random.randint(low=0,high=225,size=3)))
+                mean_regression = containment_structure_regressions_dict["Mean regression"]
+                lower95_regression = containment_structure_regressions_dict["Lower 95 regression"]
+                upper95_regression = containment_structure_regressions_dict["Upper 95 regression"]
+                """
+                fig_global.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI+' regression',
+                        x=z_vals_to_evaluate,
+                        y=mean_regression,
+                        mode="lines",
+                        line=dict(color=regression_color),
+                        showlegend=True
+                        )
+                )
+                """
+                
+                
+                fig_global.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI+' upper 95% CI',
+                        x=z_vals_to_evaluate,
+                        y=upper95_regression,
+                        mode='lines',
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        showlegend=False
+                    )
+                )
+                fig_global.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI+' lower 95% CI',
+                        x=z_vals_to_evaluate,
+                        y=lower95_regression,
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        mode='lines',
+                        fillcolor='rgba(0, 100, 20, 0.3)',
+                        fill='tonexty',
+                        showlegend=False
+                    )
+                )
+
+                # regressions only figure
+                fig_regression_only.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI + ' regression',
+                        x=z_vals_to_evaluate,
+                        y=mean_regression,
+                        mode="lines",
+                        line=dict(color=regression_color),
+                        showlegend=True
+                    )
+                )
+                fig_regression_only.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI + ' upper 95% CI',
+                        x=z_vals_to_evaluate,
+                        y=upper95_regression,
+                        mode='lines',
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        showlegend=False
+                    )
+                )
+                fig_regression_only.add_trace(
+                    go.Scatter(
+                        name=containment_structure_ROI + ' lower 95% CI',
+                        x=z_vals_to_evaluate,
+                        y=lower95_regression,
+                        marker=dict(color="#444"),
+                        line=dict(width=0),
+                        mode='lines',
+                        fillcolor='rgba(0, 100, 20, 0.3)',
+                        fill='tonexty',
+                        showlegend=False
+                    )
+                )
+
+            fig_global.update_layout(
+                title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                hovermode="x unified"
+            )
+            fig_global = plotting_funcs.fix_plotly_grid_lines(fig_global, y_axis = True, x_axis = True)
+
+            fig_regression_only.update_layout(
+                yaxis_title='Conditional mean probability',
+                xaxis_title='Axial pos Z (mm)',
+                title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
+                hovermode="x unified"
+            )
+            fig_regression_only = plotting_funcs.fix_plotly_grid_lines(fig_regression_only, y_axis = True, x_axis = True)
+            
+            if plot_type == 'with_errors':
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter_and_with_errors.svg'
+            else:                       
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter.svg'
+            svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+            fig_global.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+            if plot_type == 'with_errors':
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter_and_with_errors.html'
+            else:
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'_with_scatter.html'
+            html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+            fig_global.write_html(html_all_MC_trials_containment_fig_file_path)
+            
+            if done_regression_only == False:
+                svg_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+                svg_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_all_MC_trials_containment_fig_name)
+                fig_regression_only.write_image(svg_all_MC_trials_containment_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+                html_all_MC_trials_containment_fig_name = bx_struct_roi + general_plot_name_string+'.html'
+                html_all_MC_trials_containment_fig_file_path = patient_sp_output_figures_dir.joinpath(html_all_MC_trials_containment_fig_name)
+                fig_regression_only.write_html(html_all_MC_trials_containment_fig_file_path)
+            
+                done_regression_only = True
+            else: 
+                pass
+
+
+
+def production_plot_sobol_indices_global_containment(patient_sp_output_figures_dir_dict,
+                                                master_structure_reference_dict,
+                                                master_structure_info_dict,
+                                                bx_structs,
+                                                dil_ref,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string_dict,
+                                                structure_miss_probability_roi,
+                                                tissue_class_sobol_global_plot_bool_dict,
+                                                box_plot_points_option
+                                                ):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+
+    num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    dataframes_list = [None]*num_biopsies
+    for patientUID,pydicom_item in master_structure_reference_dict.items():  
+        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+            
+            sp_bx_sobol_containment_dataframe = specific_bx_structure["FANOVA: sobol containment dataframe"]
+            dataframes_list[bx_index] = sp_bx_sobol_containment_dataframe
+
+    grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)       
+
+    if tissue_class_sobol_global_plot_bool_dict["Global FO"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO"]
+
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, points = box_plot_points_option)
+        fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (tissue classification)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+    if tissue_class_sobol_global_plot_bool_dict["Global TO"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global TO"]
+
+        column_names_total_order_sobol_list = [name+' TO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_total_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_total_order_all, points = box_plot_points_option)
+        fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='Total order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of total order Sobol indices (tissue classification)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+    if tissue_class_sobol_global_plot_bool_dict["Global FO, sim vs non sim"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO, sim vs non sim"]
+
+        column_names_total_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_total_order_sobol_list.append("Simulated bx bool")
+
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
+        color_discrete_map_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, 
+                     points = box_plot_points_option, 
+                     color = "Simulated bx bool",
+                     color_discrete_map=color_discrete_map_dict)
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='Total order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of total order Sobol indices by biopsy class (tissue classification)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+
+def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir_dict,
+                                                master_structure_reference_dict,
+                                                master_structure_info_dict,
+                                                bx_structs,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string_dict,
+                                                dose_sobol_global_plot_bool_dict,
+                                                box_plot_points_option
+                                                ):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    
+    num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    dataframes_list = [None]*num_biopsies
+    for patientUID,pydicom_item in master_structure_reference_dict.items():  
+        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+            
+            sp_bx_sobol_dose_dataframe = specific_bx_structure["FANOVA: sobol dose dataframe"]
+            dataframes_list[bx_index] = sp_bx_sobol_dose_dataframe
+
+    grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True) 
+
+    output_result_key_list = grand_sobol_dataframe["Function output key"].unique().to_arrow().to_pylist()
+    output_result_color_list = ['#550527', '#688E26', '#FAA613', '#F44708', '#A10702', '#995FA3']
+
+    color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+    #{for index,key in enumerate(output_result_key_list.keys())}
+    #color_discrete_map_output_function_dict = {True: }
+
+    if dose_sobol_global_plot_bool_dict["Global FO"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO"]
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, points = box_plot_points_option)
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (dosimetry)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+    if dose_sobol_global_plot_bool_dict["Global FO by function output"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO by function output"]
+
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Function output key")
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, 
+                     points = box_plot_points_option, 
+                     color = "Function output key" 
+                     )
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices by dosimetry metric (dosimetry)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+    if dose_sobol_global_plot_bool_dict["Global TO"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global TO"]
+        column_names_total_order_sobol_list = [name+' TO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, 
+                     points = box_plot_points_option)
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='Total order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of total order Sobol indices (dosimetry)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+    if dose_sobol_global_plot_bool_dict["Global TO by function output"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global TO by function output"]
+
+        column_names_total_order_sobol_list = [name+' TO' for name in fanova_sobol_indices_names_by_index]
+        column_names_total_order_sobol_list.append("Function output key")
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all, 
+                     points = box_plot_points_option, 
+                     color = "Function output key")
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='Total order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of total order Sobol indices by dosimetry metric (dosimetry)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)  
+
+
+    if dose_sobol_global_plot_bool_dict["Global FO, sim only"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO, sim only"]
+        sim_bool = True
+
+        grand_sobol_dataframe_simulated_discrim = grand_sobol_dataframe[grand_sobol_dataframe["Simulated bx bool"] == sim_bool]
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_first_order_all_simulated_discrim = grand_sobol_dataframe_simulated_discrim[column_names_first_order_sobol_list]
+        
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all_simulated_discrim, 
+                     points = box_plot_points_option)
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (dosimetry) (simulated biopsies)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+    if dose_sobol_global_plot_bool_dict["Global FO, non-sim only"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO, non-sim only"]
+        sim_bool = False
+        
+        grand_sobol_dataframe_simulated_discrim = grand_sobol_dataframe[grand_sobol_dataframe["Simulated bx bool"] == sim_bool]
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        grand_sobol_dataframe_first_order_all_simulated_discrim = grand_sobol_dataframe_simulated_discrim[column_names_first_order_sobol_list]
+
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all_simulated_discrim, 
+                     points = box_plot_points_option)
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (dosimetry) (real biopsies)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+
+    if dose_sobol_global_plot_bool_dict["Global FO, sim only by function output"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO, sim only by function output"]
+        sim_bool = True
+        
+        grand_sobol_dataframe_simulated_discrim = grand_sobol_dataframe[grand_sobol_dataframe["Simulated bx bool"] == sim_bool]
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Function output key")
+        grand_sobol_dataframe_first_order_all_simulated_discrim = grand_sobol_dataframe_simulated_discrim[column_names_first_order_sobol_list]
+
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all_simulated_discrim, 
+                     points = box_plot_points_option, 
+                     color = "Function output key")
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices by dosimetry metric (dosimetry) (simulated biopsies)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+    if dose_sobol_global_plot_bool_dict["Global FO, non-sim only by function output"] == True:
+        general_plot_name_string = general_plot_name_string_dict["Global FO, non-sim only by function output"]
+        sim_bool = False
+        
+        grand_sobol_dataframe_simulated_discrim = grand_sobol_dataframe[grand_sobol_dataframe["Simulated bx bool"] == sim_bool]
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Function output key")
+        grand_sobol_dataframe_first_order_all_simulated_discrim = grand_sobol_dataframe_simulated_discrim[column_names_first_order_sobol_list]
+
+        # global sobol first order box plot
+        fig = px.box(grand_sobol_dataframe_first_order_all_simulated_discrim, 
+                     points = box_plot_points_option, 
+                     color = "Function output key")
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        fig.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices by dosimetry metric (dosimetry) (real biopsies)',
+            hovermode="x unified"
+        )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+
+
+        
+        
+
