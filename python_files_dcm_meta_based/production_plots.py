@@ -13,6 +13,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               structs_referenced_list,
                                               bx_structs,
                                               pydicom_item,
+                                              max_simulations,
                                               all_ref_key,
                                               svg_image_scale,
                                               svg_image_width,
@@ -21,26 +22,83 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               general_plot_name_string):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
-    structure_name_and_shift_type_dict_for_pandas_data_frame = {}
+    structure_name_and_shift_type_dict_for_pandas_data_frame = {'StructureID': None,
+                                                                'Structure ref #': None,
+                                                                'Struct type': None,
+                                                                'Shift X': None,
+                                                                'Shift Y': None,
+                                                                'Shift Z': None,
+                                                                'Shift magnitude': None
+                                                                }
+    structureID_list = []
+    structure_ref_num_list = []
+    structure_type_list = []
+    shift_vec_x_arr = np.empty((0))
+    shift_vec_y_arr = np.empty((0))
+    shift_vec_z_arr = np.empty((0))
+    shift_vec_mag_arr = np.empty((0))
+
     for structs in structs_referenced_list:
         for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
             structureID = specific_structure["ROI"]
+            structureID_list = structureID_list + [structureID]*max_simulations
             structure_reference_number = specific_structure["Ref #"]
+            structure_ref_num_list = structure_ref_num_list + [structure_reference_number]*max_simulations
+            structure_type_list = structure_type_list + [structs]*max_simulations
+
             if structs == bx_structs:
-                sampled_rigid_shifts_from_normal_and_uniform_distribution = specific_structure["MC data: Total rigid shift vectors arr"]
-                sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude = cp.linalg.norm(sampled_rigid_shifts_from_normal_and_uniform_distribution, axis = 1)
-                sample_description = 'Total translation (length uncertainty + normal)'
-                structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = cp.asnumpy(sampled_rigid_shifts_from_normal_and_uniform_distribution_magnitude)
-            # create box plots of sampled rigid shifts for each structure                      
-            sampled_rigid_shifts_from_normal_distribution = specific_structure['MC data: Generated normal dist random samples arr']
-            sampled_rigid_shifts_from_normal_distribution_magnitude = cp.linalg.norm(sampled_rigid_shifts_from_normal_distribution, axis = 1)
-            sample_description = 'Rigid translation (normal)'
-            structure_name_and_shift_type_dict_for_pandas_data_frame[str(structureID) + ' '+ sample_description] = cp.asnumpy(sampled_rigid_shifts_from_normal_distribution_magnitude)
-    
+                sampled_rigid_shifts = specific_structure["MC data: Total rigid shift vectors arr"]
+                sampled_rigid_shifts_magnitudes = np.linalg.norm(sampled_rigid_shifts, axis = 1)
+                
+            else:
+                # create box plots of sampled rigid shifts for each structure                      
+                sampled_rigid_shifts = specific_structure['MC data: Generated normal dist random samples arr']
+                sampled_rigid_shifts_magnitudes = np.linalg.norm(sampled_rigid_shifts, axis = 1)            
+
+            shift_vec_mag_arr = np.append(shift_vec_mag_arr,sampled_rigid_shifts_magnitudes)
+            shift_vec_x_arr = np.append(shift_vec_x_arr, sampled_rigid_shifts[:,0])
+            shift_vec_y_arr = np.append(shift_vec_y_arr, sampled_rigid_shifts[:,1])
+            shift_vec_z_arr = np.append(shift_vec_z_arr, sampled_rigid_shifts[:,2])
+
+    structure_name_and_shift_type_dict_for_pandas_data_frame['StructureID'] = structureID_list
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Structure ref #'] = structure_ref_num_list
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Struct type'] = structure_type_list
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Shift X'] = shift_vec_x_arr
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Shift Y'] = shift_vec_y_arr
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Shift Z'] = shift_vec_z_arr
+    structure_name_and_shift_type_dict_for_pandas_data_frame['Shift magnitude'] = shift_vec_mag_arr
+
     structure_name_and_shift_type_dict_pandas_data_frame = pandas.DataFrame(data=structure_name_and_shift_type_dict_for_pandas_data_frame)
     pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["All shift vector magnitudes by structure and shift type"] = structure_name_and_shift_type_dict_pandas_data_frame
     
     
+    fig = px.box(structure_name_and_shift_type_dict_pandas_data_frame, x="StructureID", y="Shift magnitude", color="Struct type")
+
+    fig = go.Figure()
+    shift_components_to_trace_list = ['Shift magnitude','Shift X', 'Shift Y', 'Shift Z']
+    color_by_component_to_trace_list = ['rgba(0, 92, 171, 1)', 'rgba(227, 27, 35,1)', 'rgba(255, 195, 37,1)', 'rgba(0, 200, 255,1)']
+    color_by_trace_dict = {key: color_by_component_to_trace_list[i] for i,key in enumerate(shift_components_to_trace_list)}
+    for component_to_trace in shift_components_to_trace_list:
+        fig.add_trace(go.Box(
+            x=structure_name_and_shift_type_dict_pandas_data_frame['StructureID'],
+            y=structure_name_and_shift_type_dict_pandas_data_frame[component_to_trace],
+            name = component_to_trace,
+            marker_color = color_by_trace_dict[component_to_trace]
+        ))
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Sampled shift (mm)',
+        xaxis_title='Structure',
+        title='Sampled translation components (' + patientUID +')',
+        hovermode="x unified"
+    )
+    fig.update_layout(
+        boxmode='group'
+    )
+
+
+    """
     # box plot
     fig = px.box(structure_name_and_shift_type_dict_pandas_data_frame, points = False)
     fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
@@ -51,6 +109,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
         title='Sampled translation magnitudes (' + patientUID +')',
         hovermode="x unified"
     )
+    """
 
     svg_dose_fig_name = patientUID + general_plot_name_string+'.svg'
     svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -1953,7 +2012,7 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
     for patientUID,pydicom_item in master_structure_reference_dict.items():  
         for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
             
-            sp_bx_sobol_containment_dataframe = specific_bx_structure["FANOVA: sobol containment dataframe"]
+            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"])
             dataframes_list[bx_index] = sp_bx_sobol_containment_dataframe
 
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)       
@@ -2009,10 +2068,10 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
     if tissue_class_sobol_global_plot_bool_dict["Global FO, sim vs non sim"] == True:
         general_plot_name_string = general_plot_name_string_dict["Global FO, sim vs non sim"]
 
-        column_names_total_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
-        column_names_total_order_sobol_list.append("Simulated bx bool")
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Simulated bx bool")
 
-        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
         color_discrete_map_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
         # global sobol first order box plot
         fig = px.box(grand_sobol_dataframe_first_order_all, 
@@ -2021,9 +2080,9 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
                      color_discrete_map=color_discrete_map_dict)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
-            yaxis_title='Total order Sobol index value (S_i)',
+            yaxis_title='First order Sobol index value (S_i)',
             xaxis_title='Index',
-            title='Distribution of total order Sobol indices by biopsy class (tissue classification)',
+            title='Distribution of first order Sobol indices by biopsy class (tissue classification)',
             hovermode="x unified"
         )
 
@@ -2053,12 +2112,14 @@ def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir
     
     num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
     dataframes_list = [None]*num_biopsies
+    bx_index = 0
     for patientUID,pydicom_item in master_structure_reference_dict.items():  
-        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        for specific_bx_structure in pydicom_item[bx_structs]:
             
-            sp_bx_sobol_dose_dataframe = specific_bx_structure["FANOVA: sobol dose dataframe"]
+            sp_bx_sobol_dose_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol dose dataframe"])
             dataframes_list[bx_index] = sp_bx_sobol_dose_dataframe
-
+            bx_index = bx_index + 1
+    del bx_index
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True) 
 
     output_result_key_list = grand_sobol_dataframe["Function output key"].unique().to_arrow().to_pylist()
@@ -2279,6 +2340,66 @@ def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir
         html_dose_fig_name = general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path) 
+
+
+
+
+
+
+def production_plot_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    box_plot_points_option = 'outliers',
+                                    notch_option = True
+                                    ):
+    
+    color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+    fig = go.Figure()
+
+    fig.add_trace(go.Box(
+        y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Mean probability"],
+        x = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Tissue type"],
+        name = 'Actual',
+        marker_color = color_discrete_map_sim_or_no_sim_dict[False],
+        boxpoints = box_plot_points_option,
+        notched = notch_option
+    ))
+    fig.add_trace(go.Box(
+        y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Mean probability"],
+        x = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Tissue type"],
+        name = 'Simulated',
+        marker_color = color_discrete_map_sim_or_no_sim_dict[True],
+        boxpoints = box_plot_points_option,
+        notched = notch_option
+    ))
+
+        
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Probability',
+        xaxis_title='Tissue classification',
+        title='Patient cohort tissue classification probability (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    fig.update_layout(
+    boxmode='group' # group together boxes of the different traces for each value of x
+    )
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+
 
 
 

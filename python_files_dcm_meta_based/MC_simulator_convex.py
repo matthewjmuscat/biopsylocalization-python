@@ -118,6 +118,7 @@ def simulator_parallel(parallel_pool,
         
         #live_display.stop()
         max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
+        master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"] = max_simulations
 
         default_output = "Initializing"
         processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,default_output)
@@ -145,7 +146,7 @@ def simulator_parallel(parallel_pool,
                 structure_type = generated_shifts_info_list[0]
                 specific_structure_index = generated_shifts_info_list[1]
                 specific_structure_structure_normal_dist_shift_samples_arr = generated_shifts_info_list[2]
-                pydicom_item[structure_type][specific_structure_index]["MC data: Generated normal dist random samples arr"] = specific_structure_structure_normal_dist_shift_samples_arr
+                pydicom_item[structure_type][specific_structure_index]["MC data: Generated normal dist random samples arr"] = cp.asnumpy(specific_structure_structure_normal_dist_shift_samples_arr)
             
             #MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, max_simulations)
             #master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
@@ -1006,7 +1007,26 @@ def simulator_parallel(parallel_pool,
 
                 
                 dosimetric_calc_parallel_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{}]...".format(specific_bx_structure_roi), total = None)
-                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, nominal_and_bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
+                # non-parallel
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_non_parallel(nominal_and_bx_only_shifted_3darr, 
+                                                                                              specific_bx_structure, 
+                                                                                              dose_ref_dict, 
+                                                                                              dose_ref, 
+                                                                                              phys_space_dose_map_phys_coords_2d_arr, 
+                                                                                              phys_space_dose_map_dose_2d_arr, 
+                                                                                              num_dose_calc_NN)
+                
+                # parallel MUCH SLOWER AND USES TOO MUCH MEMORY!
+                """
+                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, 
+                                                                                              nominal_and_bx_only_shifted_3darr, 
+                                                                                              specific_bx_structure, 
+                                                                                              dose_ref_dict, 
+                                                                                              dose_ref, 
+                                                                                              phys_space_dose_map_phys_coords_2d_arr, 
+                                                                                              phys_space_dose_map_dose_2d_arr, 
+                                                                                              num_dose_calc_NN)
+                """
                 
                 if show_NN_dose_demonstration_plots == True:
                     # plot everything to make sure its working properly!
@@ -1382,7 +1402,14 @@ def normal_distribution_MLE(data_1d_arr):
 
 
 
-def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, specific_bx_structure, dose_ref_dict, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN):
+def dosimetric_localization_parallel(parallel_pool, 
+                                     bx_only_shifted_3darr, 
+                                     specific_bx_structure, 
+                                     dose_ref_dict, 
+                                     dose_ref, 
+                                     phys_space_dose_map_phys_coords_2d_arr, 
+                                     phys_space_dose_map_dose_2d_arr, 
+                                     num_dose_calc_NN):
     # build args list
     num_trials = bx_only_shifted_3darr.shape[0]
     args_list = [None]*(num_trials) 
@@ -1401,6 +1428,38 @@ def dosimetric_localization_parallel(parallel_pool, bx_only_shifted_3darr, speci
     
     # conduct the dosimetric localization in parallel. The MC trials are done in parallel.
     dosimetric_localiation_all_MC_trials_list = parallel_pool.starmap(dosimetric_localization_single_MC_trial, args_list)
+
+    return dosimetric_localiation_all_MC_trials_list
+
+
+def dosimetric_localization_non_parallel(bx_only_shifted_3darr, 
+                                         specific_bx_structure, 
+                                         dose_ref_dict, 
+                                         dose_ref, 
+                                         phys_space_dose_map_phys_coords_2d_arr, 
+                                         phys_space_dose_map_dose_2d_arr, 
+                                         num_dose_calc_NN):
+    # build args list
+    num_trials = bx_only_shifted_3darr.shape[0]
+    args_list = [None]*(num_trials) 
+    dose_ref_dict_roi = dose_ref_dict["Dose ID"]
+    specific_bx_structure_roi = specific_bx_structure["ROI"]
+    dose_data_KDtree = dose_ref_dict["KDtree"]
+    for single_MC_trial_slice_index, bx_only_shifted_single_MC_trial_slice in enumerate(bx_only_shifted_3darr):
+        """
+        if single_MC_trial_slice_index > (num_MC_dose_simulations-1):
+            break
+        else:
+            pass 
+        """
+        single_MC_trial_arg = (dose_data_KDtree, bx_only_shifted_single_MC_trial_slice, specific_bx_structure_roi, dose_ref_dict_roi, dose_ref, phys_space_dose_map_phys_coords_2d_arr, phys_space_dose_map_dose_2d_arr, num_dose_calc_NN)
+        args_list[single_MC_trial_slice_index] = single_MC_trial_arg
+    
+    # conduct the dosimetric localization in parallel. The MC trials are done in parallel.
+    dosimetric_localiation_all_MC_trials_list = [None]*len(args_list)
+    for index, arg in enumerate(args_list):
+        nearest_neighbours_single_MC_trial_NN_parent_obj = dosimetric_localization_single_MC_trial(*arg)
+        dosimetric_localiation_all_MC_trials_list[index] = nearest_neighbours_single_MC_trial_NN_parent_obj
 
     return dosimetric_localiation_all_MC_trials_list
 

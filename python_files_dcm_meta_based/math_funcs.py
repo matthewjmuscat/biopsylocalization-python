@@ -44,7 +44,7 @@ def binomial_variance_estimator(probability_estimator, num_trials, num_successes
             p_hat_variance = -1/log_likelihood_2nd_der
     else: 
         p_hat_variance = p_hat*(1-p_hat)/n
-    return p_hat_variance
+    return abs(p_hat_variance) # always return a positive variance, the variance can be negative if phat is >1, which sometimes happens for small values of n
 
 def binomial_se_estimator(probability_estimator, num_trials, num_successes):
     p_hat = probability_estimator

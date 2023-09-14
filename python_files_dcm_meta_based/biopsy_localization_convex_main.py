@@ -76,6 +76,7 @@ import matplotlib.colors as mcolors
 import production_plots
 import pickle
 import fanova
+import dataframe_builders
 
 
 def main():
@@ -164,7 +165,7 @@ def main():
                                               "ScreenCamera_2023-02-19-15-29-43.json"
                                               ]
     
-    bx_sim_locations = [] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
+    bx_sim_locations = ['centroid'] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
     bx_sim_ref_identifier = "sim"
     simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
     differential_dvh_resolution = 100 # the number of bins
@@ -179,12 +180,20 @@ def main():
     num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work, 2^10 is good
     num_FANOVA_dose_simulations_input = 2**10
     perform_fanova = False
+    perform_dose_fanova = False
+    perform_containment_fanova = False
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
     num_sobol_bootstraps = 100
     sobol_indices_bootstrap_conf_interval = 0.95
     show_NN_FANOVA_dose_demonstration_plots = False
+
+    # patient sample cohor analyzer
+    only_perform_patient_analyser = False
+    perform_patient_sample_analyser_at_end = True
+    box_plot_points_option = 'outliers'
+    notch_option = True
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -313,6 +322,10 @@ def main():
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
     export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
     skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
+    
+    # for dataframe builder
+    cancer_tissue_label = 'DIL'
+    miss_structure_complement_label = structure_miss_probability_roi + ' complement'
 
     # non-user changeable variables, but need to be initiatied:
     all_ref_key = "All ref"
@@ -402,6 +415,100 @@ def main():
             preprocessed_data_dir = data_dir.joinpath(preprocessed_data_folder_name)
 
             misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir, preprocessed_data_dir)
+
+
+
+
+            # only perform patient sample analyzer
+
+            if only_perform_patient_analyser == True:
+                data_frame_list = []
+
+
+                sample_dict = {}
+                num_actual_biopsies = 0
+                num_sim_biopsies = 0
+                live_display.stop()
+                output_csvs_folder = pathlib.Path(fd.askdirectory(title='Open output CSVs folder', initialdir=output_dir))
+                all_patient_sub_dirs = [x for x in output_csvs_folder.iterdir() if x.is_dir()]
+                for directory in all_patient_sub_dirs:
+                    csv_files_in_directory_list = list(directory.glob('*.csv'))
+                    containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
+                    for contianment_csv in containment_csvs_list:
+                        with open(contianment_csv, "r", newline='\n') as contianment_csv_open:
+                            reader_obj_list = list(csv.reader(contianment_csv_open))
+                            info = reader_obj_list[0:3]
+                            patient_id = info[0][1]
+                            bx_id = info[1][1]
+                            simulated_string = info[2][1]
+                            if simulated_string.lower() == 'false':
+                                simulated_bool = False 
+                                num_actual_biopsies = num_actual_biopsies + 1
+                            else: 
+                                simulated_bool = True
+                                num_sim_biopsies = num_sim_biopsies + 1
+
+                            for row_index,row in enumerate(reader_obj_list):
+                                if "Global by class" in row:
+                                    starting_index = row_index + 2
+                                    break
+                                pass
+                            
+                            tissue_iteration = 1
+                            sample_dict["Patient ID"] = []
+                            sample_dict["Bx ID"] = []
+                            sample_dict["Simulated bool"] = []
+                            for row_index,row in enumerate(reader_obj_list[starting_index:]):
+                                if "+++" in row:
+                                    tissue_iteration = tissue_iteration + 1
+                                    sample_dict["Patient ID"].append(patient_id)
+                                    sample_dict["Bx ID"].append(bx_id)
+                                    sample_dict["Simulated bool"].append(simulated_bool)
+                                    continue
+                                if "---" in row:
+                                    break
+                                
+                                if tissue_iteration == 1:
+                                    if row[0] == 'Tissue type':
+                                        sample_dict[row[0]] = [row[1]]
+                                    else:
+                                        sample_dict[row[0]] = [float(row[1])]
+                                    
+                                else:
+                                    if row[0] == 'Tissue type':
+                                        sample_dict[row[0]].append(row[1])
+                                    else:
+                                        sample_dict[row[0]].append(float(row[1]))
+
+                            bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
+                            data_frame_list.append(bx_sp_dataframe)
+
+                cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)   
+
+                # Make cohort output directories
+                cohort_figures_output_dir_name = 'Cohort figures'
+                tissue_class_output_dir_name = 'Tissue classification'
+                cohort_output_figures_dir = output_csvs_folder.parents[0].joinpath(cohort_figures_output_dir_name)
+                cohort_output_figures_dir.mkdir(parents=False, exist_ok=False)
+                tissue_class_cohort_output_figures_dir = cohort_output_figures_dir.joinpath(tissue_class_output_dir_name)
+                tissue_class_cohort_output_figures_dir.mkdir(parents=False, exist_ok=False)
+                tissue_class_general_plot_name_string = 'Patient_cohort_tissue_classification_box_plot'
+                
+                production_plots.production_plot_patient_cohort(cohort_containment_dataframe,
+                                                                num_actual_biopsies,
+                                                                num_sim_biopsies,
+                                                                svg_image_scale,
+                                                                svg_image_width,
+                                                                svg_image_height,
+                                                                tissue_class_general_plot_name_string,
+                                                                tissue_class_cohort_output_figures_dir,
+                                                                box_plot_points_option,
+                                                                notch_option
+                                                                )
+                
+                print('test')         
+
+                sys.exit('>Programme exited.')
 
 
 
@@ -1676,7 +1783,8 @@ def main():
            
             #live_display.stop()
             # Run MC simulation
-            master_structure_reference_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
+            if perform_fanova == False:
+                master_structure_reference_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
                                                                                         live_display,
                                                                                         stopwatch, 
                                                                                         layout_groups, 
@@ -1731,7 +1839,9 @@ def main():
                     sobol_indices_bootstrap_conf_interval,
                     show_NN_FANOVA_dose_demonstration_plots,
                     num_dose_calc_NN,
-                    dose_views_jsons_paths_list
+                    dose_views_jsons_paths_list,
+                    perform_dose_fanova,
+                    perform_containment_fanova
                     )
 
             live_display.start(refresh=True)
@@ -1780,8 +1890,25 @@ def main():
                     patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                     patient_sp_output_figures_dir_dict["Global"] = patient_sp_output_figures_dir
                 
-            
-            if write_containment_to_file_ans ==  True:
+            if perform_fanova == False:
+                # Build dataframes
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+
+                        containment_output_dict_by_MC_trial_for_pandas_data_frame, containment_output_by_MC_trial_pandas_data_frame = dataframe_builders.tissue_probability_dataframe_builder_by_bx_pt(specific_bx_structure, 
+                                                                                                                                                                                                        structure_miss_probability_roi,
+                                                                                                                                                                                                        cancer_tissue_label,
+                                                                                                                                                                                                        miss_structure_complement_label
+                                                                                                                                                                                                        )
+                        
+                        specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+                        specific_bx_structure["Output dicts for data frames"]["Mutual containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+
+
+
+
+            if write_containment_to_file_ans ==  True and perform_fanova == False:
                 important_info.add_text_line("Writing containment CSVs to file.", live_display)
                 
                 patientUID_default = "Initializing"
@@ -1798,6 +1925,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        simulated_bool = specific_bx_structure["Simulated bool"]
                         num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
@@ -1807,15 +1935,53 @@ def main():
                         containment_output_csv_file_path = patient_sp_output_csv_dir.joinpath(containment_output_file_name)
                         with open(containment_output_csv_file_path, 'w', newline='') as f:
                             write = csv.writer(f)
-                            write.writerow(['Patient ID ->',patientUID])
-                            write.writerow(['BX ID ->',specific_bx_structure['ROI']])
+                            write.writerow(['Patient ID',patientUID])
+                            write.writerow(['BX ID',specific_bx_structure['ROI']])
+                            write.writerow(['Simulated', simulated_bool])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
-                            write.writerow(['Num MC containment sims ->',num_MC_containment_simulations_input])
-                            write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])
+                            write.writerow(['Num MC containment sims',num_MC_containment_simulations_input])
+                            write.writerow(['Num bx pt samples',num_sample_pts_per_bx])
                             
+                            # global tissue class
+                            write.writerow(['---'])
+                            write.writerow(['Global by class'])
+                            write.writerow(['---'])
+                            rows_to_write_list = []
+
+                            containment_output_by_MC_trial_pandas_data_frame = specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"]
+                            tissue_classes_list = [cancer_tissue_label,structure_miss_probability_roi,miss_structure_complement_label]
+                            for tissue_class in tissue_classes_list:
+                                tissue_class_row = ['Tissue type', tissue_class]
+
+                                mean_prob = containment_output_by_MC_trial_pandas_data_frame[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == tissue_class]["Mean probability (binom est)"].mean()
+                                mean_prob_row = ['Mean probability', mean_prob]
+
+                                mean_std = containment_output_by_MC_trial_pandas_data_frame[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == tissue_class]["Mean probability (binom est)"].std()
+                                mean_std_row = ['STD', mean_std]
+
+                                mean_stderr = containment_output_by_MC_trial_pandas_data_frame[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == tissue_class]["STD err"].mean()
+                                std_err_row = ['STD err', mean_stderr]
+                            
+                                tissue_class_CI_tuple = mf.normal_CI_estimator(mean_prob, mean_stderr)
+                                tissue_class_CI_lower_row = ['CI lower', tissue_class_CI_tuple[0]]
+                                tissue_class_CI_upper_row = ['CI upper', tissue_class_CI_tuple[1]]
+
+                                rows_to_write_list.append(tissue_class_row)
+                                rows_to_write_list.append(mean_prob_row)
+                                rows_to_write_list.append(mean_std_row)
+                                rows_to_write_list.append(std_err_row)
+                                rows_to_write_list.append(tissue_class_CI_lower_row)
+                                rows_to_write_list.append(tissue_class_CI_upper_row)
+                                rows_to_write_list.append(['+++'])
+
+                            for row_to_write in rows_to_write_list:
+                                write.writerow(row_to_write)
+                            
+                            del rows_to_write_list
+
                             # global
                             write.writerow(['---'])
-                            write.writerow(['Global'])
+                            write.writerow(['Global by structure'])
                             write.writerow(['---'])
                             rows_to_write_list = []
                             for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
@@ -1974,7 +2140,7 @@ def main():
 
 
 
-            if write_dose_to_file_ans ==  True:
+            if write_dose_to_file_ans ==  True and perform_fanova == False:
                 important_info.add_text_line("Writing dosimetry CSVs to file.", live_display)
 
                 patientUID_default = "Initializing"
@@ -2230,7 +2396,7 @@ def main():
             
 
 
-            if create_at_least_one_production_plot == True:
+            if create_at_least_one_production_plot == True and perform_fanova == False:
 
                 important_info.add_text_line("Creating production plots.", live_display)
 
@@ -2263,7 +2429,6 @@ def main():
 
 
                 # Plot boxplots of sampled rigid shift vectors
-
                 if production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Sampled translation vector magnitudes box plots"]["Plot name"]
@@ -2281,12 +2446,13 @@ def main():
                         processing_patient_production_plot_description = "Creating box plots of sampled rigid shift vectors [{}]...".format(patientUID)
                         patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-
+                        max_simulations = master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"]
                         production_plots.production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                                 patient_sp_output_figures_dir_dict,
                                                 structs_referenced_list,
                                                 bx_structs,
                                                 pydicom_item,
+                                                max_simulations,
                                                 all_ref_key,
                                                 svg_image_scale,
                                                 svg_image_width,
@@ -2852,8 +3018,8 @@ def main():
 
 
 
-                if perform_fanova == True:
-                    #live_display.stop()
+            if perform_fanova == True:
+                if perform_containment_fanova == True:
                     if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
                         
                         tissue_class_sobol_global_plot_bool_dict = production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool dict"]
@@ -2884,7 +3050,7 @@ def main():
                     else:
                         pass
 
-
+                if perform_dose_fanova == True:
                     if production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool"] == True:
                         
                         dose_sobol_global_plot_bool_dict = production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool dict"]
@@ -2911,7 +3077,6 @@ def main():
                         live_display.refresh()
                     else:
                         pass
-                    
                     
 
                             
@@ -3208,7 +3373,8 @@ def structure_referencer(structure_dcm_dict,
     mc_info = {"Num MC containment simulations": None, 
                "Num MC dose simulations and nominal": None, 
                "Num sample pts per BX core": None, 
-               "BX sample pt lattice spacing": None}
+               "BX sample pt lattice spacing": None,
+               "Max of num MC simulations": None}
     
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, 
                                                "Num structures": global_total_num_structs, 

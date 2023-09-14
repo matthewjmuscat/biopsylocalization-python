@@ -61,7 +61,7 @@ def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_cupy(specific_bx_
     randomly_sampled_bx_pts_cp_arr_resized_3darr = cp.resize(randomly_sampled_bx_pts_cp_arr,(1,num_sampled_bx_pts,3))
     randomly_sampled_bx_pts_cp_arr_3darr = cp.repeat(randomly_sampled_bx_pts_cp_arr_resized_3darr,max_simulations,0)
 
-    randomly_sampled_normal_bx_shifts_cp_arr = specific_bx_structure["MC data: Generated normal dist random samples arr"]
+    randomly_sampled_normal_bx_shifts_cp_arr = cp.array(specific_bx_structure["MC data: Generated normal dist random samples arr"])
     #num_shift_vecs = randomly_sampled_normal_bx_shifts_cp_arr.shape[0]
     #randomly_sampled_normal_bx_shifts_cp_arr_reshaped_for_vectorization = cp.reshape(randomly_sampled_normal_bx_shifts_cp_arr,(max_simulations,1,3))
     #randomly_sampled_normal_bx_shifts_cp_arr_3d_arr_for_vectorization = cp.tile(randomly_sampled_normal_bx_shifts_cp_arr_reshaped_for_vectorization,(1,num_sampled_bx_pts,1))
@@ -74,9 +74,9 @@ def MC_simulator_translate_sampled_bx_points_arr_bx_only_shift_cupy(specific_bx_
         bx_needle_centroid_vec_tip_to_handle_unit_cp_vec = cp.array(bx_needle_centroid_vec_tip_to_handle_unit_vec)
         bx_needle_centroid_vec_tip_to_handle_unit_cp_arr = cp.tile(bx_needle_centroid_vec_tip_to_handle_unit_cp_vec,(max_simulations,1))
         bx_needle_uniform_compartment_shift_vectors_cp_array = cp.multiply(bx_needle_centroid_vec_tip_to_handle_unit_cp_arr,random_uniformly_sampled_bx_shifts_cp_arr[...,None]) # The [...,None] converts the row vector to a column vector for proper element-wise multiplication
-        specific_bx_structure["MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr"] = bx_needle_uniform_compartment_shift_vectors_cp_array
+        specific_bx_structure["MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr"] = cp.asnumpy(bx_needle_uniform_compartment_shift_vectors_cp_array)
         total_rigid_shift_vectors_cp_arr = bx_needle_uniform_compartment_shift_vectors_cp_array + randomly_sampled_normal_bx_shifts_cp_arr
-        specific_bx_structure["MC data: Total rigid shift vectors arr"] = total_rigid_shift_vectors_cp_arr
+        specific_bx_structure["MC data: Total rigid shift vectors arr"] = cp.asnumpy(total_rigid_shift_vectors_cp_arr)
 
         if plot_uniform_shifts_to_check_plotly == True:
             bx_needle_uniform_compartment_shift_vectors_cp_arr_reshaped_for_vectorization = cp.reshape(bx_needle_uniform_compartment_shift_vectors_cp_array,(max_simulations,1,3))
