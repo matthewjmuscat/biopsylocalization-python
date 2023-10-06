@@ -142,6 +142,7 @@ def main():
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 4
+    perform_MC_sim = True
     
     
     num_dose_NN_to_show_for_animation_plotting = 100
@@ -177,11 +178,11 @@ def main():
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
     
     #fanova
-    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work, 2^10 is good
-    num_FANOVA_dose_simulations_input = 2**10
-    perform_fanova = False
-    perform_dose_fanova = False
-    perform_containment_fanova = False
+    num_FANOVA_containment_simulations_input = 2**11 # must be a power of two for the scipy function to work, 2^10 is good
+    num_FANOVA_dose_simulations_input = 2**11
+    perform_fanova = True 
+    perform_dose_fanova = True
+    perform_containment_fanova = True
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
@@ -1783,7 +1784,7 @@ def main():
            
             #live_display.stop()
             # Run MC simulation
-            if perform_fanova == False:
+            if perform_MC_sim == True:
                 master_structure_reference_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
                                                                                         live_display,
                                                                                         stopwatch, 
@@ -1890,7 +1891,7 @@ def main():
                     patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                     patient_sp_output_figures_dir_dict["Global"] = patient_sp_output_figures_dir
                 
-            if perform_fanova == False:
+            if perform_MC_sim == True:
                 # Build dataframes
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -1908,7 +1909,7 @@ def main():
 
 
 
-            if write_containment_to_file_ans ==  True and perform_fanova == False:
+            if write_containment_to_file_ans ==  True and perform_MC_sim == True:
                 important_info.add_text_line("Writing containment CSVs to file.", live_display)
                 
                 patientUID_default = "Initializing"
@@ -2140,7 +2141,7 @@ def main():
 
 
 
-            if write_dose_to_file_ans ==  True and perform_fanova == False:
+            if write_dose_to_file_ans ==  True and perform_MC_sim == True:
                 important_info.add_text_line("Writing dosimetry CSVs to file.", live_display)
 
                 patientUID_default = "Initializing"
@@ -2396,7 +2397,7 @@ def main():
             
 
 
-            if create_at_least_one_production_plot == True and perform_fanova == False:
+            if create_at_least_one_production_plot == True and perform_MC_sim == True:
 
                 important_info.add_text_line("Creating production plots.", live_display)
 
