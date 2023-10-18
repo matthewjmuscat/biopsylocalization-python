@@ -13,7 +13,6 @@ numpy = "*"
 pydicom = "*"
 termcolor = "*"
 matplotlib = "*"
-sklearn = "*"
 pandas = "*"
 anytree = "*"
 shapely = "*"
@@ -30,7 +29,7 @@ dill = "*"
 pathos = "*"
 rich = "*"
 "stopwatch.py" = "*"
-textual = {extras = ["dev"], version = "*"}
+textual = "*"
 plotly = "*"
 kaleido = "*"
 statsmodels = "*"
@@ -41,8 +40,12 @@ rmm-cu11 = {version = "*", index = "pypinvidia"}
 cudf-cu11 = {version = "*", index = "pypinvidia"}
 cuspatial-cu11 = {version = "*", index = "pypinvidia"} 
 
+
 [dev-packages]
 ipykernel = "*"
 
 [requires]
 python_version = "3.9"
+
+[pipenv]
+allow_prereleases = true

@@ -180,9 +180,9 @@ def main():
     #fanova
     num_FANOVA_containment_simulations_input = 2**11 # must be a power of two for the scipy function to work, 2^10 is good
     num_FANOVA_dose_simulations_input = 2**11
-    perform_fanova = True 
-    perform_dose_fanova = True
-    perform_containment_fanova = True
+    perform_fanova = False 
+    perform_dose_fanova = False
+    perform_containment_fanova = False
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
@@ -194,7 +194,7 @@ def main():
     only_perform_patient_analyser = False
     perform_patient_sample_analyser_at_end = True
     box_plot_points_option = 'outliers'
-    notch_option = True
+    notch_option = False
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -423,15 +423,19 @@ def main():
             # only perform patient sample analyzer
 
             if only_perform_patient_analyser == True:
-                data_frame_list = []
-
-
-                sample_dict = {}
-                num_actual_biopsies = 0
-                num_sim_biopsies = 0
+                #data_frame_list = []
+                #sample_dict = {}
+                #num_actual_biopsies = 0
+                #num_sim_biopsies = 0
                 live_display.stop()
                 output_csvs_folder = pathlib.Path(fd.askdirectory(title='Open output CSVs folder', initialdir=output_dir))
+                #live_display.start()
                 all_patient_sub_dirs = [x for x in output_csvs_folder.iterdir() if x.is_dir()]
+                
+                
+                # cohort tissue class 
+                num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe = dataframe_builders.containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
+                """
                 for directory in all_patient_sub_dirs:
                     csv_files_in_directory_list = list(directory.glob('*.csv'))
                     containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
@@ -459,7 +463,7 @@ def main():
                             sample_dict["Patient ID"] = []
                             sample_dict["Bx ID"] = []
                             sample_dict["Simulated bool"] = []
-                            for row_index,row in enumerate(reader_obj_list[starting_index:]):
+                            for row_index, row in enumerate(reader_obj_list[starting_index:]):
                                 if "+++" in row:
                                     tissue_iteration = tissue_iteration + 1
                                     sample_dict["Patient ID"].append(patient_id)
@@ -484,15 +488,16 @@ def main():
                             bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
                             data_frame_list.append(bx_sp_dataframe)
 
-                cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)   
+                cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)  
+                """ 
 
                 # Make cohort output directories
                 cohort_figures_output_dir_name = 'Cohort figures'
                 tissue_class_output_dir_name = 'Tissue classification'
                 cohort_output_figures_dir = output_csvs_folder.parents[0].joinpath(cohort_figures_output_dir_name)
-                cohort_output_figures_dir.mkdir(parents=False, exist_ok=False)
+                cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
                 tissue_class_cohort_output_figures_dir = cohort_output_figures_dir.joinpath(tissue_class_output_dir_name)
-                tissue_class_cohort_output_figures_dir.mkdir(parents=False, exist_ok=False)
+                tissue_class_cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
                 tissue_class_general_plot_name_string = 'Patient_cohort_tissue_classification_box_plot'
                 
                 production_plots.production_plot_patient_cohort(cohort_containment_dataframe,
@@ -506,6 +511,10 @@ def main():
                                                                 box_plot_points_option,
                                                                 notch_option
                                                                 )
+
+
+                # cohort dosimetry
+                num_actual_biopsies, num_sim_biopsies, cohort_dose_dataframe = dataframe_builders.dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
                 
                 print('test')         
 
@@ -2158,6 +2167,7 @@ def main():
                     bx_structs = bx_ref
                     patient_sp_output_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                        simulated_bool = specific_bx_structure["Simulated bool"]
                         num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
                         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                         bx_points_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr)
@@ -2175,6 +2185,7 @@ def main():
                             write = csv.writer(f)
                             write.writerow(['Patient ID ->',patientUID])
                             write.writerow(['BX ID ->',specific_bx_structure['ROI']])
+                            write.writerow(['Simulated', simulated_bool])
                             write.writerow(['BX length (from contour data) (mm)', specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']])
                             write.writerow(['Num MC dose sims ->',num_MC_dose_simulations_input])
                             write.writerow(['Num bx pt samples ->',num_sample_pts_per_bx])

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas 
+import csv
 
 def tissue_probability_dataframe_builder_by_bx_pt(specific_bx_structure, 
                                          structure_miss_probability_roi,
@@ -82,3 +83,112 @@ def tissue_probability_dataframe_builder_by_bx_pt(specific_bx_structure,
     containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
 
     return containment_output_dict_by_MC_trial_for_pandas_data_frame, containment_output_by_MC_trial_pandas_data_frame
+
+
+
+
+def containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
+    data_frame_list = []
+    sample_dict = {}
+    num_actual_biopsies = 0
+    num_sim_biopsies = 0
+    for directory in all_patient_sub_dirs:
+        csv_files_in_directory_list = list(directory.glob('*.csv'))
+        containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
+        for contianment_csv in containment_csvs_list:
+            with open(contianment_csv, "r", newline='\n') as contianment_csv_open:
+                reader_obj_list = list(csv.reader(contianment_csv_open))
+                info = reader_obj_list[0:3]
+                patient_id = info[0][1]
+                bx_id = info[1][1]
+                simulated_string = info[2][1]
+                if simulated_string.lower() == 'false':
+                    simulated_bool = False 
+                    num_actual_biopsies = num_actual_biopsies + 1
+                else: 
+                    simulated_bool = True
+                    num_sim_biopsies = num_sim_biopsies + 1
+
+                for row_index,row in enumerate(reader_obj_list):
+                    if "Global by class" in row:
+                        starting_index = row_index + 2
+                        break
+                    pass
+                
+                tissue_iteration = 1
+                sample_dict["Patient ID"] = []
+                sample_dict["Bx ID"] = []
+                sample_dict["Simulated bool"] = []
+                for row_index, row in enumerate(reader_obj_list[starting_index:]):
+                    if "+++" in row:
+                        tissue_iteration = tissue_iteration + 1
+                        sample_dict["Patient ID"].append(patient_id)
+                        sample_dict["Bx ID"].append(bx_id)
+                        sample_dict["Simulated bool"].append(simulated_bool)
+                        continue
+                    if "---" in row:
+                        break
+                    
+                    if tissue_iteration == 1:
+                        if row[0] == 'Tissue type':
+                            sample_dict[row[0]] = [row[1]]
+                        else:
+                            sample_dict[row[0]] = [float(row[1])]
+                        
+                    else:
+                        if row[0] == 'Tissue type':
+                            sample_dict[row[0]].append(row[1])
+                        else:
+                            sample_dict[row[0]].append(float(row[1]))
+
+                bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
+                data_frame_list.append(bx_sp_dataframe)
+
+    cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)   
+
+    return num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe
+
+
+
+def dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
+    data_frame_list = []
+    sample_dict = {}
+    num_actual_biopsies = 0
+    num_sim_biopsies = 0
+    for directory in all_patient_sub_dirs:
+        csv_files_in_directory_list = list(directory.glob('*.csv'))
+        dose_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "dose_out" in csv_file.name]
+        for dose_csv in dose_csvs_list:
+            with open(dose_csv, "r", newline='\n') as dose_csv_open:
+                reader_obj_list = list(csv.reader(dose_csv_open))
+                info = reader_obj_list[0:3]
+                patient_id = info[0][1]
+                bx_id = info[1][1]
+                simulated_string = info[2][1]
+                if simulated_string.lower() == 'false':
+                    simulated_bool = False 
+                    num_actual_biopsies = num_actual_biopsies + 1
+                else: 
+                    simulated_bool = True
+                    num_sim_biopsies = num_sim_biopsies + 1
+
+                for row_index,row in enumerate(reader_obj_list):
+                    if "Global" in row:
+                        starting_index = row_index + 2
+                        break
+                    pass
+                
+                #tissue_iteration = 1
+                sample_dict["Patient ID"] = [patient_id]
+                sample_dict["Bx ID"] = [bx_id]
+                sample_dict["Simulated bool"] = [simulated_bool]
+                
+                for row_index, row in enumerate(reader_obj_list[starting_index:]):
+                    sample_dict[row[0]] = [float(row[1])]
+
+                bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
+                data_frame_list.append(bx_sp_dataframe)
+
+    cohort_dose_dataframe = pandas.concat(data_frame_list,ignore_index = True)   
+
+    return num_actual_biopsies, num_sim_biopsies, cohort_dose_dataframe
