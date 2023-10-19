@@ -190,11 +190,12 @@ def main():
     sobol_indices_bootstrap_conf_interval = 0.95
     show_NN_FANOVA_dose_demonstration_plots = False
 
-    # patient sample cohor analyzer
-    only_perform_patient_analyser = False
+    # patient sample cohort analyzer
+    only_perform_patient_analyser = True
     perform_patient_sample_analyser_at_end = True
     box_plot_points_option = 'outliers'
     notch_option = False
+    boxmean_option = 'sd'
 
     # plots to show:
     show_NN_dose_demonstration_plots = False
@@ -500,7 +501,7 @@ def main():
                 tissue_class_cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
                 tissue_class_general_plot_name_string = 'Patient_cohort_tissue_classification_box_plot'
                 
-                production_plots.production_plot_patient_cohort(cohort_containment_dataframe,
+                production_plots.production_plot_tissue_patient_cohort(cohort_containment_dataframe,
                                                                 num_actual_biopsies,
                                                                 num_sim_biopsies,
                                                                 svg_image_scale,
@@ -509,14 +510,58 @@ def main():
                                                                 tissue_class_general_plot_name_string,
                                                                 tissue_class_cohort_output_figures_dir,
                                                                 box_plot_points_option,
-                                                                notch_option
+                                                                notch_option,
+                                                                boxmean_option
                                                                 )
 
 
                 # cohort dosimetry
                 num_actual_biopsies, num_sim_biopsies, cohort_dose_dataframe = dataframe_builders.dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
                 
-                print('test')         
+                dose_output_dir_name = 'Dosimetry'
+                dose_cohort_output_figures_dir = cohort_output_figures_dir.joinpath(dose_output_dir_name)
+                dose_cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
+                dose_general_plot_name_string = 'Patient_cohort_dose_box_plot'
+
+                production_plots.production_plot_dose_patient_cohort(cohort_dose_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    dose_general_plot_name_string,
+                                    dose_cohort_output_figures_dir,
+                                    box_plot_points_option,
+                                    notch_option,
+                                    boxmean_option
+                                    )
+
+                dose_distribution_plot_name_string = 'Patient_cohort_dose_distribution_histogram_plot'
+
+                fit_parameters_sim_dict, fit_parameters_actual_dict = production_plots.production_plot_dose_distribution_patient_cohort(cohort_dose_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    dose_distribution_plot_name_string,
+                                    dose_cohort_output_figures_dir
+                                    )
+
+                dose_difference_box_plot_name_string = 'Patient_cohort_global_nominal_dose_difference_box_plot'
+
+                production_plots.production_plot_dose_nominal_global_difference_box_patient_cohort(cohort_dose_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    dose_difference_box_plot_name_string,
+                                    dose_cohort_output_figures_dir,
+                                    box_plot_points_option,
+                                    notch_option,
+                                    boxmean_option
+                                    )
 
                 sys.exit('>Programme exited.')
 
@@ -2213,12 +2258,15 @@ def main():
                             write.writerow(['Nominal mean dose',nominal_mean_dose])
                             write.writerow(['Nominal std dose',nominal_std_dose])
                             write.writerow(['Nominal std err dose',nominal_std_err_dose])
-                            write.writerow(['Nominal mean CI dose',nominal_dose_mean_CI])
+                            write.writerow(['Nominal mean CI dose lower',nominal_dose_mean_CI[0]])
+                            write.writerow(['Nominal mean CI dose upper',nominal_dose_mean_CI[1]])
 
                             write.writerow(['Global mean dose',global_mean_dose])
                             write.writerow(['Global std dose',global_std_dose])
-                            write.writerow(['Global std err dose',global_std_err_dose])
-                            write.writerow(['Global mean CI dose',global_dose_mean_CI])
+                            write.writerow(['Global std err dose ',global_std_err_dose])
+                            write.writerow(['Global mean CI dose lower',global_dose_mean_CI[0]])
+                            write.writerow(['Global mean CI dose upper',global_dose_mean_CI[1]])
+
 
                             
                             

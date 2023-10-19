@@ -7,6 +7,9 @@ import plotly.graph_objects as go
 import misc_tools
 import cupy as cp
 import cudf
+import plotly.figure_factory as ff
+from scipy.stats import norm
+
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -2346,7 +2349,7 @@ def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir
 
 
 
-def production_plot_patient_cohort(patient_cohort_dataframe,
+def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
                                     num_actual_biopsies,
                                     num_sim_biopsies,
                                     svg_image_scale,
@@ -2355,7 +2358,8 @@ def production_plot_patient_cohort(patient_cohort_dataframe,
                                     general_plot_name_string,
                                     cohort_output_figures_dir,
                                     box_plot_points_option = 'outliers',
-                                    notch_option = True
+                                    notch_option = True,
+                                    boxmean_option = 'sd'
                                     ):
     
     color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
@@ -2367,7 +2371,8 @@ def production_plot_patient_cohort(patient_cohort_dataframe,
         name = 'Actual',
         marker_color = color_discrete_map_sim_or_no_sim_dict[False],
         boxpoints = box_plot_points_option,
-        notched = notch_option
+        notched = notch_option,
+        boxmean = boxmean_option
     ))
     fig.add_trace(go.Box(
         y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Mean probability"],
@@ -2375,7 +2380,8 @@ def production_plot_patient_cohort(patient_cohort_dataframe,
         name = 'Simulated',
         marker_color = color_discrete_map_sim_or_no_sim_dict[True],
         boxpoints = box_plot_points_option,
-        notched = notch_option
+        notched = notch_option,
+        boxmean = boxmean_option
     ))
 
         
@@ -2401,8 +2407,156 @@ def production_plot_patient_cohort(patient_cohort_dataframe,
 
 
 
+def production_plot_dose_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    box_plot_points_option = 'outliers',
+                                    notch_option = True,
+                                    boxmean_option = 'sd'
+                                    ):
+    
+    color_discrete_map_nominal_or_global_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+    fig = go.Figure()
 
+    fig.add_trace(go.Box(
+        y = patient_cohort_dataframe["Nominal mean dose"],
+        x = patient_cohort_dataframe["Simulated bool"],
+        name = 'Nominal',
+        marker_color = color_discrete_map_nominal_or_global_dict[False],
+        boxpoints = box_plot_points_option,
+        notched = notch_option,
+        boxmean = boxmean_option
+    ))
+    fig.add_trace(go.Box(
+        y = patient_cohort_dataframe["Global mean dose"],
+        x = patient_cohort_dataframe["Simulated bool"],
+        name = 'Global',
+        marker_color = color_discrete_map_nominal_or_global_dict[True],
+        boxpoints = box_plot_points_option,
+        notched = notch_option,
+        boxmean = boxmean_option
+    ))
 
         
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Dose (Gy)',
+        xaxis_title='Simulated',
+        title='Patient cohort dose (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    fig.update_layout(
+    boxmode='group' # group together boxes of the different traces for each value of x
+    )
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+
+
+def production_plot_dose_distribution_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    show_hist_option = False,
+                                    show_rug_option = True
+                                    ):
+    
+    x_sim = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Global mean dose"]
+    x_actual = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Global mean dose"]
+
+    std = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Global mean dose"].std()
+
+    group_labels = ['Simulated', 'Actual']
+
+    colors = ['rgba(0, 92, 171, 1)', 'rgba(227, 27, 35,1)']
+
+    # Create distplot with curve_type set to 'normal'
+    fig = ff.create_distplot([x_sim, x_actual], group_labels, bin_size=3.49*std*num_actual_biopsies**(-1/3),
+                            curve_type='normal', # override default 'kde'
+                            colors=colors,
+                            show_hist = show_hist_option,  
+                            show_rug = show_rug_option)
+    
+    # fit parameters of the normal fit, I couldnt find out how to return them directly from plotly
+    mu_sim, std_sim = norm.fit(x_sim)
+    mu_actual, std_actual = norm.fit(x_actual)
+
+    fit_parameters_sim_dict = {'mu': mu_sim, 'sigma': std_sim}
+    fit_parameters_actual_dict = {'mu': mu_actual, 'sigma': std_actual}
+
+    # Add title
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Probability',
+        xaxis_title='Dose (Gy)',
+        title='Patient cohort global mean distribution (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+    return fit_parameters_sim_dict, fit_parameters_actual_dict
+        
+
+
+def production_plot_dose_nominal_global_difference_box_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    box_plot_points_option = 'outliers',
+                                    notch_option = True,
+                                    boxmean_option = 'sd'
+                                    ):
+    
+    color_discrete_map_nominal_or_global_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+
+    patient_cohort_dataframe['Nominal - global'] = patient_cohort_dataframe.apply(lambda x: x["Nominal mean dose"] - x["Global mean dose"], axis=1)
+    
+
+    fig = px.box(patient_cohort_dataframe, x="Simulated bool", y='Nominal - global', points = box_plot_points_option)
+    fig.update_traces(boxmean = boxmean_option)   
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Dose (Gy)',
+        xaxis_title='Simulated',
+        title='Patient cohort nominal mean vs global mean dose difference (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path)
         
 

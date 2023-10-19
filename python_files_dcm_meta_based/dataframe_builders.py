@@ -184,6 +184,8 @@ def dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
                 sample_dict["Simulated bool"] = [simulated_bool]
                 
                 for row_index, row in enumerate(reader_obj_list[starting_index:]):
+                    if row[0] == '---':
+                        break
                     sample_dict[row[0]] = [float(row[1])]
 
                 bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
