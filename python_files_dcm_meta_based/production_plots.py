@@ -2406,6 +2406,135 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
     fig.write_html(html_dose_fig_file_path) 
 
 
+def production_plot_tissue_length_box_plots_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    box_plot_points_option = 'outliers',
+                                    notch_option = True,
+                                    boxmean_option = 'sd'
+                                    ):
+    
+    color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+    
+    fig = px.box(patient_cohort_dataframe, 
+                 x="Probability threshold", 
+                 y="Length estimate mean", 
+                 points = box_plot_points_option, 
+                 color = "Simulated bool",
+                 color_discrete_map = color_discrete_map_sim_or_no_sim_dict)
+    
+    fig.update_traces(boxmean = boxmean_option)   
+    
+    probability_threshold_list = patient_cohort_dataframe["Probability threshold"].unique()
+    fig.update_layout(
+    xaxis = dict(
+        tickmode = 'array',
+        tickvals = probability_threshold_list,
+    )
+    )
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Tissue length (mm)',
+        xaxis_title='Probability threshold',
+        title='Patient cohort tissue length above given threshold (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+
+    fig.update_layout(
+    boxmode='group' # group together boxes of the different traces for each value of x
+    )
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+
+def production_plot_tissue_length_distribution_patient_cohort(patient_cohort_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir,
+                                    threshold,
+                                    cdf_sp_threshold_dict,
+                                    show_hist_option = False,
+                                    show_rug_option = True
+                                    ):
+    
+    x_sim = patient_cohort_dataframe[(patient_cohort_dataframe["Simulated bool"] == True) & (patient_cohort_dataframe["Probability threshold"] == threshold)]["Length estimate mean"]
+    x_actual = patient_cohort_dataframe[(patient_cohort_dataframe["Simulated bool"] == False) & (patient_cohort_dataframe["Probability threshold"] == threshold)]["Length estimate mean"]
+
+    std = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Length estimate mean"].std()
+
+    group_labels = ['Simulated', 'Actual']
+
+    colors = ['rgba(0, 92, 171, 1)', 'rgba(227, 27, 35,1)']
+
+    # Create distplot with curve_type set to 'normal'
+    fig = ff.create_distplot([x_sim, x_actual], group_labels, bin_size=3.49*std*num_actual_biopsies**(-1/3),
+                            curve_type='normal', # override default 'kde'
+                            colors=colors,
+                            show_hist = show_hist_option,  
+                            show_rug = show_rug_option)
+    
+    # fit parameters of the normal fit, I couldnt find out how to return them directly from plotly
+    mu_sim, std_sim = norm.fit(x_sim)
+    mu_actual, std_actual = norm.fit(x_actual)
+
+    fit_parameters_sim_dict = {'mu': mu_sim, 'sigma': std_sim}
+    fit_parameters_actual_dict = {'mu': mu_actual, 'sigma': std_actual}
+
+
+    # code for cumulative 
+    cdf_sim_dict = cdf_sp_threshold_dict["CDF sim"]
+    cdf_actual_dict = cdf_sp_threshold_dict["CDF actual"]
+
+    cdf_sim_data = cdf_sim_dict["CDF"]
+    cdf_sim_edges = cdf_sim_dict["Bin edges"]
+
+    cdf_actual_data = cdf_actual_dict["CDF"]
+    cdf_actual_edges = cdf_actual_dict["Bin edges"]
+
+    fig.add_trace(go.Scatter(x=cdf_sim_edges, y=cdf_sim_data, name='CDF sim'))
+    fig.add_trace(go.Scatter(x=cdf_actual_edges, y=cdf_actual_data, name='CDF actual'))
+
+
+
+    # Add title
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Probability',
+        xaxis_title='Tissue length (mm)',
+        title='Patient cohort tissue length distribution P>=' + str(threshold) + ' (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+    return fit_parameters_sim_dict, fit_parameters_actual_dict
+
+
+
+
+
 
 def production_plot_dose_patient_cohort(patient_cohort_dataframe,
                                     num_actual_biopsies,

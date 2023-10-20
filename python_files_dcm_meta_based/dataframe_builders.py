@@ -89,7 +89,6 @@ def tissue_probability_dataframe_builder_by_bx_pt(specific_bx_structure,
 
 def containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
     data_frame_list = []
-    sample_dict = {}
     num_actual_biopsies = 0
     num_sim_biopsies = 0
     for directory in all_patient_sub_dirs:
@@ -97,6 +96,7 @@ def containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dir
         containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
         for contianment_csv in containment_csvs_list:
             with open(contianment_csv, "r", newline='\n') as contianment_csv_open:
+                sample_dict = {}
                 reader_obj_list = list(csv.reader(contianment_csv_open))
                 info = reader_obj_list[0:3]
                 patient_id = info[0][1]
@@ -115,7 +115,7 @@ def containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dir
                         break
                     pass
                 
-                tissue_iteration = 1
+                tissue_iteration = 0
                 sample_dict["Patient ID"] = []
                 sample_dict["Bx ID"] = []
                 sample_dict["Simulated bool"] = []
@@ -149,10 +149,93 @@ def containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dir
     return num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe
 
 
+def tissue_length_by_threshold_all_patients_dataframe_builder(all_patient_sub_dirs):
+    data_frame_list = []
+    num_actual_biopsies = 0
+    num_sim_biopsies = 0
+    for directory in all_patient_sub_dirs:
+        csv_files_in_directory_list = list(directory.glob('*.csv'))
+        containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
+        for contianment_csv in containment_csvs_list:
+            with open(contianment_csv, "r", newline='\n') as contianment_csv_open:
+                sample_dict = {}
+                reader_obj_list = list(csv.reader(contianment_csv_open))
+                info = reader_obj_list[0:3]
+                patient_id = info[0][1]
+                bx_id = info[1][1]
+                simulated_string = info[2][1]
+                if simulated_string.lower() == 'false':
+                    simulated_bool = False 
+                    num_actual_biopsies = num_actual_biopsies + 1
+                else: 
+                    simulated_bool = True
+                    num_sim_biopsies = num_sim_biopsies + 1
+
+                for row_index,row in enumerate(reader_obj_list):
+                    if "Tumor length estimate" in row:
+                        starting_index = row_index + 2
+                        break
+                    pass
+                
+                threshold_iteration = 0
+                sample_dict["Patient ID"] = []
+                sample_dict["Bx ID"] = []
+                sample_dict["Simulated bool"] = []
+                for row_index, row in enumerate(reader_obj_list[starting_index:]):
+                    if "+++" in row:
+                        threshold_iteration = threshold_iteration + 1
+                        sample_dict["Patient ID"].append(patient_id)
+                        sample_dict["Bx ID"].append(bx_id)
+                        sample_dict["Simulated bool"].append(simulated_bool)
+                        continue
+                    if "---" in row:
+                        break
+                    
+                    if threshold_iteration == 1:
+                        if "Length estimate bootstrap distribution" in row:
+                            pass
+                        else:
+                            sample_dict[row[0]] = [float(row[1])]     
+                    else:
+                        if "Length estimate bootstrap distribution" in row:
+                            pass
+                        else:
+                            sample_dict[row[0]].append(float(row[1]))
+
+                bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
+                data_frame_list.append(bx_sp_dataframe)
+
+    cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)   
+
+    return num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe
+
+
+def cumulative_histogram_for_tissue_length_dataframe_builder(patient_cohort_dataframe,
+                                                             threshold):
+    
+    x_sim = patient_cohort_dataframe[(patient_cohort_dataframe["Simulated bool"] == True) & (patient_cohort_dataframe["Probability threshold"] == threshold)]["Length estimate mean"].to_numpy()
+    x_actual = patient_cohort_dataframe[(patient_cohort_dataframe["Simulated bool"] == False) & (patient_cohort_dataframe["Probability threshold"] == threshold)]["Length estimate mean"].to_numpy()
+    
+    
+    hist_sim, bin_edges_sim = np.histogram(x_sim, bins=100, density=True)
+    cdf_sim = np.cumsum(hist_sim * np.diff(bin_edges_sim))
+
+    hist_actual, bin_edges_actual = np.histogram(x_actual, bins=100, density=True)
+    cdf_actual = np.cumsum(hist_actual * np.diff(bin_edges_actual))
+
+    cdf_dict = {"CDF sim": {"Bin edges": bin_edges_sim,
+                            "CDF": cdf_sim},
+                "CDF actual": {"Bin edges": bin_edges_actual,
+                               "CDF": cdf_actual}
+    }
+    
+    return cdf_dict
+    
+
+
 
 def dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
     data_frame_list = []
-    sample_dict = {}
     num_actual_biopsies = 0
     num_sim_biopsies = 0
     for directory in all_patient_sub_dirs:
@@ -160,6 +243,7 @@ def dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs):
         dose_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "dose_out" in csv_file.name]
         for dose_csv in dose_csvs_list:
             with open(dose_csv, "r", newline='\n') as dose_csv_open:
+                sample_dict = {}
                 reader_obj_list = list(csv.reader(dose_csv_open))
                 info = reader_obj_list[0:3]
                 patient_id = info[0][1]

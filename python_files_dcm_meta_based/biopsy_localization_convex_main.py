@@ -142,7 +142,7 @@ def main():
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 4
-    tissue_length_above_probability_threshold_list = [0.95,0.75,0.5]
+    tissue_length_above_probability_threshold_list = [0.95,0.75,0.5,0.25]
     n_bootstraps_for_tissue_length_above_threshold = 1000
     perform_MC_sim = True
     
@@ -193,7 +193,7 @@ def main():
     show_NN_FANOVA_dose_demonstration_plots = False
 
     # patient sample cohort analyzer
-    only_perform_patient_analyser = False
+    only_perform_patient_analyser = True
     perform_patient_sample_analyser_at_end = True
     box_plot_points_option = 'outliers'
     notch_option = False
@@ -516,6 +516,64 @@ def main():
                                                                 boxmean_option
                                                                 )
 
+
+                # cohort tissue length by threshold probability
+                num_actual_biopsies, num_sim_biopsies, cohort_tissue_length_dataframe = dataframe_builders.tissue_length_by_threshold_all_patients_dataframe_builder(all_patient_sub_dirs)
+
+                
+
+
+                # Make cohort output directories
+                cohort_figures_output_dir_name = 'Cohort figures'
+                tissue_length_output_dir_name = 'Tissue length'
+                cohort_output_figures_dir = output_csvs_folder.parents[0].joinpath(cohort_figures_output_dir_name)
+                cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
+                tissue_length_cohort_output_figures_dir = cohort_output_figures_dir.joinpath(tissue_length_output_dir_name)
+                tissue_length_cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
+
+
+                # box plot tissue length 
+                tissue_length_box_general_plot_name_string = 'Patient_cohort_tissue_length_box_plot'
+                production_plots.production_plot_tissue_length_box_plots_patient_cohort(cohort_tissue_length_dataframe,
+                                    num_actual_biopsies,
+                                    num_sim_biopsies,
+                                    svg_image_scale,
+                                    svg_image_width,
+                                    svg_image_height,
+                                    tissue_length_box_general_plot_name_string,
+                                    tissue_length_cohort_output_figures_dir,
+                                    box_plot_points_option,
+                                    notch_option,
+                                    boxmean_option
+                                    )
+                
+
+                # calculate cumulative histogram for each threshold
+                cdf_by_threshold_dict = {}
+                for threshold in cohort_tissue_length_dataframe["Probability threshold"].unique(): 
+                    cdf_dict_sp_threshold = dataframe_builders.cumulative_histogram_for_tissue_length_dataframe_builder(cohort_tissue_length_dataframe,
+                                                                                                threshold)
+                    cdf_by_threshold_dict[threshold] = cdf_dict_sp_threshold
+
+                # distribution tissue length figs
+                fit_parameters_by_threshold_dict = {}
+                for threshold in cohort_tissue_length_dataframe["Probability threshold"].unique(): 
+                    tissue_length_general_plot_name_string = 'Patient_cohort_tissue_length_distribution_plot_'+str(threshold)
+                    cdf_sp_threshold_dict = cdf_by_threshold_dict[threshold]
+                    fit_parameters_sim_dict, fit_parameters_actual_dict = production_plots.production_plot_tissue_length_distribution_patient_cohort(cohort_tissue_length_dataframe,
+                                        num_actual_biopsies,
+                                        num_sim_biopsies,
+                                        svg_image_scale,
+                                        svg_image_width,
+                                        svg_image_height,
+                                        tissue_length_general_plot_name_string,
+                                        tissue_length_cohort_output_figures_dir,
+                                        threshold,
+                                        cdf_sp_threshold_dict
+                                        )
+                    fit_parameters_by_threshold_dict[threshold] = {"Fit params for simulated bx": fit_parameters_sim_dict,
+                                                                   "Fit params for non-sim bx": fit_parameters_actual_dict
+                                                                   }
 
                 # cohort dosimetry
                 num_actual_biopsies, num_sim_biopsies, cohort_dose_dataframe = dataframe_builders.dose_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
@@ -2025,13 +2083,14 @@ def main():
                                 tissue_class_CI_lower_row = ['CI lower', tissue_class_CI_tuple[0]]
                                 tissue_class_CI_upper_row = ['CI upper', tissue_class_CI_tuple[1]]
 
+                                rows_to_write_list.append(['+++'])
                                 rows_to_write_list.append(tissue_class_row)
                                 rows_to_write_list.append(mean_prob_row)
                                 rows_to_write_list.append(mean_std_row)
                                 rows_to_write_list.append(std_err_row)
                                 rows_to_write_list.append(tissue_class_CI_lower_row)
                                 rows_to_write_list.append(tissue_class_CI_upper_row)
-                                rows_to_write_list.append(['+++'])
+                                
 
                             for row_to_write in rows_to_write_list:
                                 write.writerow(row_to_write)
@@ -2186,11 +2245,15 @@ def main():
                                 length_estimate_mean_row = ["Length estimate mean"] + [length_estimate_mean]
                                 length_estimate_se_row = ["Length estimate se"] + [leangth_estimate_se]
 
+                                rows_to_write_list.append(['+++'])
                                 rows_to_write_list.append(length_estimate_probability_threshold_row)
                                 rows_to_write_list.append(length_estimate_distribution_row)
                                 rows_to_write_list.append(length_estimate_num_bootstraps_row)
                                 rows_to_write_list.append(length_estimate_mean_row)
                                 rows_to_write_list.append(length_estimate_se_row)
+                                
+                            
+                            rows_to_write_list.append(['---'])
                             
                             for row_to_write in rows_to_write_list:
                                 write.writerow(row_to_write)
