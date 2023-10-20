@@ -102,6 +102,8 @@ def simulator_parallel(parallel_pool,
                        plot_cupy_containment_distribution_results,
                        plot_shifted_biopsies,
                        structure_miss_probability_roi,
+                       tissue_length_above_probability_threshold_list,
+                       n_bootstraps_for_tissue_length_above_threshold,
                        spinner_type
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -778,7 +780,7 @@ def simulator_parallel(parallel_pool,
 
                 # calculate nominal containment 
                 bx_nominal_containment_dil_exclusive_by_org_pt_ind_arr = np.any(bx_nominal_containment_counter_by_org_pt_ind_2d_arr, axis = 0)
-                specific_bx_structure_tumor_tissue_dict["Tumor tissue nominal arr"] = bx_nominal_containment_dil_exclusive_by_org_pt_ind_arr
+                specific_bx_structure_tumor_tissue_dict["Tumor tissue nominal arr"] = bx_nominal_containment_dil_exclusive_by_org_pt_ind_arr.astype(int)
 
                 # create an array to keep track of the sum of mutual probabilities
                 probability_sum_of_mutual_pt_wise_dil_tissue_arr = np.empty((num_sample_pts_in_bx))
@@ -812,6 +814,30 @@ def simulator_parallel(parallel_pool,
 
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tumor tissue probability"] = specific_bx_structure_tumor_tissue_dict
+
+
+                # calculate tissue length above threshold 
+                bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
+                
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
+                tissue_length_by_threshold_dict = {}
+                for threshold in tissue_length_above_probability_threshold_list:
+                    length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
+                                                                                                                        probability_pt_wise_dil_tissue_arr,
+                                                                                                                        probabilities_standard_err_arr,
+                                                                                                                        bx_sample_pts_lattice_spacing, 
+                                                                                                                        threshold,
+                                                                                                                        n_bootstraps_for_tissue_length_above_threshold)
+                
+                    tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
+                                                                                               "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
+                                                                                               "Length estimate mean": length_estimate_mean,
+                                                                                               "Length estimate se": length_estimate_se}
+                                                   
+                
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
+
 
                 # calculate miss probability
                 for structure_info, structure_specific_results_dict in specific_bx_results_dict.items():
@@ -850,7 +876,6 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, visible = False)
         completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete,visible = True)
         live_display.refresh()
-        
         
         # voxelize containment results
         biopsy_voxelize_containment_task = patients_progress.add_task("[red]Voxelizing containment results [{}]...".format("initializing"), total=num_patients)
@@ -2063,3 +2088,59 @@ def create_patient_specific_structure_dict_for_data(pydicom_item,structs_referen
             structure_organized_for_bx_data_blank_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_structure_index] = None
 
     return structure_organized_for_bx_data_blank_dict
+
+
+def tissue_length_calculator(z_coords_arr,
+                             binom_est_arr,
+                             binom_est_se_arr,
+                             lattice_spacing, 
+                             threshold_probability = 0.9,
+                             bootstraps = 100):
+    
+    threshold = threshold_probability
+    n = bootstraps
+    z_coords = z_coords_arr
+    binom_ests = binom_est_arr
+    binom_se = binom_est_se_arr
+
+    data = np.array([z_coords,binom_ests,binom_se])
+    sorted_data = data[:,data[0,:].argsort(axis=0)] 
+
+    sample_matrix = np.empty([n,sorted_data.shape[1]])
+
+    for i in range(sample_matrix.shape[0]):
+        for j in range(sample_matrix.shape[1]):
+            sample_matrix[i,j] = np.random.normal(loc = sorted_data[1,j], scale = sorted_data[2,j])
+
+    length_estimate_distribution = np.empty(sample_matrix.shape[0])
+    for i in range(sample_matrix.shape[0]):
+        particular_sample_1darr = sample_matrix[i]
+        delta_z_tot = 0
+        z_start_found = False
+        for index,binom_est in enumerate(particular_sample_1darr):
+            if binom_est >= threshold:
+                if z_start_found == True:
+                    pass
+                else: 
+                    z_start = sorted_data[0][index]
+                    z_start_found = True
+            else: 
+                if z_start_found == True:
+                    z_end = sorted_data[0][index-1]
+                    z_diff = z_end - z_start
+                    if z_diff > lattice_spacing:
+                        delta_z_tot = delta_z_tot + z_diff
+                    else:
+                        delta_z_tot = delta_z_tot + lattice_spacing
+                    z_start_found = False
+                else:
+                    pass
+        
+        length_estimate_distribution[i] = delta_z_tot
+    
+    # calculate statistics
+    length_estimate_mean = np.mean(length_estimate_distribution)
+    length_estimate_std = np.std(length_estimate_distribution)
+    length_estimate_se = length_estimate_std/np.sqrt(length_estimate_distribution.shape[0])
+
+    return length_estimate_distribution, length_estimate_mean, length_estimate_se

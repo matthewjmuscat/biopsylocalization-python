@@ -142,6 +142,8 @@ def main():
     num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 4
+    tissue_length_above_probability_threshold_list = [0.95,0.75,0.5]
+    n_bootstraps_for_tissue_length_above_threshold = 1000
     perform_MC_sim = True
     
     
@@ -191,7 +193,7 @@ def main():
     show_NN_FANOVA_dose_demonstration_plots = False
 
     # patient sample cohort analyzer
-    only_perform_patient_analyser = True
+    only_perform_patient_analyser = False
     perform_patient_sample_analyser_at_end = True
     box_plot_points_option = 'outliers'
     notch_option = False
@@ -1869,6 +1871,8 @@ def main():
                                                                                         plot_cupy_containment_distribution_results,
                                                                                         plot_shifted_biopsies,
                                                                                         structure_miss_probability_roi,
+                                                                                        tissue_length_above_probability_threshold_list,
+                                                                                        n_bootstraps_for_tissue_length_above_threshold,
                                                                                         spinner_type
                                                                                         )
             
@@ -2108,13 +2112,86 @@ def main():
                                 rows_to_write_list.append(containment_structure_binom_est_with_cont_anat_ROI_row)
 
                                 containment_structure_stand_err_list = containment_structure_dict["Standard error (containment) list"]
-                                containment_structure_stand_err_with_cont_anat_ROI_row = [containment_structure_ROI + ' STD']+containment_structure_stand_err_list
+                                containment_structure_stand_err_with_cont_anat_ROI_row = [containment_structure_ROI + ' SE']+containment_structure_stand_err_list
                                 rows_to_write_list.append(containment_structure_stand_err_with_cont_anat_ROI_row)
 
-                                containment_structure_conf_int_list = containment_structure_dict["Confidence interval 95 (containment) list"]
-                                containment_structure_conf_int_with_cont_anat_ROI_row = [containment_structure_ROI + ' 95% CI']+containment_structure_conf_int_list
-                                rows_to_write_list.append(containment_structure_conf_int_with_cont_anat_ROI_row)
+                                containment_structure_conf_int_arr = np.array(containment_structure_dict["Confidence interval 95 (containment) list"]).T
+                                containment_structure_conf_int_lower_with_cont_anat_ROI_row = [containment_structure_ROI + ' 95% CI lower'] + containment_structure_conf_int_arr[0].tolist()
+                                rows_to_write_list.append(containment_structure_conf_int_lower_with_cont_anat_ROI_row)
+                                containment_structure_conf_int_upper_with_cont_anat_ROI_row = [containment_structure_ROI + ' 95% CI upper'] + containment_structure_conf_int_arr[1].tolist()
+                                rows_to_write_list.append(containment_structure_conf_int_upper_with_cont_anat_ROI_row)
 
+
+
+                            # tumor tissue probabilities
+                            tumor_containment_structure_nominal_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue nominal arr"].tolist()
+                            tumor_containment_structure_binom_est_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"].tolist()
+                            tumor_containment_structure_std_err_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue standard error arr"].tolist()
+                            tumor_containment_structure_CI_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue confidence interval 95 arr"]
+                            tumor_containment_structure_CI_lower_list = tumor_containment_structure_CI_arr[0].tolist()
+                            tumor_containment_structure_CI_upper_list = tumor_containment_structure_CI_arr[1].tolist()
+                            
+                            tumor_containment_structure_nominal_row = ["Tumor nominal containment (0 or 1)"] + tumor_containment_structure_nominal_list
+                            tumor_containment_structure_binom_row = ["Tumor Mean probability"] + tumor_containment_structure_binom_est_list
+                            tumor_containment_structure_STD_row = ["Tumor SE"] + tumor_containment_structure_std_err_list
+                            tumor_containment_structure_CI_lower_row = ["Tumor 95% CI lower"] + tumor_containment_structure_CI_lower_list
+                            tumor_containment_structure_CI_upper_row = ["Tumor 95% CI upper"] + tumor_containment_structure_CI_upper_list
+
+                            rows_to_write_list.append(tumor_containment_structure_nominal_row)
+                            rows_to_write_list.append(tumor_containment_structure_binom_row)
+                            rows_to_write_list.append(tumor_containment_structure_STD_row)
+                            rows_to_write_list.append(tumor_containment_structure_CI_lower_row)
+                            rows_to_write_list.append(tumor_containment_structure_CI_upper_row)
+
+                            # miss structure probabilities
+                            miss_structure_roi = specific_bx_structure["MC data: miss structure tissue probability"]['OAR miss structure info'][0]
+                            miss_structure_nominal_list = specific_bx_structure["MC data: miss structure tissue probability"]["OAR tissue miss nominal arr"].tolist()
+                            miss_structure_binom_est_list = specific_bx_structure["MC data: miss structure tissue probability"]["OAR tissue miss binomial est arr"].tolist()
+                            miss_structure_std_err_list = specific_bx_structure["MC data: miss structure tissue probability"]["OAR tissue standard error arr"].tolist()
+                            miss_structure_CI_arr = specific_bx_structure["MC data: miss structure tissue probability"]["OAR tissue miss confidence interval 95 2d arr"]
+                            miss_structure_CI_lower_list = miss_structure_CI_arr[0].tolist()
+                            miss_structure_CI_upper_list = miss_structure_CI_arr[1].tolist()
+                            
+                            miss_structure_ROI_row = ["Miss structure"]+[miss_structure_roi]
+                            miss_structure_nominal_row = ["OAR miss nominal containment (0 or 1)"] + miss_structure_nominal_list
+                            miss_structure_binom_row = ["OAR miss Mean probability"] + miss_structure_binom_est_list
+                            miss_structure_STD_row = ["OAR miss SE"] + miss_structure_std_err_list
+                            miss_structure_CI_lower_row = ["OAR miss 95% CI lower"] + miss_structure_CI_lower_list
+                            miss_structure_CI_upper_row = ["OAR miss 95% CI upper"] + miss_structure_CI_upper_list
+
+                            rows_to_write_list.append(miss_structure_ROI_row)
+                            rows_to_write_list.append(miss_structure_nominal_row)
+                            rows_to_write_list.append(miss_structure_binom_row)
+                            rows_to_write_list.append(miss_structure_STD_row)
+                            rows_to_write_list.append(miss_structure_CI_lower_row)
+                            rows_to_write_list.append(miss_structure_CI_upper_row)
+                            
+                            
+                            # tumor length estimate 
+                            rows_to_write_list.append(['---'])
+                            rows_to_write_list.append(['Tumor length estimate'])
+                            rows_to_write_list.append(['---'])
+
+                            tissue_length_by_threshold_dict = specific_bx_structure["MC data: tissue length above threshold dict"] 
+                            for key,item in tissue_length_by_threshold_dict.items():
+                                probability_threshold = key
+                                length_est_dist_list = item["Length estimate distribution"].tolist()
+                                num_bootstraps = item["Num bootstraps"]
+                                length_estimate_mean = item["Length estimate mean"]
+                                leangth_estimate_se = item["Length estimate se"]
+
+                                length_estimate_probability_threshold_row = ["Probability threshold"] + [probability_threshold]
+                                length_estimate_distribution_row = ["Length estimate bootstrap distribution"] + length_est_dist_list
+                                length_estimate_num_bootstraps_row = ["Num bootstraps"]+ [num_bootstraps]
+                                length_estimate_mean_row = ["Length estimate mean"] + [length_estimate_mean]
+                                length_estimate_se_row = ["Length estimate se"] + [leangth_estimate_se]
+
+                                rows_to_write_list.append(length_estimate_probability_threshold_row)
+                                rows_to_write_list.append(length_estimate_distribution_row)
+                                rows_to_write_list.append(length_estimate_num_bootstraps_row)
+                                rows_to_write_list.append(length_estimate_mean_row)
+                                rows_to_write_list.append(length_estimate_se_row)
+                            
                             for row_to_write in rows_to_write_list:
                                 write.writerow(row_to_write)
                             
@@ -3270,6 +3347,7 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: mutual compiled sim results": None,
                          "MC data: tumor tissue probability": None,
                          "MC data: miss structure tissue probability": None,
+                         "MC data: tissue length above threshold dict": None,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
@@ -3334,6 +3412,7 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: mutual compiled sim results": None, 
                          "MC data: tumor tissue probability": None,
                          "MC data: miss structure tissue probability": None,
+                         "MC data: tissue length above threshold dict": None,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
