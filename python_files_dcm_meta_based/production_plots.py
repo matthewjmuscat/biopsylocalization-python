@@ -9,6 +9,9 @@ import cupy as cp
 import cudf
 import plotly.figure_factory as ff
 from scipy.stats import norm
+from scipy import stats
+from plotly.subplots import make_subplots
+
 
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
@@ -2363,39 +2366,80 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
                                     ):
     
     color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
-    fig = go.Figure()
 
-    fig.add_trace(go.Box(
-        y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Mean probability"],
-        x = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False]["Tissue type"],
-        name = 'Actual',
-        marker_color = color_discrete_map_sim_or_no_sim_dict[False],
-        boxpoints = box_plot_points_option,
-        notched = notch_option,
-        boxmean = boxmean_option
-    ))
-    fig.add_trace(go.Box(
-        y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Mean probability"],
-        x = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True]["Tissue type"],
-        name = 'Simulated',
+    tissue_types_list = patient_cohort_dataframe["Tissue type"].unique()
+
+    fig = make_subplots(rows=1, 
+                        cols=len(tissue_types_list)
+                        )
+
+    for index in range(len(tissue_types_list)):
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"],
+            name = tissue_types_list[index] + ' simulated',
+            marker_color = color_discrete_map_sim_or_no_sim_dict[True],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Mean probability"],
+            name = tissue_types_list[index] + ' actual',
+            marker_color = color_discrete_map_sim_or_no_sim_dict[False],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+
+    """
+    fig.append_trace(go.Box(
+        y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[1]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"],
+        name = tissue_types_list[1] + ' simulated',
         marker_color = color_discrete_map_sim_or_no_sim_dict[True],
         boxpoints = box_plot_points_option,
         notched = notch_option,
         boxmean = boxmean_option
-    ))
+    ), row =1 , col =2)
+    fig.append_trace(go.Box(
+        y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[1]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Mean probability"],
+        name = tissue_types_list[1] + ' actual',  
+        marker_color = color_discrete_map_sim_or_no_sim_dict[False],
+        boxpoints = box_plot_points_option,
+        notched = notch_option,
+        boxmean = boxmean_option
+    ), row =1 , col =2)
+    """
 
         
     
     fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    for index in range(len(tissue_types_list)):
+        fig.update_xaxes(title_text="Tissue classification", row=1, col=index+1)
+        fig.update_yaxes(title_text="Probability", range = [0,1.01], row=1, col=index+1)
+    
     fig.update_layout(
-        yaxis_title='Probability',
-        xaxis_title='Tissue classification',
-        title='Patient cohort tissue classification probability (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        #yaxis_title='Probability',
+        #xaxis_title='Tissue classification',
+        title_text='Patient cohort tissue classification probability (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
         hovermode="x unified"
     )
-    fig.update_layout(
-    boxmode='group' # group together boxes of the different traces for each value of x
-    )
+    #fig.update_layout(
+    #boxmode='group' # group together boxes of the different traces for each value of x
+    #)
+
+    for index in range(len(tissue_types_list)):
+        fig = add_p_value_annotation(fig, 
+                            [[0,1]], 
+                            subplot=index +1, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+    """
+    fig = add_p_value_annotation(fig, 
+                           [[0,1]], 
+                           subplot=2, 
+                           _format=dict(interline=0.07, text_height=1.07, color='black')
+                           )
+    """
 
     svg_dose_fig_name = general_plot_name_string+'.svg'
     svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -2689,3 +2733,233 @@ def production_plot_dose_nominal_global_difference_box_patient_cohort(patient_co
     fig.write_html(html_dose_fig_file_path)
         
 
+
+
+
+
+def add_p_value_annotation(fig, 
+                           array_columns, 
+                           subplot=1,
+                           show_p_val = True,
+                           _format=dict(interline=0.07, text_height=1.07, color='black')
+                           ):
+    ''' Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
+    
+    Parameters:
+    ----------
+    fig: figure
+        plotly boxplot figure
+    array_columns: np.array
+        array of which columns to compare 
+        e.g.: [[0,1], [1,2]] compares column 0 with 1 and 1 with 2
+    subplot: None or int
+        specifies if the figures has subplots and what subplot to add the notation to
+    _format: dict
+        format characteristics for the lines
+
+    Returns:
+    -------
+    fig: figure
+        figure with the added notation
+    '''
+    # Specify in what y_range to plot for each pair of columns
+    y_range = np.zeros([len(array_columns), 2])
+    for i in range(len(array_columns)):
+        y_range[i] = [1.01+i*_format['interline'], 1.02+i*_format['interline']]
+
+    # Get values from figure
+    fig_dict = fig.to_dict()
+
+    # Get indices if working with subplots
+    if subplot:
+        if subplot == 1:
+            subplot_str = ''
+        else:
+            subplot_str =str(subplot)
+        indices = [] #Change the box index to the indices of the data for that subplot
+        for index, data in enumerate(fig_dict['data']):
+            #print(index, data['xaxis'], 'x' + subplot_str)
+            if data['xaxis'] == 'x' + subplot_str:
+                indices = np.append(indices, index)
+        indices = [int(i) for i in indices]
+        print((indices))
+    else:
+        subplot_str = ''
+
+    # Print the p-values
+    for index, column_pair in enumerate(array_columns):
+        if subplot:
+            data_pair = [indices[column_pair[0]], indices[column_pair[1]]]
+        else:
+            data_pair = column_pair
+
+        # Mare sure it is selecting the data and subplot you want
+        #print('0:', fig_dict['data'][data_pair[0]]['name'], fig_dict['data'][data_pair[0]]['xaxis'])
+        #print('1:', fig_dict['data'][data_pair[1]]['name'], fig_dict['data'][data_pair[1]]['xaxis'])
+
+        # Get the p-value
+        pvalue = stats.ttest_ind(
+            fig_dict['data'][data_pair[0]]['y'],
+            fig_dict['data'][data_pair[1]]['y'],
+            equal_var=False,
+        )[1]
+        if pvalue >= 0.05:
+            symbol = 'ns'
+        elif pvalue >= 0.01: 
+            symbol = '*'
+        elif pvalue >= 0.001:
+            symbol = '**'
+        else:
+            symbol = '***'
+        # Vertical line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[0], y0=y_range[index][0], 
+            x1=column_pair[0], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        # Horizontal line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[0], y0=y_range[index][1], 
+            x1=column_pair[1], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        # Vertical line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[1], y0=y_range[index][0], 
+            x1=column_pair[1], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        ## add text at the correct x, y coordinates
+        ## for bars, there is a direct mapping from the bar number to 0, 1, 2...
+        fig.add_annotation(dict(font=dict(color=_format['color'],size=14),
+            x=(column_pair[0] + column_pair[1])/2,
+            y=y_range[index][1]*_format['text_height'],
+            showarrow=False,
+            text=symbol,
+            textangle=0,
+            xref="x"+subplot_str,
+            yref="y"+subplot_str+" domain"
+        ))
+
+        if show_p_val == True:
+            fig.add_annotation(dict(font=dict(color=_format['color'],size=14),
+            x=(column_pair[0] + column_pair[1])/2,
+            y=y_range[index][1]*(_format['text_height']-0.02),
+            showarrow=False,
+            text='p = '+str(round(pvalue,5)),
+            textangle=0,
+            xref="x"+subplot_str,
+            yref="y"+subplot_str+" domain"
+        ))
+    return fig
+
+
+
+
+
+
+def add_p_value_annotation_intra_column(fig, 
+                           column_names_list, 
+                           trace_names_list,
+                           subplot=1, 
+                           _format=dict(interline=0.07, text_height=1.07, color='black')
+                           ):
+    ''' Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
+    
+    Parameters:
+    ----------
+    fig: figure
+        plotly boxplot figure
+    column_names_list: list of column names, should be same length as trace_names_list
+        array of which columns to compare 
+        e.g.: [[0,1], [1,2]] compares column 0 with 1 and 1 with 2
+    trace_names_list: list of sublists, each sublist should be of length 2 and says which traces to compare for the column of the same 
+        index as column_names_list
+        specifies if the figures has subplots and what subplot to add the notation to
+    _format: dict
+        format characteristics for the lines
+
+    Returns:
+    -------
+    fig: figure
+        figure with the added notation
+    '''
+    # Specify in what y_range to plot for each pair of columns
+    y_range = np.zeros([len(column_names_list), 2])
+    for i in range(len(column_names_list)):
+        y_range[i] = [1.01+i*_format['interline'], 1.02+i*_format['interline']]
+
+    # Get values from figure
+    fig_dict = fig.to_dict()
+
+    
+
+
+    df_list = []
+    for trace in range(len(fig_dict['data'])):
+        df = pandas.DataFrame({'col name': fig_dict['data'][trace]['x'], 
+                                'vals': fig_dict['data'][trace]['y'], 
+                                'trace':trace})
+        df_list.append(df)
+    df_grand = pandas.concat(df_list, ignore_index = True)
+
+    # Print the p-values
+    for index, column_name in enumerate(column_names_list):
+        
+
+        # Mare sure it is selecting the data and subplot you want
+        #print('0:', fig_dict['data'][data_pair[0]]['name'], fig_dict['data'][data_pair[0]]['xaxis'])
+        #print('1:', fig_dict['data'][data_pair[1]]['name'], fig_dict['data'][data_pair[1]]['xaxis'])
+        trace_1_name = trace_names_list[index][0]
+        trace_2_name = trace_names_list[index][1]
+
+        # Get the p-value
+        pvalue = stats.ttest_ind(
+            df_grand[(df_grand['names'] == column_name) & (df_grand['trace name'] == trace_1_name)]['vals'].to_numpy(),
+            df_grand[(df_grand['names'] == column_name) & (df_grand['trace name'] == trace_2_name)]['vals'].to_numpy(),
+            equal_var=False,
+        )[1]
+        if pvalue >= 0.05:
+            symbol = 'ns'
+        elif pvalue >= 0.01: 
+            symbol = '*'
+        elif pvalue >= 0.001:
+            symbol = '**'
+        else:
+            symbol = '***'
+        # Vertical line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[0], y0=y_range[index][0], 
+            x1=column_pair[0], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        # Horizontal line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[0], y0=y_range[index][1], 
+            x1=column_pair[1], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        # Vertical line
+        fig.add_shape(type="line",
+            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+            x0=column_pair[1], y0=y_range[index][0], 
+            x1=column_pair[1], y1=y_range[index][1],
+            line=dict(color=_format['color'], width=2,)
+        )
+        ## add text at the correct x, y coordinates
+        ## for bars, there is a direct mapping from the bar number to 0, 1, 2...
+        fig.add_annotation(dict(font=dict(color=_format['color'],size=14),
+            x=(column_pair[0] + column_pair[1])/2,
+            y=y_range[index][1]*_format['text_height'],
+            showarrow=False,
+            text=symbol,
+            textangle=0,
+            xref="x"+subplot_str,
+            yref="y"+subplot_str+" domain"
+        ))
+    return fig

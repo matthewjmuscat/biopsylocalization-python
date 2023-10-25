@@ -438,6 +438,8 @@ def main():
                 
                 # cohort tissue class 
                 num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe = dataframe_builders.containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
+                # drop complement data
+                cohort_containment_dataframe = cohort_containment_dataframe[cohort_containment_dataframe.columns.drop(list(cohort_containment_dataframe.filter(regex='complement')))]
                 """
                 for directory in all_patient_sub_dirs:
                     csv_files_in_directory_list = list(directory.glob('*.csv'))
@@ -2388,12 +2390,22 @@ def main():
                             nominal_std_dose = np.std(nominal_dose_by_bx_pt_arr)
                             nominal_std_err_dose = nominal_std_dose / np.sqrt(np.size(nominal_dose_by_bx_pt_arr))
                             nominal_dose_mean_CI = mf.normal_CI_estimator(nominal_mean_dose, nominal_std_err_dose)
-
+                            
                             global_dose_by_bx_pt_arr = np.array(stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"])
                             global_mean_dose = np.mean(global_dose_by_bx_pt_arr)
                             global_std_dose = np.std(global_dose_by_bx_pt_arr)
                             global_std_err_dose = global_std_dose / np.sqrt(np.size(global_dose_by_bx_pt_arr))
                             global_dose_mean_CI = mf.normal_CI_estimator(global_mean_dose, global_std_err_dose)
+                            quantile_95_arr = np.array(stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"]['Q95'])
+                            quantile_5_arr = np.array(stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"]['Q5'])
+                            quantile_95_5_difference_arr = quantile_95_arr - quantile_5_arr
+                            quantile_95_5_difference_mean = np.mean(quantile_95_5_difference_arr)
+
+                            quantile_95_mean_difference_arr = quantile_95_arr - global_dose_by_bx_pt_arr
+                            quantile_95_mean_difference_mean = np.mean(quantile_95_mean_difference_arr)
+                            mean_quantile_5_difference_arr = global_dose_by_bx_pt_arr - quantile_5_arr
+                            mean_quantile_5_difference_mean = np.mean(mean_quantile_5_difference_arr)
+                            
                             
                             write.writerow(['Nominal mean dose',nominal_mean_dose])
                             write.writerow(['Nominal std dose',nominal_std_dose])
@@ -2406,6 +2418,10 @@ def main():
                             write.writerow(['Global std err dose ',global_std_err_dose])
                             write.writerow(['Global mean CI dose lower',global_dose_mean_CI[0]])
                             write.writerow(['Global mean CI dose upper',global_dose_mean_CI[1]])
+                            write.writerow(['Global mean (Q95-Q5)', quantile_95_5_difference_mean])
+                            write.writerow(['Global mean (Q95-mean)', quantile_95_mean_difference_mean])
+                            write.writerow(['Global mean (mean-Q5)', mean_quantile_5_difference_mean])
+
 
 
                             
