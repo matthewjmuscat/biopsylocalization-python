@@ -2751,38 +2751,43 @@ def main():
 
 
 
+            # create dataframes
+
+            # generate a pandas data frame that is used in numerous production plot functions
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):                        
+                    stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+                    mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
+                    std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+                    quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
+                    bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                    bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+                    pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+
+                    dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
+                                                                "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
+                                                                "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
+                                                                "STD dose": std_dose_val_specific_bx_pt
+                                                                }
+                    dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
+                    dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
+                    
+                    specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
+                    specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"] = dose_output_dict_for_pandas_data_frame
+
+            
+            
+            # create grand dose data dataframe for each biopsy by MC trial and bx pt
+            dataframe_builders.all_dose_data_by_trial_and_pt_from_MC_trial_dataframe_builder(master_structure_reference_dict,
+                                                                  bx_ref
+                                                                  )
+
+
             mc_sim_complete_bool = master_structure_info_dict['Global']['MC sim performed']
 
             if create_at_least_one_production_plot == True and mc_sim_complete_bool == True:
                 important_info.add_text_line("Creating production plots.", live_display)
                 
-
-                # generate a pandas data frame that is used in numerous production plot functions
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):                        
-                        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-                        mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
-                        std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
-                        quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
-                        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-                        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-                        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
-
-                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
-                                                                  "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
-                                                                  "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
-                                                                  "STD dose": std_dose_val_specific_bx_pt
-                                                                  }
-                        dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
-                        dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
-                        
-                        specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
-                        specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"] = dose_output_dict_for_pandas_data_frame
-
-                
-
-                
-
 
                 #### BEGIN MAKING PLOTS ####
                 
