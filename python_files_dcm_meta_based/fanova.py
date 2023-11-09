@@ -1207,3 +1207,9 @@ def fanova_analysis(
             patients_progress.update(creating_sobol_dosimetry_dataframes_patient_task, visible = False) 
             completed_progress.update(creating_sobol_dosimetry_dataframes_patient_task_completed, visible = True)
             live_display.refresh()
+
+
+        master_structure_info_dict['Global']['FANOVA sim performed'] = True
+        master_structure_info_dict['Global']['FANOVA containment sim performed'] = perform_containment_fanova
+        master_structure_info_dict['Global']['FANOVA dose sim performed'] = perform_dose_fanova
+            

@@ -524,6 +524,55 @@ def biopsy_points_reconstruction_and_uniform_sampler(list_origin_to_first_centro
     return biopsy_samples
 
 
+
+def point_to_line_segment_distance(point, line_start, line_end):
+    # Convert inputs to numpy arrays for easier calculations
+    #point = np.array(point)
+    #line_start = np.array(line_start)
+    #line_end = np.array(line_end)
+
+    line_vec = line_end - line_start
+    point_to_line_start = point - line_start
+
+    line_vec_normalized = line_vec / np.linalg.norm(line_vec)
+
+    # Parametric value of the projection of the point onto the line
+    t = np.dot(point_to_line_start, line_vec_normalized)
+
+    if t <= 0:
+        closest_point = line_start
+    elif t >= np.linalg.norm(line_vec):
+        closest_point = line_end
+    else:
+        closest_point = line_start + t * line_vec_normalized
+
+    distance = np.linalg.norm(point - closest_point)
+    return distance
+
+
+def distance_of_most_distant_points_2d_projection(points_3d, normal_vector):
+    # Ensure the normal vector is normalized
+    normal_vector = normal_vector / np.linalg.norm(normal_vector)
+    
+    # Calculate the projection matrix
+    projection_matrix = np.eye(3) - np.outer(normal_vector, normal_vector)
+    
+    # Project the 3D points onto the 2D plane
+    points_2d = np.dot(points_3d, projection_matrix.T)
+    
+    max_distance = 0.0
+    num_points = len(points_2d)
+    
+    # Calculate distances between all pairs of 2D points
+    for i in range(num_points):
+        for j in range(i + 1, num_points):
+            distance = np.linalg.norm(points_2d[i] - points_2d[j])
+            if distance > max_distance:
+                max_distance = distance
+    
+    return max_distance
+
+
 def tester():
     #centroid_list = [[1,1,1],[1,1,-1],[1,-1,1],[-1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1],[-1,-1,-1],[0,0,1],[0,0,-1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0]]
     #for centroid in centroid_list:

@@ -1399,6 +1399,9 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(biopsy_voxelize_dose_task, visible = False)
         completed_progress.update(biopsy_voxelize_dose_task_complete,visible = True)
         live_display.refresh()
+
+
+        master_structure_info_dict['Global']['MC sim performed'] = True
         
 
         return master_structure_reference_dict, live_display

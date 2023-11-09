@@ -55,7 +55,12 @@ def uncertainty_file_preper_global_sigma(uncertainties_file, master_structure_re
 
 
 
-def uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, structs_referenced_dict):
+def uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, 
+                                                 master_structure_reference_dict, 
+                                                 structs_referenced_list, 
+                                                 num_general_structs, 
+                                                 structs_referenced_dict,
+                                                 include_biopsy_variation_in_uncertainty_bool):
     global_header = ['Total num structs']
     headerUID = ['Patient UID']
     headerSTRUCT = ['Structure type']
@@ -95,6 +100,17 @@ def uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, master_stru
                         #sub_header_row = headerunc_L
                     sub_header_row = headerunc_generic
                     header_data = [patientUID, structure_type, specific_structure["ROI"], specific_structure["Ref #"], specific_structure_index, frame_of_reference]
+                    
+                    # if include biopsy contour variation has been marked as included, then include this in the sigma value for the simulation
+                    if include_biopsy_variation_in_uncertainty_bool == True and structure_type == structs_referenced_list[0]:
+                        maximum_projected_variation = specific_structure['Maximum projected distance between original centroids']
+                        default_vals_row = [0, 
+                                            float(structs_referenced_dict[structure_type]["Default sigma"]) + maximum_projected_variation,
+                                            0, 
+                                            float(structs_referenced_dict[structure_type]["Default sigma"]) + maximum_projected_variation, 
+                                            0, 
+                                            float(structs_referenced_dict[structure_type]["Default sigma"]) + maximum_projected_variation]
+                    
                     with open(uncertainties_file, "a", newline='\n') as f:
                         #writer = csv.writer(f)
                         writer.writerow(headerrow)

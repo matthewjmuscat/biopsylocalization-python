@@ -34,11 +34,11 @@ plotly = "*"
 kaleido = "*"
 statsmodels = "*"
 addict = "*"
-cubinlinker-cu11 = {version = "*", index = "pypinvidia"}
-ptxcompiler-cu11 = {version = "*", index = "pypinvidia"}
-rmm-cu11 = {version = "*", index = "pypinvidia"}
-cudf-cu11 = {version = "*", index = "pypinvidia"}
-cuspatial-cu11 = {version = "*", index = "pypinvidia"} 
+cubinlinker-cu11 = { index = "pypinvidia"}
+ptxcompiler-cu11 = { index = "pypinvidia"}
+rmm-cu11 = { index = "pypinvidia"}
+cudf-cu11 = { index = "pypinvidia"}
+cuspatial-cu11 = { index = "pypinvidia"} 
 
 [dev-packages]
 ipykernel = "*"

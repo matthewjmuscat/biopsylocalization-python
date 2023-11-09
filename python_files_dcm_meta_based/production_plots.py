@@ -2372,7 +2372,8 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
     fig = make_subplots(rows=1, 
                         cols=len(tissue_types_list)
                         )
-
+    
+     
     for index in range(len(tissue_types_list)):
         fig.append_trace(go.Box(
             y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"],
@@ -2380,7 +2381,8 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
             marker_color = color_discrete_map_sim_or_no_sim_dict[True],
             boxpoints = box_plot_points_option,
             notched = notch_option,
-            boxmean = boxmean_option
+            boxmean = boxmean_option,
+            #customdata = np.full(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"].size, np.std(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"])) 
         ), row =1 , col = index+1)
         fig.append_trace(go.Box(
             y = patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Mean probability"],
@@ -2388,7 +2390,8 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
             marker_color = color_discrete_map_sim_or_no_sim_dict[False],
             boxpoints = box_plot_points_option,
             notched = notch_option,
-            boxmean = boxmean_option
+            boxmean = boxmean_option,
+            #customdata = np.full(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Mean probability"].size, np.std(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Mean probability"]))
         ), row =1 , col = index+1)
 
     """
@@ -2410,7 +2413,16 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
     ), row =1 , col =2)
     """
 
-        
+    """
+    std_dev = {}
+    for trace in fig.data:
+        name = trace['name']
+        data = trace['y']
+        std = np.std(data)
+        std_dev[name] = std
+
+    fig.update_traces(hovertemplate='SD: %{customdata}')
+    """
     
     fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
     for index in range(len(tissue_types_list)):
@@ -2421,11 +2433,13 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
         #yaxis_title='Probability',
         #xaxis_title='Tissue classification',
         title_text='Patient cohort tissue classification probability (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
-        hovermode="x unified"
+        #hovermode="x unified"
     )
     #fig.update_layout(
     #boxmode='group' # group together boxes of the different traces for each value of x
     #)
+    #fig.update_traces(sd = np.std())
+    #fig.update_traces(hovertemplate='SD: %{customdata}')
 
     for index in range(len(tissue_types_list)):
         fig = add_p_value_annotation(fig, 
@@ -2464,7 +2478,31 @@ def production_plot_tissue_length_box_plots_patient_cohort(patient_cohort_datafr
                                     ):
     
     color_discrete_map_sim_or_no_sim_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+    probability_threshold_list = patient_cohort_dataframe["Probability threshold"].unique()
     
+    fig = make_subplots(rows=1, 
+                        cols=len(probability_threshold_list)
+                        )
+
+    for index in range(len(probability_threshold_list)):
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[(patient_cohort_dataframe["Probability threshold"] == probability_threshold_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Length estimate mean"],
+            name = str(probability_threshold_list[index]) + ' simulated',
+            marker_color = color_discrete_map_sim_or_no_sim_dict[True],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[(patient_cohort_dataframe["Probability threshold"] == probability_threshold_list[index]) & (patient_cohort_dataframe["Simulated bool"] == False)]["Length estimate mean"],
+            name = str(probability_threshold_list[index]) + ' actual',
+            marker_color = color_discrete_map_sim_or_no_sim_dict[False],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+
+    """
     fig = px.box(patient_cohort_dataframe, 
                  x="Probability threshold", 
                  y="Length estimate mean", 
@@ -2474,7 +2512,8 @@ def production_plot_tissue_length_box_plots_patient_cohort(patient_cohort_datafr
     
     fig.update_traces(boxmean = boxmean_option)   
     
-    probability_threshold_list = patient_cohort_dataframe["Probability threshold"].unique()
+    
+    
     fig.update_layout(
     xaxis = dict(
         tickmode = 'array',
@@ -2493,6 +2532,29 @@ def production_plot_tissue_length_box_plots_patient_cohort(patient_cohort_datafr
     fig.update_layout(
     boxmode='group' # group together boxes of the different traces for each value of x
     )
+    """
+
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    for index in range(len(probability_threshold_list)):
+        fig.update_xaxes(title_text="Probability threshold", row=1, col=index+1)
+        fig.update_yaxes(title_text="Tissue length (mm)", row=1, col=index+1)
+    
+    fig.update_layout(
+        #yaxis_title='Probability',
+        #xaxis_title='Tissue classification',
+        title_text='Patient cohort tissue length above given threshold (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    #fig.update_layout(
+    #boxmode='group' # group together boxes of the different traces for each value of x
+    #)
+
+    for index in range(len(probability_threshold_list)):
+        fig = add_p_value_annotation(fig, 
+                            [[0,1]], 
+                            subplot=index +1, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
 
     svg_dose_fig_name = general_plot_name_string+'.svg'
     svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -2594,6 +2656,82 @@ def production_plot_dose_patient_cohort(patient_cohort_dataframe,
                                     ):
     
     color_discrete_map_nominal_or_global_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+
+    fig = make_subplots(rows=1, 
+                        cols=4
+                        )
+    
+    nom_global_list = ['Nominal','Global']
+    travelling_index = 1
+    for index,type_name in enumerate(nom_global_list):
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == True][type_name+" mean dose"],
+            name = type_name + ' simulated',
+            marker_color = color_discrete_map_nominal_or_global_dict[True],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == False][type_name+" mean dose"],
+            name = type_name + ' actual',
+            marker_color = color_discrete_map_nominal_or_global_dict[False],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = index+1)
+        travelling_index = travelling_index + 1
+
+    for index,sim_bool in enumerate([True, False]):
+        if sim_bool == True:
+            sim_string = ' simulated'
+        else:
+            sim_string = ' actual'
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == sim_bool]["Global mean dose"],
+            name = 'Global' + sim_string,
+            marker_color = color_discrete_map_nominal_or_global_dict[sim_bool],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = travelling_index+index)
+        fig.append_trace(go.Box(
+            y = patient_cohort_dataframe[patient_cohort_dataframe["Simulated bool"] == sim_bool]["Nominal mean dose"],
+            name = 'Nominal' + sim_string,
+            marker_color = color_discrete_map_nominal_or_global_dict[sim_bool],
+            boxpoints = box_plot_points_option,
+            notched = notch_option,
+            boxmean = boxmean_option
+        ), row =1 , col = travelling_index+index)
+    
+    
+    
+
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    for i in range(1,5):
+        fig.update_xaxes(title_text="Type", row=1, col=i)
+        fig.update_yaxes(title_text="Dose (Gy)", row=1, col=i)
+        
+    
+    fig.update_layout(
+        #yaxis_title='Probability',
+        #xaxis_title='Tissue classification',
+        title_text='Patient cohort tissue length above given threshold (N_sim_bx = '+str(num_sim_biopsies) +')'+ '(N_actual_bx = '+str(num_actual_biopsies) +')',
+        hovermode="x unified"
+    )
+    #fig.update_layout(
+    #boxmode='group' # group together boxes of the different traces for each value of x
+    #)
+
+    for i in range(1,5):
+        fig = add_p_value_annotation(fig, 
+                        [[0,1]], 
+                        subplot=i, 
+                        _format=dict(interline=0.07, text_height=1.05, color='black')
+                        )
+    
+
+    """
     fig = go.Figure()
 
     fig.add_trace(go.Box(
@@ -2627,6 +2765,7 @@ def production_plot_dose_patient_cohort(patient_cohort_dataframe,
     fig.update_layout(
     boxmode='group' # group together boxes of the different traces for each value of x
     )
+    """
 
     svg_dose_fig_name = general_plot_name_string+'.svg'
     svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -2782,7 +2921,7 @@ def add_p_value_annotation(fig,
             if data['xaxis'] == 'x' + subplot_str:
                 indices = np.append(indices, index)
         indices = [int(i) for i in indices]
-        print((indices))
+        #print((indices))
     else:
         subplot_str = ''
 
