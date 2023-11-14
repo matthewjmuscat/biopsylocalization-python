@@ -183,10 +183,10 @@ def main():
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
     
     #fanova
-    num_FANOVA_containment_simulations_input = 2**11 # must be a power of two for the scipy function to work, 2^10 is good
-    num_FANOVA_dose_simulations_input = 2**11
-    perform_dose_fanova = True
-    perform_containment_fanova = True
+    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work, 2^10 is good
+    num_FANOVA_dose_simulations_input = 2**10
+    perform_dose_fanova = False
+    perform_containment_fanova = False
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
@@ -214,7 +214,7 @@ def main():
     plot_shifted_biopsies = False
 
     # Final production plots to create:
-    plot_immediately_after_simulation = True
+    plot_immediately_after_simulation = False
     regression_type_input = 0 # LOWESS = 1 or True, NPKR = 0 or False, this concerns the type of non parametric kernel regression that is performed
     global_regression_input = False # True or False bool type, this concerns whether a regression is performed on the axial dose distribution scatter plot containing all the data points of dose from all trials for each point 
 
@@ -1291,8 +1291,8 @@ def main():
 
 
                             # plot only the biopsies
-                            if structs == bx_ref:
-                                specific_structure["Plot attributes"].plot_bool = True
+                            #if structs == bx_ref:
+                            #    specific_structure["Plot attributes"].plot_bool = True
 
 
 
@@ -1916,7 +1916,6 @@ def main():
                     sigmas_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][1] # X
                     sigmas_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][3] # Y
                     sigmas_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][5] # Z
-
 
                     uncertainty_data_obj = uncertainty_data(patientUID, structure_type, structure_ROI, structure_ref_num, master_ref_dict_specific_structure_index, frame_of_reference)
                     uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
@@ -2642,6 +2641,8 @@ def main():
                         #del specific_bx_structure['MC data: compiled sim results']
                         del specific_bx_structure['MC data: bx to dose NN search objects list']
                         del specific_bx_structure['MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)']
+                        del specific_bx_structure['FANOVA: sobol indices (containment)']
+                        del specific_bx_structure['FANOVA: sobol indices (dose)']
                     for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
                         del specific_oar_structure['Intra-slice interpolation information']
                         del specific_oar_structure['Inter-slice interpolation information']
@@ -2649,6 +2650,7 @@ def main():
                         del specific_oar_structure['Delaunay triangulation global structure']
                         del specific_oar_structure['Delaunay triangulation zslice-wise list']
                         del specific_oar_structure['Interpolated structure point cloud dict']
+                        del specific_oar_structure['Uncertainty data']
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
                         del specific_dil_structure['Intra-slice interpolation information']
                         del specific_dil_structure['Inter-slice interpolation information']
@@ -2656,6 +2658,7 @@ def main():
                         del specific_dil_structure['Delaunay triangulation global structure']
                         del specific_dil_structure['Delaunay triangulation zslice-wise list']
                         del specific_dil_structure['Interpolated structure point cloud dict']
+                        del specific_dil_structure['Uncertainty data']
 
                     del pydicom_item[dose_ref]['Dose grid point cloud']
                     del pydicom_item[dose_ref]['Dose grid point cloud thresholded']
@@ -2750,40 +2753,44 @@ def main():
 
 
 
+            mc_sim_complete_bool = master_structure_info_dict['Global']['MC sim performed']
+            fanova_sim_complete_bool = master_structure_info_dict['Global']['FANOVA sim performed']
+            fanova_containment_sim_complete_bool = master_structure_info_dict['Global']['FANOVA containment sim performed']
+            fanova_dose_sim_complete_bool = master_structure_info_dict['Global']['FANOVA dose sim performed']
 
             # create dataframes
+            if create_at_least_one_production_plot == True and mc_sim_complete_bool == True:
+                # generate a pandas data frame that is used in numerous production plot functions
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):                        
+                        stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
+                        mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
+                        std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
+                        quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
+                        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                        bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
+                        pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
 
-            # generate a pandas data frame that is used in numerous production plot functions
-            for patientUID,pydicom_item in master_structure_reference_dict.items():
-                for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):                        
-                    stats_dose_val_all_MC_trials_by_bx_pt_list = specific_bx_structure["MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"]
-                    mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"].copy()
-                    std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"].copy()
-                    quantiles_dose_val_specific_bx_pt_dict_of_lists = stats_dose_val_all_MC_trials_by_bx_pt_list["Quantiles dose by bx pt dict"].copy()
-                    bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-                    bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
-                    pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
+                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
+                                                                    "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
+                                                                    "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
+                                                                    "STD dose": std_dose_val_specific_bx_pt
+                                                                    }
+                        dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
+                        dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
+                        
+                        specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
+                        specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"] = dose_output_dict_for_pandas_data_frame
 
-                    dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
-                                                                "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
-                                                                "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
-                                                                "STD dose": std_dose_val_specific_bx_pt
-                                                                }
-                    dose_output_dict_for_pandas_data_frame.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
-                    dose_output_pandas_data_frame = pandas.DataFrame(data=dose_output_dict_for_pandas_data_frame)
-                    
-                    specific_bx_structure["Output data frames"]["Dose output Z and radius"] = dose_output_pandas_data_frame
-                    specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"] = dose_output_dict_for_pandas_data_frame
+                
+                
+                # create grand dose data dataframe for each biopsy by MC trial and bx pt
+                dataframe_builders.all_dose_data_by_trial_and_pt_from_MC_trial_dataframe_builder(master_structure_reference_dict,
+                                                                    bx_ref
+                                                                    )
+
 
             
-            
-            # create grand dose data dataframe for each biopsy by MC trial and bx pt
-            dataframe_builders.all_dose_data_by_trial_and_pt_from_MC_trial_dataframe_builder(master_structure_reference_dict,
-                                                                  bx_ref
-                                                                  )
-
-
-            mc_sim_complete_bool = master_structure_info_dict['Global']['MC sim performed']
 
             if create_at_least_one_production_plot == True and mc_sim_complete_bool == True:
                 important_info.add_text_line("Creating production plots.", live_display)
@@ -3381,9 +3388,7 @@ def main():
                     pass
 
 
-            fanova_sim_complete_bool = master_structure_info_dict['Global']['FANOVA sim performed']
-            fanova_containment_sim_complete_bool = master_structure_info_dict['Global']['FANOVA containment sim performed']
-            fanova_dose_sim_complete_bool = master_structure_info_dict['Global']['FANOVA dose sim performed']
+            
             
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
                 if fanova_containment_sim_complete_bool == True:
@@ -3509,7 +3514,7 @@ def structure_referencer(structure_dcm_dict,
                         "MC data: Generated normal dist random samples arr": None, 
                         "KDtree": None, 
                         "Nearest neighbours objects": [], 
-                        "Plot attributes": plot_attributes()
+                        #"Plot attributes": plot_attributes()
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in OAR_list)]
             
             DIL_ref = [{"ROI":x.ROIName, 
@@ -3533,7 +3538,7 @@ def structure_referencer(structure_dcm_dict,
                         "MC data: Generated normal dist random samples arr": None, 
                         "KDtree": None, 
                         "Nearest neighbours objects": [], 
-                        "Plot attributes": plot_attributes()
+                        #"Plot attributes": plot_attributes()
                         } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in DIL_list)] 
 
             
@@ -3595,12 +3600,14 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
                          "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "FANOVA: sobol indices (containment)": None,
+                         "FANOVA: sobol indices (dose)": None,
                          "Output csv file paths dict": {}, 
                          "Output data frames": {},
                          "Output dicts for data frames": {},  
                          "KDtree": None, 
                          "Nearest neighbours objects": [], 
-                         "Plot attributes": plot_attributes()
+                         #"Plot attributes": plot_attributes()
                          } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in Bx_list)]    
             
             bpsy_ref_simulated = [{"ROI": "Bx_Tr_"+bx_sim_ref_identifier_str+" " + x.ROIName, 
@@ -3663,12 +3670,14 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
                          "MC data: voxelized dose results dict (dict of lists)": None, 
+                         "FANOVA: sobol indices (containment)": None,
+                         "FANOVA: sobol indices (dose)": None,
                          "Output csv file paths dict": {}, 
                          "Output data frames": {},
                          "Output dicts for data frames": {}, 
                          "KDtree": None, 
                          "Nearest neighbours objects": [], 
-                         "Plot attributes": plot_attributes()
+                         #"Plot attributes": plot_attributes()
                          } for x in structure_item.StructureSetROISequence if any(i in x.ROIName for i in sim_bx_relative_to_list)]
             
             bpsy_ref = bpsy_ref + bpsy_ref_simulated 
@@ -3785,13 +3794,13 @@ class uncertainty_data:
         self.uncertainty_data_sigma_arr = sigmas_arr
 
 
-
+"""
 class plot_attributes:
     def __init__(self,plot_bool_init = True):
         self.plot_bool = plot_bool_init
         self.color_raw = 'r'
         self.color_best_fit = 'g' 
-
+"""
 
 class nearest_neighbour_parent:
     def __init__(self,BX_struct_name,comparison_struct_name,comparison_struct_type,comparison_structure_points_that_made_KDtree,queried_BX_points,NN_search_output):
