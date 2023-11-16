@@ -2022,7 +2022,7 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
             dataframes_list[bx_index] = sp_bx_sobol_containment_dataframe
 
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)       
-
+    
     if tissue_class_sobol_global_plot_bool_dict["Global FO"] == True:
         general_plot_name_string = general_plot_name_string_dict["Global FO"]
 
@@ -2099,6 +2099,114 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         html_dose_fig_name = general_plot_name_string+'.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
         fig.write_html(html_dose_fig_file_path) 
+
+
+
+def production_plot_sobol_indices_each_biopsy_containment(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                master_structure_info_dict,
+                                                bx_structs,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string_dict,
+                                                tissue_class_sobol_per_biopsy_plot_bool_dict
+                                                ):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+
+    """
+    num_biopsies_in_patient = master_structure_info_dict["By patient"][patientUID][bx_structs]["Num structs"]
+    dataframes_list = [None]*num_biopsies_in_patient
+
+    for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]): 
+        sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"])
+        dataframes_list[bx_index] = sp_bx_sobol_containment_dataframe
+
+    grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)
+    """     
+    
+
+    if tissue_class_sobol_per_biopsy_plot_bool_dict["FO"] == True:
+
+        general_plot_name_string = general_plot_name_string_dict["FO"]
+
+        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+            bx_struct_roi = specific_bx_structure['ROI'] 
+            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"])
+
+            fanova_sobol_indices_names_FO = [x + ' FO' for x in fanova_sobol_indices_names_by_index]
+            fanova_sobol_indices_names_FO_SE = [x + ' FO SE' for x in fanova_sobol_indices_names_by_index]
+            id_vars_for_merge = ['Patient','Bx ROI','Simulated bx bool','Relative structure ROI','Relative structure index','Relative structure type']
+            replacement_dict_FO = {x + ' FO': x for x in fanova_sobol_indices_names_by_index}
+            replacement_dict_FO_SE = {x + ' FO SE': x for x in fanova_sobol_indices_names_by_index}
+
+            melted_grand_sobol_dataframe_FO = sp_bx_sobol_containment_dataframe.melt(id_vars = id_vars_for_merge, value_vars = fanova_sobol_indices_names_FO, var_name='FO var', value_name='FO val')
+            melted_grand_sobol_dataframe_FO['FO var'] = melted_grand_sobol_dataframe_FO['FO var'].replace(replacement_dict_FO) 
+            melted_grand_sobol_dataframe_FO_SE = sp_bx_sobol_containment_dataframe.melt(id_vars = id_vars_for_merge, value_vars = fanova_sobol_indices_names_FO_SE, var_name='FO var', value_name='SE val')
+            melted_grand_sobol_dataframe_FO_SE['FO var'] = melted_grand_sobol_dataframe_FO_SE['FO var'].replace(replacement_dict_FO_SE)
+            merged_grand_sobol_dataframe_FO = melted_grand_sobol_dataframe_FO.merge(melted_grand_sobol_dataframe_FO_SE,how='outer')
+            
+            fig_sobol_per_bx = px.scatter(merged_grand_sobol_dataframe_FO, y='FO val', x='FO var', color='Relative structure ROI', error_y = 'SE val')
+
+            fig_sobol_per_bx = plotting_funcs.fix_plotly_grid_lines(fig_sobol_per_bx, y_axis = True, x_axis = False)
+            fig_sobol_per_bx.update_layout(scattermode="group", scattergap=0.75)
+            fig_sobol_per_bx.update_layout(
+                yaxis_title='First order Sobol index value (S_i)',
+                xaxis_title='Index',
+                title='First order Sobol indices (tissue classification) (' + patientUID + ', ' + bx_struct_roi + ')',
+                hovermode="x unified"
+            )
+
+            svg_dose_fig_name = bx_struct_roi+' - '+general_plot_name_string+'.svg'
+            svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+            fig_sobol_per_bx.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+            html_dose_fig_name = bx_struct_roi+' - '+general_plot_name_string+'.html'
+            html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+            fig_sobol_per_bx.write_html(html_dose_fig_file_path)
+
+    if tissue_class_sobol_per_biopsy_plot_bool_dict["TO"] == True:
+
+        general_plot_name_string = general_plot_name_string_dict["TO"]
+
+        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+            bx_struct_roi = specific_bx_structure['ROI'] 
+            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"])
+
+            fanova_sobol_indices_names_TO = [x + ' TO' for x in fanova_sobol_indices_names_by_index]
+            fanova_sobol_indices_names_TO_SE = [x + ' TO SE' for x in fanova_sobol_indices_names_by_index]
+            id_vars_for_merge = ['Patient','Bx ROI','Simulated bx bool','Relative structure ROI','Relative structure index','Relative structure type']
+            replacement_dict_TO = {x + ' TO': x for x in fanova_sobol_indices_names_by_index}
+            replacement_dict_TO_SE = {x + ' TO SE': x for x in fanova_sobol_indices_names_by_index}
+
+            melted_grand_sobol_dataframe_TO = sp_bx_sobol_containment_dataframe.melt(id_vars = id_vars_for_merge, value_vars = fanova_sobol_indices_names_TO, var_name='TO var', value_name='TO val')
+            melted_grand_sobol_dataframe_TO['TO var'] = melted_grand_sobol_dataframe_TO['TO var'].replace(replacement_dict_TO) 
+            melted_grand_sobol_dataframe_TO_SE = sp_bx_sobol_containment_dataframe.melt(id_vars = id_vars_for_merge, value_vars = fanova_sobol_indices_names_TO_SE, var_name='TO var', value_name='SE val')
+            melted_grand_sobol_dataframe_TO_SE['TO var'] = melted_grand_sobol_dataframe_TO_SE['TO var'].replace(replacement_dict_TO_SE)
+            merged_grand_sobol_dataframe_TO = melted_grand_sobol_dataframe_TO.merge(melted_grand_sobol_dataframe_TO_SE,how='outer')
+            
+            fig_sobol_per_bx = px.scatter(merged_grand_sobol_dataframe_TO, y='TO val', x='TO var', color='Relative structure ROI', error_y = 'SE val')
+
+            fig_sobol_per_bx = plotting_funcs.fix_plotly_grid_lines(fig_sobol_per_bx, y_axis = True, x_axis = False)
+            fig_sobol_per_bx.update_layout(scattermode="group", scattergap=0.75)
+            fig_sobol_per_bx.update_layout(
+                yaxis_title='Total order Sobol index value (Stot_i)',
+                xaxis_title='Index',
+                title='Total order Sobol indices (tissue classification) (' + patientUID + ', ' + bx_struct_roi + ')',
+                hovermode="x unified"
+            )
+
+            svg_dose_fig_name = bx_struct_roi+' - '+general_plot_name_string+'.svg'
+            svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+            fig_sobol_per_bx.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+            html_dose_fig_name = bx_struct_roi+' - '+general_plot_name_string+'.html'
+            html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+            fig_sobol_per_bx.write_html(html_dose_fig_file_path)   
+
 
 
 def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir_dict,
