@@ -327,6 +327,15 @@ def main():
                                                                 "Global FO, non-sim only by function output": 'FANOVA_global_dose_first_order_non-sim_only_by_function_output_sobol'
                                                                 },
                                              "Box plot points option": 'all' # can be 'all', 'outliers' or False
+                                             },
+                                        "Dosimetry Sobol indices per biopsy plot": \
+                                            {"Plot bool dict": {"FO": True,
+                                                                "TO": True
+                                                                }, 
+                                             "Plot name dict": {"FO": 'FANOVA_dosimetry_first_order_sobol',
+                                                                "TO": 'FANOVA_dosimetry_total_order_sobol'
+                                                                },
+                                             "Structure miss ROI": structure_miss_probability_roi,
                                              }
                                         }
     
@@ -368,6 +377,7 @@ def main():
     production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] = any(production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool dict"].values())
     production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool"] = any(production_plots_input_dictionary["Dosimetry Sobol indices global plot"]["Plot bool dict"].values())
     production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot bool"] = any(production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot bool dict"].values())
+    production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool"] = any(production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool dict"].values())
     create_at_least_one_production_plot = any([x["Plot bool"] for x in production_plots_input_dictionary.values()]) # will produce True if at least one plot bool in the production_plots_input_dictionary is true, otherwise will be false if all are false 
     if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
         fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
@@ -3399,7 +3409,7 @@ def main():
 
 
             
-            live_display.stop()
+            #live_display.stop()
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
                 if fanova_containment_sim_complete_bool == True:
                     if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
@@ -3439,8 +3449,8 @@ def main():
                         tissue_class_sobol_per_biopsy_plot_bool_dict = production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot bool dict"]
                         general_plot_name_string_dict = production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot name dict"]
 
-                        global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting global Sobol indices (containment)...', total=None)
-                        global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting global Sobol indices (containment)', total=1, visible = False)
+                        global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting per biopsy Sobol indices (containment)...', total=None)
+                        global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting per biopsy Sobol indices (containment)', total=1, visible = False)
                         
                         for patientUID,pydicom_item in master_structure_reference_dict.items():
                             production_plots.production_plot_sobol_indices_each_biopsy_containment(patient_sp_output_figures_dir_dict,
@@ -3489,8 +3499,34 @@ def main():
                         live_display.refresh()
                     else:
                         pass
-                    
 
+
+                    if production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool"] == True:
+
+                        dosimetry_sobol_per_biopsy_plot_bool_dict = production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool dict"]
+                        general_plot_name_string_dict = production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot name dict"]
+
+                        global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting per biopsy Sobol indices (dose)...', total=None)
+                        global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting per biopsy Sobol indices (dose)', total=1, visible = False)
+
+                        for patientUID,pydicom_item in master_structure_reference_dict.items():
+                            production_plots.production_plot_sobol_indices_each_biopsy_dosimetry(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    master_structure_info_dict,
+                                                    bx_ref,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string_dict,
+                                                    dosimetry_sobol_per_biopsy_plot_bool_dict
+                                                    )
+                    
+                        indeterminate_progress_main.update(global_sobol_plots_task_indeterminate, visible = False)
+                        completed_progress.update(global_sobol_plots_task_indeterminate_completed, advance = 1,visible = True)
+                        live_display.refresh()
+                    else:
+                        pass
                             
             print('>Programme has ended.')
 
