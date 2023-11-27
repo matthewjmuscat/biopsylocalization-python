@@ -1999,8 +1999,9 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
 def production_plot_sobol_indices_global_containment(patient_sp_output_figures_dir_dict,
                                                 master_structure_reference_dict,
                                                 master_structure_info_dict,
-                                                bx_structs,
+                                                bx_ref,
                                                 dil_ref,
+                                                cancer_tissue_label,
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
@@ -2010,16 +2011,26 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
                                                 box_plot_points_option
                                                 ):
     
+
+    color_discrete_map_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
     fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
 
-    num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-    dataframes_list = [None]*num_biopsies
+    #num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    dataframes_list = []
+    for patientUID,pydicom_item in master_structure_reference_dict.items():  
+        for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment (DIL tissue) dataframe"])
+            dataframes_list.append(sp_bx_sobol_containment_dataframe)
+
+    """
+    dataframes_list_other = []
     for patientUID,pydicom_item in master_structure_reference_dict.items():  
         for bx_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-            
-            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"])
-            dataframes_list[bx_index] = sp_bx_sobol_containment_dataframe
+            sp_bx_sobol_containment_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol containment dataframe"][specific_bx_structure["FANOVA: sobol containment dataframe"]["Relative structure type"] == dil_ref])
+            dataframes_list_other.append(sp_bx_sobol_containment_dataframe)
+    """
 
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)       
     
@@ -2027,15 +2038,19 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         general_plot_name_string = general_plot_name_string_dict["Global FO"]
 
         column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Simulated bx bool")
         grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
         # global sobol first order box plot
-        fig = px.box(grand_sobol_dataframe_first_order_all, points = box_plot_points_option)
-        fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
+        fig = px.box(grand_sobol_dataframe_first_order_all, 
+                     points = box_plot_points_option,
+                     color = "Simulated bx bool",
+                     color_discrete_map = color_discrete_map_dict)
+        #fig = fig.update_traces(marker_color = 'rgba(227, 27, 35,1)') 
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='First order Sobol index value (S_i)',
             xaxis_title='Index',
-            title='Distribution of first order Sobol indices (tissue classification)',
+            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+')',
             hovermode="x unified"
         )
 
@@ -2051,15 +2066,20 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         general_plot_name_string = general_plot_name_string_dict["Global TO"]
 
         column_names_total_order_sobol_list = [name+' TO' for name in fanova_sobol_indices_names_by_index]
+        column_names_total_order_sobol_list.append("Simulated bx bool")
+
         grand_sobol_dataframe_total_order_all = grand_sobol_dataframe[column_names_total_order_sobol_list]
         # global sobol first order box plot
-        fig = px.box(grand_sobol_dataframe_total_order_all, points = box_plot_points_option)
-        fig = fig.update_traces(marker_color = 'rgba(0, 92, 171, 1)') 
+        fig = px.box(grand_sobol_dataframe_total_order_all, 
+                     points = box_plot_points_option,
+                     color = "Simulated bx bool",
+                     color_discrete_map = color_discrete_map_dict)
+        #fig = fig.update_traces(marker_color = 'rgba(227, 27, 35,1)') 
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='Total order Sobol index value (S_i)',
             xaxis_title='Index',
-            title='Distribution of total order Sobol indices (tissue classification)',
+            title='Distribution of total order Sobol indices (tissue classification, ' + cancer_tissue_label + ')',
             hovermode="x unified"
         )
 
@@ -2078,7 +2098,7 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         column_names_first_order_sobol_list.append("Simulated bx bool")
 
         grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
-        color_discrete_map_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
+        
         # global sobol first order box plot
         fig = px.box(grand_sobol_dataframe_first_order_all, 
                      points = box_plot_points_option, 
@@ -2088,7 +2108,7 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         fig.update_layout(
             yaxis_title='First order Sobol index value (S_i)',
             xaxis_title='Index',
-            title='Distribution of first order Sobol indices by biopsy class (tissue classification)',
+            title='Distribution of first order Sobol indices by biopsy class (tissue classification, ' + cancer_tissue_label + ')',
             hovermode="x unified"
         )
 

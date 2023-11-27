@@ -1,0 +1,10 @@
+"filename", "language", "Python", "JSON", "comment", "blank", "total"
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/MC_simulator_convex.py", "Python", 2, 0, 0, 3, 5
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_creator.py", "Python", 25, 0, 9, 15, 49
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py", "Python", 234, 0, 33, 60, 327
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py", "Python", 94, 0, 4, 26, 124
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/fanova.py", "Python", 3, 0, 0, 3, 6
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py", "Python", 463, 0, 152, 123, 738
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb", "JSON", 0, 1089, 0, 0, 1089
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/uncertainty_file_writer.py", "Python", 13, 0, 1, 2, 16
+"Total", "-", 834, 1089, 199, 232, 2354

@@ -106,8 +106,7 @@ def main():
     modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
     #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
     """
-    Consider prostate only for OARs! If the first position is the prostate, the simulated biopsies 
-    will be generated relative to this structure.
+    Consider prostate only for OARs!
 
     -- Also the first structure in the below list is the structure specified to plot probability of missing this structure!
     """
@@ -1995,6 +1994,8 @@ def main():
                         master_structure_info_dict,
                         structs_referenced_list,
                         bx_ref,
+                        dil_ref,
+                        oar_ref,
                         dose_ref,
                         biopsy_needle_compartment_length,
                         simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
@@ -2009,7 +2010,9 @@ def main():
                         num_dose_calc_NN,
                         dose_views_jsons_paths_list,
                         perform_dose_fanova,
-                        perform_containment_fanova
+                        perform_containment_fanova,
+                        structure_miss_probability_roi,
+                        cancer_tissue_label
                         )
 
                 live_display.start(refresh=True)
@@ -2663,6 +2666,7 @@ def main():
                         del specific_bx_structure['MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)']
                         del specific_bx_structure['FANOVA: sobol indices (containment)']
                         del specific_bx_structure['FANOVA: sobol indices (dose)']
+                        del specific_bx_structure['FANOVA: sobol indices (DIL tissue)']
                     for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
                         del specific_oar_structure['Intra-slice interpolation information']
                         del specific_oar_structure['Inter-slice interpolation information']
@@ -3409,7 +3413,7 @@ def main():
 
 
             
-            #live_display.stop()
+            live_display.stop()
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
                 if fanova_containment_sim_complete_bool == True:
                     if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
@@ -3427,6 +3431,7 @@ def main():
                                                 master_structure_info_dict,
                                                 bx_ref,
                                                 dil_ref,
+                                                cancer_tissue_label,
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,

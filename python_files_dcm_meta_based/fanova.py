@@ -11,6 +11,7 @@ import plotting_funcs
 import cudf
 import fanova_mathfuncs
 import scipy
+import itertools
 
 def fanova_analysis(
             parallel_pool, 
@@ -21,6 +22,8 @@ def fanova_analysis(
             master_structure_info_dict,
             structs_referenced_list,
             bx_ref,
+            dil_ref,
+            oar_ref,
             dose_ref,
             biopsy_needle_compartment_length,
             simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
@@ -35,7 +38,9 @@ def fanova_analysis(
             num_dose_calc_NN,
             dose_views_jsons_paths_list,
             perform_dose_fanova,
-            perform_containment_fanova
+            perform_containment_fanova,
+            structure_miss_probability_roi,
+            cancer_tissue_label
             ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -420,10 +425,10 @@ def fanova_analysis(
             # Note that the matrix specific results 
             matrix_specific_results_dict_empty = {"Total successes list (by trial)": None, 
                                                     "Binomial estimator list (by trial)": None, 
-                                                    "Confidence interval 95 (containment) list": None, 
-                                                    "Standard error (containment) list": None,
-                                                    "Global mean binomial estimator (all trials)": None
                                                     }
+            mutual_structure_specific_results_dict_empty = {"Total successes list (by trial)": None, 
+                                                 "Binomial estimator list (by trial)": None, 
+                                                 }
             compiling_results_patient_containment_task = patients_progress.add_task("[red]Compiling MC results ...", total=num_patients)
             compiling_results_patient_containment_task_completed = completed_progress.add_task("[green]Compiling MC results", total=num_patients, visible = False)  
             for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -437,6 +442,9 @@ def fanova_analysis(
                     biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                     containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
                     shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
+                    
+                    
+                    # compute independent probabilities
                     fanova_compiled_results_for_fixed_bx_dict = copy.deepcopy(structure_organized_for_bx_data_blank_dict)
                     
                     sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
@@ -462,26 +470,219 @@ def fanova_analysis(
                                                                                 ["Pt contained bool","Trial num"]
                                                                                 ].groupby(["Trial num"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()
                             matrix_specific_results_dict["Total successes list (by trial)"] = bx_containment_counter_by_org_pt_ind_list                    
-                            bx_containment_binomial_estimator_by_org_pt_ind_list = [x/num_sample_pts_in_bx for x in bx_containment_counter_by_org_pt_ind_list]
-                            matrix_specific_results_dict["Binomial estimator list (by trial)"] = bx_containment_binomial_estimator_by_org_pt_ind_list
-                            matrix_specific_results_dict["Global mean binomial estimator (all trials)"] = np.mean(bx_containment_binomial_estimator_by_org_pt_ind_list)
+                            bx_containment_binomial_estimator_by_trial_list = [x/num_sample_pts_in_bx for x in bx_containment_counter_by_org_pt_ind_list]
+                            matrix_specific_results_dict["Binomial estimator list (by trial)"] = bx_containment_binomial_estimator_by_trial_list
+                            #matrix_specific_results_dict["Global mean binomial estimator (all trials)"] = np.mean(bx_containment_binomial_estimator_by_trial_list)
 
                             fanova_compiled_results_for_fixed_bx_dict[structure_info][matrix_key] = matrix_specific_results_dict
 
                         structures_progress.update(compiling_results_each_non_bx_structure_containment_task, advance=1)
                     
+
+                    # compute mutual probabilities
+                    #unique_non_bx_structures_roi_list = containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"].unique() # generates a unique list of structure ROIs from the dataframe!
+                    #mutual_probabilities_dict = {}
+                    non_bx_structures_info_list = fanova_compiled_results_for_fixed_bx_dict.keys()
+                    structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
+                    mutual_fanova_compiled_results_for_fixed_bx_dict = {}
+                    for structure_info_combination_tuple in structure_info_combinations_list:
+                        roi_combination_list = [struct_info[0] for struct_info in structure_info_combination_tuple]
+                        struct_index_combination_list = [struct_info[3] for struct_info in structure_info_combination_tuple]
+                        
+                        mutual_fanova_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple] = {matrix_key: None for matrix_key in shifted_bx_data_dict.keys()}
+                        
+                        for matrix_key in shifted_bx_data_dict.keys():
+                            combination_structure_specific_results_dict = mutual_structure_specific_results_dict_empty.copy()
+
+                            # Note needed to convert cudf dataframe to pandas dataframe since cudf dataframe groupby object has no method "all()"
+                            containment_info_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
+                            """
+                            bx_mutual_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"].isin(roi_combination_list))  
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Relative structure index"].isin(struct_index_combination_list))
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Matrix key"] == matrix_key)
+                                                                                ].reset_index()[
+                                                                                    ["Original pt index","Relative structure ROI","Pt contained bool","Trial num"]
+                                                                                    ].groupby(["Original pt index","Trial num"]).all().sort_index().groupby(["Trial num"]).sum().sort_index()["Pt contained bool"].to_numpy().T.flatten(order = 'C').tolist()
+                            """
+                            bx_mutual_containment_counter_by_trial_list = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"].isin(roi_combination_list))  
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Relative structure index"].isin(struct_index_combination_list))
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Matrix key"] == matrix_key)
+                                                                                ].reset_index()[
+                                                                                    ["Original pt index","Pt contained bool","Trial num"]
+                                                                                    ].groupby(["Original pt index","Trial num"]).all().sort_index().groupby(["Trial num"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()
+                            
+                            combination_structure_specific_results_dict["Total successes list (by trial)"] = bx_mutual_containment_counter_by_trial_list
+                            bx_containment_combination_binomial_estimator_by_org_pt_ind_list = [x/num_sample_pts_in_bx for x in bx_mutual_containment_counter_by_trial_list]
+                            combination_structure_specific_results_dict["Binomial estimator list (by trial)"] = bx_containment_combination_binomial_estimator_by_org_pt_ind_list
+
+                            mutual_fanova_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple][matrix_key] = combination_structure_specific_results_dict
                     
+                    del containment_info_grand_all_structures_pandas_dataframe
                     del containment_info_grand_all_structures_cudf_dataframe
                     master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sim containment raw results dataframe"] = 'Deleted'
 
                     structures_progress.remove_task(compiling_results_each_non_bx_structure_containment_task)
                     biopsies_progress.update(compiling_results_biopsy_containment_task, advance = 1) 
+
                     master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: compiled sim results"] = fanova_compiled_results_for_fixed_bx_dict
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"] = mutual_fanova_compiled_results_for_fixed_bx_dict
+
                 biopsies_progress.remove_task(compiling_results_biopsy_containment_task) 
                 patients_progress.update(compiling_results_patient_containment_task, advance = 1) 
                 completed_progress.update(compiling_results_patient_containment_task_completed, advance = 1)
             patients_progress.update(compiling_results_patient_containment_task, visible = False) 
             completed_progress.update(compiling_results_patient_containment_task_completed, visible = True)
+            live_display.refresh()
+
+
+
+            specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est by fanova matrix dict": None, 
+                                            }
+        
+            specific_bx_structure_relative_OAR_miss_dict_empty = {"OAR miss structure info": None,
+                                "OAR tissue miss binomial est by fanova matrix dict": None
+                                }
+            
+            calc_mutual_probabilities_stat_biopsy_containment_task = patients_progress.add_task("[red]Calculating mutual probabilities [{}]...".format("initializing"), total=num_patients)
+            calc_mutual_probabilities_stat_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating mutual probabilities ", total=num_patients, visible = False)
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, description = "[red]Calculating mutual probabilities  [{}]...".format(patientUID))
+                
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+                sp_patient_num_dils = master_structure_info_dict["By patient"][patientUID][dil_ref]["Num structs"]
+
+                calc_mutual_probabilities_stat_each_bx_structure_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+                for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                    num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
+                    specific_bx_structure_tumor_tissue_dict = copy.deepcopy(specific_bx_structure_tumor_tissue_dict_empty)
+                    specific_bx_structure_relative_OAR_dict = copy.deepcopy(specific_bx_structure_relative_OAR_miss_dict_empty)
+
+                    specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: compiled sim results"] 
+                    mutual_fanova_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"]
+
+                    specific_bx_structure_roi = specific_bx_structure["ROI"]
+                    biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+
+                    # create a 2d array to accumulate the standard errors of each binomial estimator  
+                    mutual_fanova_compiled_results_for_fixed_bx_exclusively_dils_only_dict = copy.deepcopy(mutual_fanova_compiled_results_for_fixed_bx_dict)
+                    for mutual_struct_combo_key in mutual_fanova_compiled_results_for_fixed_bx_dict.keys():
+                        for struct_key in mutual_struct_combo_key:
+                            struct_type = struct_key[1]
+                            if struct_type != dil_ref:
+                                mutual_fanova_compiled_results_for_fixed_bx_exclusively_dils_only_dict.pop(mutual_struct_combo_key)
+                                break
+                    
+                    """
+                    num_mutual_combinations_involving_dils_only = len(mutual_fanova_compiled_results_for_fixed_bx_exclusively_dils_only_dict)
+                    num_combinations_involving_dils_only = num_mutual_combinations_involving_dils_only + sp_patient_num_dils
+                    """
+
+                    probability_sum_of_independent_trial_wise_dil_tissue_by_fanova_matrix_dict = {}
+                    for matrix_key in shifted_bx_data_dict.keys():
+                        ## calc probability tumor tissue
+                        # create an array to keep track of the sum of independent probabilities
+                        probability_sum_of_independent_trial_wise_dil_tissue_arr = np.empty((num_FANOVA_containment_simulations_input))
+                        probability_sum_of_independent_trial_wise_dil_tissue_arr.fill(0)
+
+                        for structureID,structure_specific_results_dict in specific_bx_results_dict.items(): 
+                            non_bx_structure_type = structureID[1]
+                            # only accumulate dil probabilities
+                            if non_bx_structure_type != dil_ref:
+                                continue
+                            specific_dil_structure_binomial_est_arr = np.array(structure_specific_results_dict[matrix_key]["Binomial estimator list (by trial)"])
+                            probability_sum_of_independent_trial_wise_dil_tissue_arr = probability_sum_of_independent_trial_wise_dil_tissue_arr + specific_dil_structure_binomial_est_arr
+
+                        probability_sum_of_independent_trial_wise_dil_tissue_by_fanova_matrix_dict[matrix_key] = probability_sum_of_independent_trial_wise_dil_tissue_arr
+                        
+
+                    probability_sum_of_mutual_trial_wise_dil_tissue_by_fanova_matrix_dict = {}
+                    for matrix_key in shifted_bx_data_dict.keys():
+                        # create an array to keep track of the sum of mutual probabilities
+                        probability_sum_of_mutual_trial_wise_dil_tissue_arr = np.empty((num_FANOVA_containment_simulations_input))
+                        probability_sum_of_mutual_trial_wise_dil_tissue_arr.fill(0)
+
+                        # get mutual probabilities and standard errors
+                        for mutual_structure_specific_results_dict in mutual_fanova_compiled_results_for_fixed_bx_exclusively_dils_only_dict.values():
+                            mutual_structure_specific_exlusively_dils_binomial_est_arr = np.array(mutual_structure_specific_results_dict[matrix_key]["Binomial estimator list (by trial)"])
+                            probability_sum_of_mutual_trial_wise_dil_tissue_arr = probability_sum_of_mutual_trial_wise_dil_tissue_arr + mutual_structure_specific_exlusively_dils_binomial_est_arr
+                        
+                        probability_sum_of_mutual_trial_wise_dil_tissue_by_fanova_matrix_dict[matrix_key] = probability_sum_of_mutual_trial_wise_dil_tissue_arr
+
+
+                    total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict = {}
+                    for matrix_key in shifted_bx_data_dict.keys():
+                        # create total probability trial wise array
+                        probability_trial_wise_dil_tissue_arr = np.empty((num_FANOVA_containment_simulations_input))
+                        probability_trial_wise_dil_tissue_arr.fill(0)
+
+                        probability_sum_of_independent_trial_wise_dil_tissue_arr = probability_sum_of_independent_trial_wise_dil_tissue_by_fanova_matrix_dict[matrix_key]
+                        probability_sum_of_mutual_trial_wise_dil_tissue_arr = probability_sum_of_mutual_trial_wise_dil_tissue_by_fanova_matrix_dict[matrix_key]
+
+                        probability_trial_wise_dil_tissue_arr = probability_sum_of_independent_trial_wise_dil_tissue_arr - probability_sum_of_mutual_trial_wise_dil_tissue_arr
+                        
+                        total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict[matrix_key] = probability_trial_wise_dil_tissue_arr
+                    
+                    specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est by fanova matrix dict"] = total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict
+
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: tumor tissue probability"] = specific_bx_structure_tumor_tissue_dict
+
+                    """
+                    # calculate tissue length above threshold 
+                    bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
+                    
+                    bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                    z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
+                    tissue_length_by_threshold_dict = {}
+                    for threshold in tissue_length_above_probability_threshold_list:
+                        length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
+                                                                                                                            probability_pt_wise_dil_tissue_arr,
+                                                                                                                            probabilities_standard_err_arr,
+                                                                                                                            bx_sample_pts_lattice_spacing, 
+                                                                                                                            threshold,
+                                                                                                                            n_bootstraps_for_tissue_length_above_threshold)
+                    
+                        tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
+                                                                                                "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
+                                                                                                "Length estimate mean": length_estimate_mean,
+                                                                                                "Length estimate se": length_estimate_se}
+                                                    
+                    
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
+                    """
+
+                    # calculate miss probability
+                    miss_structure_binom_est_arr_by_fanova_matrix_dict = {}
+                    for structure_info, structure_specific_results_dict in specific_bx_results_dict.items():
+                        structure_roi = structure_info[0]
+                        non_bx_structure_type = structure_info[1]
+                        # only consider the miss structure
+                        if (non_bx_structure_type != oar_ref) or (structure_roi != structure_miss_probability_roi):
+                            continue
+                        specific_bx_structure_relative_OAR_dict["OAR miss structure info"] = structure_info
+
+                        for matrix_key in shifted_bx_data_dict.keys():
+                        
+                            non_bx_structure_binom_est_arr = np.array(structure_specific_results_dict[matrix_key]["Binomial estimator list (by trial)"])
+                            miss_structure_binom_est_arr = 1 - non_bx_structure_binom_est_arr
+
+                            miss_structure_binom_est_arr_by_fanova_matrix_dict[matrix_key] = miss_structure_binom_est_arr
+                        
+                        specific_bx_structure_relative_OAR_dict["OAR tissue miss binomial est dict"] = miss_structure_binom_est_arr_by_fanova_matrix_dict
+                        
+
+                        break
+
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: miss structure tissue probability"] = specific_bx_structure_relative_OAR_dict
+                    
+                    biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, advance = 1)
+                biopsies_progress.remove_task(calc_mutual_probabilities_stat_each_bx_structure_containment_task)
+                patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, advance = 1)
+                completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete, advance = 1)
+            patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, visible = False)
+            completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete,visible = True)
             live_display.refresh()
 
             
@@ -550,6 +751,73 @@ def fanova_analysis(
                     master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sobol indices (containment)"] = fanova_sobol_indices_for_fixed_bx_dict
 
                     structures_progress.remove_task(calculating_sobol_containment_each_non_bx_structure_task)
+                    biopsies_progress.update(calculating_sobol_containment_biopsy_task, advance = 1) 
+                biopsies_progress.remove_task(calculating_sobol_containment_biopsy_task) 
+                patients_progress.update(calculating_sobol_containment_patient_task, advance = 1) 
+                completed_progress.update(calculating_sobol_containment_patient_task_completed, advance = 1)
+            patients_progress.update(calculating_sobol_containment_patient_task, visible = False) 
+            completed_progress.update(calculating_sobol_containment_patient_task_completed, visible = True)
+            live_display.refresh()
+
+
+
+            calculating_sobol_containment_patient_task = patients_progress.add_task("[red]Calculating Sobol indices (DIL tissue) ...", total=num_patients)
+            calculating_sobol_containment_patient_task_completed = completed_progress.add_task("[green]Calculating Sobol indices (DIL tissue)", total=num_patients, visible = False)  
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                patients_progress.update(calculating_sobol_containment_patient_task, description = "[red]Calculating Sobol indices (DIL tissue) [{}]...".format(patientUID), total=num_patients)
+                sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                calculating_sobol_containment_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+                
+                structure_organized_for_bx_data_blank_dict = MC_simulator_convex.create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)           
+
+                for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                    num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
+                    specific_bx_structure_roi = specific_bx_structure["ROI"]
+                    biopsies_progress.update(calculating_sobol_containment_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                    
+                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                    sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+                    #fanova_sobol_indices_for_fixed_bx_dict = copy.deepcopy(structure_organized_for_bx_data_blank_dict)
+                    
+                    
+                    specific_bx_structure_tumor_tissue_dict = specific_bx_structure["FANOVA: tumor tissue probability"] 
+                    total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict = specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est by fanova matrix dict"]
+
+                    ga = total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict['A']
+                    gb = total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict['B']
+
+                    # for the scipy sobol indices function, the dictionary below is fed to it, and the arrays must have very specific shapes
+                    fanova_containment_for_scipy_sobol_func_dict = {'f_A': np.array(ga).reshape((1,-1)),
+                                                                        'f_B': np.array(gb).reshape((1,-1)),
+                                                                        }
+                    
+                    total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict_subset_dict = copy.deepcopy(total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict)
+                    total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict_subset_dict.pop('A')
+                    total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict_subset_dict.pop('B')
+                    gab = np.empty((len(total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict_subset_dict),1,num_FANOVA_containment_simulations_input))
+
+
+                    for matrix_key,total_probability_trial_wise_dil_tissue_sp_matrix in total_probability_trial_wise_dil_tissue_by_fanova_matrix_dict_subset_dict.items():     
+                        gj = total_probability_trial_wise_dil_tissue_sp_matrix
+                        gab[int(matrix_key)] = gj
+
+
+                    fanova_containment_for_scipy_sobol_func_dict['f_AB'] = gab
+
+                    sobol_indices = scipy.stats.sobol_indices(func = fanova_containment_for_scipy_sobol_func_dict, n=num_FANOVA_containment_simulations_input)
+                    bootstrap_sobol_indices = sobol_indices.bootstrap(confidence_level = sobol_indices_bootstrap_conf_interval, 
+                                                                    n_resamples = num_sobol_bootstraps
+                                                                    )
+                    
+                    fanova_sobol_indices_DIL_tissue_for_fixed_bx_dict = {"Indices result": sobol_indices,
+                                                                        "Bootstrap result": bootstrap_sobol_indices
+                                                                        }
+
+
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sobol indices (DIL tissue)"] = fanova_sobol_indices_DIL_tissue_for_fixed_bx_dict
+
                     biopsies_progress.update(calculating_sobol_containment_biopsy_task, advance = 1) 
                 biopsies_progress.remove_task(calculating_sobol_containment_biopsy_task) 
                 patients_progress.update(calculating_sobol_containment_patient_task, advance = 1) 
@@ -635,6 +903,64 @@ def fanova_analysis(
                     specific_bx_structure["FANOVA: sobol containment dataframe"] = sp_bx_sobol_containment_dataframe_no_na.to_pandas()
                     del sp_bx_sobol_containment_dataframe
                     del sp_bx_sobol_containment_dataframe_no_na
+
+                patients_progress.update(creating_sobol_containment_dataframes_patient_task, advance = 1) 
+                completed_progress.update(creating_sobol_containment_dataframes_patient_task_completed, advance = 1)
+            patients_progress.update(creating_sobol_containment_dataframes_patient_task, visible = False) 
+            completed_progress.update(creating_sobol_containment_dataframes_patient_task_completed, visible = True)
+            live_display.refresh()
+
+
+            #live_display.stop()
+            creating_sobol_containment_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol containment (DIL tissue) DFs ...", total=num_patients)
+            creating_sobol_containment_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol containment (DIL tissue) DFs", total=num_patients, visible = False)  
+            num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
+            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+            for patientUID,pydicom_item in master_structure_reference_dict.items():  
+                patients_progress.update(creating_sobol_containment_dataframes_patient_task, description = "[red]Creating Sobol containment (DIL tissue) DFs...".format(patientUID), total=num_patients)
+
+                for specific_bx_structure in pydicom_item[bx_ref]:
+                    bx_struct_roi = specific_bx_structure["ROI"]
+                    simulated_bx_bool =  specific_bx_structure["Simulated bool"]
+                    fanova_sobol_indices_DIL_tissue_for_fixed_bx_dict = specific_bx_structure["FANOVA: sobol indices (DIL tissue)"]                
+                        
+                    sp_indices = fanova_sobol_indices_DIL_tissue_for_fixed_bx_dict["Indices result"]
+                    sp_bootstrap = fanova_sobol_indices_DIL_tissue_for_fixed_bx_dict["Bootstrap result"]
+                        
+                    cumulative_containment_sobol_indices_first_order_arr = sp_indices.first_order
+                    cumulative_containment_sobol_indices_first_order_se_arr= sp_bootstrap.first_order.standard_error
+                    cumulative_containment_sobol_indices_first_order_boot_low_arr = sp_bootstrap.first_order.confidence_interval.low                   
+                    cumulative_containment_sobol_indices_first_order_boot_high_arr= sp_bootstrap.first_order.confidence_interval.high   
+                        
+                    cumulative_containment_sobol_indices_total_order_arr = sp_indices.total_order
+                    cumulative_containment_sobol_indices_total_order_se_arr = sp_bootstrap.total_order.standard_error
+                    cumulative_containment_sobol_indices_total_order_boot_low_arr = sp_bootstrap.total_order.confidence_interval.low                   
+                    cumulative_containment_sobol_indices_total_order_boot_high_arr = sp_bootstrap.total_order.confidence_interval.high  
+                        
+
+                    sp_bx_sobol_containment_for_dataframe_dict = {"Patient": patientUID,
+                                                                "Bx ROI": bx_struct_roi,
+                                                                "Simulated bx bool": simulated_bx_bool,
+                                                                "Relative structure ROI": cancer_tissue_label,
+                                                                "Relative structure type": dil_ref
+                                                                }
+                    
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO': cumulative_containment_sobol_indices_first_order_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO': cumulative_containment_sobol_indices_total_order_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO SE': cumulative_containment_sobol_indices_first_order_se_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO SE': cumulative_containment_sobol_indices_total_order_se_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO CI low': cumulative_containment_sobol_indices_first_order_boot_low_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' FO CI high': cumulative_containment_sobol_indices_first_order_boot_high_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO CI low': cumulative_containment_sobol_indices_total_order_boot_low_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+                    sp_bx_sobol_containment_for_dataframe_dict.update({name+' TO CI high': cumulative_containment_sobol_indices_total_order_boot_high_arr[index] for index,name in enumerate(fanova_sobol_indices_names_by_index)})
+
+                    sp_bx_sobol_containment_dataframe = cudf.DataFrame(sp_bx_sobol_containment_for_dataframe_dict)
+                    sp_bx_sobol_containment_dataframe_no_na = sp_bx_sobol_containment_dataframe.fillna(0)
+
+                    specific_bx_structure["FANOVA: sobol containment (DIL tissue) dataframe"] = sp_bx_sobol_containment_dataframe_no_na.to_pandas()
+                    del sp_bx_sobol_containment_dataframe
+                    del sp_bx_sobol_containment_dataframe_no_na
+                    del sp_bx_sobol_containment_for_dataframe_dict
 
                 patients_progress.update(creating_sobol_containment_dataframes_patient_task, advance = 1) 
                 completed_progress.update(creating_sobol_containment_dataframes_patient_task_completed, advance = 1)
