@@ -2236,16 +2236,14 @@ def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
     fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
     
-    num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
-    dataframes_list = [None]*num_biopsies
-    bx_index = 0
+    #num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
+    dataframes_list = []
     for patientUID,pydicom_item in master_structure_reference_dict.items():  
         for specific_bx_structure in pydicom_item[bx_structs]:
             
             sp_bx_sobol_dose_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sobol dose dataframe"])
-            dataframes_list[bx_index] = sp_bx_sobol_dose_dataframe
-            bx_index = bx_index + 1
-    del bx_index
+            dataframes_list.append(sp_bx_sobol_dose_dataframe)
+
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True) 
 
     output_result_key_list = grand_sobol_dataframe["Function output key"].unique().to_arrow().to_pylist()

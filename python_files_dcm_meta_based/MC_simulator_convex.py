@@ -104,6 +104,8 @@ def simulator_parallel(parallel_pool,
                        structure_miss_probability_roi,
                        tissue_length_above_probability_threshold_list,
                        n_bootstraps_for_tissue_length_above_threshold,
+                       perform_mc_containment_sim,
+                       perform_mc_dose_sim,
                        spinner_type
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -1401,7 +1403,11 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
-        master_structure_info_dict['Global']['MC sim performed'] = True
+        
+        master_structure_info_dict['Global']["MC info"]['MC containment sim performed'] = perform_mc_containment_sim
+        master_structure_info_dict['Global']["MC info"]['MC dose sim performed'] = perform_mc_dose_sim
+        list_of_mc_sim_types = [perform_mc_dose_sim,perform_mc_containment_sim]
+        master_structure_info_dict['Global']['MC sim performed'] = any(list_of_mc_sim_types)
         
 
         return master_structure_reference_dict, live_display

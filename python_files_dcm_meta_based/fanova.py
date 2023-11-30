@@ -1535,7 +1535,12 @@ def fanova_analysis(
             live_display.refresh()
 
 
-        master_structure_info_dict['Global']['FANOVA sim performed'] = True
+        # save information about the simulation
+        master_structure_info_dict['Global']["FANOVA info"]["Num fanova containment simulations"] = num_FANOVA_containment_simulations_input
+        master_structure_info_dict['Global']["FANOVA info"]["Num fanova dose simulations"] = num_FANOVA_dose_simulations_input
+        
+        list_of_fanova_sim_types = [perform_dose_fanova,perform_containment_fanova]
+        master_structure_info_dict['Global']['FANOVA sim performed'] = any(list_of_fanova_sim_types)
         master_structure_info_dict['Global']['FANOVA containment sim performed'] = perform_containment_fanova
         master_structure_info_dict['Global']['FANOVA dose sim performed'] = perform_dose_fanova
             

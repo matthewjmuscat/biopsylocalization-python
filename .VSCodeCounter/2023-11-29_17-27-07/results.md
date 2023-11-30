@@ -1,26 +1,26 @@
 # Summary
 
-Date : 2023-07-13 20:06:53
+Date : 2023-11-29 17:27:07
 
-Directory e:\\UBC\\Research\\Biopsy localisation\\biopsy-localization-python-MM\\biopsylocalization-python\\python_files_dcm_meta_based
+Directory /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based
 
-Total : 29 files,  8440 codes, 1054 comments, 1558 blanks, all 11052 lines
+Total : 37 files,  16389 codes, 1993 comments, 3026 blanks, all 21408 lines
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
 
 ## Languages
 | language | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| Python | 27 | 6,062 | 1,054 | 1,552 | 8,668 |
-| JSON | 1 | 2,352 | 0 | 1 | 2,353 |
+| Python | 34 | 11,249 | 1,993 | 3,019 | 16,261 |
+| JSON | 2 | 5,114 | 0 | 2 | 5,116 |
 | CSS | 1 | 26 | 0 | 5 | 31 |
 
 ## Directories
 | path | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| . | 29 | 8,440 | 1,054 | 1,558 | 11,052 |
-| . (Files) | 20 | 5,818 | 987 | 1,473 | 8,278 |
-| Junk | 8 | 2,622 | 67 | 84 | 2,773 |
+| . | 37 | 16,389 | 1,993 | 3,026 | 21,408 |
+| . (Files) | 28 | 13,731 | 1,926 | 2,941 | 18,598 |
+| Junk | 8 | 2,658 | 67 | 84 | 2,809 |
 | my-lib | 1 | 0 | 0 | 1 | 1 |
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
