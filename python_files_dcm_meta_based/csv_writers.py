@@ -332,7 +332,8 @@ def csv_writer_dosimetry(live_display,
                            master_structure_info_dict,
                            patient_sp_output_csv_dir_dict,
                            bx_ref,
-                           display_dvh_as
+                           display_dvh_as,
+                           volume_DVH_percent_dose
                            ):
 
     app_header,progress_group_info_list,important_info,app_footer = layout_groups

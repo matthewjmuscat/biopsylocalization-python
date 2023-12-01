@@ -140,8 +140,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.25
-    num_MC_containment_simulations_input = 1000
-    num_MC_dose_simulations_input = 1000
+    num_MC_containment_simulations_input = 0
+    num_MC_dose_simulations_input = 0
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 4
     tissue_length_above_probability_threshold_list = [0.95,0.75,0.5,0.25]
@@ -181,8 +181,8 @@ def main():
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
     
     #fanova
-    num_FANOVA_containment_simulations_input = 2**10 # must be a power of two for the scipy function to work, 2^10 is good
-    num_FANOVA_dose_simulations_input = 2**10
+    num_FANOVA_containment_simulations_input = 0 # must be a power of two for the scipy function to work, 2^10 is good
+    num_FANOVA_dose_simulations_input = 0
     show_fanova_containment_demonstration_plots = False
     plot_cupy_fanova_containment_distribution_results = False
     fanova_plot_uniform_shifts_to_check_plotly = False
@@ -222,7 +222,7 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
                                         "Axial dose distribution all trials and global regression": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-scatter-all_trials_axial_dose_distribution"
                                              },
                                         "Axial and radial (3D, surface) dose distribution": \
@@ -242,12 +242,12 @@ def main():
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution voxelized box plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-box_plot-voxelized_axial_dose_distribution",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Axial dose distribution voxelized violin plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose-violin_plot-voxelized_axial_dose_distribution",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
@@ -311,7 +311,14 @@ def main():
                                                                 "Global FO, sim only": True,
                                                                 "Global FO, sim only by function output": True,
                                                                 "Global FO, non-sim only": True,
-                                                                "Global FO, non-sim only by function output": True
+                                                                "Global FO, non-sim only by function output": True,
+                                                                ###
+                                                                "Global FO, sim_only, by function output, separate": True,
+                                                                "Global FO, non_sim_only, by function output, separate": True,
+                                                                "Global FO, sim_and_non_sim, by function output, separate": True,
+                                                                "Global TO, sim_only, by function output, separate": True,
+                                                                "Global TO, non_sim_only, by function output, separate": True,
+                                                                "Global TO, sim_and_non_sim, by function output, separate": True,
                                                                 }, 
                                              "Plot name dict": {"Global FO": 'FANOVA_global_dose_first_order_sobol',
                                                                 "Global FO by function output": 'FANOVA_global_dose_first_order_sobol_by_function_output',
@@ -320,7 +327,14 @@ def main():
                                                                 "Global FO, sim only": 'FANOVA_global_dose_first_order_sim_only_sobol',
                                                                 "Global FO, sim only by function output": 'FANOVA_global_dose_first_order_sim_only_by_function_output_sobol',
                                                                 "Global FO, non-sim only": 'FANOVA_global_dose_first_order_non-sim_only_sobol',
-                                                                "Global FO, non-sim only by function output": 'FANOVA_global_dose_first_order_non-sim_only_by_function_output_sobol'
+                                                                "Global FO, non-sim only by function output": 'FANOVA_global_dose_first_order_non-sim_only_by_function_output_sobol',
+                                                                ###
+                                                                "Global FO, sim_only, by function output, separate": "FANOVA_dose_FO_sim_by_function_output_separated",
+                                                                "Global FO, non_sim_only, by function output, separate": "FANOVA_dose_FO_nonsim_by_function_output_separated",
+                                                                "Global FO, sim_and_non_sim, by function output, separate": "FANOVA_dose_FO_sim_and_non_sim_by_function_output_separated",
+                                                                "Global TO, sim_only, by function output, separate": "FANOVA_dose_TO_sim_by_function_output_separated",
+                                                                "Global TO, non_sim_only, by function output, separate": "FANOVA_dose_TO_nonsim_by_function_output_separated",
+                                                                "Global TO, sim_and_non_sim, by function output, separate": "FANOVA_dose_TO_sim_and_non_sim_by_function_output_separated",
                                                                 },
                                              "Box plot points option": 'all' # can be 'all', 'outliers' or False
                                              },
@@ -2165,12 +2179,15 @@ def main():
 
             specific_output_dir = master_structure_info_dict["Global"]["Specific output dir"]
 
-
+            #live_display.stop()
 
             # CREATE DATAFRAMES ---------------------------
 
             # FOR CSVs
             if mc_sim_complete_bool == True:
+                csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, tissue)...', total=None)
+                csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, tissue)', total=1, visible = False)
+                
                 # Build dataframes
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -2185,10 +2202,16 @@ def main():
                         specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
                         specific_bx_structure["Output dicts for data frames"]["Mutual containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
+                indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
+                completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
+                live_display.refresh()
 
 
             # FOR PLOTS
             if create_at_least_one_production_plot == True and mc_sim_complete_bool == True:
+                csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, dosimetry)...', total=None)
+                csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, dosimetry)', total=1, visible = False)
+
                 # generate a pandas data frame that is used in numerous production plot functions
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):                        
@@ -2219,7 +2242,9 @@ def main():
                                                                     )
 
 
-            
+                indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
+                completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
+                live_display.refresh()
 
 
 
@@ -2227,7 +2252,7 @@ def main():
             # CREATE CSV DIRECTORIES ---------------------------
 
 
-
+            #live_display.stop()
             # create global csv output folder
             if any([write_containment_to_file_ans, write_dose_to_file_ans, write_sobol_containment_data_to_file, write_sobol_dose_data_to_file]):
                 csv_output_folder_name = 'Output CSVs'
@@ -2246,7 +2271,7 @@ def main():
                     patient_sp_output_csv_dir = mc_csv_output_dir.joinpath(patientUID)
                     patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
                     patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
-                global_mc_output_csv_dir = fanova_csv_output_dir.joinpath('Global')
+                global_mc_output_csv_dir = mc_csv_output_dir.joinpath('Global')
                 global_mc_output_csv_dir.mkdir(parents=True, exist_ok=True)
                 patient_sp_output_csv_dir_dict["Global"] = global_mc_output_csv_dir
 
@@ -2282,6 +2307,7 @@ def main():
                         structure_miss_probability_roi,
                         miss_structure_complement_label
                         )
+                live_display.start(refresh=True)
                 
             else:
                 pass  
@@ -2297,11 +2323,33 @@ def main():
                         master_structure_info_dict,
                         patient_sp_output_csv_dir_dict,
                         bx_ref,
-                        display_dvh_as
+                        display_dvh_as,
+                        volume_DVH_percent_dose
                         )
+                live_display.start(refresh=True)
                 
             else:
                 pass
+            
+            # Write the rest of the dataframes that we've stored
+            if mc_csv_output_dir.is_dir():
+                important_info.add_text_line("Writing remainder of stored dataframes to file.", live_display)
+                csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, dosimetry)...', total=None)
+                csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, dosimetry)', total=1, visible = False)
+
+                for patientUID in master_structure_reference_dict.keys():
+                    patient_sp_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
+                    for specific_bx_structure in pydicom_item[bx_ref]:
+                        bx_roi = specific_bx_structure["ROI"]
+                        for dataframe_name, dataframe in specific_bx_structure["Output data frames"].items():
+                            dataframe_file_name = str(bx_roi) +'-'+ str(dataframe_name)+ '.csv'
+                            dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
+                            dataframe.to_csv(dataframe_file_path)
+
+                indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
+                completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
+                live_display.refresh()
+
 
                 
 
@@ -2314,7 +2362,6 @@ def main():
                 # DIL tissue Sobol dataframe
                 fanova_csv_dataframe_filename = 'sobol_dataframe_DIL_tissue_for_all_patients.csv'
                 sobol_dil_tissue_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-                sobol_dil_tissue_dataframe_filepath_all_patients.mkdir(parents=True, exist_ok=True)
 
                 dataframes_list = []
                 for patientUID,pydicom_item in master_structure_reference_dict.items():  
@@ -2330,7 +2377,6 @@ def main():
                 # All tissues Sobol dataframe
                 fanova_csv_dataframe_filename = 'sobol_dataframe_by_tissue_for_all_patients.csv'
                 sobol_tissue_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-                sobol_tissue_dataframe_filepath_all_patients.mkdir(parents=True, exist_ok=True)
 
                 dataframes_list = []
                 for patientUID,pydicom_item in master_structure_reference_dict.items():  
@@ -2356,7 +2402,6 @@ def main():
                 # dose Sobol dataframe
                 fanova_csv_dataframe_filename = 'sobol_dataframe_dose_for_all_patients.csv'
                 sobol_dose_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-                sobol_dose_dataframe_filepath_all_patients.mkdir(parents=True, exist_ok=True)
 
                 dataframes_list = []
                 for patientUID,pydicom_item in master_structure_reference_dict.items():  
@@ -3017,7 +3062,7 @@ def main():
 
 
             
-            live_display.stop()
+            #live_display.stop()
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
                 if fanova_containment_sim_complete_bool == True:
                     if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
@@ -3030,7 +3075,7 @@ def main():
                         global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting global Sobol indices (containment)...', total=None)
                         global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting global Sobol indices (containment)', total=1, visible = False)
 
-                        production_plots.production_plot_sobol_indices_global_containment(patient_sp_output_figures_dir_dict,
+                        production_plots.production_plot_sobol_indices_global_containment(patient_sp_fanova_output_figures_dir_dict,
                                                 master_structure_reference_dict,
                                                 master_structure_info_dict,
                                                 bx_ref,
@@ -3062,7 +3107,7 @@ def main():
                         global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting per biopsy Sobol indices (containment)', total=1, visible = False)
                         
                         for patientUID,pydicom_item in master_structure_reference_dict.items():
-                            production_plots.production_plot_sobol_indices_each_biopsy_containment(patient_sp_output_figures_dir_dict,
+                            production_plots.production_plot_sobol_indices_each_biopsy_containment(patient_sp_fanova_output_figures_dir_dict,
                                                         patientUID,
                                                         pydicom_item,
                                                         master_structure_info_dict,
@@ -3091,7 +3136,7 @@ def main():
                         global_sobol_plots_task_indeterminate = indeterminate_progress_main.add_task('[red]Plotting global Sobol indices (dose)...', total=None)
                         global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting global Sobol indices (dose)', total=1, visible = False)
 
-                        production_plots.production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir_dict,
+                        production_plots.production_plot_sobol_indices_global_dosimetry(patient_sp_fanova_output_figures_dir_dict,
                                                 master_structure_reference_dict,
                                                 master_structure_info_dict,
                                                 bx_ref,
@@ -3119,7 +3164,7 @@ def main():
                         global_sobol_plots_task_indeterminate_completed = completed_progress.add_task('[green]Plotting per biopsy Sobol indices (dose)', total=1, visible = False)
 
                         for patientUID,pydicom_item in master_structure_reference_dict.items():
-                            production_plots.production_plot_sobol_indices_each_biopsy_dosimetry(patient_sp_output_figures_dir_dict,
+                            production_plots.production_plot_sobol_indices_each_biopsy_dosimetry(patient_sp_fanova_output_figures_dir_dict,
                                                     patientUID,
                                                     pydicom_item,
                                                     master_structure_info_dict,
@@ -3137,7 +3182,7 @@ def main():
                     else:
                         pass
                             
-            print('>Programme has ended.')
+            sys.exit(">Production plots produced, programme exited.")
 
 
 def UID_generator(pydicom_obj):

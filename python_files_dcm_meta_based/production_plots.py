@@ -147,6 +147,8 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
 
+        bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+        """
         dose_output_z_and_radius_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
         pt_radius_bx_coord_sys = dose_output_z_and_radius_dict_for_pandas_data_frame["Radial pos (mm)"]
 
@@ -177,8 +179,11 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
                                                               "MC trial num": MC_trial_index_point_wise_for_pd_data_frame_list
                                                               }
         
+        
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = pandas.DataFrame.from_dict(data = dose_output_dict_by_MC_trial_for_pandas_data_frame)
-        specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = dose_output_nominal_and_all_MC_trials_pandas_data_frame
+        """
+        dose_output_dict_by_MC_trial_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Point-wise dose output by MC trial number"]
+        dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
