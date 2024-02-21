@@ -319,3 +319,422 @@ def all_dose_data_by_trial_and_pt_from_MC_trial_dataframe_builder(master_structu
             dose_output_nominal_and_all_MC_trials_pandas_data_frame = pandas.DataFrame.from_dict(data = dose_output_dict_by_MC_trial_for_pandas_data_frame)
             specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = dose_output_nominal_and_all_MC_trials_pandas_data_frame
             specific_bx_structure["Output dicts for data frames"]["Point-wise dose output by MC trial number"] = dose_output_dict_by_MC_trial_for_pandas_data_frame
+
+
+
+
+def structure_volume_dataframe_builder(master_structure_ref_dict,
+                                       structs_referenced_list,
+                                       all_ref_key):
+    
+
+    for patientUID,pydicom_item in master_structure_ref_dict.items():
+        structure_ID_list = []
+        structure_type_list = []
+        structure_volume_list = []
+        structure_max_pairwise_dist_list = []
+        structure_ref_num_list = []
+        structure_index_list = []
+        patient_ID_list = []
+        voxel_size_list = []
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                structureID = specific_structure["ROI"]
+                structure_reference_number = specific_structure["Ref #"]
+                struct_type = structs
+
+                maximum_distance = specific_structure["Maximum pairwise distance"]
+                structure_volume = specific_structure["Structure volume"]
+                voxel_size = specific_structure["Voxel size for structure volume calc"]
+
+                structure_ID_list.append(structureID)
+                structure_type_list.append(struct_type)
+                structure_ref_num_list.append(structure_reference_number)
+                structure_max_pairwise_dist_list.append(maximum_distance)
+                structure_volume_list.append(structure_volume)
+                structure_index_list.append(specific_structure_index)
+                patient_ID_list.append(patientUID)
+                voxel_size_list.append(voxel_size)
+
+        structure_info_dict_for_pandas_dataframe = {"Patient UID": patient_ID_list,
+                                                    "Structure ID": structure_ID_list,
+                                                    "Structure type": structure_type_list,
+                                                    "Structure ref num": structure_ref_num_list,
+                                                    "Structure index": structure_index_list,
+                                                    "Structure max pair-wise distance": structure_max_pairwise_dist_list,
+                                                    "Structure volume": structure_volume_list,
+                                                    "Voxel side length": voxel_size_list
+                                                    }
+        
+        structure_info_pandas_data_frame = pandas.DataFrame.from_dict(data = structure_info_dict_for_pandas_dataframe)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Structure information"] = structure_info_pandas_data_frame
+
+
+
+def structure_dimension_dataframe_builder(master_structure_ref_dict,
+                                       structs_referenced_list,
+                                       all_ref_key,
+                                       bx_ref):
+    
+
+    for patientUID,pydicom_item in master_structure_ref_dict.items():
+        structure_ID_list = []
+        structure_type_list = []
+        structure_x_dim_list = []
+        structure_y_dim_list = []
+        structure_z_dim_list = []
+        structure_ref_num_list = []
+        structure_index_list = []
+        patient_ID_list = []
+        voxel_size_list = []
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                if structs != bx_ref:
+                    structureID = specific_structure["ROI"]
+                    structure_reference_number = specific_structure["Ref #"]
+                    struct_type = structs
+
+                    structure_dimension_dict = specific_structure["Structure dimension at centroid dict"]
+                    x_dim_len = structure_dimension_dict["X dimension length at centroid"]
+                    y_dim_len = structure_dimension_dict["Y dimension length at centroid"]
+                    z_dim_len = structure_dimension_dict["Z dimension length at centroid"]
+
+                    voxel_size = specific_structure["Voxel size for structure dimension calc"]
+
+                    structure_ID_list.append(structureID)
+                    structure_type_list.append(struct_type)
+                    structure_ref_num_list.append(structure_reference_number)
+                    structure_x_dim_list.append(x_dim_len)
+                    structure_y_dim_list.append(y_dim_len)
+                    structure_z_dim_list.append(z_dim_len)
+                    structure_index_list.append(specific_structure_index)
+                    patient_ID_list.append(patientUID)
+                    voxel_size_list.append(voxel_size)
+                else: 
+                    pass
+
+        structure_info_dict_for_pandas_dataframe = {"Patient UID": patient_ID_list,
+                                                    "Structure ID": structure_ID_list,
+                                                    "Structure type": structure_type_list,
+                                                    "Structure ref num": structure_ref_num_list,
+                                                    "Structure index": structure_index_list,
+                                                    "Structure X dim length (mm)": structure_x_dim_list,
+                                                    "Structure Y dim length (mm)": structure_y_dim_list,
+                                                    "Structure Z dim length (mm)": structure_z_dim_list,
+                                                    "Voxel side length": voxel_size_list
+                                                    }
+        
+        structure_info_pandas_data_frame = pandas.DataFrame.from_dict(data = structure_info_dict_for_pandas_dataframe)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Structure information dimension"] = structure_info_pandas_data_frame
+
+
+
+def non_bx_structure_info_dataframe_builder(master_structure_ref_dict,
+                                       structs_referenced_list,
+                                       all_ref_key,
+                                       bx_ref):
+    
+
+    for patientUID,pydicom_item in master_structure_ref_dict.items():
+        patient_ID_list = []
+        structure_ID_list = []
+        structure_type_list = []
+        structure_ref_num_list = []
+        structure_index_list = []
+
+        structure_volume_list = []
+        structure_max_pairwise_dist_list = []
+        voxel_size_for_volume_list = []
+
+        structure_x_dim_list = []
+        structure_y_dim_list = []
+        structure_z_dim_list = []
+        voxel_size_for_dimension_list = []
+
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                if structs != bx_ref:
+                    structureID = specific_structure["ROI"]
+                    structure_reference_number = specific_structure["Ref #"]
+                    struct_type = structs
+
+                    maximum_distance = specific_structure["Maximum pairwise distance"]
+                    structure_volume = specific_structure["Structure volume"]
+                    voxel_size_for_volume = specific_structure["Voxel size for structure volume calc"]
+
+                    structure_dimension_dict = specific_structure["Structure dimension at centroid dict"]
+                    x_dim_len = structure_dimension_dict["X dimension length at centroid"]
+                    y_dim_len = structure_dimension_dict["Y dimension length at centroid"]
+                    z_dim_len = structure_dimension_dict["Z dimension length at centroid"]
+                    voxel_size_for_dimension = specific_structure["Voxel size for structure dimension calc"]
+
+
+                    structure_ID_list.append(structureID)
+                    structure_type_list.append(struct_type)
+                    structure_ref_num_list.append(structure_reference_number)
+                    structure_max_pairwise_dist_list.append(maximum_distance)
+                    structure_volume_list.append(structure_volume)
+                    structure_index_list.append(specific_structure_index)
+                    patient_ID_list.append(patientUID)
+                    voxel_size_for_volume_list.append(voxel_size_for_volume)
+
+                    structure_x_dim_list.append(x_dim_len)
+                    structure_y_dim_list.append(y_dim_len)
+                    structure_z_dim_list.append(z_dim_len)
+                    voxel_size_for_dimension_list.append(voxel_size_for_dimension)
+
+
+                else:
+                    pass
+
+        structure_info_dict_for_pandas_dataframe = {"Patient UID": patient_ID_list,
+                                                    "Structure ID": structure_ID_list,
+                                                    "Structure type": structure_type_list,
+                                                    "Structure ref num": structure_ref_num_list,
+                                                    "Structure index": structure_index_list,
+                                                    "Structure max pair-wise distance": structure_max_pairwise_dist_list,
+                                                    "Structure volume": structure_volume_list,
+                                                    "Voxel side length (volume calculation)": voxel_size_for_volume_list,
+                                                    "Structure X dim length (mm)": structure_x_dim_list,
+                                                    "Structure Y dim length (mm)": structure_y_dim_list,
+                                                    "Structure Z dim length (mm)": structure_z_dim_list,
+                                                    "Voxel side length (dimension calculation)": voxel_size_for_dimension_list
+                                                    }
+        
+        structure_info_pandas_data_frame = pandas.DataFrame.from_dict(data = structure_info_dict_for_pandas_dataframe)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Structure information (Non-BX)"] = structure_info_pandas_data_frame
+
+
+
+def bx_structure_info_dataframe_builder(master_structure_ref_dict,
+                                       structs_referenced_list,
+                                       all_ref_key,
+                                       bx_ref):
+    
+
+    for patientUID,pydicom_item in master_structure_ref_dict.items():
+        patient_ID_list = []
+        structure_ID_list = []
+        structure_type_list = []
+        structure_ref_num_list = []
+        structure_index_list = []
+
+        structure_volume_list = []
+        structure_max_pairwise_dist_list = []
+        voxel_size_for_volume_list = []
+
+        nearest_dil_by_centroid_list = []
+        nearest_dil_by_centroid_centroid_distance_list = []
+        nearest_dil_by_centroid_surface_distance_list = []
+        nearest_dil_by_surface_list = []
+        nearest_dil_by_surface_centroid_distance_list = []
+        nearest_dil_by_surface_surface_distance_list = []
+
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                if structs == bx_ref:
+                    structureID = specific_structure["ROI"]
+                    structure_reference_number = specific_structure["Ref #"]
+                    struct_type = structs
+
+                    maximum_distance = specific_structure["Maximum pairwise distance"]
+                    structure_volume = specific_structure["Structure volume"]
+                    voxel_size_for_volume = specific_structure["Voxel size for structure volume calc"]
+
+                    nearest_dils_by_surface_dict = specific_structure["Target DIL by surfaces dict"] 
+                    nearest_dils_by_centroid_dict = specific_structure["Target DIL by centroid dict"]
+
+                    patient_ID_list.append(patientUID)
+                    structure_ID_list.append(structureID)
+                    structure_type_list.append(struct_type)
+                    structure_ref_num_list.append(structure_reference_number)
+                    structure_index_list.append(specific_structure_index)
+
+                    structure_volume_list.append(structure_volume)
+                    structure_max_pairwise_dist_list.append(maximum_distance)
+                    voxel_size_for_volume_list.append(voxel_size_for_volume)
+
+                    structure_x_dim_list.append(x_dim_len)
+                    structure_y_dim_list.append(y_dim_len)
+                    structure_z_dim_list.append(z_dim_len)
+                    voxel_size_for_dimension_list.append(voxel_size_for_dimension)
+
+
+                else:
+                    pass
+
+        structure_info_dict_for_pandas_dataframe = {"Patient UID": patient_ID_list,
+                                                    "Structure ID": structure_ID_list,
+                                                    "Structure type": structure_type_list,
+                                                    "Structure ref num": structure_ref_num_list,
+                                                    "Structure index": structure_index_list,
+                                                    "Structure max pair-wise distance": structure_max_pairwise_dist_list,
+                                                    "Structure volume": structure_volume_list,
+                                                    "Voxel side length (volume calculation)": voxel_size_for_volume_list,
+                                                    "Structure X dim length (mm)": structure_x_dim_list,
+                                                    "Structure Y dim length (mm)": structure_y_dim_list,
+                                                    "Structure Z dim length (mm)": structure_z_dim_list,
+                                                    "Voxel side length (dimension calculation)": voxel_size_for_dimension_list
+                                                    }
+        
+        structure_info_pandas_data_frame = pandas.DataFrame.from_dict(data = structure_info_dict_for_pandas_dataframe)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Structure information (Non-BX)"] = structure_info_pandas_data_frame
+
+
+def bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
+                                       structs_referenced_list,
+                                       all_ref_key,
+                                       bx_ref
+                                       ):
+    
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        sp_patient_relative_dil_dataframe_list = []
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                if structs == bx_ref:
+                    structureID = specific_structure["ROI"]
+                    structure_reference_number = specific_structure["Ref #"]
+                    bx_structure_info = (patientUID,
+                                                structureID,
+                                                bx_ref,
+                                                structure_reference_number,
+                                                specific_structure_index
+                                                )
+
+                
+                    dil_distance_dict = specific_structure["Nearest DILs info dict"]
+
+
+                    patientUID_list = []
+                    structureID_list = []
+                    bx_ref_list = []
+                    structure_reference_number_list = []
+                    specific_structure_index_list = []
+                    dil_structureID_list = []
+                    dil_ref_list = []
+                    dil_structure_reference_number_list = []
+                    specific_dil_structure_index_list = []
+                    bx_centroid_vec_list = []
+                    dil_centroid_vec_list =[]
+                    vector_cent_to_cent_list = []
+                    x_cent_to_cent_list = []
+                    y_cent_to_cent_list = []
+                    z_cent_to_cent_list = []
+                    dist_cent_to_cent_list = []
+                    nn_dist_surf_to_surf_list = []
+
+                    
+                    patientUID = bx_structure_info[0]
+                    structureID = bx_structure_info[1]
+                    bx_ref = bx_structure_info[2]
+                    structure_reference_number = bx_structure_info[3]
+                    specific_structure_index = bx_structure_info[4]
+                                                                
+
+                    for dil_structure_info, dil_distance_info in dil_distance_dict.items():
+
+                        dil_structureID = dil_structure_info[0]
+                        dil_ref = dil_structure_info[1]
+                        dil_structure_reference_number = dil_structure_info[2]
+                        specific_dil_structure_index = dil_structure_info[3]
+
+                        bx_centroid_vec = dil_distance_info["Bx centroid vector"]
+                        dil_centroid_vec = dil_distance_info["DIL centroid vector"]
+                        vector_cent_to_cent = dil_distance_info["Vector DIL centroid - BX centroid"]
+                        x_cent_to_cent = dil_distance_info["X to DIL centroid"]
+                        y_cent_to_cent = dil_distance_info["Y to DIL centroid"]
+                        z_cent_to_cent = dil_distance_info["Z to DIL centroid"]
+                        dist_cent_to_cent = dil_distance_info["Distance DIL centroid - BX centroid"]
+                        nn_dist_surf_to_surf = dil_distance_info["Shortest distance from BX surface to DIL surface"]
+
+
+                        patientUID_list.append(patientUID)
+                        structureID_list.append(structureID)
+                        bx_ref_list.append(bx_ref)
+                        structure_reference_number_list.append(structure_reference_number)
+                        specific_structure_index_list.append(specific_structure_index)
+                        dil_structureID_list.append(dil_structureID)
+                        dil_ref_list.append(dil_ref)
+                        dil_structure_reference_number_list.append(dil_structure_reference_number)
+                        specific_dil_structure_index_list.append(specific_dil_structure_index)
+                        bx_centroid_vec_list.append(bx_centroid_vec)
+                        dil_centroid_vec_list.append(dil_centroid_vec)
+                        vector_cent_to_cent_list.append(vector_cent_to_cent)
+                        x_cent_to_cent_list.append(x_cent_to_cent)
+                        y_cent_to_cent_list.append(y_cent_to_cent)
+                        z_cent_to_cent_list.append(z_cent_to_cent)
+                        dist_cent_to_cent_list.append(dist_cent_to_cent)
+                        nn_dist_surf_to_surf_list.append(nn_dist_surf_to_surf)
+
+                    else:
+                        pass
+                                                                
+                    sp_bx_relative_dil_info_dict = {"Patient UID": patientUID_list,
+                                                    "Structure ID": structureID_list,
+                                                    "Struct type": bx_ref_list,
+                                                    "Struct ref num": structure_reference_number_list,
+                                                    "Structure index": specific_structure_index_list,
+                                                    "Relative DIL ID": dil_structureID_list,
+                                                    "Relative struct type": dil_ref_list,
+                                                    "Relative DIL ref num": dil_structure_reference_number_list,
+                                                    "Relative DIL index": specific_dil_structure_index_list,
+                                                    "BX centroid vec": bx_centroid_vec_list,
+                                                    "DIL centroid vec": dil_centroid_vec_list,
+                                                    "BX to DIL centroid vector": vector_cent_to_cent_list,
+                                                    "BX to DIL centroid (X)": x_cent_to_cent_list,
+                                                    "BX to DIL centroid (Y)": y_cent_to_cent_list,
+                                                    "BX to DIL centroid (Z)": z_cent_to_cent_list,
+                                                    "BX to DIL centroid distance": dist_cent_to_cent_list,
+                                                    "NN surface-surface distance": nn_dist_surf_to_surf_list
+                                                    }
+                    
+                    sp_bx_relative_dil_dataframe = pandas.DataFrame.from_dict(data = sp_bx_relative_dil_info_dict)
+
+                    sp_patient_relative_dil_dataframe_list.append(sp_bx_relative_dil_dataframe)
+
+                    
+
+        sp_patient_relative_dil_dataframe = pandas.concat(sp_patient_relative_dil_dataframe_list)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Nearest DILs info dataframe"] = sp_patient_relative_dil_dataframe
+
+
+
+
+def bx_info_dataframe_builder(master_structure_reference_dict,
+                            structs_referenced_list,
+                            all_ref_key,
+                            bx_ref,
+                            target_dils_dataframe):
+    print('test')
+
+
+
+
+def dil_optimization_results_dataframe_builder(master_structure_reference_dict,
+                                       all_ref_key,
+                                       dil_ref
+                                       ):
+     
+     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        optimal_locations_dataframe_list = []
+        potential_optimal_locations_dataframe_list = []
+        for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
+
+            optimal_locations_dataframe = specific_dil_structure["Optimal biopsy location dataframe"]
+            potential_optimal_locations_dataframe = specific_dil_structure["Optimal biopsy location (all latice points) dataframe"]
+
+            optimal_locations_dataframe_list.append(optimal_locations_dataframe)
+            potential_optimal_locations_dataframe_list.append(potential_optimal_locations_dataframe)
+
+        sp_patient_optimal_dataframe = pandas.concat(optimal_locations_dataframe_list)
+        sp_patient_potential_optimal_dataframe = pandas.concat(potential_optimal_locations_dataframe_list)
+
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Optimal DIL targeting dataframe"] = sp_patient_optimal_dataframe
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Optimal DIL targeting entire lattice dataframe"] = sp_patient_potential_optimal_dataframe
+
+

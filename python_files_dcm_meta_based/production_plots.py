@@ -11,6 +11,7 @@ import plotly.figure_factory as ff
 from scipy.stats import norm
 from scipy import stats
 from plotly.subplots import make_subplots
+import itertools
 
 
 
@@ -2013,7 +2014,9 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
                                                 general_plot_name_string_dict,
                                                 structure_miss_probability_roi,
                                                 tissue_class_sobol_global_plot_bool_dict,
-                                                box_plot_points_option
+                                                box_plot_points_option,
+                                                notch_option,
+                                                boxmean_option
                                                 ):
     
 
@@ -2021,6 +2024,8 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
 
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
     fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    fanova_sobol_indices_names_FO = [x + ' FO' for x in fanova_sobol_indices_names_by_index]
+    fanova_sobol_indices_names_TO = [x + ' TO' for x in fanova_sobol_indices_names_by_index]
 
     #num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
     dataframes_list = []
@@ -2040,13 +2045,102 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
     grand_sobol_dataframe = cudf.concat(dataframes_list, ignore_index=True)       
     
     if tissue_class_sobol_global_plot_bool_dict["Global FO"] == True:
-        general_plot_name_string = general_plot_name_string_dict["Global FO"]
+        
+        num_uncertainty_vars = len(fanova_sobol_indices_names_by_index)
+        comb_seed_list = list(range(0,num_uncertainty_vars))
+        combs_list_for_p_vals = []
+        for subset in itertools.combinations(comb_seed_list, 2):
+            combs_list_for_p_vals.append(list(subset))
 
         column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
         column_names_first_order_sobol_list.append("Simulated bx bool")
         grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
+        grand_sobol_dataframe_first_order_non_sim_only = grand_sobol_dataframe_first_order_all[grand_sobol_dataframe_first_order_all["Simulated bx bool"] == False]
+        grand_sobol_dataframe_first_order_sim_only = grand_sobol_dataframe_first_order_all[grand_sobol_dataframe_first_order_all["Simulated bx bool"] == True]
+        
+        fig_non_sim = go.Figure()
+        for FO_uncertainty_type in fanova_sobol_indices_names_FO:
+            fig_non_sim.add_trace(go.Box(
+                y = grand_sobol_dataframe_first_order_non_sim_only[FO_uncertainty_type].to_numpy(),
+                name = FO_uncertainty_type,
+                marker_color = color_discrete_map_dict[False],
+                boxpoints = box_plot_points_option,
+                notched = notch_option,
+                boxmean = boxmean_option,
+            ))
+        fig_non_sim = plotting_funcs.fix_plotly_grid_lines(fig_non_sim, y_axis = True, x_axis = False)
+        fig_non_sim.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (non-sim only)',
+            hovermode="x unified"
+        )
+        fig_non_sim = add_p_value_annotation(fig_non_sim, 
+                            combs_list_for_p_vals, 
+                            subplot=None,
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        fig_non_sim.update_layout(
+            margin=dict(t=50*len(combs_list_for_p_vals))
+            )
+
+        fig_sim = go.Figure()
+        for FO_uncertainty_type in fanova_sobol_indices_names_FO:
+            fig_sim.add_trace(go.Box(
+                y = grand_sobol_dataframe_first_order_sim_only[FO_uncertainty_type].to_numpy(),
+                name = FO_uncertainty_type,
+                marker_color = color_discrete_map_dict[True],
+                boxpoints = box_plot_points_option,
+                notched = notch_option,
+                boxmean = boxmean_option,
+            ))
+        fig_sim = plotting_funcs.fix_plotly_grid_lines(fig_sim, y_axis = True, x_axis = False)
+        fig_sim.update_layout(
+            yaxis_title='First order Sobol index value (S_i)',
+            xaxis_title='Index',
+            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (sim only)',
+            hovermode="x unified"
+        )
+        fig_sim = add_p_value_annotation(fig_sim, 
+                            combs_list_for_p_vals,
+                            subplot=None, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        fig_sim.update_layout(
+            margin=dict(t=50*len(combs_list_for_p_vals))
+            )
+
+        # cant use plotly express for p value generation because only creates one trace
+        """
+        fig_sim = px.box(grand_sobol_dataframe_first_order_sim_only, 
+                     points = box_plot_points_option,
+                     color = "Simulated bx bool",
+                     color_discrete_map = color_discrete_map_dict)
+        fig_sim = add_p_value_annotation(fig_sim, 
+                            combs_list_for_p_vals, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        fig_non_sim = px.box(grand_sobol_dataframe_first_order_non_sim_only, 
+                     points = box_plot_points_option,
+                     color = "Simulated bx bool",
+                     color_discrete_map = color_discrete_map_dict)
+        fig_non_sim = add_p_value_annotation(fig_non_sim, 
+                            combs_list_for_p_vals, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        """
+        
+        
+        # old code
+        """
+        
+
+        column_names_first_order_sobol_list = [name+' FO' for name in fanova_sobol_indices_names_by_index]
+        column_names_first_order_sobol_list.append("Simulated bx bool")
+        grand_sobol_dataframe_first_order_all = grand_sobol_dataframe[column_names_first_order_sobol_list]
+        grand_sobol_dataframe_first_order_non_sim_only = grand_sobol_dataframe_first_order_all[grand_sobol_dataframe_first_order_all["Simulated bx bool"] == False]
         # global sobol first order box plot
-        fig = px.box(grand_sobol_dataframe_first_order_all, 
+        fig = px.box(grand_sobol_dataframe_first_order_non_sim_only, 
                      points = box_plot_points_option,
                      color = "Simulated bx bool",
                      color_discrete_map = color_discrete_map_dict)
@@ -2055,17 +2149,28 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
         fig.update_layout(
             yaxis_title='First order Sobol index value (S_i)',
             xaxis_title='Index',
-            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+')',
+            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (non-sim only)',
             hovermode="x unified"
         )
+        """
 
-        svg_dose_fig_name = general_plot_name_string+'.svg'
+        general_plot_name_string = general_plot_name_string_dict["Global FO"]
+
+        svg_dose_fig_name = general_plot_name_string+'_sim.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+        fig_sim.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
 
-        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_name = general_plot_name_string+'_sim.html'
         html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig.write_html(html_dose_fig_file_path)
+        fig_sim.write_html(html_dose_fig_file_path)
+
+        svg_dose_fig_name = general_plot_name_string+'_nonsim.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig_non_sim.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'_nonsim.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig_non_sim.write_html(html_dose_fig_file_path)
 
     if tissue_class_sobol_global_plot_bool_dict["Global TO"] == True:
         general_plot_name_string = general_plot_name_string_dict["Global TO"]

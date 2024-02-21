@@ -282,3 +282,9 @@ def confidence_intervals_95_from_calculated_SE(values_arr, se_arr):
     conf_int_arr = np.array([lower,upper])
 
     return conf_int_arr
+
+
+
+
+def add_in_quadrature(array):
+    return np.sqrt((array**2).sum())

@@ -9,6 +9,8 @@ import cudf
 import cupy as cp
 import point_containment_tools
 import plotting_funcs
+import math
+import pandas as pd 
 
 #import multiprocess
 #import dill
@@ -291,6 +293,268 @@ def cuspatial_points_contained(polygons_geoseries,
     return grand_cudf_dataframe
 
 
+def cuspatial_points_contained_mc_sim_cupy_pandas(polygons_geoseries,
+                               test_points_geoseries, 
+                               test_points_array, 
+                               nearest_zslices_indices_arr,
+                               nearest_zslices_vals_arr,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval,  
+                               num_sample_pts_in_bx,
+                               num_MC_containment_simulations,
+                               structure_info,
+                               layout_groups,
+                               live_display,
+                               progress_bar_level_task_obj,
+                               indeterminate_bar_level_task_obj,
+                               upper_limit_size_input = 1e9
+                               ):
+    
+    num_zslices = len(polygons_geoseries)
+    total_num_points = len(test_points_geoseries) # note that this is the total number of points num_MC_containment_sims*num_sampled_pts_in_bx+1, the +1 is because nominal position is included
+    upper_limit_size = upper_limit_size_input
+    if num_zslices*total_num_points > upper_limit_size:
+        ###
+        indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~Very large array, building prelims (1)", total = None)
+        ###
+
+        contain_bool_arr_step_1 = cp.empty(total_num_points, dtype = cp.bool_)
+        chunk_row_size = math.floor(upper_limit_size/num_zslices)
+        num_point_chunks = math.ceil(total_num_points/chunk_row_size)
+        next_pt_index = 0
+        current_pt_index = 0
+
+        ###
+        indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+        ###
+
+
+        task_description = "[cyan]Processing point chunks"
+        chunk_task = progress_bar_level_task_obj.add_task(task_description, total=num_point_chunks)
+        while next_pt_index < total_num_points:
+            if total_num_points - current_pt_index > chunk_row_size:
+                next_pt_index = current_pt_index + chunk_row_size
+            else:
+                next_pt_index = total_num_points
+
+            current_index = 0
+            next_index = 0
+
+            ###
+            indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~Building pointschunk cupy array (2)", total = None)
+            ###
+
+            containment_results_grand_cupy_array_pointschunk = cp.empty((next_pt_index-current_pt_index,num_zslices), dtype = cp.bool_)
+
+            ###
+            indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+            ###
+
+            num_slice_chunks = math.ceil(num_zslices/30)
+            slice_task_description = "[cyan]Processing slicechunk"
+            slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+            while next_index < num_zslices:
+                if num_zslices - current_index > 30:
+                    next_index = current_index + 30
+                else:
+                    next_index = num_zslices
+
+                ###
+                indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~cuspatial (3)", total = None)
+                ###
+
+                containment_results_grand_cupy_array_pointschunk_polygonchunk = cuspatial.point_in_polygon(test_points_geoseries[current_pt_index:next_pt_index],
+                                                polygons_geoseries[current_index:next_index]                   
+                                                ).to_cupy()
+                
+
+                ###
+                indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+                ###
+                
+                ###
+                indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~Assigning (4)", total = None)
+                ###
+
+                containment_results_grand_cupy_array_pointschunk[:,current_index:next_index] = containment_results_grand_cupy_array_pointschunk_polygonchunk
+                
+                ###
+                indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+                ###
+
+                del containment_results_grand_cupy_array_pointschunk_polygonchunk
+                current_index = next_index
+
+                progress_bar_level_task_obj.update(slice_task, advance=1)
+            progress_bar_level_task_obj.update(slice_task, visible=False)
+
+            ###
+            indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~Creating and assigning (5)", total = None)
+            ###
+
+            points_arr_index = cp.arange(0,next_pt_index-current_pt_index, dtype = cp.int64)
+            contain_bool_arr_step_1_points_chunk = containment_results_grand_cupy_array_pointschunk[points_arr_index,nearest_zslices_indices_arr[current_pt_index:next_pt_index]]
+            del containment_results_grand_cupy_array_pointschunk
+            del points_arr_index
+            contain_bool_arr_step_1[current_pt_index:next_pt_index] = contain_bool_arr_step_1_points_chunk
+            del contain_bool_arr_step_1_points_chunk
+
+            ###
+            indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+            ###
+            
+            current_pt_index = next_pt_index
+
+            progress_bar_level_task_obj.update(chunk_task, advance=1)
+        progress_bar_level_task_obj.update(chunk_task, visible=False)
+
+
+    else: 
+        current_index = 0
+        next_index = 0
+        ###
+        indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~Small array, creating cupy arr (1)", total = None)
+        ###
+        
+        containment_results_grand_cupy_array = cp.empty((total_num_points,num_zslices), dtype = cp.bool_)
+
+        ###
+        indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+        ###
+
+        num_slice_chunks = math.ceil(num_zslices/30)
+        slice_task_description = "[cyan]Processing slicechunk"
+        slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+        while next_index < num_zslices:
+            if num_zslices - current_index > 30:
+                next_index = current_index + 30
+            else:
+                next_index = num_zslices
+
+            ###
+            indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~cuspatial (2)", total = None)
+            ###
+
+            containment_results_grand_cupy_array_polygon_subset = cuspatial.point_in_polygon(test_points_geoseries,
+                                            polygons_geoseries[current_index:next_index]                   
+                                            ).to_cupy()
+            
+            ###
+            indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+            ###
+
+            ###
+            indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~assigning (3)", total = None)
+            ###
+            
+            containment_results_grand_cupy_array[:,current_index:next_index] = containment_results_grand_cupy_array_polygon_subset
+
+            ###
+            indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+            ###
+
+            current_index = next_index
+
+            progress_bar_level_task_obj.update(slice_task, advance=1)
+        progress_bar_level_task_obj.update(slice_task, visible=False)
+
+        ###
+        indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~ Creating and assigning (4)", total = None)
+        ###
+
+        points_arr_index = cp.arange(0,total_num_points, dtype=cp.int64)
+        contain_bool_arr_step_1 = containment_results_grand_cupy_array[points_arr_index,nearest_zslices_indices_arr]
+        del containment_results_grand_cupy_array
+        del points_arr_index
+
+        ###
+        indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+        ###
+
+    points_arr_org_index_template = cp.array(range(num_sample_pts_in_bx))
+    points_arr_org_index = cp.tile(points_arr_org_index_template,num_MC_containment_simulations+1) # the +1 is because of the nominal position!
+    del points_arr_org_index_template
+
+    ###
+    indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~ logic (5)", total = None)
+    ###
+
+    # further set points that are outside z-range to False
+    pts_contained_below_max_zval = cp.array((test_points_array[:,2] < non_bx_struct_max_zval))
+    pts_contained_above_min_zval = cp.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_between_zvals = cp.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
+    del pts_contained_below_max_zval
+    del pts_contained_above_min_zval
+    contain_bool_arr = cp.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
+    del contain_bool_arr_step_1
+    del pts_contained_between_zvals
+
+    ###
+    indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+    ###
+
+    ###
+    indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~coloring (6)", total = None)
+    ###
+
+    contain_color_arr = color_by_bool_array_cupy_fast(contain_bool_arr)
+    contain_color_arr[0:num_sample_pts_in_bx,2] = 1 # set the nominal points to turn on blue for contained color, therefore False = pink and True = Cyan
+    
+    ###
+    indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+    ###
+    
+
+    ###
+    indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~creating (7)", total = None)
+    ###
+
+    #trial_number_list = [int(i) for i in range(num_MC_containment_simulations+1) for j in range(num_sample_pts_in_bx)] # Note that the nominal position is indicated by Trial num = 0
+    trial_number_template_arr = cp.array(range(num_MC_containment_simulations+1))
+    trial_number_arr = cp.repeat(trial_number_template_arr, num_sample_pts_in_bx)
+
+    ###
+    indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+    ###
+
+    ###
+    indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~creating dictionary (8)", total = None)
+    ###
+
+    results_dictionary = {"Relative structure ROI": structure_info[0],
+                          "Relative structure type": structure_info[1],
+                          "Relative structure index": structure_info[3],
+                          "Original pt index": points_arr_org_index.get(),
+                          "Pt contained bool": contain_bool_arr.get(),
+                          "Nearest zslice zval": nearest_zslices_vals_arr,
+                          "Nearest zslice index": nearest_zslices_indices_arr,
+                          "Pt clr R": contain_color_arr[:,0].get(),
+                          "Pt clr G": contain_color_arr[:,1].get(),
+                          "Pt clr B": contain_color_arr[:,2].get(),
+                          "Test pt X": test_points_array[:,0],
+                          "Test pt Y": test_points_array[:,1],
+                          "Test pt Z": test_points_array[:,2],
+                          "Trial num": trial_number_arr.get()
+                          }
+    
+    ###
+    indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+    ###
+
+    ###
+    indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~creating dataframe (9)", total = None)
+    ###
+
+    #grand_pandas_dataframe = cudf.DataFrame.from_dict(results_dictionary).to_pandas()
+    grand_pandas_dataframe = pd.DataFrame.from_dict(results_dictionary)
+
+    ###
+    indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
+    ###
+
+    return grand_pandas_dataframe, live_display
+
+
 def cuspatial_points_contained_FANOVA(polygons_geoseries,
                                test_points_geoseries, 
                                test_points_array, 
@@ -359,6 +623,267 @@ def cuspatial_points_contained_FANOVA(polygons_geoseries,
 
 
 
+def cuspatial_points_contained_generic_numpy_pandas(polygons_geoseries,
+                               test_points_geoseries, 
+                               test_points_array, 
+                               nearest_zslices_indices_arr,
+                               nearest_zslices_vals_arr,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval,
+                               structure_info,
+                               layout_groups,
+                               live_display,
+                               progress_bar_level_task_obj,
+                               upper_limit_size_input = 1e9
+                               ):
+    
+    num_zslices = len(polygons_geoseries)
+    total_num_points = len(test_points_geoseries)
+    upper_limit_size = upper_limit_size_input
+    if num_zslices*total_num_points > upper_limit_size:
+        
+        contain_bool_arr_step_1 = np.empty(total_num_points)
+        chunk_row_size = math.floor(upper_limit_size/num_zslices)
+        num_point_chunks = math.ceil(total_num_points/chunk_row_size)
+        next_pt_index = 0
+        current_pt_index = 0
+
+        task_description = "[cyan]Processing point chunks"
+        chunk_task = progress_bar_level_task_obj.add_task(task_description, total=num_point_chunks)
+        while next_pt_index < total_num_points:
+            if total_num_points - current_pt_index > chunk_row_size:
+                next_pt_index = current_pt_index + chunk_row_size
+            else:
+                next_pt_index = total_num_points
+
+            current_index = 0
+            next_index = 0
+
+            containment_results_grand_numpy_array_pointschunk = np.empty((next_pt_index-current_pt_index,num_zslices))
+            num_slice_chunks = math.ceil(num_zslices/30)
+            slice_task_description = "[cyan]Processing slicechunk"
+            slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+            while next_index < num_zslices:
+                if num_zslices - current_index > 30:
+                    next_index = current_index + 30
+                else:
+                    next_index = num_zslices
+
+                containment_results_grand_numpy_array_pointschunk_polygonchunk = cuspatial.point_in_polygon(test_points_geoseries[current_pt_index:next_pt_index],
+                                                polygons_geoseries[current_index:next_index]                   
+                                                ).to_numpy()
+                
+                containment_results_grand_numpy_array_pointschunk[:,current_index:next_index] = containment_results_grand_numpy_array_pointschunk_polygonchunk
+
+                current_index = next_index
+
+                progress_bar_level_task_obj.update(slice_task, advance=1)
+            progress_bar_level_task_obj.update(slice_task, visible=False)
+
+            points_arr_index = np.arange(0,next_pt_index-current_pt_index, dtype=np.int64)
+            contain_bool_arr_step_1_points_chunk = containment_results_grand_numpy_array_pointschunk[points_arr_index,nearest_zslices_indices_arr[current_pt_index:next_pt_index]]
+            contain_bool_arr_step_1[current_pt_index:next_pt_index] = np.array(contain_bool_arr_step_1_points_chunk)
+            
+            current_pt_index = next_pt_index
+
+            progress_bar_level_task_obj.update(chunk_task, advance=1)
+        progress_bar_level_task_obj.update(chunk_task, visible=False)
+
+
+    else: 
+        current_index = 0
+        next_index = 0
+        #results_dataframes_list = []
+        containment_results_grand_numpy_array = np.empty((total_num_points,num_zslices))
+
+        num_slice_chunks = math.ceil(num_zslices/30)
+        slice_task_description = "[cyan]Processing slicechunk"
+        slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+        while next_index < num_zslices:
+            if num_zslices - current_index > 30:
+                next_index = current_index + 30
+            else:
+                next_index = num_zslices
+
+            containment_results_grand_numpy_array_polygon_subset = cuspatial.point_in_polygon(test_points_geoseries,
+                                            polygons_geoseries[current_index:next_index]                   
+                                            ).to_numpy()
+
+            containment_results_grand_numpy_array[:,current_index:next_index] = containment_results_grand_numpy_array_polygon_subset
+
+            current_index = next_index
+
+            progress_bar_level_task_obj.update(slice_task, advance=1)
+        progress_bar_level_task_obj.update(slice_task, visible=False)
+
+        points_arr_index = np.arange(0,total_num_points, dtype=np.int64)
+
+        contain_bool_arr_step_1 = containment_results_grand_numpy_array[points_arr_index,nearest_zslices_indices_arr]
+
+
+    # further set points that are outside z-range to False
+    pts_contained_below_max_zval = np.array((test_points_array[:,2] < non_bx_struct_max_zval))
+    pts_contained_above_min_zval = np.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_between_zvals = np.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
+    contain_bool_arr = np.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
+    contain_color_arr = color_by_bool_array_numpy_fast(contain_bool_arr)
+    
+    results_dictionary = {"Relative structure ROI": structure_info["Structure ID"],
+                        "Relative structure type": structure_info["Struct ref type"],
+                        "Relative structure index": structure_info["Index number"],
+                        "Pt contained bool": contain_bool_arr,
+                        "Nearest zslice zval": nearest_zslices_vals_arr,
+                        "Nearest zslice index": nearest_zslices_indices_arr,
+                        "Pt clr R": contain_color_arr[:,0],
+                        "Pt clr G": contain_color_arr[:,1],
+                        "Pt clr B": contain_color_arr[:,2],
+                        "Test pt X": test_points_array[:,0],
+                        "Test pt Y": test_points_array[:,1],
+                        "Test pt Z": test_points_array[:,2]
+                        }
+
+
+    grand_pandas_dataframe = pd.DataFrame.from_dict(results_dictionary)
+
+    return grand_pandas_dataframe, live_display
+
+
+
+
+def cuspatial_points_contained_generic_cupy_pandas(polygons_geoseries,
+                               test_points_geoseries, 
+                               test_points_array, 
+                               nearest_zslices_indices_arr,
+                               nearest_zslices_vals_arr,
+                               non_bx_struct_max_zval,
+                               non_bx_struct_min_zval,
+                               structure_info,
+                               layout_groups,
+                               live_display,
+                               progress_bar_level_task_obj,
+                               upper_limit_size_input = 1e9
+                               ):
+    
+    num_zslices = len(polygons_geoseries)
+    total_num_points = len(test_points_geoseries)
+    upper_limit_size = upper_limit_size_input
+    if num_zslices*total_num_points > upper_limit_size:
+        
+        contain_bool_arr_step_1 = cp.empty(total_num_points, dtype = cp.bool_)
+        chunk_row_size = math.floor(upper_limit_size/num_zslices)
+        num_point_chunks = math.ceil(total_num_points/chunk_row_size)
+        next_pt_index = 0
+        current_pt_index = 0
+
+        task_description = "[cyan]Processing point chunks"
+        chunk_task = progress_bar_level_task_obj.add_task(task_description, total=num_point_chunks)
+        while next_pt_index < total_num_points:
+            if total_num_points - current_pt_index > chunk_row_size:
+                next_pt_index = current_pt_index + chunk_row_size
+            else:
+                next_pt_index = total_num_points
+
+            current_index = 0
+            next_index = 0
+
+            containment_results_grand_numpy_array_pointschunk = cp.empty((next_pt_index-current_pt_index,num_zslices), dtype = cp.bool_)
+            num_slice_chunks = math.ceil(num_zslices/30)
+            slice_task_description = "[cyan]Processing slicechunk"
+            slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+            while next_index < num_zslices:
+                if num_zslices - current_index > 30:
+                    next_index = current_index + 30
+                else:
+                    next_index = num_zslices
+
+                containment_results_grand_numpy_array_pointschunk_polygonchunk = cuspatial.point_in_polygon(test_points_geoseries[current_pt_index:next_pt_index],
+                                                polygons_geoseries[current_index:next_index]                   
+                                                ).to_cupy()
+                
+                containment_results_grand_numpy_array_pointschunk[:,current_index:next_index] = containment_results_grand_numpy_array_pointschunk_polygonchunk
+                del containment_results_grand_numpy_array_pointschunk_polygonchunk
+                current_index = next_index
+
+                progress_bar_level_task_obj.update(slice_task, advance=1)
+            progress_bar_level_task_obj.update(slice_task, visible=False)
+
+            points_arr_index = cp.arange(0,next_pt_index-current_pt_index, dtype=cp.int64)
+            contain_bool_arr_step_1_points_chunk = containment_results_grand_numpy_array_pointschunk[points_arr_index,nearest_zslices_indices_arr[current_pt_index:next_pt_index]]
+            del containment_results_grand_numpy_array_pointschunk
+            contain_bool_arr_step_1[current_pt_index:next_pt_index] = contain_bool_arr_step_1_points_chunk
+            del contain_bool_arr_step_1_points_chunk
+            
+            current_pt_index = next_pt_index
+
+            progress_bar_level_task_obj.update(chunk_task, advance=1)
+        progress_bar_level_task_obj.update(chunk_task, visible=False)
+
+
+    else: 
+        current_index = 0
+        next_index = 0
+        #results_dataframes_list = []
+        containment_results_grand_numpy_array = cp.empty((total_num_points,num_zslices), dtype = cp.bool_)
+
+        num_slice_chunks = math.ceil(num_zslices/30)
+        slice_task_description = "[cyan]Processing slicechunk"
+        slice_task = progress_bar_level_task_obj.add_task(slice_task_description, total=num_slice_chunks)
+        while next_index < num_zslices:
+            if num_zslices - current_index > 30:
+                next_index = current_index + 30
+            else:
+                next_index = num_zslices
+
+            containment_results_grand_numpy_array_polygon_subset = cuspatial.point_in_polygon(test_points_geoseries,
+                                            polygons_geoseries[current_index:next_index]                   
+                                            ).to_cupy()
+
+            containment_results_grand_numpy_array[:,current_index:next_index] = containment_results_grand_numpy_array_polygon_subset
+            del containment_results_grand_numpy_array_polygon_subset
+
+            current_index = next_index
+
+            progress_bar_level_task_obj.update(slice_task, advance=1)
+        progress_bar_level_task_obj.update(slice_task, visible=False)
+
+        points_arr_index = cp.arange(0,total_num_points, dtype=cp.int64)
+
+        contain_bool_arr_step_1 = containment_results_grand_numpy_array[points_arr_index,nearest_zslices_indices_arr]
+        del containment_results_grand_numpy_array
+
+
+    # further set points that are outside z-range to False
+    pts_contained_below_max_zval = cp.array((test_points_array[:,2] < non_bx_struct_max_zval))
+    pts_contained_above_min_zval = cp.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_between_zvals = cp.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
+    del pts_contained_below_max_zval
+    del pts_contained_above_min_zval
+    contain_bool_arr = cp.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
+    del contain_bool_arr_step_1
+    del pts_contained_between_zvals
+    contain_color_arr = color_by_bool_array_cupy_fast(contain_bool_arr)
+    
+    results_dictionary = {"Relative structure ROI": structure_info["Structure ID"],
+                        "Relative structure type": structure_info["Struct ref type"],
+                        "Relative structure index": structure_info["Index number"],
+                        "Pt contained bool": contain_bool_arr.get(),
+                        "Nearest zslice zval": nearest_zslices_vals_arr,
+                        "Nearest zslice index": nearest_zslices_indices_arr,
+                        "Pt clr R": contain_color_arr[:,0].get(),
+                        "Pt clr G": contain_color_arr[:,1].get(),
+                        "Pt clr B": contain_color_arr[:,2].get(),
+                        "Test pt X": test_points_array[:,0],
+                        "Test pt Y": test_points_array[:,1],
+                        "Test pt Z": test_points_array[:,2]
+                        }
+
+    #grand_pandas_dataframe = cudf.DataFrame.from_dict(results_dictionary).to_pandas()
+    grand_pandas_dataframe = pd.DataFrame.from_dict(results_dictionary)
+
+    return grand_pandas_dataframe, live_display
+
+
+
 
 def color_by_bool_by_arr(contain_bool_arr):
     color_arr = np.empty([len(contain_bool_arr),3])
@@ -371,14 +896,39 @@ def color_by_bool_by_arr(contain_bool_arr):
     return color_arr
 
 
+def color_by_bool(contain_bool):
+    if contain_bool == True:
+        color_arr = np.array([0,1,0]) # green
+    else:
+        color_arr = np.array([1,0,0]) # red
+    return color_arr
 
-def color_by_bool(bool_val):
-    if bool_val == True:
-        color = np.array([0,1,0],dtype=float)
-    elif bool_val == False:
-        color = np.array([1,0,0],dtype=float)
+def color_by_bool_array_cupy_fast(cupy_bool_val_arr):
+    color_arr = cp.empty((cupy_bool_val_arr.shape[0],3))
+    
+    green_arr = cupy_bool_val_arr.astype(int)
+    red_arr = 1- green_arr
+    blue_arr = cp.zeros((cupy_bool_val_arr.shape[0]))
+    
+    color_arr[:,0] = red_arr
+    color_arr[:,1] = green_arr
+    color_arr[:,2] = blue_arr
 
-    return color
+    return color_arr
+
+
+def color_by_bool_array_numpy_fast(cupy_bool_val_arr):
+    color_arr = np.empty((cupy_bool_val_arr.shape[0],3))
+    
+    green_arr = cupy_bool_val_arr.astype(int)
+    red_arr = 1- green_arr
+    blue_arr = np.zeros((cupy_bool_val_arr.shape[0]))
+    
+    color_arr[:,0] = red_arr
+    color_arr[:,1] = green_arr
+    color_arr[:,2] = blue_arr
+
+    return color_arr
 
 def take_closest(myList_org, myNumber):
     """
@@ -387,6 +937,43 @@ def take_closest(myList_org, myNumber):
     If two numbers are equally close, return the smallest number.
     """
     myList = myList_org.copy()
+    if myList[0] > myList[1]:
+        myList.reverse()
+        list_reversed = True
+    else:
+        list_reversed = False
+    if list_reversed == False:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return 0, myList[0]
+        if pos == len(myList):
+            return pos-1, myList[-1]
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return pos, after
+        else:
+            return pos - 1, before
+    elif list_reversed == True:
+        pos = bisect_left(myList, myNumber)
+        if pos == 0:
+            return len(myList)-1, myList[0]
+        if pos == len(myList):
+            return 0, myList[-1]
+        before = myList[pos - 1]
+        after = myList[pos]
+        if after - myNumber < myNumber - before:
+            return len(myList) - 1 - pos, after
+        else:
+            return len(myList) - pos, before
+
+def take_closest_cp(myList_org, myNumber):
+    """
+    Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    myList = myList_org.tolist().copy()
     if myList[0] > myList[1]:
         myList.reverse()
         list_reversed = True
@@ -470,6 +1057,20 @@ def take_closest_array_input(myList, myArray):
     return closest_vals_indices_array, closest_vals_array
 
 
+def take_closest_array_input_cp(myList, myArray):
+    """
+    Assumes myList is sorted. Returns index of closest value and the closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number. Takes an array as input and vectorizes the 'take_closest_index_only' function. 
+
+    Returns an array of the indices of the original list that contains the value that is closest to each element of the given array.
+    """
+    mylistTiled = np.tile(myList,(myArray.shape[0],1))
+    take_closest_index_only_vectorized = cp.vectorize(take_closest_cp)
+    closest_vals_indices_array, closest_vals_array = take_closest_index_only_vectorized(mylistTiled,myArray)
+    return closest_vals_indices_array, closest_vals_array
+
+
 def convex_bx_structure_global_test_point_containment(global_delaunay_tri,test_point):
     if global_delaunay_tri.find_simplex(test_point) >= 0:
         pt_contained = True
@@ -477,6 +1078,41 @@ def convex_bx_structure_global_test_point_containment(global_delaunay_tri,test_p
         pt_contained = False            
     return pt_contained
 
+
+def take_closest_cupy(indexed_array, testing_values_array):
+
+    "Note that: In case of multiple occurrences of the minimum values, the indices corresponding to the first occurrence are returned."
+
+    indexed_array_cupy = cp.array(indexed_array)
+    testing_values_array_cupy = cp.array(testing_values_array)
+
+    indexed_array_cupy_tiled = cp.tile(indexed_array_cupy, (testing_values_array_cupy.shape[0],1)) 
+
+    dist_array = cp.absolute(indexed_array_cupy_tiled.transpose()-testing_values_array_cupy).transpose()
+
+    del indexed_array_cupy_tiled
+    
+    # THE RESULTS INDICES ARRAY MUST HAVE AN INTEGER DATA TYPE!
+    results_indices = cp.asnumpy(dist_array.argmin(axis=1).astype(cp.int64))
+
+    results_nearest_vals = cp.asnumpy(indexed_array_cupy[results_indices])
+
+
+    return results_indices, results_nearest_vals
+
+
+def take_closest_numpy(indexed_array, testing_values_array):
+    indexed_array_numpy = np.array(indexed_array)
+    testing_values_array_numpy = np.array(testing_values_array)
+
+    indexed_array_numpy_tiled = np.tile(indexed_array_numpy, (testing_values_array_numpy.shape[0],1)) 
+
+    dist_array = np.absolute(indexed_array_numpy_tiled.transpose()-testing_values_array_numpy).transpose()
+    results_indices = dist_array.argmin(axis=1)
+    results_nearest_vals = indexed_array_numpy[results_indices]
+
+
+    return results_indices, results_nearest_vals
 
 
 class delaunay_obj:
@@ -526,3 +1162,101 @@ class delaunay_obj:
         line_set.lines = o3d.utility.Vector2iVector(edges)
         line_set.colors = o3d.utility.Vector3dVector(colors)
         return line_set
+    
+
+
+
+
+
+def nearest_zslice_vals_and_indices_numpy_generic(zvals_list, 
+                                                  test_arr_1d,
+                                                max_array_NxN_size,
+                                                progress_bar_level_task_obj):
+    
+    num_test_points = test_arr_1d.shape[0]
+    num_zvals = len(zvals_list)
+
+    nearest_zslice_index_array_final = np.empty(num_test_points, dtype = np.int64)
+    nearest_zslice_vals_array_final = np.empty(num_test_points)
+    
+    
+    if num_zvals*num_test_points > max_array_NxN_size:
+        
+        chunk_size = math.floor(max_array_NxN_size/num_zvals)
+        num_point_chunks = math.ceil(num_test_points/chunk_size)
+        next_pt_index = 0
+        current_pt_index = 0
+
+        task_description = "[cyan]Processing point chunks"
+        chunk_task = progress_bar_level_task_obj.add_task(task_description, total=num_point_chunks)
+        while next_pt_index < num_test_points:
+            if num_test_points - current_pt_index > chunk_size:
+                next_pt_index = current_pt_index + chunk_size
+            else:
+                next_pt_index = num_test_points
+
+            nearest_zslice_index_array_intermediate, nearest_zslice_vals_intermediate = point_containment_tools.take_closest_numpy(zvals_list, test_arr_1d[current_pt_index:next_pt_index])
+
+            nearest_zslice_index_array_final[current_pt_index:next_pt_index] = nearest_zslice_index_array_intermediate
+            nearest_zslice_vals_array_final[current_pt_index:next_pt_index] = nearest_zslice_vals_intermediate
+
+            del nearest_zslice_index_array_intermediate
+            del nearest_zslice_vals_intermediate
+
+            current_pt_index = next_pt_index
+
+            progress_bar_level_task_obj.update(chunk_task, advance=1)
+        progress_bar_level_task_obj.update(chunk_task, visible=False)
+
+    else:
+        nearest_zslice_index_array_final, nearest_zslice_vals_array_final = point_containment_tools.take_closest_numpy(zvals_list, test_arr_1d) 
+
+    return nearest_zslice_index_array_final, nearest_zslice_vals_array_final
+    
+    
+    
+
+def nearest_zslice_vals_and_indices_cupy_generic(zvals_list, 
+                                                test_arr_1d,
+                                                max_array_NxN_size,
+                                                progress_bar_level_task_obj):
+    
+    num_test_points = test_arr_1d.shape[0]
+    num_zvals = len(zvals_list)
+
+    nearest_zslice_index_array_final = np.empty(num_test_points, dtype = np.int64)
+    nearest_zslice_vals_array_final = np.empty(num_test_points)
+    
+    
+    if num_zvals*num_test_points > max_array_NxN_size:
+        
+        chunk_size = math.floor(max_array_NxN_size/num_zvals)
+        num_point_chunks = math.ceil(num_test_points/chunk_size)
+        next_pt_index = 0
+        current_pt_index = 0
+
+        task_description = "[cyan]Processing point chunks"
+        chunk_task = progress_bar_level_task_obj.add_task(task_description, total=num_point_chunks)
+        while next_pt_index < num_test_points:
+            if num_test_points - current_pt_index > chunk_size:
+                next_pt_index = current_pt_index + chunk_size
+            else:
+                next_pt_index = num_test_points
+
+            nearest_zslice_index_array_intermediate, nearest_zslice_vals_intermediate = point_containment_tools.take_closest_cupy(zvals_list, test_arr_1d[current_pt_index:next_pt_index])
+
+            nearest_zslice_index_array_final[current_pt_index:next_pt_index] = nearest_zslice_index_array_intermediate
+            nearest_zslice_vals_array_final[current_pt_index:next_pt_index] = nearest_zslice_vals_intermediate
+
+            del nearest_zslice_index_array_intermediate
+            del nearest_zslice_vals_intermediate
+
+            current_pt_index = next_pt_index
+
+            progress_bar_level_task_obj.update(chunk_task, advance=1)
+        progress_bar_level_task_obj.update(chunk_task, visible=False)
+
+    else:
+        nearest_zslice_index_array_final, nearest_zslice_vals_array_final = point_containment_tools.take_closest_cupy(zvals_list, test_arr_1d) 
+
+    return nearest_zslice_index_array_final, nearest_zslice_vals_array_final

@@ -6,6 +6,8 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
     MofNCompleteColumn,
+    TaskProgressColumn,
+    TimeRemainingColumn
 )
 from rich.panel import Panel
 from rich.console import Group
@@ -27,7 +29,11 @@ def get_completed_progress():
 def get_patients_progress(spinner_type):
     patients_progress = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        #TimeRemainingColumn(),
         TextColumn("[green]Patient:"),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
@@ -37,8 +43,12 @@ def get_patients_progress(spinner_type):
 def get_structures_progress(spinner_type):
     structures_progress = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
-        TextColumn("[green]Structure:"),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        #TimeRemainingColumn(),
+        #TextColumn("[green]Structure:"),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
     )
@@ -47,8 +57,12 @@ def get_structures_progress(spinner_type):
 def get_completed_biopsies_progress():
     completed_biopsies_progress = Progress(
         TextColumn(':heavy_check_mark:'),
-        *Progress.get_default_columns(),
-        TextColumn("[green]Biopsy:"),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        #TimeRemainingColumn(),
+        #TextColumn("[green]Biopsy:"),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
     )
@@ -57,8 +71,12 @@ def get_completed_biopsies_progress():
 def get_biopsies_progress(spinner_type):
     biopsies_progress = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
-        TextColumn("[green]Biopsy:"),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        #TimeRemainingColumn(),
+        #TextColumn("[green]Biopsy:"),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
     )
@@ -67,7 +85,11 @@ def get_biopsies_progress(spinner_type):
 def get_indeterminate_progress_main(spinner_type):
     indeterminate_progress_main = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        #TaskProgressColumn(),
+        #TimeRemainingColumn(),
         TimeElapsedColumn(),
     )
     return indeterminate_progress_main
@@ -83,7 +105,11 @@ def get_completed_indeterminate_progress_main():
 def get_indeterminate_progress_sub(spinner_type):
     indeterminate_progress_sub = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        #TaskProgressColumn(),
+        #TimeRemainingColumn(),
         TimeElapsedColumn(),
     )
     return indeterminate_progress_sub
@@ -92,8 +118,12 @@ def get_indeterminate_progress_sub(spinner_type):
 def get_MC_trial_progress(spinner_type):
     MC_trial_progress = Progress(
         SpinnerColumn(spinner_type),
-        *Progress.get_default_columns(),
-        TextColumn("[green]MC trial:"),
+        #*Progress.get_default_columns(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        #TimeRemainingColumn(),
+        #TextColumn("[green]MC trial:"),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
     )

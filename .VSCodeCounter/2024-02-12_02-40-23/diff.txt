@@ -1,0 +1,31 @@
+Date : 2024-02-12 02:40:23
+Directory : /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based
+Total : 6 files,  531 codes, 48 comments, 81 blanks, all 660 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| JSON     |          1 |        293 |          0 |          0 |        293 |
+| Python   |          5 |        238 |         48 |         81 |        367 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                                             | files      | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                                                |          6 |        531 |         48 |         81 |        660 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                                                                                         | language | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py | Python   |        192 |         31 |         56 |        279 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_optimizer.py                | Python   |         12 |         13 |          0 |         25 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py              | Python   |         15 |          0 |         13 |         28 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py                      | Python   |         10 |          2 |          3 |         15 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/point_containment_tools.py         | Python   |          9 |          2 |          9 |         20 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb                    | JSON     |        293 |          0 |          0 |        293 |
+| Total                                                                                                                                            |          |        531 |         48 |         81 |        660 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

@@ -21,6 +21,7 @@ import cudf
 import cupy_functions
 import cupy as cp
 import itertools
+import pandas
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -106,7 +107,9 @@ def simulator_parallel(parallel_pool,
                        n_bootstraps_for_tissue_length_above_threshold,
                        perform_mc_containment_sim,
                        perform_mc_dose_sim,
-                       spinner_type
+                       spinner_type,
+                       cupy_array_upper_limit_NxN_size_input,
+                       nearest_zslice_vals_and_indices_cupy_generic_max_size
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -169,7 +172,7 @@ def simulator_parallel(parallel_pool,
         
 
 
-
+        #live_display.stop()
         default_patientUID = "initializing"
         translating_patients_main_desc = "[red]Transforming anatomy [{}]...".format(default_patientUID)
         translating_patients_structures_task = patients_progress.add_task(translating_patients_main_desc, total=num_patients)
@@ -351,13 +354,27 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(testing_nominal_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
         """
-        
+
+        structure_specific_results_dict_empty = {"Total successes (containment) list": None, 
+                                                 "Binomial estimator list": None, 
+                                                 "Confidence interval 95 (containment) list": None, 
+                                                 "Standard error (containment) list": None,
+                                                 "Nominal containment list": None
+                                                 }
+        mutual_structure_specific_results_dict_empty = {"Total successes (containment) list": None, 
+                                    "Binomial estimator list": None, 
+                                    "Confidence interval 95 (containment) list": None, 
+                                    "Standard error (containment) list": None,
+                                    "Nominal containment list": None
+                                    }
+
 
         #live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             
+            structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)          
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
@@ -382,7 +399,7 @@ def simulator_parallel(parallel_pool,
                 
                 structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
                 
-                relative_structure_containment_results_data_frames_list = []
+                containment_info_grand_all_structures_pandas_dataframe = pandas.DataFrame()
                 for structure_info,shifted_bx_data_3darr_cp in structure_shifted_bx_data_dict.items():
                     structure_roi = structure_info[0]
                     non_bx_structure_type = structure_info[1]
@@ -415,13 +432,32 @@ def simulator_parallel(parallel_pool,
                     combined_nominal_and_shifted_bx_pts_2d_arr_XYZ = np.vstack((unshifted_bx_sampled_pts_arr,shifted_bx_data_stacked_2darr_from_all_trials_3darray))
                     combined_nominal_and_shifted_bx_pts_2d_arr_XY = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,0:2]
                     combined_nominal_and_shifted_bx_pts_2d_arr_Z = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,2]
+                    del shifted_bx_data_stacked_2darr_from_all_trials_3darray
                     
-                    combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,combined_nominal_and_shifted_bx_pts_2d_arr_Z)
+                    # THIS LINE IS VERY SLOW
+                    #combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,combined_nominal_and_shifted_bx_pts_2d_arr_Z)
+
+                    ### NUMPY IS SLOWER!!
+                    """
+                    combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_numpy_generic(interpolated_zvlas_list, 
+                                                                                                                                                            combined_nominal_and_shifted_bx_pts_2d_arr_Z,
+                                                                                                                                                            numpy_array_upper_limit_NxN_size_input,
+                                                                                                                                                            structures_progress
+                                                                                                                                                            )
+                    """
+                    # THIS IS QUICKER!
+                    combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
+                                                                                                                                                            combined_nominal_and_shifted_bx_pts_2d_arr_Z,
+                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                            structures_progress
+                                                                                                                                                            )
                     
                     combined_nominal_and_shifted_bx_data_XY_interleaved_1darr = combined_nominal_and_shifted_bx_pts_2d_arr_XY.flatten()
                     combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(combined_nominal_and_shifted_bx_data_XY_interleaved_1darr)
-
-                    
+                    del combined_nominal_and_shifted_bx_data_XY_interleaved_1darr
+                    del combined_nominal_and_shifted_bx_pts_2d_arr_XY
+                    del combined_nominal_and_shifted_bx_pts_2d_arr_Z
+                    """
                     containment_info_grand_cudf_dataframe = point_containment_tools.cuspatial_points_contained(non_bx_struct_zslices_polygons_cuspatial_geoseries,
                                combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points, 
                                combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, 
@@ -433,14 +469,33 @@ def simulator_parallel(parallel_pool,
                                num_MC_containment_simulations,
                                structure_info
                                )
+                    """
+                    containment_info_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_mc_sim_cupy_pandas(non_bx_struct_zslices_polygons_cuspatial_geoseries,
+                                                                            combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points, 
+                                                                            combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, 
+                                                                            combined_nominal_and_shifted_nearest_interpolated_zslice_index_array,
+                                                                            combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array,
+                                                                            non_bx_struct_max_zval,
+                                                                            non_bx_struct_min_zval, 
+                                                                            num_sample_pts_in_bx,
+                                                                            num_MC_containment_simulations,
+                                                                            structure_info,
+                                                                            layout_groups,
+                                                                            live_display,
+                                                                            biopsies_progress,
+                                                                            indeterminate_progress_sub,
+                                                                            upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
+                    )
+                    del combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points
+                    containment_info_grand_all_structures_pandas_dataframe = pandas.concat([containment_info_grand_all_structures_pandas_dataframe,containment_info_grand_pandas_dataframe], ignore_index=True)
 
-                    relative_structure_containment_results_data_frames_list.append(containment_info_grand_cudf_dataframe)
 
+                    ### PLOT RESULTS PER TRIAL AGAINST A SINGLE STRUCTURE
                     if (show_containment_demonstration_plots == True) & (non_bx_structure_type == 'DIL ref'):
                         for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr_num_MC_containment_sims_cutoff):
-                            bx_test_pts_color_R = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
-                            bx_test_pts_color_G = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
-                            bx_test_pts_color_B = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
+                            bx_test_pts_color_R = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
+                            bx_test_pts_color_G = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
+                            bx_test_pts_color_B = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
                             bx_test_pts_color_arr = np.empty([num_sample_pts_in_bx,3])
                             bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
                             bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
@@ -451,17 +506,221 @@ def simulator_parallel(parallel_pool,
                             #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
                             #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
                     
+
+                    ### PLOT ALL RESULTS AGAINST SINGLE STRUCTURE
+                    if plot_cupy_containment_distribution_results == True:
+
+                        grand_cudf_dataframe = containment_info_grand_pandas_dataframe
+
+                        # Extract and rebuild pts color data
+                        bx_test_pts_color_R = grand_cudf_dataframe["Pt clr R"].to_numpy()
+                        bx_test_pts_color_G = grand_cudf_dataframe["Pt clr G"].to_numpy()
+                        bx_test_pts_color_B = grand_cudf_dataframe["Pt clr B"].to_numpy()
+                        bx_test_pts_color_arr = np.empty([len(grand_cudf_dataframe.index),3])
+                        bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+                        bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+                        bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+
+                        # Extract and rebuild pts vector data
+                        bx_test_pts_X = grand_cudf_dataframe["Test pt X"].to_numpy()
+                        bx_test_pts_Y = grand_cudf_dataframe["Test pt Y"].to_numpy()
+                        bx_test_pts_Z = grand_cudf_dataframe["Test pt Z"].to_numpy()
+                        bx_test_pts_arr = np.empty([len(grand_cudf_dataframe.index),3])
+                        bx_test_pts_arr[:,0] = bx_test_pts_X
+                        bx_test_pts_arr[:,1] = bx_test_pts_Y
+                        bx_test_pts_arr[:,2] = bx_test_pts_Z
+
+                        # Create point cloud
+                        colored_bx_test_pts_pcd = point_containment_tools.create_point_cloud_with_colors_array(bx_test_pts_arr, bx_test_pts_color_arr)
+
+                        # Extract relative structure point cloud
+                        non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                        non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                        non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(colored_bx_test_pts_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                        stopwatch.start()
+
+
+                    # free up GPU memory
+                    del containment_info_grand_pandas_dataframe
+
                     structures_progress.update(testing_each_non_bx_structure_containment_task, advance=1)
-                
+
                 structures_progress.remove_task(testing_each_non_bx_structure_containment_task)
+
+
+
+                ###
+                ### START COMPILING RESULTS (PER BIOPSY) ###
+                ###
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing independent probabilities", total = None)
+                ###
+
+                ### COMPUTE INDEPENDENT PROBABILITIES
                 
-                # concatenate containment results into a single dataframe
-                containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
-                # free up GPU memory
-                del containment_info_grand_cudf_dataframe
-                del relative_structure_containment_results_data_frames_list
+                # convert from pandas to cudf
+                containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(containment_info_grand_all_structures_pandas_dataframe)
+
+
+                # compute independent probabilities
+                # Shifted, note that the nominal position is indicated by Trial num = 0
+
+                mc_compiled_results_for_fixed_bx_dataframe = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Trial num"] != 0)
+                                                                    ][["Relative structure ROI","Relative structure type","Pt contained bool","Original pt index", "Relative structure index"]
+                                                                      ].groupby(["Relative structure ROI","Relative structure type","Relative structure index","Original pt index"]).sum().sort_index().reset_index().rename(columns={"Pt contained bool": "Total successes"})
+                
+                # calculate binomial estimator
+                mc_compiled_results_for_fixed_bx_dataframe["Binomial estimator"] = mc_compiled_results_for_fixed_bx_dataframe["Total successes"]/num_MC_containment_simulations
+                
+                
+                # Nominal, note that the nominal position is indicated by Trial num = 0
+                mc_compiled_results_for_fixed_bx_dataframe_nominal = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Trial num"] == 0)
+                                                                    ][
+                                                                        ["Relative structure ROI","Relative structure type","Relative structure index","Original pt index", "Pt contained bool"]
+                                                                        ].reset_index(drop = True).rename(columns={"Pt contained bool": "Nominal"})
+                
+                # convert nominal column from bool to uint8
+                mc_compiled_results_for_fixed_bx_dataframe_nominal = mc_compiled_results_for_fixed_bx_dataframe_nominal.astype({'Nominal': 'uint8'})              
+
+                # merge nominal and all trials dataframes
+                mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.merge(mc_compiled_results_for_fixed_bx_dataframe_nominal, how='inner', on = ["Relative structure ROI","Relative structure type","Relative structure index","Original pt index"])
+                
+                # sort values
+                mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.sort_values(['Relative structure ROI',"Relative structure type",'Relative structure index', 'Original pt index'], ascending=[False,False, True,True]).reset_index(drop=True)
+
+
+                # to pandas
+
+                mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.to_pandas()
+                # save memory
+                del containment_info_grand_all_structures_cudf_dataframe
+                del mc_compiled_results_for_fixed_bx_dataframe_nominal
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing mutual probabilities", total = None)
+                ###
+
+                ### COMPUTE MUTUAL PROBABILITIES
+                MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
+                structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
+                containment_info_grand_all_structures_pandas_dataframe["(ID,type,index)"] = tuple(zip(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"], containment_info_grand_all_structures_pandas_dataframe["Relative structure type"], containment_info_grand_all_structures_pandas_dataframe["Relative structure index"]))
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = pandas.DataFrame()
+                for structure_info_combination_tuple in structure_info_combinations_list:
+
+                    
+                    # This is needed to extract the correct relative structures information, this
+                    # is better over & statement to prevent exceptional cases of 
+                    # structures of differing type with the same name but with an index contained 
+                    # in the accepted list from getting through. 
+                    combo_list_for_dataframe_checker = [(x[0],x[1],x[3]) for x in structure_info_combination_tuple]
+
+
+                    # Note needed to convert cudf dataframe to pandas dataframe since cudf dataframe groupby object has no method "all()"
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["(ID,type,index)"].isin(combo_list_for_dataframe_checker))
+                                                                        & (containment_info_grand_all_structures_pandas_dataframe["Trial num"] != 0)].reset_index()[
+                                                                            ["Pt contained bool","Original pt index","Trial num"]
+                                                                            ].groupby(["Original pt index","Trial num"]).all().groupby(["Original pt index"]).sum().reset_index().rename(columns={"Pt contained bool": "Total successes"})
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe["Binomial estimator"] = bx_mutual_containment_sp_combo_by_org_pt_dataframe["Total successes"]/num_MC_containment_simulations
+                    
+    
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe.insert(loc=0, column="Structure combination", value=[set(combo_list_for_dataframe_checker)]*num_sample_pts_in_bx)
+                    
+
+                    bx_mutual_containment_by_org_pt_all_combos_dataframe = pandas.concat([bx_mutual_containment_by_org_pt_all_combos_dataframe, bx_mutual_containment_sp_combo_by_org_pt_dataframe])
+                    
+                    
+                    del bx_mutual_containment_sp_combo_by_org_pt_dataframe
+
+                del containment_info_grand_all_structures_pandas_dataframe
+                
+                
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~This code should be phased out!", total = None)
+                ###
+
+
+                #### EVERNTUALLY WANT TO PHASE OUT THIS CODE!
+                MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
+                for structure_info in MC_compiled_results_for_fixed_bx_dict.keys():
+                    structure_roi = structure_info[0]
+                    non_bx_structure_type = structure_info[1]
+                    structure_index = structure_info[3]
+
+                    structure_specific_results_dict = structure_specific_results_dict_empty.copy()
+
+                    bx_containment_counter_by_org_pt_ind_list = mc_compiled_results_for_fixed_bx_dataframe[(mc_compiled_results_for_fixed_bx_dataframe["Relative structure ROI"] == structure_roi) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure type"] == non_bx_structure_type) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure index"] == structure_index)].sort_values(by=['Original pt index'])["Total successes"].to_list()
+                    structure_specific_results_dict["Total successes (containment) list"] = bx_containment_counter_by_org_pt_ind_list 
+                    
+                                       
+                    bx_containment_binomial_estimator_by_org_pt_ind_list = mc_compiled_results_for_fixed_bx_dataframe[(mc_compiled_results_for_fixed_bx_dataframe["Relative structure ROI"] == structure_roi) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure type"] == non_bx_structure_type) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure index"] == structure_index)].sort_values(by=['Original pt index'])["Binomial estimator"].to_list()
+                    structure_specific_results_dict["Binomial estimator list"] = bx_containment_binomial_estimator_by_org_pt_ind_list
+                    
+                    bx_nominal_containment_counter_by_org_pt_ind_list = mc_compiled_results_for_fixed_bx_dataframe[(mc_compiled_results_for_fixed_bx_dataframe["Relative structure ROI"] == structure_roi) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure type"] == non_bx_structure_type) &
+                                                               (mc_compiled_results_for_fixed_bx_dataframe["Relative structure index"] == structure_index)].sort_values(by=['Original pt index'])["Nominal"].to_list()
+                    structure_specific_results_dict["Nominal containment list"] = bx_nominal_containment_counter_by_org_pt_ind_list        
+
+                    MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
+
+
+                non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
+                structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
+                mutual_MC_compiled_results_for_fixed_bx_dict = {}
+                for structure_info_combination_tuple in structure_info_combinations_list:
+                    comparison_set = {(x[0],x[1],x[3]) for x in structure_info_combination_tuple}
+                    
+                    combination_structure_specific_results_dict = mutual_structure_specific_results_dict_empty.copy()
+
+                    bx_mutual_containment_counter_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure combination"] == comparison_set].sort_values(by = 'Original pt index')['Total successes'].to_list()
+                    combination_structure_specific_results_dict["Total successes (containment) list"] = bx_mutual_containment_counter_by_org_pt_ind_list
+                    
+                    bx_containment_combination_binomial_estimator_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure combination"] == comparison_set].sort_values(by = 'Original pt index')['Binomial estimator'].to_list()
+                    combination_structure_specific_results_dict["Binomial estimator list"] = bx_containment_combination_binomial_estimator_by_org_pt_ind_list
+
+                    mutual_MC_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple] = combination_structure_specific_results_dict
+                #### EVERNTUALLY WANT TO PHASE OUT THIS CODE!
+                
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###                
+                
+                
                 # Update the master dictionary
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
+
+                
+                ### EVENTUALLY WANT TO DELETE THIS CODE!
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+                ### EVENTUALLY WANT TO DELETE THIS CODE!
+                
+                
+                
+                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"] = containment_info_grand_all_structures_pandas_dataframe
 
                 biopsies_progress.update(testing_biopsy_containment_task, advance=1)
             biopsies_progress.remove_task(testing_biopsy_containment_task)
@@ -471,7 +730,14 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(testing_biopsy_containment_patient_task, visible = False)
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
+        
 
+
+        # This was removed in favour of doing one structure at a time since saving all the results from all patients 
+        # and all structures into a single dataframe and saving it costed too much memory
+        # its better to compile the result of a single cuspatial result right away and then delete it
+        # due to decrease in memory consumption
+        """
         #live_display.stop()
         if plot_cupy_containment_distribution_results == True:
             plotting_biopsy_containment_cuspatial_patient_task = patients_progress.add_task("[red]Plotting containment (cuspatial) results...", total=num_patients)
@@ -530,8 +796,10 @@ def simulator_parallel(parallel_pool,
             completed_progress.update(plotting_biopsy_containment_cuspatial_patient_task_completed, visible = True)
             live_display.refresh()
 
+        """
 
 
+        """
         #live_display.stop()
         structure_specific_results_dict_empty = {"Total successes (containment) list": None, 
                                                  "Binomial estimator list": None, 
@@ -573,18 +841,18 @@ def simulator_parallel(parallel_pool,
                     structure_specific_results_dict = structure_specific_results_dict_empty.copy()
 
                     # Much slower code commented out, list comprehension can be very slow!
-                    """
-                    st = time.time()
-                    bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
+                    #st = time.time()
+                    #bx_containment_counter_by_org_pt_ind_list = [len(containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
                                                                                                            & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
                                                                                                            & (containment_info_grand_all_structures_cudf_dataframe["Pt contained bool"] == True)
                                                                                                            & (containment_info_grand_all_structures_cudf_dataframe["Original pt index"] == pt_index)
                                                                                                            ])
                                                                                                            for pt_index in range(num_sample_pts_in_bx)
                                                                                                            ]
-                    et = time.time()
-                    print("Org: "+str(et-st))
-                    """
+                    #et = time.time()
+                    #print("Org: "+str(et-st))
+                    
+                    
                     # compute independent probabilities
                     # Shifted, note that the nominal position is indicated by Trial num = 0
                     bx_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
@@ -654,6 +922,9 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(compiling_results_patient_containment_task, visible = False) 
         completed_progress.update(compiling_results_patient_containment_task_completed, visible = True)
         live_display.refresh()
+
+
+        """
 
         
         calc_MC_stat_biopsy_containment_task = patients_progress.add_task("[red]Calculating MC statistics [{}]...".format("initializing"), total=num_patients)
