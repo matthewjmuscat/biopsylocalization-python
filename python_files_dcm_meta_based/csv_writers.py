@@ -389,7 +389,7 @@ def csv_writer_dosimetry(live_display,
                     write.writerow(['---'])
                     write.writerow(['Global'])
                     write.writerow(['---'])
-                    nominal_dose_by_bx_pt_arr = np.array(specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal)'])
+                    nominal_dose_by_bx_pt_arr = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)'][:,0]
                     nominal_mean_dose = np.mean(nominal_dose_by_bx_pt_arr)
                     nominal_std_dose = np.std(nominal_dose_by_bx_pt_arr)
                     nominal_std_err_dose = nominal_std_dose / np.sqrt(np.size(nominal_dose_by_bx_pt_arr))
@@ -456,7 +456,7 @@ def csv_writer_dosimetry(live_display,
                         pt_radius_bx_coord_sys = np.linalg.norm(bx_points_bx_coords_sys_arr_list[pt_index][0:2])
                         mean_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["Mean dose by bx pt"][pt_index]
                         std_dose_val_specific_bx_pt = stats_dose_val_all_MC_trials_by_bx_pt_list["STD by bx pt"][pt_index]
-                        nominal_dose_val_specific_bx_pt = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal)'][pt_index]
+                        nominal_dose_val_specific_bx_pt = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)'][:,0][pt_index]
                         info_row_part = [bx_points_bx_coords_sys_arr_list[pt_index], 
                                         bx_points_bx_coords_sys_arr_list[pt_index][0], 
                                         bx_points_bx_coords_sys_arr_list[pt_index][1], 
@@ -466,7 +466,7 @@ def csv_writer_dosimetry(live_display,
                                         mean_dose_val_specific_bx_pt, 
                                         std_dose_val_specific_bx_pt
                                         ]
-                        dose_vals_row_arr = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (all MC trials)'][pt_index]
+                        dose_vals_row_arr = specific_bx_structure['MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)'][:,1:][pt_index]
                         dose_vals_row_list = dose_vals_row_arr.tolist()
                         complete_dose_vals_row = info_row_part + dose_vals_row_list
                         write.writerow(complete_dose_vals_row)

@@ -22,6 +22,9 @@ import cupy_functions
 import cupy as cp
 import itertools
 import pandas
+import misc_tools
+import dosimetric_localizer
+
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
 
@@ -109,7 +112,10 @@ def simulator_parallel(parallel_pool,
                        perform_mc_dose_sim,
                        spinner_type,
                        cupy_array_upper_limit_NxN_size_input,
-                       nearest_zslice_vals_and_indices_cupy_generic_max_size
+                       nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                       idw_power,
+                       raw_data_mc_dosimetry_dump_bool, 
+                       raw_data_mc_containment_dump_bool
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -398,6 +404,9 @@ def simulator_parallel(parallel_pool,
                 testing_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each non-BX structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
                 
                 structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
+
+
+                biopsy_structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure) 
                 
                 containment_info_grand_all_structures_pandas_dataframe = pandas.DataFrame()
                 for structure_info,shifted_bx_data_3darr_cp in structure_shifted_bx_data_dict.items():
@@ -479,6 +488,8 @@ def simulator_parallel(parallel_pool,
                                                                             non_bx_struct_min_zval, 
                                                                             num_sample_pts_in_bx,
                                                                             num_MC_containment_simulations,
+                                                                            patientUID,
+                                                                            biopsy_structure_info,
                                                                             structure_info,
                                                                             layout_groups,
                                                                             live_display,
@@ -487,6 +498,21 @@ def simulator_parallel(parallel_pool,
                                                                             upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
                     )
                     del combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points
+
+                    # TAKE A DUMP?
+                    if raw_data_mc_containment_dump_bool == True:
+                        raw_mc_output_dir = master_structure_info_dict["Global"]["Raw MC output dir"]
+                        containment_raw_results_csv_name = 'mc_raw_results_containment.csv'
+                        containment_raw_results_csv = raw_mc_output_dir.joinpath(containment_raw_results_csv_name)
+                        with open(containment_raw_results_csv, 'a') as temp_file_obj:
+                            containment_info_grand_pandas_dataframe.to_csv(temp_file_obj, mode='a', index=False, header=temp_file_obj.tell()==0)
+
+
+
+
+
+
+
                     containment_info_grand_all_structures_pandas_dataframe = pandas.concat([containment_info_grand_all_structures_pandas_dataframe,containment_info_grand_pandas_dataframe], ignore_index=True)
 
 
@@ -1270,6 +1296,147 @@ def simulator_parallel(parallel_pool,
 
         
 
+
+
+
+        #live_display.stop()
+        ### NEW DOSIMETRIC LOCALIZATION!
+        calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Calculating NN dosimetric localization (NEW) [{}]...".format("initializing"), total=num_patients)
+        calc_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating NN dosimetric localization (NEW)", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, description = "[red]Calculating NN dosimetric localization (NEW) [{}]...".format(patientUID))
+            # create KDtree for dose data
+            dose_ref_dict = pydicom_item[dose_ref]
+            phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+            phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
+            phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
+            phys_space_dose_map_dose_1d_arr = phys_space_dose_map_3d_arr_flattened[:,6] 
+            dose_data_KDtree = scipy.spatial.KDTree(phys_space_dose_map_phys_coords_2d_arr)
+            dose_ref_dict["KDtree"] = dose_data_KDtree
+            
+
+            # code for the plotting of the below NN search of sampled bx pts
+            lattice_dose_pcd = dose_ref_dict["Dose grid point cloud"]
+            thresholded_lattice_dose_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
+
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
+
+
+                bx_structure_info_dict = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure)
+                
+                bx_only_shifted_3darr = cp.asnumpy(specific_bx_structure["MC data: bx only shifted 3darr"]) # note that the 3rd dimension slices are each MC trial
+                bx_only_shifted_3darr_cutoff = bx_only_shifted_3darr[0:num_MC_dose_simulations]
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                unshifted_bx_sampled_pts_arr_3darr = np.expand_dims(unshifted_bx_sampled_pts_arr, axis=0)
+                nominal_and_bx_only_shifted_3darr = np.concatenate((unshifted_bx_sampled_pts_arr_3darr,bx_only_shifted_3darr_cutoff))
+                bx_only_shifted_stacked_2darr = np.reshape(nominal_and_bx_only_shifted_3darr, (-1,3) , order = 'C')
+
+                
+                dosimetric_calc_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{}]...".format(specific_bx_structure_roi), total = None)
+
+                ### THIS DATAFRAME CONSUMES TOO MUCH MEMORY TO CARRY IT THROUGHOUT THE PROGRAMME, NEED TO PARSE IMMEDIATELY,
+                ### CAN CONSIDER SAVING TO DISK... ONE STRATEGY COULD BE TO CONTINUALLY APPEND TO A CSV ON DISK!
+                dose_nearest_neighbour_results_dataframe = dosimetric_localizer.dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
+                                                    patientUID, 
+                                                    bx_structure_info_dict, 
+                                                    dose_data_KDtree, 
+                                                    phys_space_dose_map_dose_1d_arr, 
+                                                    num_dose_calc_NN,
+                                                    num_MC_dose_simulations,
+                                                    num_sample_pts_per_bx,
+                                                    idw_power)
+                
+                # TAKE A DUMP?
+                if raw_data_mc_dosimetry_dump_bool == True:
+                    raw_mc_output_dir = master_structure_info_dict["Global"]["Raw MC output dir"]
+                    dose_raw_results_csv_name = 'mc_raw_results_dosimetry.csv'
+                    dose_raw_results_csv = raw_mc_output_dir.joinpath(dose_raw_results_csv_name)
+                    with open(dose_raw_results_csv, 'a') as temp_file_obj:
+                        dose_nearest_neighbour_results_dataframe.to_csv(temp_file_obj, mode='a', index=False, header=temp_file_obj.tell()==0)
+
+                indeterminate_progress_sub.remove_task(dosimetric_calc_task)
+
+                # plot everything to make sure its working properly!
+                if show_NN_dose_demonstration_plots == True:
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+                    for trial_num in np.arange(0,num_MC_dose_simulations+1):
+                        NN_pts_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Nearest phys space points"].to_numpy())
+                        NN_doses_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Nearest doses"].to_numpy())
+                        queried_bx_pts_arr_concatenated = np.stack(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Struct test pt vec"].to_numpy())
+                        queried_bx_pts_assigned_doses_arr_concatenated = dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Dose val (interpolated)"].to_numpy()
+                        
+                        patients_progress.stop_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.stop_task(calc_dose_NN_biopsy_containment_task_complete)
+                        stopwatch.stop()
+                        #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = False, axes_visible=True)
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = True, axes_visible=True)
+                        stopwatch.start()
+                        patients_progress.start_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.start_task(calc_dose_NN_biopsy_containment_task_complete)
+                else:
+                    pass
+
+                
+
+
+                # Cant save these dataframes, they take up too much memory! Need to parse data right away
+                #specific_bx_structure['MC data: bx to dose NN search results dataframe'] = dose_nearest_neighbour_results_dataframe # Note that trial 0 is the nominal position
+
+
+
+
+
+                ### COMPILE DATA STRAIGHT AWAY!
+                dose_nearest_neighbour_results_dataframe_pivoted = dose_nearest_neighbour_results_dataframe.pivot(index = "Original pt index", columns="Trial num", values = "Dose val (interpolated)")
+                del dose_nearest_neighbour_results_dataframe
+                
+                # It seems pivoting already sorts the indices and columns, but just to be sure I do it manually anyways
+                dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted = dose_nearest_neighbour_results_dataframe_pivoted.sort_index(axis = 0).sort_index(axis = 1)
+                del dose_nearest_neighbour_results_dataframe_pivoted
+                
+                # Note that each row is a specific biopsy point, while the column is a particular MC trial
+                dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted.to_numpy()
+                del dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted
+
+
+                # Update master dictionary
+                # MC trials only
+                #specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,1:]
+                # Nominal and MC trials
+                #specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,0]
+                specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr
+                
+                del dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr
+
+
+                biopsies_progress.update(dosimetric_calc_biopsy_task, advance=1)
+            biopsies_progress.remove_task(dosimetric_calc_biopsy_task)
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, advance = 1)
+            completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, advance = 1)
+        patients_progress.update(calc_dose_NN_biopsy_containment_task, visible = False)
+        completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, visible = True)
+        live_display.refresh()
+
+
+
+
+
+
+
+        #### OLD WAY, EVENTUALLY WANT TO PHASE OUT THIS CODE!
+        """
         #live_display.stop()
         calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Calculating NN dosimetric localization [{}]...".format("initializing"), total=num_patients)
         calc_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating NN dosimetric localization", total=num_patients, visible = False)
@@ -1315,8 +1482,8 @@ def simulator_parallel(parallel_pool,
                                                                                               num_dose_calc_NN)
                 
                 # parallel MUCH SLOWER AND USES TOO MUCH MEMORY!
-                """
-                dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, 
+                
+                #dosimetric_localization_all_MC_trials_list = dosimetric_localization_parallel(parallel_pool, 
                                                                                               nominal_and_bx_only_shifted_3darr, 
                                                                                               specific_bx_structure, 
                                                                                               dose_ref_dict, 
@@ -1324,7 +1491,7 @@ def simulator_parallel(parallel_pool,
                                                                                               phys_space_dose_map_phys_coords_2d_arr, 
                                                                                               phys_space_dose_map_dose_2d_arr, 
                                                                                               num_dose_calc_NN)
-                """
+                
                 
                 if show_NN_dose_demonstration_plots == True:
                     # plot everything to make sure its working properly!
@@ -1372,8 +1539,16 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(calc_dose_NN_biopsy_containment_task, visible = False)
         completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, visible = True)
         live_display.refresh()
-                    
+        #### OLD WAY, EVENTUALLY WANT TO PHASE OUT THIS CODE!
+        """
 
+
+
+
+
+
+        ### THIS WAS PHASED OUT IN FAVOUR OF COMPILING RIGHT AWAY TO SAVE MEMORY!
+        """
         compile_results_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Compiling dosimetric localization results [{}]...".format("initializing"), total=num_patients)
         compile_results_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Compiling dosimetric localization results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1386,10 +1561,10 @@ def simulator_parallel(parallel_pool,
                 dosimetric_localization_nominal_and_all_MC_trials_list = specific_bx_structure['MC data: bx to dose NN search objects list']
                 
                 # Split NN dose output into nominal and MC trials
-                """
-                dosimetric_localization_nominal_NN_parent_obj = dosimetric_localization_nominal_and_all_MC_trials_list[0]
-                dosimetric_localization_all_MC_trials_list = dosimetric_localization_nominal_and_all_MC_trials_list[1:]
-                """
+                
+                #dosimetric_localization_nominal_NN_parent_obj = dosimetric_localization_nominal_and_all_MC_trials_list[0]
+                #dosimetric_localization_all_MC_trials_list = dosimetric_localization_nominal_and_all_MC_trials_list[1:]
+                
 
                 # MC trials
                 dosimetric_localization_nominal_and_all_MC_trials_list_NN_lists_only = [NN_parent_obj.NN_data_list for NN_parent_obj in dosimetric_localization_nominal_and_all_MC_trials_list]
@@ -1397,10 +1572,10 @@ def simulator_parallel(parallel_pool,
                 dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_list = [[NN_child_obj.nearest_dose for NN_child_obj in fixed_bx_pt_NN_objs_list] for fixed_bx_pt_NN_objs_list in dosimetric_localization_NN_child_objs_by_bx_point_nominal_and_all_trials_list]
                 dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = np.array(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_list)
                 # Nominal
-                """
-                dosimetric_localization_NN_child_objs_by_bx_point_nominal_list = dosimetric_localization_nominal_NN_parent_obj.NN_data_list
-                dosimetric_localization_dose_vals_by_bx_point_nominal_list = [nn_dose_child_obj.nearest_dose for nn_dose_child_obj in dosimetric_localization_NN_child_objs_by_bx_point_nominal_list]
-                """
+                
+                #dosimetric_localization_NN_child_objs_by_bx_point_nominal_list = dosimetric_localization_nominal_NN_parent_obj.NN_data_list
+                #dosimetric_localization_dose_vals_by_bx_point_nominal_list = [nn_dose_child_obj.nearest_dose for nn_dose_child_obj in dosimetric_localization_NN_child_objs_by_bx_point_nominal_list]
+                
 
                 # Update master dictionary
                 # MC trials only
@@ -1421,7 +1596,10 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
-        #live_display.stop()
+        """
+
+
+        live_display.stop()
         calculate_biopsy_DVH_quantities_task = patients_progress.add_task("[red]Calculating DVH quantities [{}]...".format("initializing"), total=num_patients)
         calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1547,7 +1725,7 @@ def simulator_parallel(parallel_pool,
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(compile_results_dose_NN_biopsy_containment_by_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
-                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] 
+                dosimetric_localization_dose_vals_by_bx_point_all_trials_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"][:,1:] # REMOVE NOMINAL!
                 dosimetric_localization_dose_vals_by_bx_point_all_trials_list = dosimetric_localization_dose_vals_by_bx_point_all_trials_arr.tolist()
 
                 dosimetric_MLE_statistics_all_bx_pts_list = normal_distribution_MLE_parallel(parallel_pool, dosimetric_localization_dose_vals_by_bx_point_all_trials_list)
@@ -1585,7 +1763,7 @@ def simulator_parallel(parallel_pool,
 
             biopsy_voxelize_each_bx_structure_dose_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                specific_bx_dose_results_arr = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] 
+                specific_bx_dose_results_arr = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"][:,1:]
                 specific_bx_dose_results_list = specific_bx_dose_results_arr.tolist()
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))

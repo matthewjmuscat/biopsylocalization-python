@@ -174,11 +174,13 @@ def main():
     num_MC_containment_simulations_input = 10000
     num_MC_dose_simulations_input = 10000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
-    num_dose_calc_NN = 4
+    num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
+    idw_power = 1 # This determines the power of the inverse distance weighting (interpolation) for the NN dose search of the dose lattice!
     tissue_length_above_probability_threshold_list = [0.95,0.75,0.5,0.25]
     n_bootstraps_for_tissue_length_above_threshold = 1000
-    
-    
+    raw_data_mc_dosimetry_dump_bool = False # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for dose tests! 
+    raw_data_mc_containment_dump_bool = False  # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for containment tests!
+
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
     pio.templates.default = "plotly_white"
@@ -256,7 +258,7 @@ def main():
     boxmean_option = True # can be 'sd' or True
 
     # plots to show:
-    show_NN_dose_demonstration_plots = False
+    show_NN_dose_demonstration_plots = False # this shows one trial at a time!!!
     show_containment_demonstration_plots = False # this shows one trial at a time!!!
     show_3d_dose_renderings = False
     show_processed_3d_datasets_renderings = False
@@ -561,7 +563,6 @@ def main():
 
             misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir, preprocessed_data_dir)
            
-
 
             # only perform patient sample analyzer
             if only_perform_patient_analyser == True:
@@ -2712,6 +2713,7 @@ def main():
                 if export_pickled_preprocessed_data == True:
                     export_preprocessed_data_task_indeterminate = indeterminate_progress_main.add_task("[red]Exporting preprocessed data...", total=None)
                     export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False, total=master_structure_info_dict["Global"]["Num patients"])
+                    
                     date_time_now = datetime.now()
                     date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
                     global_num_structures = master_structure_info_dict["Global"]["Num structures"]
@@ -2811,7 +2813,13 @@ def main():
             ###
             
 
+            ### MAKE ALL DIRECTORIES!
+            raw_mc_output_folder_name = 'Raw MC output'
+            raw_mc_output_dir = specific_output_dir.joinpath(raw_mc_output_folder_name)
+            raw_mc_output_dir.mkdir(parents=True, exist_ok=True)
 
+            master_structure_info_dict["Global"]["Raw MC output dir"] = raw_mc_output_dir
+        
 
 
 
@@ -3424,7 +3432,10 @@ def main():
                                                                                             perform_mc_dose_sim,
                                                                                             spinner_type,
                                                                                             cupy_array_upper_limit_NxN_size_input,
-                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size
+                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                            idw_power,
+                                                                                            raw_data_mc_dosimetry_dump_bool, 
+                                                                                            raw_data_mc_containment_dump_bool
                                                                                             )
                 
                 if perform_fanova == True:
@@ -3485,7 +3496,7 @@ def main():
                         del specific_bx_structure['MC data: bx and structure shifted dict']
                         #del specific_bx_structure['MC data: compiled sim results']
                         del specific_bx_structure['MC data: bx to dose NN search objects list']
-                        del specific_bx_structure['MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)']
+                        #del specific_bx_structure['MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)']
                         del specific_bx_structure['FANOVA: sobol indices (containment)']
                         del specific_bx_structure['FANOVA: sobol indices (dose)']
                         del specific_bx_structure['FANOVA: sobol indices (DIL tissue)']
@@ -4822,10 +4833,10 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
-                         "MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
+                         #"MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
                          "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None, 
-                         "MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
-                         "MC data: Dose vals for each sampled bx pt arr (nominal)": None,
+                         #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
+                         #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
                          "MC data: Differential DVH dict": None,
                          "MC data: Cumulative DVH dict": None,
                          "MC data: dose volume metrics dict": None, 
@@ -4904,10 +4915,10 @@ def structure_referencer(structure_dcm_dict,
                                 "MC data: voxelized containment results dict": None, 
                                 "MC data: voxelized containment results dict (dict of lists)": None, 
                                 "MC data: bx to dose NN search objects list": None, 
-                                "MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
+                                #"MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
                                 "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
-                                "MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
-                                "MC data: Dose vals for each sampled bx pt arr (nominal)": None,
+                                #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
+                                #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
                                 "MC data: Differential DVH dict": None,
                                 "MC data: Cumulative DVH dict": None,
                                 "MC data: dose volume metrics dict": None,
