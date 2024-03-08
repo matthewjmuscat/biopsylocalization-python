@@ -526,3 +526,27 @@ def specific_structure_info_dict_creator(create_type,
                 }
     
     return structure_info
+
+
+
+
+
+def delete_shared_rows(arr1, arr2):
+    """
+    Deletes rows in arr1 that share rows with arr2.
+    
+    Parameters:
+    arr1 (numpy.ndarray): The first array.
+    arr2 (numpy.ndarray): The second array.
+    
+    Returns:
+    numpy.ndarray: The modified arr1 with shared rows removed.
+    """
+    # Convert arrays to sets of tuples for efficient comparison
+    set1 = set(map(tuple, arr1))
+    set2 = set(map(tuple, arr2))
+    
+    # Find the rows in arr1 that are not in arr2
+    result = np.array([row for row in arr1 if tuple(row) not in set2])
+    
+    return result

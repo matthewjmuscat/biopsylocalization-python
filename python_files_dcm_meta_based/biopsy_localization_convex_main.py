@@ -171,8 +171,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.25
-    num_MC_containment_simulations_input = 10000
-    num_MC_dose_simulations_input = 10000
+    num_MC_containment_simulations_input = 1000
+    num_MC_dose_simulations_input = 1000
     biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
     idw_power = 1 # This determines the power of the inverse distance weighting (interpolation) for the NN dose search of the dose lattice!
@@ -237,7 +237,7 @@ def main():
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
     num_cumulative_dvh_plots_to_show = 25
     num_differential_dvh_plots_to_show = 25
-    volume_DVH_percent_dose = [100,125,150,200,300]
+    volume_DVH_percent_dose = [100,125,150,200,300] # These are V%
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
     
     #fanova
@@ -272,7 +272,7 @@ def main():
     plot_dimension_calculation_containment_result_bool = False
 
     # Final production plots to create:
-    plot_immediately_after_simulation = False
+    plot_immediately_after_simulation = True
     regression_type_input = 0 # LOWESS = 1 or True, NPKR = 0 or False, this concerns the type of non parametric kernel regression that is performed
     global_regression_input = False # True or False bool type, this concerns whether a regression is performed on the axial dose distribution scatter plot containing all the data points of dose from all trials for each point 
 
@@ -290,12 +290,12 @@ def main():
                                              }, 
                                         "Guidance maps":\
                                             {"Plot bool": True, 
-                                             "Plot name": " - guidance maps",
+                                             "Plot name": "guidance maps",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Guidance maps with actual cores":\
                                             {"Plot bool": True, 
-                                             "Plot name": " - guidance maps with actual cores",
+                                             "Plot name": "guidance maps with actual cores",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },      
                                         "Axial dose distribution all trials and global regression": \
@@ -1472,7 +1472,7 @@ def main():
                     origin = all_geometries_min_bounds
 
                     # generate cubic lattice of points
-                    all_dils_centered_cubic_lattice_arr = MC_simulator_convex.generate_cubic_lattice(voxel_size_for_dil_optimizer_grid, 
+                    all_geometries_centered_cubic_lattice_arr = MC_simulator_convex.generate_cubic_lattice(voxel_size_for_dil_optimizer_grid, 
                                                                                                         lattice_sizex,
                                                                                                         lattice_sizey,
                                                                                                         lattice_sizez,
@@ -1480,13 +1480,14 @@ def main():
 
 
                     # CREATE A COPY TO REMOVE THE POINTS CONTAINED IN THE DILS!
-                    #all_dils_centered_cubic_lattice_with_dil_points_removed_arr = all_dils_centered_cubic_lattice_arr.copy()
+                    #all_geometries_centered_cubic_lattice_with_dil_points_removed_arr = all_geometries_centered_cubic_lattice_arr.copy()
                     
 
                     # Create empty dataframe for all contained points in lattice
-                    dil_contained_points_df = pandas.DataFrame()
+                    #dil_contained_points_df = pandas.DataFrame()
                     
-                    
+                    # Make an empty array to keep track of all the points 
+                    #centered_cubic_lattice_points_NOT_contained_in_ANY_dil_arr = all_geometries_centered_cubic_lattice_arr.copy()
 
                     #####
                     structureID_default = "Initializing"
@@ -1518,26 +1519,26 @@ def main():
 
 
                         ### CONSTRUCT THE LATTICE POINTS TO PASS TO THE OPTIMIZER FUNCTION
-                        all_dils_centered_cubic_lattice_arr_XY = all_dils_centered_cubic_lattice_arr[:,0:2]
-                        all_dils_centered_cubic_lattice_arr_Z = all_dils_centered_cubic_lattice_arr[:,2]
+                        all_geometries_centered_cubic_lattice_arr_XY = all_geometries_centered_cubic_lattice_arr[:,0:2]
+                        all_geometries_centered_cubic_lattice_arr_Z = all_geometries_centered_cubic_lattice_arr[:,2]
 
                         
-                        #nearest_interpolated_zslice_for_test_lattice_index_array, nearest_interpolated_zslice_for_test_lattice_vals_array = point_containment_tools.take_closest_cupy(interpolated_zvals_list, all_dils_centered_cubic_lattice_arr_Z)
+                        #nearest_interpolated_zslice_for_test_lattice_index_array, nearest_interpolated_zslice_for_test_lattice_vals_array = point_containment_tools.take_closest_cupy(interpolated_zvals_list, all_geometries_centered_cubic_lattice_arr_Z)
 
                         nearest_interpolated_zslice_for_test_lattice_index_array, nearest_interpolated_zslice_for_test_lattice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvals_list, 
-                                                                                                                                                            all_dils_centered_cubic_lattice_arr_Z,
+                                                                                                                                                            all_geometries_centered_cubic_lattice_arr_Z,
                                                                                                                                                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                                                                                                                                             structures_progress
                                                                                                                                                             )
                         
                         
-                        all_dils_centered_cubic_lattice_XY_interleaved_1darr = all_dils_centered_cubic_lattice_arr_XY.flatten()
-                        all_dils_centered_cubic_lattice_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(all_dils_centered_cubic_lattice_XY_interleaved_1darr)
+                        all_geometries_centered_cubic_lattice_XY_interleaved_1darr = all_geometries_centered_cubic_lattice_arr_XY.flatten()
+                        all_geometries_centered_cubic_lattice_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(all_geometries_centered_cubic_lattice_XY_interleaved_1darr)
 
                         # Test point containment to remove points from the potential optimization testing point lattice that are not inside the DIL
                         containment_info_for_all_lattice_points_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_generic_numpy_pandas(zslices_polygons_cuspatial_geoseries,
-                            all_dils_centered_cubic_lattice_XY_cuspatial_geoseries_points, 
-                            all_dils_centered_cubic_lattice_arr, 
+                            all_geometries_centered_cubic_lattice_XY_cuspatial_geoseries_points, 
+                            all_geometries_centered_cubic_lattice_arr, 
                             nearest_interpolated_zslice_for_test_lattice_index_array,
                             nearest_interpolated_zslice_for_test_lattice_vals_array,
                             max_zval,
@@ -1555,14 +1556,17 @@ def main():
                         #containment_info_for_all_lattice_points_grand_pandas_dataframe = containment_info_for_all_lattice_points_grand_cudf_dataframe.to_pandas()
                         
                         containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe = containment_info_for_all_lattice_points_grand_pandas_dataframe.drop(containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == False].index).reset_index()
+                        containment_info_for_lattice_points_NOT_in_sp_dil_grand_pandas_dataframe = containment_info_for_all_lattice_points_grand_pandas_dataframe.drop(containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True].index).reset_index()
                         del containment_info_for_all_lattice_points_grand_pandas_dataframe
 
-                        dil_contained_points_df = dil_contained_points_df.append(containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe)
+                        #dil_contained_points_df = dil_contained_points_df.append(containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe)
 
-                        centered_cubic_lattice_points_contained_only_in_sp_dil_arr = all_dils_centered_cubic_lattice_arr[containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe["index"].to_numpy()]
+                        centered_cubic_lattice_points_contained_only_in_sp_dil_arr = all_geometries_centered_cubic_lattice_arr[containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe["index"].to_numpy()]
+                        centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr = all_geometries_centered_cubic_lattice_arr[containment_info_for_lattice_points_NOT_in_sp_dil_grand_pandas_dataframe["index"].to_numpy()]
+                        #centered_cubic_lattice_points_NOT_contained_in_ANY_dil_arr = centered_cubic_lattice_points_NOT_contained_in_ANY_dil_arr[containment_info_for_lattice_points_NOT_in_sp_dil_grand_pandas_dataframe["index"].to_numpy()]
                         del containment_info_for_lattice_points_in_sp_dil_grand_pandas_dataframe
 
-                        optimal_locations_dataframe, potential_optimal_locations_dataframe, live_display = biopsy_optimizer.find_dil_optimal_sampling_position(patientUID,
+                        optimal_locations_dataframe, potential_optimal_locations_dataframe, zero_locations_dataframe, live_display = biopsy_optimizer.find_dil_optimal_sampling_position(patientUID,
                                                                                                         structs_referenced_dict,
                                                                                                         bx_ref,
                                                                                                         dil_ref,
@@ -1586,10 +1590,11 @@ def main():
                                                                                                         nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                                                                                         nearest_zslice_vals_and_indices_numpy_generic_max_size,
                                                                                                         structures_progress,
-                                                                                                        test_lattice_arr = centered_cubic_lattice_points_contained_only_in_sp_dil_arr
+                                                                                                        test_lattice_arr = centered_cubic_lattice_points_contained_only_in_sp_dil_arr,
+                                                                                                        all_points_to_set_to_zero_arr = centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr # This was added to make the "search" volume to include the entire volume
                                                                                                         )
 
-                        del centered_cubic_lattice_points_contained_only_in_sp_dil_arr
+                        #del centered_cubic_lattice_points_contained_only_in_sp_dil_arr
 
                         live_display.refresh()
 
@@ -1597,7 +1602,9 @@ def main():
                         dil_centroids_optimization_locations_dataframe = pandas.DataFrame(potential_optimal_locations_dataframe.loc[[0],:])
                         specific_dil_structure["Biopsy optimization: DIL centroid optimal biopsy location dataframe"] = dil_centroids_optimization_locations_dataframe
                         specific_dil_structure["Biopsy optimization: Optimal biopsy location dataframe"] = optimal_locations_dataframe
-                        specific_dil_structure["Biopsy optimization: Optimal biopsy location (all latice points) dataframe"] = potential_optimal_locations_dataframe
+                        specific_dil_structure["Biopsy optimization: Optimal biopsy location (all tested lattice points) dataframe"] = potential_optimal_locations_dataframe
+                        specific_dil_structure["Biopsy optimization: Optimal biopsy location (zero lattice) dataframe"] = zero_locations_dataframe
+                        specific_dil_structure["Biopsy optimization: cubic lattice of optimization points only in dil"] = centered_cubic_lattice_points_contained_only_in_sp_dil_arr
 
                         structures_progress.update(processing_structures_task, advance=1)
                     structures_progress.update(processing_structures_task, visible = False)
@@ -1606,9 +1613,9 @@ def main():
                     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Tying results in a bow", total = None)
                     ###
                     
-                    
-                    centered_cubic_lattice_points_NOT_contained_in_dils_arr = np.delete(all_dils_centered_cubic_lattice_arr,dil_contained_points_df["index"].to_numpy(),axis = 0)
-                    #centered_cubic_lattice_points_NOT_contained_in_dils_arr = all_dils_centered_cubic_lattice_arr[dil_contained_points_df["index"].to_numpy()]
+                    """
+                    centered_cubic_lattice_points_NOT_contained_in_dils_arr = np.delete(all_geometries_centered_cubic_lattice_arr,dil_contained_points_df["index"].to_numpy(),axis = 0)
+                    #centered_cubic_lattice_points_NOT_contained_in_dils_arr = all_geometries_centered_cubic_lattice_arr[dil_contained_points_df["index"].to_numpy()]
                     del dil_contained_points_df
 
 
@@ -1638,29 +1645,60 @@ def main():
                                                         }
                     # all points not in the dil, these values were set to zero, this is for the contour plot production!
                     centered_cubic_lattice_non_dil_locations_dataframe = pandas.DataFrame(centered_cubic_lattice_points_NOT_contained_in_dils_dict_for_dataframe)
-                    
+                    """
+
+                    #live_display.stop()
                     # extract the results of the optimization lattice testing for each dil
-                    all_dils_optimization_lattices_result_dataframe_list = []
+                    #all_dils_optimization_lattices_result_dataframe_list = []
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                        potential_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location (all latice points) dataframe"]
-       
+                        potential_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location (all tested lattice points) dataframe"]
+                        zero_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location (zero lattice) dataframe"]
+
                         # Drop the centroid from the lattice! It messes up the contour plot! The centroid was inserted into the first position!
                         potential_optimal_locations_dataframe_centroid_dropped = potential_optimal_locations_dataframe.drop([0])
-                        all_dils_optimization_lattices_result_dataframe_list.append(potential_optimal_locations_dataframe_centroid_dropped)
 
-                    all_dils_optimization_lattices_result_dataframe = pandas.concat(all_dils_optimization_lattices_result_dataframe_list)
+                        # Extract tested optimization points only in the DIL
+                        #centered_cubic_lattice_points_contained_only_in_sp_dil_arr = specific_dil_structure["Biopsy optimization: cubic lattice of optimization points only in dil"]
 
-                    all_dils_and_non_dil_optimization_lattices_result_dataframe = pandas.concat([all_dils_optimization_lattices_result_dataframe,centered_cubic_lattice_non_dil_locations_dataframe])
+                        # Calculate the optimized planes dataframe
+                        sp_dil_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+                        guidance_map_max_planes_dataframe = biopsy_optimizer.guidance_map_max_planes_dataframe(potential_optimal_locations_dataframe_centroid_dropped,
+                                                                            sp_dil_optimal_locations_dataframe,
+                                                                            voxel_size_for_dil_optimizer_grid,
+                                                                            zero_locations_dataframe,
+                                                                            important_info,
+                                                                            live_display)
+
+                        specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"] = guidance_map_max_planes_dataframe
+                        
+
+                        #all_dils_optimization_lattices_result_dataframe_list.append(potential_optimal_locations_dataframe_centroid_dropped)
+
+                    #all_dils_optimization_lattices_result_dataframe = pandas.concat(all_dils_optimization_lattices_result_dataframe_list)
+                    #del all_dils_optimization_lattices_result_dataframe_list
+
+                    # IMPORTANT: Need to investigate this dataframe... The columns should be the same between these two???
+                    #all_dils_and_non_dil_optimization_lattices_result_dataframe = pandas.concat([all_dils_optimization_lattices_result_dataframe,centered_cubic_lattice_non_dil_locations_dataframe])
                     
+                    entire_overlapped_lattice_dataframe = biopsy_optimizer.specific_dil_to_all_dils_optimization_lattice_dataframe_combiner(pydicom_item,
+                                                                     dil_ref)
+
+                    # Calculate the cumulative_projection dataframe
+                    cumulative_projection_optimization_scores_dataframe = biopsy_optimizer.guidance_map_cumulative_projection_dataframe_creator(entire_overlapped_lattice_dataframe)
 
                     # save the selected prostate to all DILs (they will all contain the same value but its the best way to save this)!
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
                         specific_dil_structure["Biopsy optimization: selected relative prostate dict"] = {"Info": selected_prostate_info, "Centroid vector array": prostate_centroid}
 
                     # save the full lattice, this will only be useful (i think) for creating the contour plots at the end, ie. doesnt need to be CSVd!!!
-                    pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe"] = all_dils_and_non_dil_optimization_lattices_result_dataframe
+                    pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe"] = entire_overlapped_lattice_dataframe
+                    del entire_overlapped_lattice_dataframe
 
+                    # save the cumulative_projection
+                    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Cumulative projection (all points within prostate) dataframe"] = cumulative_projection_optimization_scores_dataframe
+                    del cumulative_projection_optimization_scores_dataframe
 
+                    
 
                     ###
                     indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -1698,9 +1736,9 @@ def main():
                         selected_prostate_info = random_dil_structure["Biopsy optimization: selected relative prostate dict"]["Info"]
                         selected_prostate_centroid = random_dil_structure["Biopsy optimization: selected relative prostate dict"]["Centroid vector array"]
 
-                        all_dils_and_non_dil_optimization_lattices_result_dataframe = pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe"]
+                        entire_overlapped_lattice_dataframe = pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe"]
 
-                        df_simple = all_dils_and_non_dil_optimization_lattices_result_dataframe[['Test location (Prostate centroid origin) (X)','Test location (Prostate centroid origin) (Y)','Test location (Prostate centroid origin) (Z)','Proportion of normal dist points contained']]
+                        df_simple = entire_overlapped_lattice_dataframe[['Test location (Prostate centroid origin) (X)','Test location (Prostate centroid origin) (Y)','Test location (Prostate centroid origin) (Z)','Proportion of normal dist points contained']]
 
 
                         for combination in list(combinations(np.array([0,1,2]), 2)):
@@ -3482,7 +3520,7 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                         del specific_bx_structure['Intra-slice interpolation information']
-                        del specific_bx_structure['Inter-slice interpolation information']
+                        #del specific_bx_structure['Inter-slice interpolation information']
                         del specific_bx_structure['Point cloud raw']
                         del specific_bx_structure['Delaunay triangulation global structure']
                         del specific_bx_structure['Delaunay triangulation zslice-wise list']
@@ -3502,7 +3540,7 @@ def main():
                         del specific_bx_structure['FANOVA: sobol indices (DIL tissue)']
                     for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
                         del specific_oar_structure['Intra-slice interpolation information']
-                        del specific_oar_structure['Inter-slice interpolation information']
+                        #del specific_oar_structure['Inter-slice interpolation information']
                         del specific_oar_structure['Point cloud raw']
                         del specific_oar_structure['Delaunay triangulation global structure']
                         del specific_oar_structure['Delaunay triangulation zslice-wise list']
@@ -3510,7 +3548,7 @@ def main():
                         del specific_oar_structure['Uncertainty data']
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
                         del specific_dil_structure['Intra-slice interpolation information']
-                        del specific_dil_structure['Inter-slice interpolation information']
+                        #del specific_dil_structure['Inter-slice interpolation information']
                         del specific_dil_structure['Point cloud raw']
                         del specific_dil_structure['Delaunay triangulation global structure']
                         del specific_dil_structure['Delaunay triangulation zslice-wise list']
@@ -3603,7 +3641,7 @@ def main():
 
             specific_output_dir = master_structure_info_dict["Global"]["Specific output dir"]
 
-            live_display.stop()
+            #live_display.stop()
 
             # CREATE DATAFRAMES ---------------------------
 
@@ -3929,6 +3967,25 @@ def main():
                 output_figures_dir = specific_output_dir.joinpath(figures_output_dir_name)
                 output_figures_dir.mkdir(parents=True, exist_ok=True)
 
+                # PREPROCESSING
+                preprocessing_output_folder_name = 'Preprocessing'
+                preprocessing_fig_output_dir = output_figures_dir.joinpath(preprocessing_output_folder_name)
+                preprocessing_fig_output_dir.mkdir(parents=True, exist_ok=True)
+
+                # generate and store patient directory folders for saving
+                patient_sp_preprocessing_output_figures_dir_dict = {}
+                for patientUID in master_structure_reference_dict.keys():
+                    patient_sp_preprocessing_output_figures_dir = preprocessing_fig_output_dir.joinpath(patientUID)
+                    patient_sp_preprocessing_output_figures_dir.mkdir(parents=True, exist_ok=True)
+                    patient_sp_preprocessing_output_figures_dir_dict[patientUID] = patient_sp_preprocessing_output_figures_dir
+
+                # create a global folder
+                patient_sp_preprocessing_output_figures_dir = preprocessing_fig_output_dir.joinpath('Global')
+                patient_sp_preprocessing_output_figures_dir.mkdir(parents=True, exist_ok=True)
+                patient_sp_preprocessing_output_figures_dir_dict["Global"] = patient_sp_preprocessing_output_figures_dir
+
+                master_structure_info_dict["Global"]['Patient specific output figures directory (pre-processing) dict'] = patient_sp_preprocessing_output_figures_dir_dict
+
                 # MC SPECIFIC
                 mc_output_folder_name = 'MC simulation'
                 mc_fig_output_dir = output_figures_dir.joinpath(mc_output_folder_name)
@@ -3946,7 +4003,7 @@ def main():
                 patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                 patient_sp_output_figures_dir_dict["Global"] = patient_sp_output_figures_dir
 
-                master_structure_info_dict["Global"]['Patient specific output figures directory dict'] = patient_sp_output_figures_dir_dict
+                master_structure_info_dict["Global"]['Patient specific output figures directory (MC sim) dict'] = patient_sp_output_figures_dir_dict
 
                 # FANOVA SPECIFIC
                 fanova_output_folder_name = 'FANOVA simulation'
@@ -3965,13 +4022,73 @@ def main():
                 patient_sp_output_figures_dir.mkdir(parents=True, exist_ok=True)
                 patient_sp_fanova_output_figures_dir_dict["Global"] = patient_sp_output_figures_dir
 
-                master_structure_info_dict["Global"]['Patient specific fanova output figures directory dict'] = patient_sp_fanova_output_figures_dir_dict
+                master_structure_info_dict["Global"]['Patient specific output figures directory (fanova) dict'] = patient_sp_fanova_output_figures_dir_dict
 
 
             # CREATE PRODUCTION PLOTS ---------------------------------------------
 
+
+
+
+            ### PREPROCESSING FIGS AND OPTIMIZATION
+            if create_at_least_one_production_plot == True and preprocessing_complete_bool == True:
+                patient_sp_preprocessing_output_figures_dir_dict = master_structure_info_dict["Global"]['Patient specific output figures directory (pre-processing) dict']
+
+                if production_plots_input_dictionary["Guidance maps"]["Plot bool"] == True:
+
+                    general_plot_name_string = production_plots_input_dictionary["Guidance maps"]["Plot name"]
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating guidance maps [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
+                    processing_patient_production_plot_description_completed = "Creating guidance maps"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating guidance maps [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        patient_sp_preprocessing_output_figures_dir = patient_sp_preprocessing_output_figures_dir_dict[patientUID]
+                        
+                        # Cumulative projection guidance map
+                        production_plots.production_plot_guidance_maps_cumulative_projection(patientUID,
+                                                patient_sp_preprocessing_output_figures_dir,
+                                                pydicom_item,
+                                                all_ref_key,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string
+                                                )
+                        # Max planes guidance maps
+                        production_plots.production_plot_guidance_maps_max_planes(patientUID,
+                                            patient_sp_preprocessing_output_figures_dir,
+                                            pydicom_item,
+                                            dil_ref,
+                                            oar_ref,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string
+                                            )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)
+                else:
+                    pass
+
+
+            ### MC SIM FIGS
             if create_at_least_one_production_plot == True and mc_sim_complete_bool == True:
                 important_info.add_text_line("Creating production plots.", live_display)
+
+
+                patient_sp_output_figures_dir_dict = master_structure_info_dict["Global"]['Patient specific output figures directory (MC sim) dict']
                 
                 #live_display.stop()
 
@@ -4564,9 +4681,10 @@ def main():
                     pass
 
 
-            
+            ### FANOVA FIGS
             #live_display.stop()
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
+                patient_sp_fanova_output_figures_dir_dict = master_structure_info_dict["Global"]['Patient specific output figures directory (fanova) dict']
                 if fanova_containment_sim_complete_bool == True:
                     if production_plots_input_dictionary["Tissue classification Sobol indices global plot"]["Plot bool"] == True:
                         
@@ -4951,8 +5069,16 @@ def structure_referencer(structure_dcm_dict,
                 item["Index number"] = index
 
             # Note that all of the dataframes in the below "Multi-structure output data frames dict" are output as csvs in the final report
-            all_ref = {"Multi-structure output data frames dict": {},
-                        "Multi-structure information dict (not for csv output)": {} 
+            all_ref = {"Multi-structure output data frames dict": {
+                                                                   },
+                        "Multi-structure information dict (not for csv output)": {"Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe": None,
+                                                                                  },
+                        "Multi-structure pre-processing output dataframes dict": {"Biopsy optimization - Cumulative projection (all points within prostate) dataframe": pandas.DataFrame(),
+                                                                                  "Biopsy optimization - DIL centroids optimal targeting dataframe": pandas.DataFrame(),
+                                                                                  "Biopsy optimization - Optimal DIL targeting dataframe": pandas.DataFrame(),
+                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": pandas.DataFrame()},    
+                        "Multi-structure MC simulation output dataframes dict": {}, 
+                        "Multi-structure Fanova output dataframes dict": {}                                             
                         }
             
             
@@ -5050,9 +5176,10 @@ def structure_referencer(structure_dcm_dict,
                                                'FANOVA sim performed': False,
                                                'FANOVA containment sim performed': False,
                                                'FANOVA dose sim performed': False,  
-                                               "FANOVA info": fanova_info,                              
-                                               'Patient specific output figures directory dict': None,
-                                               'Patient specific fanova output figures directory dict': None,
+                                               "FANOVA info": fanova_info,
+                                               'Patient specific output figures directory (pre-processing) dict': None,                        
+                                               'Patient specific output figures directory (MC sim) dict': None,
+                                               'Patient specific output figures directory (fanova) dict': None,
                                                "Specific output dir": None 
                                                }
     

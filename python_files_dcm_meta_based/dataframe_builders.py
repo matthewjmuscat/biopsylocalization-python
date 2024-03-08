@@ -721,20 +721,43 @@ def dil_optimization_results_dataframe_builder(master_structure_reference_dict,
                                        ):
      
      for patientUID,pydicom_item in master_structure_reference_dict.items():
+        dil_centroids_optimization_locations_dataframe_list = []
         optimal_locations_dataframe_list = []
         potential_optimal_locations_dataframe_list = []
         for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
 
-            optimal_locations_dataframe = specific_dil_structure["Optimal biopsy location dataframe"]
-            potential_optimal_locations_dataframe = specific_dil_structure["Optimal biopsy location (all latice points) dataframe"]
+            dil_centroids_optimization_locations_dataframe = specific_dil_structure["Biopsy optimization: DIL centroid optimal biopsy location dataframe"]
+            optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+            potential_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location (all tested lattice points) dataframe"]
 
+            dil_centroids_optimization_locations_dataframe_list.append(dil_centroids_optimization_locations_dataframe)
             optimal_locations_dataframe_list.append(optimal_locations_dataframe)
             potential_optimal_locations_dataframe_list.append(potential_optimal_locations_dataframe)
 
+        sp_patient_dil_centroids_optimization_dataframe = pandas.concat(dil_centroids_optimization_locations_dataframe_list)
         sp_patient_optimal_dataframe = pandas.concat(optimal_locations_dataframe_list)
         sp_patient_potential_optimal_dataframe = pandas.concat(potential_optimal_locations_dataframe_list)
 
-        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Optimal DIL targeting dataframe"] = sp_patient_optimal_dataframe
-        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Optimal DIL targeting entire lattice dataframe"] = sp_patient_potential_optimal_dataframe
+        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - DIL centroids optimal targeting dataframe"] = sp_patient_dil_centroids_optimization_dataframe
+        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Optimal DIL targeting dataframe"] = sp_patient_optimal_dataframe
+        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Optimal DIL targeting entire lattice dataframe"] = sp_patient_potential_optimal_dataframe
 
 
+
+
+
+def dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
+                                            bx_ref,
+                                            all_ref_key):
+    
+    
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        all_bx_dvh_metrics_dataframe = pandas.DataFrame()
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+
+            dvh_metric_dataframe_per_biopsy = specific_bx_structure["Output data frames"]["DVH metrics"]
+
+            all_bx_dvh_metrics_dataframe = pandas.concat([all_bx_dvh_metrics_dataframe,dvh_metric_dataframe_per_biopsy], ignore_index = True)
+
+        
+        pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["DVH metrics"] = all_bx_dvh_metrics_dataframe

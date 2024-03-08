@@ -40,6 +40,7 @@ rmm-cu11 = { index = "pypinvidia"}
 cudf-cu11 = { index = "pypinvidia"}
 cuspatial-cu11 = { index = "pypinvidia"} 
 cupy-cuda11x = "*"
+pysimplegui = "*"
 
 [dev-packages]
 ipykernel = "*"

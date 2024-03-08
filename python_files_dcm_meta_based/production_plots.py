@@ -12,8 +12,9 @@ from scipy.stats import norm
 from scipy import stats
 from plotly.subplots import make_subplots
 import itertools
-
-
+from itertools import combinations
+import random
+import point_containment_tools
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -3198,7 +3199,286 @@ def production_plot_dose_nominal_global_difference_box_patient_cohort(patient_co
 
 
 
+def production_plot_guidance_maps_cumulative_projection(patientUID,
+                                                        patient_sp_output_figures_dir,
+                                                        pydicom_item,
+                                                        all_ref_key,
+                                                        svg_image_scale,
+                                                        svg_image_width,
+                                                        svg_image_height,
+                                                        general_plot_name_string
+                                                        ):
 
+
+    cumulative_projection_optimization_scores_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Cumulative projection (all points within prostate) dataframe"]
+    sp_patient_centroid_optimal_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - DIL centroids optimal targeting dataframe"]
+    sp_patient_optimal_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Optimal DIL targeting dataframe"]
+    
+    
+
+    list_of_cumulative_planes = cumulative_projection_optimization_scores_dataframe['Patient plane'].unique().tolist()
+    for plane in list_of_cumulative_planes:
+        plane_specific_cumulative_projection_optimization_scores_dataframe = cumulative_projection_optimization_scores_dataframe[cumulative_projection_optimization_scores_dataframe['Patient plane'] == plane]
+        hor_axis_column_name = plane_specific_cumulative_projection_optimization_scores_dataframe.sample().reset_index(drop=True).at[0,'Coord 1 name']
+        vert_axis_column_name = plane_specific_cumulative_projection_optimization_scores_dataframe.sample().reset_index(drop=True).at[0,'Coord 2 name']
+        
+        
+        fig = go.Figure()
+
+        # Add optimal sampling location for each DIL
+        for index, row in sp_patient_optimal_dataframe.iterrows():
+            fig.add_scatter(x=[row[hor_axis_column_name]],
+                    y=[row[vert_axis_column_name]],
+                    marker=dict(
+                        color='orange',
+                        size=10,
+                        symbol = 'circle'
+                    ),
+                    text=[row["Relative DIL ID"]],
+                    mode = "markers+text",
+                    name=row["Relative DIL ID"]+' optimal',
+                    textposition="bottom center",
+                    textfont=dict(
+                        family="sans serif",
+                        size=12,
+                        color="white"
+                    )
+                )
+
+        # Add centroids of each DIL
+        for index, row in sp_patient_centroid_optimal_dataframe.iterrows():
+            fig.add_scatter(x=[row[hor_axis_column_name]],
+                    y=[row[vert_axis_column_name]],
+                    marker=dict(
+                        color='yellow',
+                        size=10,
+                        symbol = 'circle'
+                    ),
+                    text=[row["Relative DIL ID"]],
+                    mode = "markers+text",
+                    name=row["Relative DIL ID"]+' centroid',
+                    textposition="bottom center",
+                    textfont=dict(
+                        family="sans serif",
+                        size=12,
+                        color="white"
+                    )
+                )
+            
+        # Add prostate centroid
+        fig.add_scatter(x=[0],
+                    y=[0],
+                    marker=dict(
+                        color='black',
+                        size=10,
+                        symbol = 'circle'
+                    ),
+                name='Prostate centroid')  
+
+        # Add contour plot of the values of the cumulative projection of the optimization
+        fig.add_trace(
+            go.Contour(
+                z=plane_specific_cumulative_projection_optimization_scores_dataframe['Proportion of normal dist points contained'],
+                x=plane_specific_cumulative_projection_optimization_scores_dataframe["Coordinate 1"],
+                y=plane_specific_cumulative_projection_optimization_scores_dataframe["Coordinate 2"],
+                colorscale=[[0, 'rgb(0,0,255)'], [0.9, 'rgb(255,0,0)'],[1, 'rgb(0,255,0)']],
+                zmax = 1,
+                zmin = 0,
+                autocontour = False,
+                contours = go.contour.Contours(type = 'levels', showlines = True, coloring = 'heatmap', showlabels = True, size = 0.1),
+                connectgaps = False, 
+                colorbar = go.contour.ColorBar(len = 0.5)
+            ))
+
+        # Add axes names and other annotations on the figure
+        x_axis_name = hor_axis_column_name[-2]
+        y_axis_name = vert_axis_column_name[-2]
+        patient_pos_dict = {'X': ' (L/R)', "Y":' (A/P)', "Z": '(S/I)'}
+        fig['layout']['xaxis'].update(title=x_axis_name+patient_pos_dict[x_axis_name])
+        fig['layout']['yaxis'].update(title=y_axis_name+patient_pos_dict[y_axis_name])
+        
+        patient_plane_dict = {'XY': ' Transverse (XY)', "YZ": ' Sagittal (YZ)', "XZ": ' Coronal (XZ)',
+                              'YX': ' Transverse (YX)', "ZY": ' Sagittal (ZY)', "ZX": ' Coronal (ZX)'}
+        patient_plane_determiner_str = x_axis_name+y_axis_name
+        
+        fig.add_annotation(text="Cumulative, "+patient_plane_dict[patient_plane_determiner_str]+' plane',
+            xref="paper", yref="paper",
+            x=0.95, y=0.9, showarrow=False,
+                font=dict(family="Courier New, monospace", size=16, color="#ffffff")
+            )  
+        fig.add_annotation(text="Patient: "+patientUID,
+                                xref="paper", yref="paper",
+                                x=0.95, y=0.95, showarrow=False,
+                                    font=dict(family="Courier New, monospace", size=16, color="#ffffff")
+                                )  
+        
+
+        svg_dose_fig_name = general_plot_name_string+' - (cumulative - ' +patient_plane_dict[patient_plane_determiner_str]+').svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+' - (cumulative - ' +patient_plane_dict[patient_plane_determiner_str]+').html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path)
+
+
+
+
+def production_plot_guidance_maps_max_planes(patientUID,
+                                            patient_sp_output_figures_dir,
+                                            pydicom_item,
+                                            dil_ref,
+                                            oar_ref,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string
+                                            ):
+    
+
+    column_to_index_dict = {'Test location (Prostate centroid origin) (X)': 0, 
+                            'Test location (Prostate centroid origin) (Y)': 1, 
+                            'Test location (Prostate centroid origin) (Z)': 2
+                            }
+
+    for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):    
+        specific_dil_structureID = specific_dil_structure["ROI"]
+        sp_dil_guidance_map_max_planes_dataframe = specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"]
+        sp_dil_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+        selected_prostate_info_and_centroid_dict = specific_dil_structure["Biopsy optimization: selected relative prostate dict"]
+        selected_prostate_centroid = selected_prostate_info_and_centroid_dict["Centroid vector array"]
+
+        list_of_max_plane_types = sp_dil_guidance_map_max_planes_dataframe['Patient plane'].unique().tolist()
+        for plane in list_of_max_plane_types:
+            plane_specific_guidance_map_max_planes_dataframe = sp_dil_guidance_map_max_planes_dataframe[sp_dil_guidance_map_max_planes_dataframe['Patient plane'] == plane]
+            hor_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 1 name']
+            vert_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 2 name']
+            const_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Const coord name']
+            
+            fig = go.Figure()
+
+            # Add optimal sampling location for each DIL
+            for index, row in sp_dil_optimal_locations_dataframe.iterrows():
+                fig.add_scatter(x=[row[hor_axis_column_name]],
+                        y=[row[vert_axis_column_name]],
+                        marker=dict(
+                            color='orange',
+                            size=10,
+                            symbol = 'circle'
+                        ),
+                        text=[row["Relative DIL ID"]],
+                        mode = "markers+text",
+                        name=row["Relative DIL ID"]+' optimal',
+                        textposition="bottom center",
+                        textfont=dict(
+                            family="sans serif",
+                            size=12,
+                            color="white"
+                        )
+                    )    
+
+
+            # Add prostate centroid
+            fig.add_scatter(x=[0],
+                        y=[0],
+                        marker=dict(
+                            color='black',
+                            size=10,
+                            symbol = 'circle'
+                        ),
+                    name='Prostate centroid')
+
+            for oar_structure in pydicom_item[oar_ref]:
+                oar_structureID = oar_structure["ROI"]
+                interslice_interpolation_information = oar_structure["Inter-slice interpolation information"]                        
+
+                interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+
+                if 'Transverse' in plane:
+                    const_plane_coord_value = sp_dil_optimal_locations_dataframe.at[0,const_axis_column_name]
+                    const_plane_coord_value_in_patient_frame = const_plane_coord_value + selected_prostate_centroid[column_to_index_dict[const_axis_column_name]]
+                    if (const_plane_coord_value_in_patient_frame > max(interpolated_zvals_list)) or (const_plane_coord_value_in_patient_frame < min(interpolated_zvals_list)):
+                        continue
+                    closest_z_index, closest_z_val = point_containment_tools.take_closest_numpy(interpolated_zvals_list, [const_plane_coord_value_in_patient_frame])
+                    transverse_slice_of_oar_at_optimal_depth = np.array(zslices_list[closest_z_index[0]])
+                    transverse_slice_of_oar_at_optimal_depth_in_prostate_frame = transverse_slice_of_oar_at_optimal_depth - selected_prostate_centroid
+                    transverse_slice_of_oar_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection = np.append(transverse_slice_of_oar_at_optimal_depth_in_prostate_frame, transverse_slice_of_oar_at_optimal_depth_in_prostate_frame[[0],:], axis = 0)
+
+                    fig.add_scatter(x=transverse_slice_of_oar_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection[:,column_to_index_dict[hor_axis_column_name]],
+                        y=transverse_slice_of_oar_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection[:,column_to_index_dict[vert_axis_column_name]],
+                        mode = "lines",
+                        name=oar_structureID)
+                    
+            for dil_structure in pydicom_item[dil_ref]:
+                dil_structureID = dil_structure["ROI"]
+                interslice_interpolation_information = dil_structure["Inter-slice interpolation information"]                        
+
+                interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+
+                if 'Transverse' in plane:
+                    const_plane_coord_value = sp_dil_optimal_locations_dataframe.at[0,const_axis_column_name]
+                    const_plane_coord_value_in_patient_frame = const_plane_coord_value + selected_prostate_centroid[column_to_index_dict[const_axis_column_name]]
+                    if (const_plane_coord_value_in_patient_frame > max(interpolated_zvals_list)) or (const_plane_coord_value_in_patient_frame < min(interpolated_zvals_list)):
+                        continue
+                    closest_z_index, closest_z_val = point_containment_tools.take_closest_numpy(interpolated_zvals_list, [const_plane_coord_value_in_patient_frame])
+                    transverse_slice_of_dil_at_optimal_depth = np.array(zslices_list[closest_z_index[0]])
+                    transverse_slice_of_dil_at_optimal_depth_in_prostate_frame = transverse_slice_of_dil_at_optimal_depth - selected_prostate_centroid
+                    transverse_slice_of_dil_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection = np.append(transverse_slice_of_dil_at_optimal_depth_in_prostate_frame, transverse_slice_of_dil_at_optimal_depth_in_prostate_frame[[0],:], axis = 0)
+
+                    fig.add_scatter(x=transverse_slice_of_dil_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection[:,column_to_index_dict[hor_axis_column_name]],
+                        y=transverse_slice_of_dil_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection[:,column_to_index_dict[vert_axis_column_name]],
+                        mode = "lines",
+                        name=dil_structureID)
+
+            # Add contour plot of the values of the cumulative projection of the optimization
+            fig.add_trace(
+                go.Contour(
+                    z=plane_specific_guidance_map_max_planes_dataframe['Proportion of normal dist points contained'],
+                    x=plane_specific_guidance_map_max_planes_dataframe[hor_axis_column_name],
+                    y=plane_specific_guidance_map_max_planes_dataframe[vert_axis_column_name],
+                    colorscale=[[0, 'rgb(0,0,255)'], [0.9, 'rgb(255,0,0)'],[1, 'rgb(0,255,0)']],
+                    zmax = 1,
+                    zmin = 0,
+                    autocontour = False,
+                    contours = go.contour.Contours(type = 'levels', showlines = True, coloring = 'heatmap', showlabels = True, size = 0.1),
+                    connectgaps = False, 
+                    colorbar = go.contour.ColorBar(len = 0.5)
+                ))
+
+            # Add axes names and other annotations on the figure
+            x_axis_name = hor_axis_column_name[-2]
+            y_axis_name = vert_axis_column_name[-2]
+            patient_pos_dict = {'X': ' (L/R)', "Y":' (A/P)', "Z": '(S/I)'}
+            fig['layout']['xaxis'].update(title=x_axis_name+patient_pos_dict[x_axis_name])
+            fig['layout']['yaxis'].update(title=y_axis_name+patient_pos_dict[y_axis_name])
+            
+            patient_plane_dict = {'XY': ' Transverse (XY)', "YZ": ' Sagittal (YZ)', "XZ": ' Coronal (XZ)',
+                                'YX': ' Transverse (YX)', "ZY": ' Sagittal (ZY)', "ZX": ' Coronal (ZX)'}
+            patient_plane_determiner_str = x_axis_name+y_axis_name
+            
+            fig.add_annotation(text="Optimal plane, "+patient_plane_dict[patient_plane_determiner_str],
+                xref="paper", yref="paper",
+                x=0.95, y=0.9, showarrow=False,
+                    font=dict(family="Courier New, monospace", size=16, color="#ffffff")
+                )  
+            fig.add_annotation(text="Patient: "+patientUID,
+                                    xref="paper", yref="paper",
+                                    x=0.95, y=0.95, showarrow=False,
+                                        font=dict(family="Courier New, monospace", size=16, color="#ffffff")
+                                    )  
+            
+
+            svg_dose_fig_name = general_plot_name_string+' - (maxplane - ' +patient_plane_dict[patient_plane_determiner_str]+' - '+specific_dil_structureID+').svg'
+            svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+            fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+            html_dose_fig_name = general_plot_name_string+' - (maxplane - ' +patient_plane_dict[patient_plane_determiner_str]+' - '+specific_dil_structureID+').html'
+            html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+            fig.write_html(html_dose_fig_file_path)
 
 def add_p_value_annotation(fig, 
                            array_columns, 
