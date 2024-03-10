@@ -495,7 +495,9 @@ def guidance_map_cumulative_projection_dataframe_creator(all_dils_and_non_dil_op
     
     dfcumulative_all_planes = pandas.DataFrame()
     coord_index_arr = np.array([0,1,2])
-    for combination in list(combinations(coord_index_arr, 2)):
+    plane_combinations = [(0,1),(0,2),(2,1)] # This defines Transverse (X,Y), Coronal (X,Z) and Saggital (Z,Y)
+
+    for combination in plane_combinations:
         index_to_column_dict = {0: 'Test location (Prostate centroid origin) (X)', 
                                 1: 'Test location (Prostate centroid origin) (Y)', 
                                 2: 'Test location (Prostate centroid origin) (Z)'
@@ -553,7 +555,8 @@ def guidance_map_max_planes_dataframe(sp_dil_potential_optimal_locations_datafra
     
     dfmax_all_planes = pandas.DataFrame()
     coord_index_arr = np.array([0,1,2])
-    for combination in list(combinations(coord_index_arr, 2)):
+    plane_combinations = [(0,1),(0,2),(2,1)] # This defines Transverse (X,Y), Coronal (X,Z) and Saggital (Z,Y)
+    for combination in plane_combinations:
         index_to_column_dict = {0: 'Test location (Prostate centroid origin) (X)', 
                                 1: 'Test location (Prostate centroid origin) (Y)', 
                                 2: 'Test location (Prostate centroid origin) (Z)'

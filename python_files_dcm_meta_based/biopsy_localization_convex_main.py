@@ -1437,22 +1437,34 @@ def main():
 
 
 
-                    ## GENERATE LATTICE ENCOMPASSING ALL DILS
+                    ## GENERATE LATTICE ENCOMPASSING ALL GEOMETRIES
                     # add the dils!
                     list_of_all_dils_interpolated_pts = []
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
                         sp_dil_interslice_interpolation_information = specific_dil_structure["Inter-slice interpolation information"]
                         sp_dil_interpolated_pts_np_arr = sp_dil_interslice_interpolation_information.interpolated_pts_np_arr
                         list_of_all_dils_interpolated_pts.append(sp_dil_interpolated_pts_np_arr)
-                    all_dils_interpolated_pts = np.vstack(list_of_all_dils_interpolated_pts)
+                    #all_dils_interpolated_pts = np.vstack(list_of_all_dils_interpolated_pts)
 
-                    # add the prostate!
+                    # add the OARs!
+                    list_of_all_oar_interpolated_pts = []
+                    for specific_oar_structure in pydicom_item[oar_ref]:
+                        oar_interslice_interpolation_information = specific_oar_structure["Inter-slice interpolation information"]
+                        oar_interpolated_pts_np_arr = oar_interslice_interpolation_information.interpolated_pts_np_arr
+                        list_of_all_oar_interpolated_pts.append(oar_interpolated_pts_np_arr)
+
+                    all_geometries_list_of_interpolated_pts = list_of_all_dils_interpolated_pts + list_of_all_oar_interpolated_pts
+                    all_geometries_interpolated_pts = np.vstack(all_geometries_list_of_interpolated_pts)
+
+                    # Before, only added prostate, but better to add ALL OARs
+                    """
                     if prostate_found_bool == True:
                         prostate_interslice_interpolation_information = pydicom_item[prostate_ref_type][prostate_structure_index]["Inter-slice interpolation information"]
                         prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
                         all_geometries_interpolated_pts = np.vstack([all_dils_interpolated_pts,prostate_interpolated_pts_np_arr])
                     else: 
                         all_geometries_interpolated_pts = all_dils_interpolated_pts
+                    """
 
                     # all geometries means dils + prostate (if a prostate could be found!)
                     all_geometries_interpolated_pts_point_cloud = point_containment_tools.create_point_cloud(all_geometries_interpolated_pts)
@@ -1740,8 +1752,8 @@ def main():
 
                         df_simple = entire_overlapped_lattice_dataframe[['Test location (Prostate centroid origin) (X)','Test location (Prostate centroid origin) (Y)','Test location (Prostate centroid origin) (Z)','Proportion of normal dist points contained']]
 
-
-                        for combination in list(combinations(np.array([0,1,2]), 2)):
+                        plane_combinations = [(0,1),(0,2),(2,1)] # This defines Transverse (X,Y), Coronal (X,Z) and Saggital (Z,Y)
+                        for combination in plane_combinations:
                             index_to_column_dict = {0: 'Test location (Prostate centroid origin) (X)', 1: 'Test location (Prostate centroid origin) (Y)', 2: 'Test location (Prostate centroid origin) (Z)'}
                             dfcumulative = df_simple.groupby([index_to_column_dict[combination[0]],index_to_column_dict[combination[1]]])['Proportion of normal dist points contained'].sum().reset_index()
                             max_val = (dfcumulative['Proportion of normal dist points contained']).max()
@@ -1817,7 +1829,8 @@ def main():
                             fig['layout']['xaxis'].update(title=x_axis_name+patient_pos_dict[x_axis_name])
                             fig['layout']['yaxis'].update(title=y_axis_name+patient_pos_dict[y_axis_name])
                             
-                            patient_plane_dict = {'XY': ' Transverse', "YZ": ' Sagittal', "XZ": ' Coronal'}
+                            patient_plane_dict = {'XY': ' Transverse (XY)', "YZ": ' Sagittal (YZ)', "XZ": ' Coronal (XZ)',
+                                                  'YX': ' Transverse (YX)', "ZY": ' Sagittal (ZY)', "ZX": ' Coronal (ZX)'}
                             patient_plane_determiner_str = x_axis_name+y_axis_name
                             
                             fig.add_annotation(text="Cumulative, "+patient_plane_dict[patient_plane_determiner_str]+' plane',
@@ -3519,7 +3532,7 @@ def main():
                 ## PREPARE TO PICKLE MASTER STRUCTURE REFERENCE DICT, DELETE ALL UNPICKLEABLE ITEMS
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                        del specific_bx_structure['Intra-slice interpolation information']
+                        #del specific_bx_structure['Intra-slice interpolation information']
                         #del specific_bx_structure['Inter-slice interpolation information']
                         del specific_bx_structure['Point cloud raw']
                         del specific_bx_structure['Delaunay triangulation global structure']
@@ -3539,7 +3552,7 @@ def main():
                         del specific_bx_structure['FANOVA: sobol indices (dose)']
                         del specific_bx_structure['FANOVA: sobol indices (DIL tissue)']
                     for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
-                        del specific_oar_structure['Intra-slice interpolation information']
+                        #del specific_oar_structure['Intra-slice interpolation information']
                         #del specific_oar_structure['Inter-slice interpolation information']
                         del specific_oar_structure['Point cloud raw']
                         del specific_oar_structure['Delaunay triangulation global structure']
@@ -3547,7 +3560,7 @@ def main():
                         del specific_oar_structure['Interpolated structure point cloud dict']
                         del specific_oar_structure['Uncertainty data']
                     for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                        del specific_dil_structure['Intra-slice interpolation information']
+                        #del specific_dil_structure['Intra-slice interpolation information']
                         #del specific_dil_structure['Inter-slice interpolation information']
                         del specific_dil_structure['Point cloud raw']
                         del specific_dil_structure['Delaunay triangulation global structure']
@@ -5303,9 +5316,12 @@ class interpolation_information_obj:
             self.scipylinesegments_by_zslice_keys_dict[zslice_key] = z_slice_seg_obj_list
             self.numpoints_raw_per_zslice_dict[zslice_key] = numpoints_raw_per_zslice
             self.numpoints_after_interpolation_per_zslice_dict[zslice_key] = numpoints_after_interpolation_per_zslice_temp
-            for interpolated_point in threeDdata_zslice_interpolated_list:
-                self.interpolated_pts_list.append(interpolated_point)
-        self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
+            
+            threeDdata_zslice_interpolated_arr = np.asarray(threeDdata_zslice_interpolated_list)
+            self.interpolated_pts_list.append(threeDdata_zslice_interpolated_arr)
+        self.interpolated_pts_np_arr = np.vstack(self.interpolated_pts_list)
+
+
     
     def parallel_analyze(self, parallel_pool, three_Ddata_list,interp_dist):
         pool = parallel_pool
@@ -5321,9 +5337,10 @@ class interpolation_information_obj:
             self.scipylinesegments_by_zslice_keys_dict[zslice_key] = z_slice_seg_obj_list
             self.numpoints_raw_per_zslice_dict[zslice_key] = numpoints_raw_per_zslice
             self.numpoints_after_interpolation_per_zslice_dict[zslice_key] = numpoints_after_interpolation_per_zslice_temp
-            for interpolated_point in threeDdata_zslice_interpolated_list:
-                self.interpolated_pts_list.append(interpolated_point)
-        self.interpolated_pts_np_arr = np.asarray(self.interpolated_pts_list)
+            
+            threeDdata_zslice_interpolated_arr = np.asarray(threeDdata_zslice_interpolated_list)
+            self.interpolated_pts_list.append(threeDdata_zslice_interpolated_arr)
+        self.interpolated_pts_np_arr = np.vstack(self.interpolated_pts_list)
 
                 
     
@@ -5421,7 +5438,9 @@ class interpolation_information_obj:
             fill_point_as_arr = np.asarray(fill_point)
             self.endcaps_points.append(fill_point_as_arr)
             self.interpolated_pts_with_end_caps_list.append(fill_point_as_arr)
-        self.interpolated_pts_with_end_caps_np_arr = np.asarray(self.interpolated_pts_with_end_caps_list)
+        self.interpolated_pts_with_end_caps_np_arr = np.vstack(self.interpolated_pts_with_end_caps_list)
+
+
 
  
 def trimesh_reconstruction_ball_pivot(threeD_data_arr, ball_radii):
