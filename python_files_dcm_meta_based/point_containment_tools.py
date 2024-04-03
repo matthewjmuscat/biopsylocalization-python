@@ -523,9 +523,10 @@ def cuspatial_points_contained_mc_sim_cupy_pandas(polygons_geoseries,
     indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~creating dictionary (8)", total = None)
     ###
 
-    results_dictionary = {"Patient UID": patientUID,
-                          "Biopsy ID": biopsy_structure_info["Structure ID"],
+    results_dictionary = {"Patient ID": patientUID,
+                          "Bx ID": biopsy_structure_info["Structure ID"],
                           "Biopsy refnum": biopsy_structure_info["Dicom ref num"],
+                          "Bx index": biopsy_structure_info["Index number"],
                           "Relative structure ROI": structure_info[0],
                           "Relative structure type": structure_info[1],
                           "Relative structure index": structure_info[3],

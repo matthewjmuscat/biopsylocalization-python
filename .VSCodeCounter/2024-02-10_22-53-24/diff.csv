@@ -1,8 +1,0 @@
-"filename", "language", "Python", "JSON", "comment", "blank", "total"
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py", "Python", 40, 0, 45, 30, 115
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_optimizer.py", "Python", 81, 0, -35, 46, 92
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/math_funcs.py", "Python", 2, 0, 0, 4, 6
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py", "Python", 63, 0, -109, 33, -13
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/point_containment_tools.py", "Python", 50, 0, 13, 18, 81
-"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb", "JSON", 0, -1198, 0, 0, -1198
-"Total", "-", 236, -1198, -86, 131, -917

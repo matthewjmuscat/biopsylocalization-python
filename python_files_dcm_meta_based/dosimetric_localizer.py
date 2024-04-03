@@ -46,7 +46,7 @@ def dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
     comparison_structure_NN_distances_reciprocal_fixed_2d_list = comparison_structure_NN_distances_reciprocal_fixed.tolist()
 
 
-    dose_nearest_neighbour_results_dict_for_dataframe = {"Patient UID": [patientUID]*total_num_trials_and_nominal_times_bx_points,
+    dose_nearest_neighbour_results_dict_for_dataframe = {"Patient ID": [patientUID]*total_num_trials_and_nominal_times_bx_points,
                                                         "Struct ID": [structureID]*total_num_trials_and_nominal_times_bx_points,
                                                         "Struct type": [struct_type]*total_num_trials_and_nominal_times_bx_points,
                                                         "Struct dicom ref num": [structure_reference_number]*total_num_trials_and_nominal_times_bx_points,

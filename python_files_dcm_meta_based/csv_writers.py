@@ -58,7 +58,7 @@ def csv_writer_containment(live_display,
                     write.writerow(['---'])
                     rows_to_write_list = []
 
-                    containment_output_by_MC_trial_pandas_data_frame = specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"]
+                    containment_output_by_MC_trial_pandas_data_frame = specific_bx_structure["Output data frames"]["Mutual containment output by bx point"]
                     tissue_classes_list = [cancer_tissue_label,structure_miss_probability_roi,miss_structure_complement_label]
                     for tissue_class in tissue_classes_list:
                         tissue_class_row = ['Tissue type', tissue_class]
@@ -218,12 +218,13 @@ def csv_writer_containment(live_display,
                     rows_to_write_list.append(miss_structure_CI_lower_row)
                     rows_to_write_list.append(miss_structure_CI_upper_row)
                     
-                    
+                    """
                     # tumor length estimate 
                     rows_to_write_list.append(['---'])
                     rows_to_write_list.append(['Tumor length estimate'])
                     rows_to_write_list.append(['---'])
 
+                    
                     tissue_length_by_threshold_dict = specific_bx_structure["MC data: tissue length above threshold dict"] 
                     for key,item in tissue_length_by_threshold_dict.items():
                         probability_threshold = key
@@ -245,7 +246,8 @@ def csv_writer_containment(live_display,
                         rows_to_write_list.append(length_estimate_mean_row)
                         rows_to_write_list.append(length_estimate_se_row)
                         
-                    
+                    """
+
                     rows_to_write_list.append(['---'])
                     
                     for row_to_write in rows_to_write_list:

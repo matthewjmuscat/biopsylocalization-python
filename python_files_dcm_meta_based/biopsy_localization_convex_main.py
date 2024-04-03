@@ -83,6 +83,9 @@ import geopandas
 import biopsy_optimizer
 from itertools import combinations
 import biopsy_transporter
+import machina_learning
+import matplotlib.pyplot as plt
+
 
 def main():
     
@@ -103,6 +106,10 @@ def main():
     stopwatch = Stopwatch(1)
 
     global loader
+
+    # prevents matplotlib plots from opening unless explicitely asked to with plt.show()
+    plt.ioff()
+
 
     # The following could be user input, for now they are defined here, and used throughout 
     # the programme for generality
@@ -158,14 +165,27 @@ def main():
     lower_bound_dose_percent = 5
     color_flattening_deg = 3 
     interp_inter_slice_dist = 0.5
-    interp_intra_slice_dist = 1 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
-    interp_dist_caps = 2
-    biopsy_radius = 0.275
+    interp_intra_slice_dist = 0.5 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
+    interp_dist_caps = 0.25
+    biopsy_radius = 0.5
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     voxel_size_for_structure_volume_calc_bx = 0.1 # if set to 0 then it is calculated based on the maximum pairwise distance of the structure
     voxel_size_for_structure_volume_calc_non_bx = 1
     voxel_size_for_structure_dimension_calc = 0.1 # this one is of calculating the length dimension of each structure at the position of the centroid!
     factor_for_voxel_size = 100 # only relevant if one of the above variables (voxel_size_for_structure_volume_calc_XXX) is equal to 0!
+    
+    # A note on radius vs knn for normal estimation
+    """
+    Radius or K-neighbors: When using methods like k-nearest neighbors or radius search for normal estimation, 
+    the choice of the radius or the number of neighbors can affect accuracy. A smaller radius or fewer neighbors 
+    might capture finer details but could also be sensitive to noise, while a larger radius or more neighbors might 
+    provide a smoother result but could miss smaller features.
+    """
+    # It may be best at this point to be consistent at 1mm
+    radius_for_normals_estimation = 1 # Making this larger produces better normals on a sphere, but too large may have undesired effects??
+    radius_for_curvature_estimation = 1 # This is the radius for determination of tangent plane normal, making this large tends to uniformize the pointwise curvature values
+    max_nn_for_normals_estimation = 30
+
 
     # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
@@ -173,7 +193,7 @@ def main():
     bx_sample_pts_lattice_spacing = 0.25
     num_MC_containment_simulations_input = 1000
     num_MC_dose_simulations_input = 1000
-    biopsy_z_voxel_length = 0.5 #voxelize biopsy core every 0.5 mm along core
+    biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
     idw_power = 1 # This determines the power of the inverse distance weighting (interpolation) for the NN dose search of the dose lattice!
     tissue_length_above_probability_threshold_list = [0.95,0.75,0.5,0.25]
@@ -188,6 +208,7 @@ def main():
     NPKR_bandwidth = 0.5
     svg_image_height = 1080
     svg_image_width = 1920
+    dpi_for_seaborn_plots = 100
     open3d_views_jsons_folder_name = "open3d_views_jsons"
     open3d_views_dose_folder_name = "dose_views"
     open3d_views_containment_folder_name = "containment_views"
@@ -227,6 +248,8 @@ def main():
                               "Identifier string": 'sim_optimal_dil'}
                             }
     simulated_biopsy_length_method = 'real normal' # can be 'full' (ie. 19mm), 'real normal' (samples from a normal distribution with mu=real_mean, std = real_std) or 'real mean' (all sim biopsy lengths are equal to real_mean)
+    color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)'}
+
     #bx_sim_locations = ['centroid'] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
     #bx_sim_ref_identifier = "sim"
     #simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
@@ -269,7 +292,11 @@ def main():
     plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
     plot_shifted_biopsies = False
     plot_volume_calculation_containment_result_bool = False
+    plot_binary_mask_bool = False
     plot_dimension_calculation_containment_result_bool = False
+    display_curvature_bool = False
+    display_structure_surface_mesh_bool = False
+    show_equivalent_ellipsoid_from_pca_bool = False
 
     # Final production plots to create:
     plot_immediately_after_simulation = True
@@ -279,7 +306,7 @@ def main():
     num_z_vals_to_evaluate_for_regression_plots = 1000
     tissue_class_probability_plot_type_list = ['with_errors','']
     production_plots_input_dictionary = {"Sampled translation vector magnitudes box plots": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
@@ -294,7 +321,7 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Guidance maps with actual cores":\
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": "guidance maps with actual cores",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },      
@@ -315,13 +342,17 @@ def main():
                                              "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles regression plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution voxelized box plot": \
                                             {"Plot bool": False, 
                                              "Plot name": " - dose-box_plot-voxelized_axial_dose_distribution",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
+                                             },
+                                        "Axial dose voxelized ridgeline plot": \
+                                            {"Plot bool": False, 
+                                             "Plot name": " - dose_voxelized_ridgeline",
                                              },
                                         "Axial dose distribution voxelized violin plot": \
                                             {"Plot bool": False, 
@@ -333,7 +364,7 @@ def main():
                                              "Plot name": ' - dose-DVH-differential_dvh_showing_'+str(num_differential_dvh_plots_to_show)+'_trials'
                                              },
                                         "Differential DVH dose binned all trials box plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot',
                                              "Box plot color": 'rgba(0, 92, 171, 1)',
                                              "Nominal point color": 'rgba(227, 27, 35, 1)'
@@ -347,16 +378,43 @@ def main():
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_regression_only'
                                              },
                                         "Cumulative DVH quantile regression all trials plot colorwash": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_colorwash'
                                              },
                                         "Tissue classification scatter and regression probabilities all trials plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class-regression-probabilities'
                                              },
                                         "Tissue classification mutual probabilities plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_mutual-regression-probabilities',
+                                             "Structure miss ROI": structure_miss_probability_roi
+                                             },
+                                        "Axial tissue class voxelized ridgeline plot": \
+                                            {"Plot bool": False, 
+                                             "Plot name": ' - tissue_class_ridgeline',
+                                             "Structure miss ROI": structure_miss_probability_roi
+                                             },
+                                        "Cohort - Scatter plot matrix targeting accuracy": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - scatter_plot_matrix_targeting_accuracy'
+                                             },
+                                        "Cohort - Scatter plot 2d gaussian transverse accuracy": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - 2d_gaussian_transverse_accuracy'
+                                             },
+                                        "Cohort - Scatter plot 2d gaussian sagittal accuracy": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' - 2d_gaussian_sagittal_accuracy'
+                                             },
+                                        "Cohort - Tissue class global score by biopsy type": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_class_global_by_bx_type',
+                                             "Structure miss ROI": structure_miss_probability_roi
+                                             },
+                                        "Cohort - Tissue volume by biopsy type": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_volume_threshold_by_bx_type',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Tissue classification Sobol indices global plot": \
@@ -566,10 +624,7 @@ def main():
 
             # only perform patient sample analyzer
             if only_perform_patient_analyser == True:
-                #data_frame_list = []
-                #sample_dict = {}
-                #num_actual_biopsies = 0
-                #num_sim_biopsies = 0
+
                 live_display.stop()
                 output_csvs_folder = pathlib.Path(fd.askdirectory(title='Open output CSVs folder', initialdir=output_dir))
                 #live_display.start()
@@ -580,61 +635,7 @@ def main():
                 num_actual_biopsies, num_sim_biopsies, cohort_containment_dataframe = dataframe_builders.containment_global_scores_all_patients_dataframe_builder(all_patient_sub_dirs)
                 # drop complement data
                 cohort_containment_dataframe = cohort_containment_dataframe[cohort_containment_dataframe.columns.drop(list(cohort_containment_dataframe.filter(regex='complement')))]
-                """
-                for directory in all_patient_sub_dirs:
-                    csv_files_in_directory_list = list(directory.glob('*.csv'))
-                    containment_csvs_list = [csv_file for csv_file in csv_files_in_directory_list if "containment_out" in csv_file.name]
-                    for contianment_csv in containment_csvs_list:
-                        with open(contianment_csv, "r", newline='\n') as contianment_csv_open:
-                            reader_obj_list = list(csv.reader(contianment_csv_open))
-                            info = reader_obj_list[0:3]
-                            patient_id = info[0][1]
-                            bx_id = info[1][1]
-                            simulated_string = info[2][1]
-                            if simulated_string.lower() == 'false':
-                                simulated_bool = False 
-                                num_actual_biopsies = num_actual_biopsies + 1
-                            else: 
-                                simulated_bool = True
-                                num_sim_biopsies = num_sim_biopsies + 1
-
-                            for row_index,row in enumerate(reader_obj_list):
-                                if "Global by class" in row:
-                                    starting_index = row_index + 2
-                                    break
-                                pass
-                            
-                            tissue_iteration = 1
-                            sample_dict["Patient ID"] = []
-                            sample_dict["Bx ID"] = []
-                            sample_dict["Simulated bool"] = []
-                            for row_index, row in enumerate(reader_obj_list[starting_index:]):
-                                if "+++" in row:
-                                    tissue_iteration = tissue_iteration + 1
-                                    sample_dict["Patient ID"].append(patient_id)
-                                    sample_dict["Bx ID"].append(bx_id)
-                                    sample_dict["Simulated bool"].append(simulated_bool)
-                                    continue
-                                if "---" in row:
-                                    break
-                                
-                                if tissue_iteration == 1:
-                                    if row[0] == 'Tissue type':
-                                        sample_dict[row[0]] = [row[1]]
-                                    else:
-                                        sample_dict[row[0]] = [float(row[1])]
-                                    
-                                else:
-                                    if row[0] == 'Tissue type':
-                                        sample_dict[row[0]].append(row[1])
-                                    else:
-                                        sample_dict[row[0]].append(float(row[1]))
-
-                            bx_sp_dataframe = pandas.DataFrame(data=sample_dict)
-                            data_frame_list.append(bx_sp_dataframe)
-
-                cohort_containment_dataframe = pandas.concat(data_frame_list,ignore_index = True)  
-                """ 
+                
 
                 # Make cohort output directories
                 cohort_figures_output_dir_name = 'Cohort figures'
@@ -1187,6 +1188,10 @@ def main():
                 completed_progress.update(pulling_patients_task_completed,  visible=True)            
 
                 
+
+                ### PREPROCESSING OARs
+
+
                 #live_display.stop()
 
                 patientUID_default = "Initializing"
@@ -1205,199 +1210,701 @@ def main():
                     num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     
                     num_non_bx_structs_patient_specific = num_total_structs_patient_specific - num_bx_structs_patient_specific
+
+
                     
                     processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
                     processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_non_bx_structs_patient_specific)
-                    for structs in structs_referenced_list:
-                        if structs != bx_ref:
-                            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                                structureID = specific_structure["ROI"]
-                                structure_reference_number = specific_structure["Ref #"]
-                                processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                                structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                                # The below print lines were just for my own understanding of how to access the data structure
-                                #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                                #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+                    structs = oar_ref
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        structureID = specific_structure["ROI"]
+                        structure_reference_number = specific_structure["Ref #"]
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                                threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+                        # The below print lines were just for my own understanding of how to access the data structure
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+                        
+                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                        threeDdata_array = np.empty([total_structure_points,3])                                                       
+
+                        # build raw threeDdata for non biopsies
+                        lower_bound_index = 0  
+                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                            current_zslice_num_points = np.size(threeDdata_zslice,0)
+                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                            lower_bound_index = lower_bound_index + current_zslice_num_points 
+                        
+                        
+                        # conduct INTER-slice interpolation
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+                        
+                        # conduct INTRA-slice interpolation
+                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                        
+                        # SLOWER TO ANALYZE PARALLEL
+                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                        
+
+                        # FASTER TO ANALYZE SERIALLY
+                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                        
+
+                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                        # fill in the end caps
+                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # generate point cloud of raw threeDdata
+                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                        
+                        # generate delaunay triangulations 
+                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                        zslice1 = threeDdata_array[0,2]
+                        zslice2 = threeDdata_array[-1,2]
+                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                        #delaunay_global_convex_structure_obj.generate_lineset()
+
+                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                        pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
+                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
+                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
+                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
+                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                        # plot raw points ?
+                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                        # plot points with order labels of interpolated intraslice ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                        # plot points with order labels of raw data ?
+                        #if test_ind > 1:
+                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                        #test_ind = test_ind + 1
+
+                        
+                        # plot fully interpolated points of z data ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                        # plot two point clouds side by side ? 
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                        
+
+
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
+
+                        ### CALCULATE THE STRUCTURES VOLUME
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                        ###
                                 
-                                total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                                threeDdata_array = np.empty([total_structure_points,3])                                                       
+                        
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
 
-                                # build raw threeDdata for non biopsies
-                                lower_bound_index = 0  
-                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                                    current_zslice_num_points = np.size(threeDdata_zslice,0)
-                                    threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                                    lower_bound_index = lower_bound_index + current_zslice_num_points 
-                              
-                                
-                                # conduct INTER-slice interpolation
-                                interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                                
-                                # conduct INTRA-slice interpolation
-                                # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                                threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                                # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                                num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                                
-                                # SLOWER TO ANALYZE PARALLEL
-                                #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                                #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                                
-
-                                # FASTER TO ANALYZE SERIALLY
-                                interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                                interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                                
-
-                                #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                                #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
-
-                                # fill in the end caps
-                                first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                                last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                                interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                                interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                                # generate point cloud of raw threeDdata
-                                threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
-                                threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
-                                
-                                # generate delaunay triangulations 
-                                deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-
-                                zslice1 = threeDdata_array[0,2]
-                                zslice2 = threeDdata_array[-1,2]
-                                delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                                #delaunay_global_convex_structure_obj.generate_lineset()
-
-                                threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                                threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                                threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                                pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
-                                interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
-                                inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
-                                inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
-                                interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                                # plot raw points ?
-                                #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                                # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                                # plot points with order labels of interpolated intraslice ?
-                                #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                                # plot points with order labels of raw data ?
-                                #if test_ind > 1:
-                                #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                                #test_ind = test_ind + 1
-
-                                
-                                # plot fully interpolated points of z data ?
-                                #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                                #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                                #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                                #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                                # plot two point clouds side by side ? 
-                                #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                                #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                                
-
-
-                                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
-
-                                ### CALCULATE THE STRUCTURES VOLUME
-                                ###
-                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                                ###
-                                        
-                                
-                                interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                                interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                                zslices_list = interslice_interpolation_information.interpolated_pts_list
-
-                                structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                                    interpolated_zvals_list,
-                                    zslices_list,
-                                    structure_info,
-                                    plot_volume_calculation_containment_result_bool,
-                                    voxel_size_for_structure_volume_calc_non_bx,
-                                    factor_for_voxel_size,
-                                    cupy_array_upper_limit_NxN_size_input,
-                                    layout_groups,
-                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                    structures_progress,
-                                    live_display
-                                    )
-                                
-                                ###
-                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                                ###
-                                ###### END STRUCTURE VOLUME CALCULATION
+                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                            interpolated_zvals_list,
+                            zslices_list,
+                            structure_info,
+                            plot_volume_calculation_containment_result_bool,
+                            plot_binary_mask_bool,
+                            voxel_size_for_structure_volume_calc_non_bx,
+                            factor_for_voxel_size,
+                            cupy_array_upper_limit_NxN_size_input,
+                            layout_groups,
+                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                            structures_progress,
+                            live_display
+                            )
+                        
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        ###### END STRUCTURE VOLUME CALCULATION
 
 
 
-                                ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                                ###
-                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                                ###
-                                
-                                interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                                interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                                zslices_list = interslice_interpolation_information.interpolated_pts_list
-                                non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                                non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                        ###
+                        
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
+                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
 
-                                structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                                                            interpolated_zvals_list,
-                                                                                                                                                            zslices_list,
-                                                                                                                                                            non_bx_structure_global_centroid,
-                                                                                                                                                            structure_info,
-                                                                                                                                                            plot_dimension_calculation_containment_result_bool,
-                                                                                                                                                            voxel_size_for_structure_dimension_calc,
-                                                                                                                                                            factor_for_voxel_size,
-                                                                                                                                                            cupy_array_upper_limit_NxN_size_input,
-                                                                                                                                                            layout_groups,
-                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                            structures_progress,
-                                                                                                                                                            live_display
-                                                                                                                                                            )
+                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                                                    interpolated_zvals_list,
+                                                                                                                                                    zslices_list,
+                                                                                                                                                    non_bx_structure_global_centroid,
+                                                                                                                                                    structure_info,
+                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
+                                                                                                                                                    voxel_size_for_structure_dimension_calc,
+                                                                                                                                                    factor_for_voxel_size,
+                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
+                                                                                                                                                    layout_groups,
+                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                    structures_progress,
+                                                                                                                                                    live_display
+                                                                                                                                                    )
 
-                                ###
-                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                                ###
-                                
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
 
 
-                                # store all calculated quantities
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_distance
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                        """
+                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
 
-                                #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                                #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                        ###
+                        
 
-                                structures_progress.update(processing_structures_task, advance=1)
-                        else:
-                            pass
+                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                    radius_for_normals_estimation,
+                                                                                                                    max_nn_for_normals_estimation,
+                                                                                                                    radius_for_curvature_estimation,
+                                                                                                                    display_curvature_bool)
+
+
+
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        """
+
+
+
+
+
+                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
+
+
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
+                        ###
+                        #live_display.stop()
+
+                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                            interp_intra_slice_dist,
+                            threeDdata_array_fully_interpolated_with_end_caps,
+                            radius_for_normals_estimation,
+                            max_nn_for_normals_estimation
+                            )
+                        
+                        if display_structure_surface_mesh_bool == True:
+                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
+
+                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                        """
+                        end_caps_points = np.array(interpolation_information.endcaps_points)
+                        area_voxel_size = interp_dist_caps**2
+                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
+
+                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                        """
+
+
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+
+
+                        ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        maximum_3D_diameter = maximum_distance 
+
+                        # Note that the eigenvectors are vstacked
+                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                        # This is the same method as pyradiomics
+                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                        if show_equivalent_ellipsoid_from_pca_bool == True:
+                            axis_diameters = list(equivalent_ellipse_dimensions.values())
+                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+                        
+
+                        # Create dataframe of the 3d shape features
+                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                        "Structure ID": [structureID],
+                                                        "Structure type": [structs],
+                                                        "Structure refnum": [structure_reference_number],
+                                                        "Volume": [structure_volume],
+                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                        "Surface area to volume ratio": [surface_volume_ratio],
+                                                        "Sphericity": [sphericity],
+                                                        "Compactness 1": [compactness_1],
+                                                        "Compactness 2": [compactness_2],
+                                                        "Spherical disproportion": [spherical_disproportion],
+                                                        "Maximum 3D diameter": [maximum_3D_diameter],
+                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                        "PCA eigenvector major": [pca_eigenvectors_of_structure_arr[0,:]],
+                                                        "PCA eigenvector minor": [pca_eigenvectors_of_structure_arr[1,:]],
+                                                        "PCA eigenvector least": [pca_eigenvectors_of_structure_arr[2,:]],
+                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                        "Elongation": [elongation],
+                                                        "Flatness": [flatness],
+                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid']
+                                                        }
+
+
+
+                        
+
+                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+
+                        # store all calculated quantities
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+
+                        structures_progress.update(processing_structures_task, advance=1)
+
                     structures_progress.remove_task(processing_structures_task)
                     patients_progress.update(processing_patients_task, advance=1)
                     completed_progress.update(processing_patients_task_completed, advance=1)
                 patients_progress.update(processing_patients_task, visible=False)
                 completed_progress.update(processing_patients_task_completed,  visible=True)    
 
+
+
+
+                ##### PREPROCESSING DILs
+                #live_display.stop()
+
+                patientUID_default = "Initializing"
+                processing_patients_task_main_description = "[red]Processing patient non-bx structure data [{}]...".format(patientUID_default)
+                processing_patients_task_completed_main_description = "[green]Processing patient non-bx structure data"
+                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible = False)
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_task_main_description = "[red]Processing patient non-bx structure data [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                    
+                    structureID_default = "Initializing"
+                    #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                    
+                    num_non_bx_structs_patient_specific = num_total_structs_patient_specific - num_bx_structs_patient_specific
+
+
+                    ### SELECT PROSTATE, OR DEFAULT TO ORIGIN FOR PROSTATE COM IF NONE FOUND
+                    selected_prostate_info, message_string, prostate_found_bool, num_prostates_found = misc_tools.prostate_selector(pydicom_item,
+                                            oar_ref,
+                                            prostate_contour_name)   
+
+                    if num_prostates_found > 1:
+                        important_info.add_text_line(message_string,live_display) 
+                    elif prostate_found_bool == False:
+                        important_info.add_text_line(message_string,live_display)
+                    
+                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_non_bx_structs_patient_specific)
+
+
+                    structs = dil_ref
+                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                        structureID = specific_structure["ROI"]
+                        structure_reference_number = specific_structure["Ref #"]
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                        # The below print lines were just for my own understanding of how to access the data structure
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+                        
+                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                        threeDdata_array = np.empty([total_structure_points,3])                                                       
+
+                        # build raw threeDdata for non biopsies
+                        lower_bound_index = 0  
+                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                            current_zslice_num_points = np.size(threeDdata_zslice,0)
+                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                            lower_bound_index = lower_bound_index + current_zslice_num_points 
+                        
+                        
+                        # conduct INTER-slice interpolation
+                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+                        
+                        # conduct INTRA-slice interpolation
+                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+                        
+                        # SLOWER TO ANALYZE PARALLEL
+                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                        
+
+                        # FASTER TO ANALYZE SERIALLY
+                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+                        
+
+                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                        # fill in the end caps
+                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # generate point cloud of raw threeDdata
+                        threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
+                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, threeDdata_pcd_color)
+                        
+                        # generate delaunay triangulations 
+                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                        zslice1 = threeDdata_array[0,2]
+                        zslice2 = threeDdata_array[-1,2]
+                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                        #delaunay_global_convex_structure_obj.generate_lineset()
+
+                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                        pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
+                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_rand_color)
+                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_rand_color)
+                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_rand_color)
+                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                        # plot raw points ?
+                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                        # plot points with order labels of interpolated intraslice ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                        # plot points with order labels of raw data ?
+                        #if test_ind > 1:
+                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                        #test_ind = test_ind + 1
+
+                        
+                        # plot fully interpolated points of z data ?
+                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                        # plot two point clouds side by side ? 
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+                        
+
+
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
+
+                        ### CALCULATE THE STRUCTURES VOLUME
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                        ###
+                                
+                        
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                            interpolated_zvals_list,
+                            zslices_list,
+                            structure_info,
+                            plot_volume_calculation_containment_result_bool,
+                            plot_binary_mask_bool,
+                            voxel_size_for_structure_volume_calc_non_bx,
+                            factor_for_voxel_size,
+                            cupy_array_upper_limit_NxN_size_input,
+                            layout_groups,
+                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                            structures_progress,
+                            live_display
+                            )
+                        
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        ###### END STRUCTURE VOLUME CALCULATION
+
+
+
+                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                        ###
+                        
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
+                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+
+                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                                                    interpolated_zvals_list,
+                                                                                                                                                    zslices_list,
+                                                                                                                                                    non_bx_structure_global_centroid,
+                                                                                                                                                    structure_info,
+                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
+                                                                                                                                                    voxel_size_for_structure_dimension_calc,
+                                                                                                                                                    factor_for_voxel_size,
+                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
+                                                                                                                                                    layout_groups,
+                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                    structures_progress,
+                                                                                                                                                    live_display
+                                                                                                                                                    )
+
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+
+
+                        """
+                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
+
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                        ###
+                        
+
+                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                    radius_for_normals_estimation,
+                                                                                                                    max_nn_for_normals_estimation,
+                                                                                                                    radius_for_curvature_estimation,
+                                                                                                                    display_curvature_bool)
+
+
+
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        """
+
+
+
+
+
+                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
+
+
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
+                        ###
+                        #live_display.stop()
+
+                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                            interp_intra_slice_dist,
+                            threeDdata_array_fully_interpolated_with_end_caps,
+                            radius_for_normals_estimation,
+                            max_nn_for_normals_estimation
+                            )
+                        
+                        if display_structure_surface_mesh_bool == True:
+                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
+
+                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                        """
+                        end_caps_points = np.array(interpolation_information.endcaps_points)
+                        area_voxel_size = interp_dist_caps**2
+                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
+
+                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                        """
+
+
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+
+
+                        ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                        maximum_3D_diameter = maximum_distance 
+
+                        # Note that the eigenvectors are vstacked
+                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                        # This is the same method as pyradiomics
+                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                        if show_equivalent_ellipsoid_from_pca_bool == True:
+                            axis_diameters = list(equivalent_ellipse_dimensions.values())
+                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+                        
+
+
+                            
+
+                        live_display.refresh()
+                        if prostate_found_bool == True:
+                            prostate_structure_index = selected_prostate_info["Index number"]
+                            prostate_structure = pydicom_item[oar_ref][prostate_structure_index]
+                            prostate_structure_global_centroid = prostate_structure["Structure global centroid"].copy().reshape((3))
+                            prostate_dimension_at_centroid_dict = prostate_structure["Structure dimension at centroid dict"]
+                            prostate_z_dimension_length_at_centroid = prostate_dimension_at_centroid_dict["Z dimension length at centroid"]
+                        
+                            # note that distance_to_mid_gland_threshold should be a positive quantity for the position classifier function below!
+                            distance_to_mid_gland_threshold = abs(prostate_z_dimension_length_at_centroid/6) 
+
+                            # determine dil location within prostate 
+                            # Calculate DIL location in prostate reference frame 
+                            specific_structure_global_centroid = specific_structure["Structure global centroid"][0]
+                            specific_structure_global_centroid_in_prostate_frame = specific_structure_global_centroid - prostate_structure_global_centroid
+
+                            # despite the function name, it can be used on any structure, not just biopsies
+                            dil_prostate_position_dict = misc_tools.bx_position_classifier_in_prostate_frame_sextant(specific_structure_global_centroid_in_prostate_frame,
+                                        distance_to_mid_gland_threshold)
+                        else: 
+                            dil_prostate_position_dict = {"LR": None,"AP": None,"SI": None}
+
+                        # Create dataframe of the 3d shape features
+                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                        "Structure ID": [structureID],
+                                                        "Structure type": [structs],
+                                                        "Structure refnum": [structure_reference_number],
+                                                        "Volume": [structure_volume],
+                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                        "Surface area to volume ratio": [surface_volume_ratio],
+                                                        "Sphericity": [sphericity],
+                                                        "Compactness 1": [compactness_1],
+                                                        "Compactness 2": [compactness_2],
+                                                        "Spherical disproportion": [spherical_disproportion],
+                                                        "Maximum 3D diameter": [maximum_3D_diameter],
+                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                        "PCA eigenvector major": [pca_eigenvectors_of_structure_arr[0,:]],
+                                                        "PCA eigenvector minor": [pca_eigenvectors_of_structure_arr[1,:]],
+                                                        "PCA eigenvector least": [pca_eigenvectors_of_structure_arr[2,:]],
+                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                        "Elongation": [elongation],
+                                                        "Flatness": [flatness],
+                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                        "DIL centroid (X, prostate frame)": specific_structure_global_centroid_in_prostate_frame[0],
+                                                        "DIL centroid (Y, prostate frame)": specific_structure_global_centroid_in_prostate_frame[1],
+                                                        "DIL centroid (Z, prostate frame)": specific_structure_global_centroid_in_prostate_frame[2],
+                                                        "DIL centroid distance (prostate frame)": np.linalg.norm(specific_structure_global_centroid_in_prostate_frame),
+                                                        "DIL prostate sextant (LR)": dil_prostate_position_dict["LR"],
+                                                        "DIL prostate sextant (AP)": dil_prostate_position_dict["AP"],
+                                                        "DIL prostate sextant (SI)": dil_prostate_position_dict["SI"]
+                                                        }
+
+
+
+                        
+
+                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+
+                        # store all calculated quantities
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+
+                        structures_progress.update(processing_structures_task, advance=1)
+
+                    structures_progress.remove_task(processing_structures_task)
+                    patients_progress.update(processing_patients_task, advance=1)
+                    completed_progress.update(processing_patients_task_completed, advance=1)
+                patients_progress.update(processing_patients_task, visible=False)
+                completed_progress.update(processing_patients_task_completed,  visible=True)    
 
 
 
@@ -2085,11 +2592,12 @@ def main():
                         zvals_list = np.unique(rotated_reconstructed_bx_arr_rounded[:,2]).tolist()
                         zslices_list = [rotated_reconstructed_bx_arr_rounded[rotated_reconstructed_bx_arr_rounded[:,2] == z_val] for z_val in zvals_list]
 
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, live_display = misc_tools.structure_volume_calculator(rotated_reconstructed_bx_arr_rounded,
+                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(rotated_reconstructed_bx_arr_rounded,
                             zvals_list,
                             zslices_list,
                             structure_info,
                             plot_volume_calculation_containment_result_bool,
+                            plot_binary_mask_bool,
                             voxel_size_for_structure_volume_calc_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
@@ -2465,11 +2973,12 @@ def main():
                         zvals_list = np.unique(rotated_reconstructed_bx_arr_rounded[:,2]).tolist()
                         zslices_list = [rotated_reconstructed_bx_arr_rounded[rotated_reconstructed_bx_arr_rounded[:,2] == z_val] for z_val in zvals_list]
 
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, live_display = misc_tools.structure_volume_calculator(rotated_reconstructed_bx_arr_rounded,
+                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(rotated_reconstructed_bx_arr_rounded,
                             zvals_list,
                             zslices_list,
                             structure_info,
                             plot_volume_calculation_containment_result_bool,
+                            plot_binary_mask_bool,
                             voxel_size_for_structure_volume_calc_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
@@ -3044,6 +3553,7 @@ def main():
             #st = time.time()
             args_list = []
             master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"] = bx_sample_pts_lattice_spacing
+            master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"] = bx_sample_pts_lattice_spacing**3
 
             patientUID_default = "Initializing"
             processing_patient_parallel_computing_main_description = "Preparing patient for parallel processing [{}]...".format(patientUID_default)
@@ -3477,6 +3987,8 @@ def main():
                                                                                             plot_cupy_containment_distribution_results,
                                                                                             plot_shifted_biopsies,
                                                                                             structure_miss_probability_roi,
+                                                                                            cancer_tissue_label,
+                                                                                            miss_structure_complement_label,
                                                                                             tissue_length_above_probability_threshold_list,
                                                                                             n_bootstraps_for_tissue_length_above_threshold,
                                                                                             perform_mc_containment_sim,
@@ -3654,7 +4166,7 @@ def main():
 
             specific_output_dir = master_structure_info_dict["Global"]["Specific output dir"]
 
-            #live_display.stop()
+            live_display.stop()
 
             # CREATE DATAFRAMES ---------------------------
 
@@ -3675,17 +4187,29 @@ def main():
                                        bx_ref)
 
                 # nearest dils to biopsies dataframe builder
-                dataframe_builders.bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
+                cohort_nearest_dils_dataframe = dataframe_builders.bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
                                        structs_referenced_list,
                                        all_ref_key,
                                        bx_ref
                                        )
+                
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"] = cohort_nearest_dils_dataframe
+
                 
                 # results of the biopsy optimization algorithm
                 dataframe_builders.dil_optimization_results_dataframe_builder(master_structure_reference_dict,
                                        all_ref_key,
                                        dil_ref
                                        )
+
+
+                # structure radiomic 3D segmentation features dataframe
+                structure_cohort_3d_radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(master_structure_reference_dict,
+                                                structs_referenced_list,
+                                                bx_ref)
+
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: 3D radiomic features all OAR and DIL structures"] = structure_cohort_3d_radiomic_features_dataframe
                 
                       
                 
@@ -3693,12 +4217,14 @@ def main():
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
                 
-
+            #live_display.stop()
             if mc_sim_complete_bool == True:
                 csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, tissue)...', total=None)
                 csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, tissue)', total=1, visible = False)
                 
+                
                 # Build dataframes
+                """ This was moved to MC_simulator_convex.py
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
 
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
@@ -3709,12 +4235,64 @@ def main():
                                                                                                                                                                                                         miss_structure_complement_label
                                                                                                                                                                                                         )
                         
-                        specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
-                        specific_bx_structure["Output dicts for data frames"]["Mutual containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+                        specific_bx_structure["Output data frames"]["Mutual containment output by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+                        specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+
+                """
+
+                # create global tissue class scores dataframes for each biopsy
+                cohort_global_tissue_class_by_tissue_type_dataframe = dataframe_builders.global_scores_by_tissue_class_dataframe_builder(master_structure_reference_dict,
+                                                                                    bx_ref,
+                                                                                    all_ref_key)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue class global scores (tissue type)"] = cohort_global_tissue_class_by_tissue_type_dataframe
+
+
+
+                cohort_global_tissue_class_by_structure_dataframe = dataframe_builders.global_scores_by_specific_structure_dataframe_builder(master_structure_reference_dict,
+                                                    bx_ref,
+                                                    all_ref_key)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue class global scores (structure)"] = cohort_global_tissue_class_by_structure_dataframe
+
+
+                # create dataframe for tissue volume above threshold
+                cohort_tissue_volume_above_threshold_dataframe = dataframe_builders.tissue_volume_threshold_dataframe_builder_NEW(master_structure_reference_dict,
+                                                                                    bx_ref)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue volume above threshold"] = cohort_tissue_volume_above_threshold_dataframe
+
+                
+                # All binom est info for cohort 
+                cohort_all_binom_est_data_by_pt_and_voxel = dataframe_builders.cohort_creator_binom_est_by_pt_and_voxel_dataframe(master_structure_reference_dict,
+                                                       bx_ref)
+                
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"] = cohort_all_binom_est_data_by_pt_and_voxel
+
+
+                cohort_global_tissue_scores_with_target_dil_radiomic_features_df = dataframe_builders.bx_global_score_to_target_dil_3d_radiomic_features_dataframe_builder(structure_cohort_3d_radiomic_features_dataframe,
+                                                                         cohort_global_tissue_class_by_structure_dataframe,
+                                                                         master_structure_reference_dict,
+                                                                         bx_ref)
+                
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: DIL global tissue scores and DIL features"] = cohort_global_tissue_scores_with_target_dil_radiomic_features_df
+
 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
+
+
+
+                ####### MACHINE LEARNING RANDOM FOREST ON TUMOR MORPHOLOGY AND TISSUE CLASS SCORE
+                live_display.stop()
+                tumor_morphology_rf_metrics_df, tumor_morphology_rf_regressor, tumor_morphology_rf_results, tumor_morphology_feature_columns = machina_learning.random_forest_global_tissue_class_score_predicted_by_tumor_morphology(cohort_global_tissue_scores_with_target_dil_radiomic_features_df)
+
+                master_cohort_patient_data_and_dataframes["Data"]["Cohort: Random forest tumor morphology results"] = {"Metrics":tumor_morphology_rf_metrics_df, 
+                                                                                                                          "Regressor": tumor_morphology_rf_regressor,
+                                                                                                                          "Results": tumor_morphology_rf_results,
+                                                                                                                          "Feature columns": tumor_morphology_feature_columns}
+                live_display.start()
 
 
             # FOR PLOTS
@@ -3733,8 +4311,8 @@ def main():
                         bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
                         pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
 
-                        dose_output_dict_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_bx_coord_sys, 
-                                                                    "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], 
+                        dose_output_dict_for_pandas_data_frame = {"R (Bx frame)": pt_radius_bx_coord_sys, 
+                                                                    "Z (Bx frame)": bx_points_bx_coords_sys_arr[:,2], 
                                                                     "Mean dose (Gy)": mean_dose_val_specific_bx_pt, 
                                                                     "STD dose": std_dose_val_specific_bx_pt
                                                                     }
@@ -3747,11 +4325,29 @@ def main():
                 
                 
                 # create grand dose data dataframe for each biopsy by MC trial and bx pt
-                dataframe_builders.all_dose_data_by_trial_and_pt_from_MC_trial_dataframe_builder(master_structure_reference_dict,
-                                                                    bx_ref
-                                                                    )
+                cohort_all_dose_data_by_trial_and_pt = dataframe_builders.all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_NEW(master_structure_reference_dict,
+                                                                  bx_ref,
+                                                                  biopsy_z_voxel_length
+                                                                  )
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"] = cohort_all_dose_data_by_trial_and_pt
+
+                cohort_all_bx_dvh_metric_dataframe = dataframe_builders.dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
+                                                                            bx_ref,
+                                                                            all_ref_key)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Bx DVH metrics"] = cohort_all_bx_dvh_metric_dataframe
 
 
+                ### THIS NEEDS WORK, THIS MAY BE A BAD IDEA, TOO MANY COLUMNS THAT MIGHT MATCH
+                ### This has to be the last one because it depends on the creation of previous dataframes
+                bx_info_cohort_dataframe = dataframe_builders.bx_info_dataframe_builder(cohort_nearest_dils_dataframe,
+                            cohort_global_tissue_class_by_tissue_type_dataframe,
+                            cohort_all_bx_dvh_metric_dataframe)
+
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Bx global info dataframe"] = bx_info_cohort_dataframe
+                ### THIS NEEDS WORK, THIS MAY BE A BAD IDEA, TOO MANY COLUMNS THAT MIGHT MATCH
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
@@ -4038,6 +4634,24 @@ def main():
                 master_structure_info_dict["Global"]['Patient specific output figures directory (fanova) dict'] = patient_sp_fanova_output_figures_dir_dict
 
 
+
+                # COHORT figures
+
+                # Make cohort output directories
+                cohort_figures_output_dir_name = 'Cohort figures'
+                cohort_output_figures_dir = output_figures_dir.joinpath(cohort_figures_output_dir_name)
+                cohort_output_figures_dir.mkdir(parents=False, exist_ok=True)
+                
+                master_structure_info_dict["Global"]['Cohort figures dir'] = cohort_output_figures_dir
+
+
+
+
+
+
+
+
+
             # CREATE PRODUCTION PLOTS ---------------------------------------------
 
 
@@ -4094,6 +4708,80 @@ def main():
                     completed_progress.update(processing_patients_completed_task, visible = True)
                 else:
                     pass
+
+
+                if production_plots_input_dictionary["Cohort - Scatter plot matrix targeting accuracy"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot matrix target accuracy...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - scatter plot matrix target accuracy', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Scatter plot matrix targeting accuracy"]["Plot name"]
+
+                    cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
+
+                    production_plots.production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame(cohort_nearest_dils_dataframe,
+                                                                              general_plot_name_string,
+                                                                              cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+                if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian transverse accuracy"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss transverse accuracy...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - scatter plot Gauss transverse accuracy', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian transverse accuracy"]["Plot name"]
+
+                    cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
+
+                    production_plots.production_plot_transverse_accuracy_with_marginals_and_gaussian_fit(cohort_nearest_dils_dataframe,
+                                         general_plot_name_string,
+                                        cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian sagittal accuracy"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss sagittal accuracy...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - scatter plot Gauss sagittal accuracy', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian sagittal accuracy"]["Plot name"]
+
+                    cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
+
+                    production_plots.production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit(cohort_nearest_dils_dataframe,
+                                         general_plot_name_string,
+                                        cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                
+
+
+                
 
 
             ### MC SIM FIGS
@@ -4391,7 +5079,31 @@ def main():
                 else:
                     pass
 
-                
+                if production_plots_input_dictionary["Axial dose voxelized ridgeline plot"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Dose voxelized ridge plots...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Dose voxelized ridge plots', total=1, visible = False)
+
+
+                    ridge_line_dose_general_plot_name_string = production_plots_input_dictionary["Axial dose voxelized ridgeline plot"]["Plot name"]
+                    #structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Structure miss ROI"]
+
+
+                    production_plots.production_plot_dose_ridge_plot_by_voxel(master_cohort_patient_data_and_dataframes,
+                                                                            svg_image_width,
+                                                                            svg_image_height,
+                                                                            dpi_for_seaborn_plots,
+                                                                            ridge_line_dose_general_plot_name_string,
+                                                                            patient_sp_output_figures_dir_dict)
+
+
+
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
 
                 # voxelized violin plot axial dose distribution  
 
@@ -4694,7 +5406,168 @@ def main():
                     pass
 
 
-            ### FANOVA FIGS
+
+
+
+                if production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot name"]
+                    structure_miss_probability_roi = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Structure miss ROI"]
+
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
+                    processing_patient_production_plot_description_completed = "Creating mutual containment probability plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        
+                        production_plots.production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
+                                                    patientUID,
+                                                    pydicom_item,
+                                                    bx_ref,
+                                                    regression_type_input,
+                                                    parallel_pool,
+                                                    NPKR_bandwidth,
+                                                    num_bootstraps_for_regression_plots_input,
+                                                    num_z_vals_to_evaluate_for_regression_plots,
+                                                    tissue_class_probability_plot_type_list,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string,
+                                                    structure_miss_probability_roi
+                                                    )
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass
+
+
+
+                if production_plots_input_dictionary["Axial tissue class voxelized ridgeline plot"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Tissue class voxelized ridge plots...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Tissue class voxelized ridge plots', total=1, visible = False)
+
+
+                    ridge_line_tissue_class_general_plot_name_string = production_plots_input_dictionary["Axial tissue class voxelized ridgeline plot"]["Plot name"]
+                    #structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Structure miss ROI"]
+
+
+                    production_plots.production_plot_binom_est_ridge_plot_by_voxel(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi_for_seaborn_plots,
+                                             ridge_line_tissue_class_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict)
+
+
+
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                if production_plots_input_dictionary["Cohort - Tissue class global score by biopsy type"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue class global by bx group...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - tissue class global by bx group', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    tissue_class_general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class global score by biopsy type"]["Plot name"]
+                    structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue class global score by biopsy type"]["Structure miss ROI"]
+
+
+                    production_plots.production_plot_tissue_patient_cohort_NEW(master_structure_reference_dict,
+                                              master_structure_info_dict,
+                                              miss_structure_complement_label,
+                                              all_ref_key,
+                                              color_discrete_map_by_sim_type,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            tissue_class_general_plot_name_string,
+                                            cohort_output_figures_dir,
+                                            box_plot_points_option,
+                                            notch_option,
+                                            boxmean_option
+                                            )
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+                
+
+                if production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue volume by threshold...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - tissue volume by threshold', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    tissue_class_general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Plot name"]
+                    #structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Structure miss ROI"]
+
+
+                    production_plots.production_plot_tissue_volume_box_plots_patient_cohort_NEW(master_cohort_patient_data_and_dataframes,
+                                                master_structure_info_dict,
+                                                color_discrete_map_by_sim_type,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                tissue_class_general_plot_name_string,
+                                                cohort_output_figures_dir,
+                                                box_plot_points_option,
+                                                notch_option,
+                                                boxmean_option
+                                            )
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                
+
+                
+                    
+
+
+
+
+
+
+
+
+
+            ############# FANOVA FIGURES
+
+
+
+
+
+
             #live_display.stop()
             if create_at_least_one_production_plot == True and fanova_sim_complete_bool == True:
                 patient_sp_fanova_output_figures_dir_dict = master_structure_info_dict["Global"]['Patient specific output figures directory (fanova) dict']
@@ -5090,14 +5963,19 @@ def structure_referencer(structure_dcm_dict,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": pandas.DataFrame(),
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": pandas.DataFrame(),
                                                                                   "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": pandas.DataFrame()},    
-                        "Multi-structure MC simulation output dataframes dict": {}, 
+                        "Multi-structure MC simulation output dataframes dict": {"Tissue class - Global tissue class statistics all patients": pandas.DataFrame()}, 
                         "Multi-structure Fanova output dataframes dict": {}                                             
                         }
             
             
+
+            # Dictionary comprehension to count occurrences of each type of biopsy
+            bpsy_type_counts_dict = {item["Simulated type"]: sum(1 for d in bpsy_ref if d["Simulated type"] == item["Simulated type"]) for item in bpsy_ref}
+
             bpsy_info = {"Num structs": len(bpsy_ref), 
                          "Num sim structs": len(bpsy_ref_simulated_total), 
-                         "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated_total)}
+                         "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated_total),
+                         "Biopsy type counts": bpsy_type_counts_dict}
             OAR_info = {"Num structs": len(OAR_ref)}
             DIL_info = {"Num structs": len(DIL_ref)}
             patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"]
@@ -5166,17 +6044,23 @@ def structure_referencer(structure_dcm_dict,
     mc_info = {"Num MC containment simulations": None, 
                "Num MC dose simulations": None, 
                "Num sample pts per BX core": None, 
-               "BX sample pt lattice spacing": None,
+               "BX sample pt lattice spacing (mm)": None,
+               "BX sample pt volume element (mm^3)": None,
                "Max of num MC simulations": None
                }
     
     fanova_info = {"Num fanova containment simulations": None, 
                    "Num fanova dose simulations": None, 
                     }
+
+    # count number of biopsies of each type for the entire cohort
+    list_of_bpsy_nums_by_bpsy_type_all_patients = [pt_sp_dict[st_ref_list[0]]["Biopsy type counts"] for pt_sp_dict in master_st_ds_info_dict.values()]
+    global_num_biopsies_by_type = {key: sum(d[key] for d in list_of_bpsy_nums_by_bpsy_type_all_patients if key in d) for d in list_of_bpsy_nums_by_bpsy_type_all_patients for key in d}              
     
     master_st_ds_info_global_dict["Global"] = {"Num patients": global_num_patients, 
                                                "Num structures": global_total_num_structs, 
-                                               "Num biopsies": global_num_biopsies, 
+                                               "Num biopsies": global_num_biopsies,
+                                               "Num biopsies by bx type dict": global_num_biopsies_by_type, 
                                                "Num DILs": global_num_DIL, 
                                                "Num OARs": global_num_OAR, 
                                                "MC info": mc_info,
@@ -5193,6 +6077,7 @@ def structure_referencer(structure_dcm_dict,
                                                'Patient specific output figures directory (pre-processing) dict': None,                        
                                                'Patient specific output figures directory (MC sim) dict': None,
                                                'Patient specific output figures directory (fanova) dict': None,
+                                               "Cohort figures dir": None,
                                                "Specific output dir": None 
                                                }
     
@@ -5443,41 +6328,7 @@ class interpolation_information_obj:
 
 
  
-def trimesh_reconstruction_ball_pivot(threeD_data_arr, ball_radii):
-    num_points = threeD_data_arr.shape[0]
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
-    pcd_color = np.random.uniform(0, 0.7, size=3)
-    point_cloud.paint_uniform_color(pcd_color) 
-    point_cloud.estimate_normals()
-    #point_cloud.orient_normals_consistent_tangent_plane(num_points)
-    point_cloud.orient_normals_to_align_with_direction(np.array([0.0,0.0,0.0],dtype=float))
-    point_cloud.normalize_normals()
-    struct_tri_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-                            point_cloud,  o3d.utility.DoubleVector(ball_radii))
-    return struct_tri_mesh
 
-def trimesh_reconstruction_poisson(threeD_data_arr):
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
-    pcd_color = np.random.uniform(0, 0.7, size=3)
-    point_cloud.paint_uniform_color(pcd_color) 
-    point_cloud.estimate_normals()
-    with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
-        struct_tri_mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(point_cloud, depth=9)
-    return struct_tri_mesh
-
-def trimesh_reconstruction_alphashape(threeD_data_arr):
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(threeD_data_arr)
-    pcd_color = np.random.uniform(0, 0.7, size=3)
-    point_cloud.paint_uniform_color(pcd_color) 
-    point_cloud.estimate_normals()
-    alpha = 0.03
-    tetra_mesh, pt_map = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
-    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(point_cloud, alpha, tetra_mesh, pt_map)
-    mesh.compute_vertex_normals()
-    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
 
 
 

@@ -51,7 +51,7 @@ def fanova_analysis(
 
         num_patients = master_structure_info_dict["Global"]["Num patients"]
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
-        bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
+        bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
 
 
         max_fanova_simulations = max(num_FANOVA_dose_simulations_input,num_FANOVA_containment_simulations_input)

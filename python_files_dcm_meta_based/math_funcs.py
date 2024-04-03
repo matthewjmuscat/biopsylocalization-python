@@ -2,6 +2,8 @@ import numpy as np
 import math 
 from statsmodels.nonparametric import kernel_regression
 import statsmodels.api as sm
+import scipy.stats as stats
+
 
 def binomial_likelihood(p, num_trials, num_successes):
     # note that we omit the factor out front as it does not depend on the probability estimator p
@@ -65,6 +67,27 @@ def binomial_CI_estimator(probability_estimator, num_trials, num_successes):
     p_hat_CI_tuple = (p_hat_CI_lower,p_hat_CI_upper)
     return p_hat_CI_tuple
 
+def binomial_CI_estimator_general(probability_estimator, num_trials, confidence_level = 0.95):
+    """
+    Calculate the confidence interval for a binomial estimator.
+    
+    Parameters:
+    - probability_estimator: Estimated probability of success (float).
+    - num_trials: Total number of trials (int).
+    - num_successes: Number of successes (int).
+    
+    Returns:
+    - Tuple containing the lower and upper bounds of the confidence interval (float, float).
+    """
+    standard_error = np.sqrt(probability_estimator * (1 - probability_estimator) / num_trials)
+    z_score = stats.norm.ppf(1 - (1 - confidence_level) / 2)
+    margin_of_error = z_score * standard_error
+    
+    lower_bound = probability_estimator - margin_of_error
+    upper_bound = probability_estimator + margin_of_error
+    
+    return np.array([lower_bound, upper_bound])
+
 
 def normal_mean_se_var_estimatation(data_1d_arr):
     mean_estimator = np.mean(data_1d_arr)
@@ -81,17 +104,37 @@ def normal_mean_se_var_estimatation(data_1d_arr):
     return mu_se_var_tuple
 
 
-def normal_CI_estimator(mu_estimator, se_estimator):
+def normal_CI_estimator(mu_estimator, se_estimator, confidence = 0.95):
     mu_hat = mu_estimator
     se_hat = se_estimator
-    z0975=1.96
-    mu_hat_CI_lower = mu_hat - z0975*se_hat
-    mu_hat_CI_upper = mu_hat + z0975*se_hat
+    z_score = stats.norm.ppf((1 + confidence) / 2) # Two-tailed z-score for the confidence level
+    mu_hat_CI_lower = mu_hat - z_score*se_hat
+    mu_hat_CI_upper = mu_hat + z_score*se_hat
     mu_hat_CI_tuple = (mu_hat_CI_lower,mu_hat_CI_upper)
     return mu_hat_CI_tuple
 
-
-
+def estimate_confidence_interval_general(data, confidence=0.95):
+    """
+    Estimates the confidence interval for the mean of a normal distribution given a sample.
+    
+    Parameters:
+    - data: The sample data as a list or numpy array.
+    - confidence: The confidence level for the interval, as a float between 0 and 1. Default is 0.95 for a 95% confidence interval.
+    
+    Returns:
+    - A tuple containing the lower bound and upper bound of the confidence interval.
+    """
+    data = np.array(data)
+    mean = np.mean(data)
+    std_dev = np.std(data, ddof=1) # ddof=1 for sample standard deviation
+    n = len(data)
+    z_score = stats.norm.ppf((1 + confidence) / 2) # Two-tailed z-score for the confidence level
+    margin_of_error = z_score * (std_dev / np.sqrt(n))
+    
+    lower_bound = mean - margin_of_error
+    upper_bound = mean + margin_of_error
+    
+    return lower_bound, upper_bound
 
 def rotation_matrix_from_vectors(vec1, vec2):
     """ Find the rotation matrix that aligns vec1 to vec2

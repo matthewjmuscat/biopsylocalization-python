@@ -24,6 +24,7 @@ import itertools
 import pandas
 import misc_tools
 import dosimetric_localizer
+import dataframe_builders
 
 
 def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
@@ -106,6 +107,8 @@ def simulator_parallel(parallel_pool,
                        plot_cupy_containment_distribution_results,
                        plot_shifted_biopsies,
                        structure_miss_probability_roi,
+                       cancer_tissue_label,
+                       miss_structure_complement_label,
                        tissue_length_above_probability_threshold_list,
                        n_bootstraps_for_tissue_length_above_threshold,
                        perform_mc_containment_sim,
@@ -126,8 +129,8 @@ def simulator_parallel(parallel_pool,
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
         num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
         num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
-        bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
-        bx_sample_pts_volume_element = bx_sample_pt_lattice_spacing**3 
+        bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
+        bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
         
         #live_display.stop()
         max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
@@ -391,6 +394,7 @@ def simulator_parallel(parallel_pool,
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
+                specific_bx_structure_refnum = specific_bx_structure["Ref #"]
                 bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi)
                 biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
 
@@ -619,9 +623,36 @@ def simulator_parallel(parallel_pool,
                 mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.sort_values(['Relative structure ROI',"Relative structure type",'Relative structure index', 'Original pt index'], ascending=[False,False, True,True]).reset_index(drop=True)
 
 
-                # to pandas
+                
 
+
+                # add back patient, bx id information to dataframe
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Patient ID', patientUID)
+
+                # to pandas
                 mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.to_pandas()
+
+                # add biopsy point location in the bx frame 
+
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                mc_compiled_results_for_fixed_bx_dataframe = misc_tools.include_vector_columns_in_dataframe(mc_compiled_results_for_fixed_bx_dataframe, 
+                                                                                           bx_points_bx_coords_sys_arr, 
+                                                                                           reference_column_name = 'Original pt index', 
+                                                                                           new_column_name_x = "X (Bx frame)", 
+                                                                                           new_column_name_y = "Y (Bx frame)", 
+                                                                                           new_column_name_z = "Z (Bx frame)")
+                
+                # Calculate and add to dataframe the binom est standard error
+                mc_compiled_results_for_fixed_bx_dataframe['Binom est STD err'] = mc_compiled_results_for_fixed_bx_dataframe.apply(lambda row: mf.binomial_se_estimator(row['Binomial estimator'], num_MC_containment_simulations, row['Total successes']), axis=1)
+                CI_results = mc_compiled_results_for_fixed_bx_dataframe.apply(lambda row: mf.binomial_CI_estimator_general(row['Binomial estimator'], num_MC_containment_simulations, confidence_level = 0.95), axis=1)
+                mc_compiled_results_for_fixed_bx_dataframe['CI lower vals'] = CI_results.apply(lambda x: x[0])
+                mc_compiled_results_for_fixed_bx_dataframe['CI upper vals'] = CI_results.apply(lambda x: x[1])
+                
+                
+                
                 # save memory
                 del containment_info_grand_all_structures_cudf_dataframe
                 del mc_compiled_results_for_fixed_bx_dataframe_nominal
@@ -1108,35 +1139,17 @@ def simulator_parallel(parallel_pool,
                 specific_bx_structure_tumor_tissue_dict["Tumor tissue standard error arr"] = probabilities_standard_err_arr
 
                 # calculate 95 CI 
-                probabilities_CI_arr = mf.confidence_intervals_95_from_calculated_SE(probability_pt_wise_dil_tissue_arr, probabilities_standard_err_arr)
+                
+                probabilities_CI_arr = mf.binomial_CI_estimator_general(probability_pt_wise_dil_tissue_arr, num_MC_containment_simulations, confidence_level = 0.95)
+                #probabilities_CI_arr = mf.confidence_intervals_95_from_calculated_SE(probability_pt_wise_dil_tissue_arr, probabilities_standard_err_arr)
                 specific_bx_structure_tumor_tissue_dict["Tumor tissue confidence interval 95 arr"] = probabilities_CI_arr
 
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tumor tissue probability"] = specific_bx_structure_tumor_tissue_dict
 
 
-                # calculate tissue length above threshold 
-                bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing"]
                 
-                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-                z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
-                tissue_length_by_threshold_dict = {}
-                for threshold in tissue_length_above_probability_threshold_list:
-                    length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
-                                                                                                                        probability_pt_wise_dil_tissue_arr,
-                                                                                                                        probabilities_standard_err_arr,
-                                                                                                                        bx_sample_pts_lattice_spacing, 
-                                                                                                                        threshold,
-                                                                                                                        n_bootstraps_for_tissue_length_above_threshold)
                 
-                    tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
-                                                                                               "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
-                                                                                               "Length estimate mean": length_estimate_mean,
-                                                                                               "Length estimate se": length_estimate_se}
-                                                   
-                
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
-
 
                 # calculate miss probability
                 for structure_info, structure_specific_results_dict in specific_bx_results_dict.items():
@@ -1168,6 +1181,74 @@ def simulator_parallel(parallel_pool,
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: miss structure tissue probability"] = specific_bx_structure_relative_OAR_dict
                 
+
+
+
+
+
+                ### CREATE DATAFRAME OF MUTUAL PROBABILITIES
+                containment_output_dict_by_MC_trial_for_pandas_data_frame, containment_output_by_MC_trial_pandas_data_frame = dataframe_builders.tissue_probability_dataframe_builder_by_bx_pt(patientUID,
+                                                                                                                                                                                                specific_bx_structure,
+                                                                                                                                                                                                specific_bx_structure_index, 
+                                                                                                                                                                                                structure_miss_probability_roi,
+                                                                                                                                                                                                cancer_tissue_label,
+                                                                                                                                                                                                miss_structure_complement_label,
+                                                                                                                                                                                                biopsy_z_voxel_length
+                                                                                                                                                                                                )
+                        
+                specific_bx_structure["Output data frames"]["Mutual containment output by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+                specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+
+
+
+
+
+
+
+                # calculate tissue volume above threshold 
+                """
+                bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
+                
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
+                """
+                bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
+                all_thresholds_volume_of_tissue_above_threshold_dataframe = pandas.DataFrame()
+                for probability_threshold in tissue_length_above_probability_threshold_list:
+
+                    volume_of_tissue_above_threshold_dataframe = tissue_volume_calculator(patientUID,
+                             specific_bx_structure,
+                             cancer_tissue_label,
+                             probability_threshold,
+                             bx_sample_pts_volume_element,
+                             structure_miss_probability_roi)
+                    
+                    all_thresholds_volume_of_tissue_above_threshold_dataframe = pandas.concat([all_thresholds_volume_of_tissue_above_threshold_dataframe,volume_of_tissue_above_threshold_dataframe]).reset_index(drop = True)
+                    """
+                    length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
+                                                                                                                        probability_pt_wise_dil_tissue_arr,
+                                                                                                                        probabilities_standard_err_arr,
+                                                                                                                        bx_sample_pts_lattice_spacing, 
+                                                                                                                        threshold,
+                                                                                                                        n_bootstraps_for_tissue_length_above_threshold)
+                
+                    tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
+                                                                                               "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
+                                                                                               "Length estimate mean": length_estimate_mean,
+                                                                                               "Length estimate se": length_estimate_se}
+                    """                            
+                """
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
+                """
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["Output data frames"]["Tissue volume above threshold"] = all_thresholds_volume_of_tissue_above_threshold_dataframe 
+
+
+
+
+
+
+
+
                 biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(calc_mutual_probabilities_stat_each_bx_structure_containment_task)
             patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, advance = 1)
@@ -1731,10 +1812,11 @@ def simulator_parallel(parallel_pool,
 
                 dvh_metric_dataframe_per_biopsy = pandas.DataFrame()
                 for index, vol_dose_percent in enumerate(volume_DVH_percent_dose):
-                    dvh_metric_dict_for_dataframe_temp = {"Patient UID": patientUID,
-                                                 "Biopsy ID": bx_structure_info_dict["Structure ID"],
+                    dvh_metric_dict_for_dataframe_temp = {"Patient ID": patientUID,
+                                                 "Bx ID": bx_structure_info_dict["Structure ID"],
                                                  "Struct type": bx_structure_info_dict["Struct ref type"],
                                                  "Dicom ref num": bx_structure_info_dict["Dicom ref num"],
+                                                 "Bx index": bx_structure_info_dict["Index number"],
                                                  "DVH Metric": str(vol_dose_percent),
                                                  "Nominal": dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Nominal"],
                                                  "Mean": dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"],
@@ -2131,6 +2213,166 @@ def simulator_parallel(parallel_pool,
 
 
         """
+
+        """
+
+        ### VOXELIZE DOSE RESULTS NEW WAY!
+
+        # voxelize dose results
+        biopsy_voxelize_dose_task = patients_progress.add_task("[red]Voxelizing dose results [{}]...".format("initializing"), total=num_patients)
+        biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
+
+            biopsy_voxelize_each_bx_structure_dose_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                
+                ### Prelims
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Prelims", total = None)
+                ###
+
+                specific_bx_dose_results_arr = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"][:,1:]
+                specific_bx_dose_results_list = specific_bx_dose_results_arr.tolist()
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
+                randomly_sampled_bx_pts_bx_coord_sys_arr = specific_bx_structure['Random uniformly sampled volume pts bx coord sys arr']
+                biopsy_cyl_z_length = specific_bx_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                num_z_voxels = float(math.floor(float(biopsy_cyl_z_length/biopsy_z_voxel_length)))
+                constant_voxel_biopsy_cyl_z_length = num_z_voxels*biopsy_z_voxel_length
+                biopsy_z_length_difference = biopsy_cyl_z_length - constant_voxel_biopsy_cyl_z_length
+                extra_length_for_biopsy_end_cap_voxels = biopsy_z_length_difference/2
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing", total = None)
+                ###
+                
+                voxel_z_begin = 0.
+                voxelized_biopsy_dose_results_list = [None]*int(num_z_voxels)
+                voxel_dose_dict_empty = {"Voxel z begin": None, 
+                                         "Voxel z end": None, 
+                                         "Indices from all sample pts that are within voxel arr": None, 
+                                         "Num sample pts in voxel": None, 
+                                         "Sample pts in voxel arr (bx coord sys)": None, 
+                                         "All dose vals in voxel list": None, 
+                                         "Total num MC trials in voxel": None, 
+                                         "Arithmetic mean of dose in voxel": None, 
+                                         "Std dev of dose in voxel": None
+                                         }
+                for voxel_index in range(int(num_z_voxels)):
+                    if voxel_index == 0 or voxel_index == range(int(num_z_voxels))[-1]:
+                        voxel_z_end = voxel_z_begin + biopsy_z_voxel_length + extra_length_for_biopsy_end_cap_voxels
+                    else:
+                        voxel_z_end = voxel_z_begin + biopsy_z_voxel_length
+                        
+                    # find indices of the points in the biopsy that fall between the voxel bounds
+                    sample_pts_indices_in_voxel_arr = np.asarray(np.logical_and(randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] >= voxel_z_begin , randomly_sampled_bx_pts_bx_coord_sys_arr[:,2] <= voxel_z_end)).nonzero()
+                    num_sample_pts_in_voxel = sample_pts_indices_in_voxel_arr[0].shape[0]
+                    samples_pts_in_voxel_arr = np.take(randomly_sampled_bx_pts_bx_coord_sys_arr, sample_pts_indices_in_voxel_arr, axis=0)[0]
+                    dose_vals_in_voxel_by_sampled_pt_index_arr = np.take(specific_bx_dose_results_list, sample_pts_indices_in_voxel_arr, axis = 0)[0]
+                    dose_vals_in_voxel_list = dose_vals_in_voxel_by_sampled_pt_index_arr.flatten(order='C').tolist()
+                    
+                    total_num_MC_trials_in_voxel = len(dose_vals_in_voxel_list)
+                    if total_num_MC_trials_in_voxel < 1:
+                        arithmetic_mean_dose_in_voxel = 'No data'
+                    else:
+                        arithmetic_mean_dose_in_voxel = statistics.mean(dose_vals_in_voxel_list)
+                    if total_num_MC_trials_in_voxel <= 1:
+                        std_dev_dose_in_voxel = 0
+                    else:
+                        std_dev_dose_in_voxel = statistics.stdev(dose_vals_in_voxel_list)
+
+                    voxel_dose_dict = voxel_dose_dict_empty.copy()
+                    voxel_dose_dict["Voxel z begin"] = voxel_z_begin
+                    voxel_dose_dict["Voxel z end"] = voxel_z_end
+                    voxel_dose_dict["Indices from all sample pts that are within voxel arr"] = sample_pts_indices_in_voxel_arr
+                    voxel_dose_dict["Num sample pts in voxel"] = num_sample_pts_in_voxel
+                    voxel_dose_dict["Sample pts in voxel arr (bx coord sys)"] = samples_pts_in_voxel_arr
+                    voxel_dose_dict["Total num MC trials in voxel"] = total_num_MC_trials_in_voxel
+                    voxel_dose_dict["All dose vals in voxel list"] = dose_vals_in_voxel_list
+                    voxel_dose_dict["Arithmetic mean of dose in voxel"] = arithmetic_mean_dose_in_voxel
+                    voxel_dose_dict["Std dev of dose in voxel"] = std_dev_dose_in_voxel
+                    
+                    voxelized_biopsy_dose_results_list[voxel_index] = voxel_dose_dict
+
+                    voxel_z_begin = voxel_z_end
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~ Reorganizing", total = None)
+                ###
+                
+                # reorganize this data in a better way (didnt want to delete/change above code), but better to have a dictionary of lists rather than a list of dictionaries
+                voxel_dose_dict_of_lists = voxel_dose_dict_empty.copy()
+                #voxel_dict_of_lists = dict.fromkeys(voxel_dict_of_lists,[])
+                for key,value in voxel_dose_dict_of_lists.items():
+                    voxel_dose_dict_of_lists[key] = []
+                voxel_dose_dict_of_lists["Voxel z range"] = []
+                voxel_dose_dict_of_lists["Voxel z range rounded"] = []
+                for voxel_index in range(int(num_z_voxels)):
+                    voxel_dose_dict = voxelized_biopsy_dose_results_list[voxel_index]
+                    voxel_dose_dict_of_lists["Voxel z begin"].append(voxel_dose_dict["Voxel z begin"])
+                    voxel_dose_dict_of_lists["Voxel z end"].append(voxel_dose_dict["Voxel z end"])
+                    voxel_dose_dict_of_lists["Voxel z range"].append([voxel_dose_dict["Voxel z begin"],voxel_dose_dict["Voxel z end"]])
+                    voxel_dose_dict_of_lists["Voxel z range rounded"].append([round(voxel_dose_dict["Voxel z begin"],2),round(voxel_dose_dict["Voxel z end"],2)])
+                    voxel_dose_dict_of_lists["Indices from all sample pts that are within voxel arr"].append(voxel_dose_dict["Indices from all sample pts that are within voxel arr"])
+                    voxel_dose_dict_of_lists["Num sample pts in voxel"].append(voxel_dose_dict["Num sample pts in voxel"])
+                    voxel_dose_dict_of_lists["Sample pts in voxel arr (bx coord sys)"].append(voxel_dose_dict["Sample pts in voxel arr (bx coord sys)"])
+                    voxel_dose_dict_of_lists["Total num MC trials in voxel"].append(voxel_dose_dict["Total num MC trials in voxel"])
+                    voxel_dose_dict_of_lists["All dose vals in voxel list"].append(voxel_dose_dict["All dose vals in voxel list"])
+                    voxel_dose_dict_of_lists["Arithmetic mean of dose in voxel"].append(voxel_dose_dict["Arithmetic mean of dose in voxel"])
+                    voxel_dose_dict_of_lists["Std dev of dose in voxel"].append(voxel_dose_dict["Std dev of dose in voxel"])
+                    
+                voxel_dose_dict_of_lists["Num voxels"] = int(num_z_voxels)
+                voxelized_biopsy_dose_results_dict = voxel_dose_dict_of_lists
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+                
+                specific_bx_structure["MC data: voxelized dose results list"] = voxelized_biopsy_dose_results_list
+                specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"] = voxelized_biopsy_dose_results_dict
+                 
+                biopsies_progress.update(biopsy_voxelize_each_bx_structure_dose_task, advance = 1)
+            biopsies_progress.remove_task(biopsy_voxelize_each_bx_structure_dose_task)
+            patients_progress.update(biopsy_voxelize_dose_task, advance = 1)
+            completed_progress.update(biopsy_voxelize_dose_task_complete, advance = 1)
+        patients_progress.update(biopsy_voxelize_dose_task, visible = False)
+        completed_progress.update(biopsy_voxelize_dose_task_complete,visible = True)
+        live_display.refresh()
+
+
+
+        """
+
+
+
+
+
+
+
+
+
+
 
         # voxelize dose results
         biopsy_voxelize_dose_task = patients_progress.add_task("[red]Voxelizing dose results [{}]...".format("initializing"), total=num_patients)
@@ -3056,3 +3298,45 @@ def tissue_length_calculator(z_coords_arr,
     length_estimate_se = length_estimate_std/np.sqrt(length_estimate_distribution.shape[0])
 
     return length_estimate_distribution, length_estimate_mean, length_estimate_se
+
+
+
+def tissue_volume_calculator(patientUID,
+                             specific_bx_structure,
+                             cancer_tissue_label,
+                             probability_threshold,
+                             bx_sample_pts_volume_element,
+                             structure_miss_probability_roi):
+    
+    bx_roi = specific_bx_structure["ROI"]
+    bx_sim_bool = specific_bx_structure["Simulated bool"]
+    bx_type = specific_bx_structure["Simulated type"]
+    containment_output_by_MC_trial_pandas_data_frame = specific_bx_structure["Output data frames"]["Mutual containment output by bx point"]  
+    total_structure_volume = specific_bx_structure["Structure volume"]
+
+    # volume of dil tissue
+    containment_output_by_MC_trial_pandas_data_frame_DIL_and_min_threshold_subset = containment_output_by_MC_trial_pandas_data_frame[(containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == cancer_tissue_label) &
+                                                    (containment_output_by_MC_trial_pandas_data_frame["Mean probability (binom est)"] >= probability_threshold)]    
+    num_dil_voxels_in_subset = containment_output_by_MC_trial_pandas_data_frame_DIL_and_min_threshold_subset.shape[0]
+    volume_of_dil_tissue = num_dil_voxels_in_subset*bx_sample_pts_volume_element
+
+    # volume of miss structure tissue
+    containment_output_by_MC_trial_pandas_data_frame_miss_structure_and_min_threshold_subset = containment_output_by_MC_trial_pandas_data_frame[(containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == structure_miss_probability_roi) &
+                                                    (containment_output_by_MC_trial_pandas_data_frame["Mean probability (binom est)"] >= probability_threshold)]    
+    num_miss_structure_voxels_in_subset = containment_output_by_MC_trial_pandas_data_frame_miss_structure_and_min_threshold_subset.shape[0]
+    volume_of_miss_structure_tissue = num_miss_structure_voxels_in_subset*bx_sample_pts_volume_element
+
+    volume_of_tissue_above_threshold_dict_for_dataframe = {"Patient ID": [patientUID],
+                          "Bx ID": [bx_roi],
+                          "Bx simulated bool": [bx_sim_bool],
+                          "Bx type": [bx_type],
+                          "Probability threshold": [probability_threshold],
+                          "Volume of DIL tissue": [volume_of_dil_tissue],
+                          "Miss structure roi": [structure_miss_probability_roi],
+                          "Volume of structure_miss_probability_roi": [volume_of_miss_structure_tissue],
+                          "Total volume": [total_structure_volume]
+                          }
+    
+    volume_of_tissue_above_threshold_dataframe = pandas.DataFrame(volume_of_tissue_above_threshold_dict_for_dataframe)
+
+    return volume_of_tissue_above_threshold_dataframe

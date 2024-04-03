@@ -16,6 +16,13 @@ from itertools import combinations
 import random
 import point_containment_tools
 import centroid_finder
+import seaborn as sns
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+from matplotlib.patches import Ellipse
+from sklearn.metrics import mean_squared_error
+
+
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -153,7 +160,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
         """
         dose_output_z_and_radius_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
-        pt_radius_bx_coord_sys = dose_output_z_and_radius_dict_for_pandas_data_frame["Radial pos (mm)"]
+        pt_radius_bx_coord_sys = dose_output_z_and_radius_dict_for_pandas_data_frame["R (Bx frame)"]
 
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
         #bx_points_XY_bx_coords_sys_arr_list = list(bx_points_bx_coords_sys_arr[:,0:2])
@@ -176,8 +183,8 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
             MC_trial_index_point_wise_for_pd_data_frame_list = MC_trial_index_point_wise_for_pd_data_frame_list + list(range(0,num_nominal_and_all_MC_trials))
         
         # Note that the 0th MC trial num index is the nominal value
-        dose_output_dict_by_MC_trial_for_pandas_data_frame = {"Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, 
-                                                              "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
+        dose_output_dict_by_MC_trial_for_pandas_data_frame = {"R (Bx frame)": pt_radius_point_wise_for_pd_data_frame_list, 
+                                                              "Z (Bx frame)": axial_Z_point_wise_for_pd_data_frame_list, 
                                                               "Dose (Gy)": dose_vals_point_wise_for_pd_data_frame_list, 
                                                               "MC trial num": MC_trial_index_point_wise_for_pd_data_frame_list
                                                               }
@@ -196,7 +203,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                 parallel_pool,
-                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Z (Bx frame)"], 
                 y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
                 eval_x = z_vals_to_evaluate, N=num_bootstraps_for_regression_plots_input, conf_interval=0.95
             )
@@ -205,7 +212,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_lower, \
             all_MC_trials_dose_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                 parallel_pool,
-                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Axial pos Z (mm)"], 
+                x = dose_output_dict_by_MC_trial_for_pandas_data_frame["Z (Bx frame)"], 
                 y = dose_output_dict_by_MC_trial_for_pandas_data_frame["Dose (Gy)"], 
                 eval_x = z_vals_to_evaluate, N=num_bootstraps_for_regression_plots_input, conf_interval=0.95, bandwidth = NPKR_bandwidth
             )
@@ -215,7 +222,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
         
         # create 2d scatter dose plot axial (z) vs all doses from all MC trials
         dose_output_all_MC_trials_pandas_data_frame = dose_output_nominal_and_all_MC_trials_pandas_data_frame[dose_output_nominal_and_all_MC_trials_pandas_data_frame["MC trial num"] != 0]
-        fig_global = px.scatter(dose_output_all_MC_trials_pandas_data_frame, x="Axial pos Z (mm)", y="Dose (Gy)", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
+        fig_global = px.scatter(dose_output_all_MC_trials_pandas_data_frame, x="Z (Bx frame)", y="Dose (Gy)", color = "MC trial num", width  = svg_image_width, height = svg_image_height)
         if global_regression_ans == True:
             fig_global.add_trace(
                 go.Scatter(
@@ -294,7 +301,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
             ])
             fig_regression_only.update_layout(
                 yaxis_title='Conditional mean dose (Gy)',
-                xaxis_title='Axial pos Z (mm)',
+                xaxis_title='Z (Bx frame)',
                 title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                 hovermode="x unified"
             )
@@ -338,7 +345,7 @@ def production_3d_scatter_dose_axial_radial_distribution_by_patient(patient_sp_o
         
         
         
-        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", z="Mean dose (Gy)", error_z = "STD dose", width  = svg_image_width, height = svg_image_height)
+        fig = px.scatter_3d(dose_output_pandas_data_frame, x="Z (Bx frame)", y="R (Bx frame)", z="Mean dose (Gy)", error_z = "STD dose", width  = svg_image_width, height = svg_image_height)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
@@ -369,7 +376,7 @@ def production_2d_scatter_dose_axial_radial_color_distribution_by_patient(patien
                
             
         # create 2d scatter dose color map plot axial (z) vs radial (r) vs mean dose (color)
-        fig = px.scatter(dose_output_pandas_data_frame, x="Axial pos Z (mm)", y="Radial pos (mm)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
+        fig = px.scatter(dose_output_pandas_data_frame, x="Z (Bx frame)", y="R (Bx frame)", color="Mean dose (Gy)", width  = svg_image_width, height = svg_image_height)
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
@@ -439,7 +446,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
         fig = go.Figure([
             go.Scatter(
                 name='Mean',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Mean dose (Gy)"],
                 mode='markers',
                 marker_color=regression_colors_dict["Mean"],
@@ -447,7 +454,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
             ),
             go.Scatter(
                 name='95th Quantile',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Q95"],
                 mode='markers',
                 marker_color=regression_colors_dict["Q95"],
@@ -455,7 +462,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
             ),
             go.Scatter(
                 name='75th Quantile',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Q75"],
                 mode='markers',
                 marker_color=regression_colors_dict["Q75"],
@@ -463,7 +470,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
             ),
             go.Scatter(
                 name='50th Quantile (median)',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Q50"],
                 mode='markers',
                 marker_color=regression_colors_dict["Q50"],
@@ -471,7 +478,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
             ),
             go.Scatter(
                 name='25th Quantile',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Q25"],
                 mode='markers',
                 marker_color=regression_colors_dict["Q25"],
@@ -479,7 +486,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
             ),
             go.Scatter(
                 name='5th Quantile',
-                x=dose_output_dict_for_pandas_data_frame["Axial pos Z (mm)"],
+                x=dose_output_dict_for_pandas_data_frame["Z (Bx frame)"],
                 y=dose_output_dict_for_pandas_data_frame["Q5"],
                 mode='markers',
                 marker_color=regression_colors_dict["Q5"],
@@ -488,7 +495,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
         ])
         fig.update_layout(
             yaxis_title='Dose (Gy)',
-            xaxis_title='Axial pos Z (mm)',
+            xaxis_title='Z (Bx frame)',
             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
@@ -528,7 +535,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         bx_struct_roi = specific_bx_structure["ROI"]
 
         dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
-        pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["Radial pos (mm)"]
+        pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["R (Bx frame)"]
 
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
         #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
@@ -588,7 +595,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
 
 
         # perform non parametric kernel regression through conditional quantiles and conditional mean doses
-        dose_output_dict_for_regression = {"Radial pos (mm)": pt_radius_bx_coord_sys, "Axial pos Z (mm)": bx_points_bx_coords_sys_arr[:,2], "Mean": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt, "Nominal": dose_vals_nominal_by_sampled_bx_pt_list}
+        dose_output_dict_for_regression = {"R (Bx frame)": pt_radius_bx_coord_sys, "Z (Bx frame)": bx_points_bx_coords_sys_arr[:,2], "Mean": mean_dose_val_specific_bx_pt, "STD dose": std_dose_val_specific_bx_pt, "Nominal": dose_vals_nominal_by_sampled_bx_pt_list}
         dose_output_dict_for_regression.update(quantiles_dose_val_specific_bx_pt_dict_of_lists)
         non_parametric_kernel_regressions_dict = {}
         data_for_non_parametric_kernel_regressions_dict = {}
@@ -603,7 +610,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                 non_parametric_regression_lower, \
                 non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
+                    x = dose_output_dict_for_regression["Z (Bx frame)"], 
                     y = data_to_regress, 
                     eval_x = z_vals_to_evaluate, 
                     N=num_bootstraps_for_regression_plots_input, 
@@ -614,7 +621,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
                 non_parametric_regression_lower, \
                 non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = dose_output_dict_for_regression["Axial pos Z (mm)"], 
+                    x = dose_output_dict_for_regression["Z (Bx frame)"], 
                     y = data_to_regress, 
                     eval_x = z_vals_to_evaluate, 
                     N=num_bootstraps_for_regression_plots_input, 
@@ -667,7 +674,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         fig_regressions_only_quantiles_and_mean.add_trace(
                 go.Scatter(
                     name='Nominal',
-                    x=dose_output_dict_for_regression["Axial pos Z (mm)"],
+                    x=dose_output_dict_for_regression["Z (Bx frame)"],
                     y=dose_output_dict_for_regression["Nominal"],
                     marker=dict(line_color=regression_colors_dict["Nominal"],
                                 symbol = nominal_scatter_marker,
@@ -680,7 +687,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         
         fig_regressions_only_quantiles_and_mean.update_layout(
             yaxis_title='Dose (Gy)',
-            xaxis_title='Axial pos Z (mm)',
+            xaxis_title='Z (Bx frame)',
             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
@@ -772,7 +779,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         fig_regressions_dose_quantiles_simple.add_trace(
                 go.Scatter(
                     name='Nominal',
-                    x=dose_output_dict_for_regression["Axial pos Z (mm)"],
+                    x=dose_output_dict_for_regression["Z (Bx frame)"],
                     y=dose_output_dict_for_regression["Nominal"],
                     marker=dict(line_color=regression_colors_dict["Nominal"],
                                 symbol = nominal_scatter_marker,
@@ -786,7 +793,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
         
         fig_regressions_dose_quantiles_simple.update_layout(
             yaxis_title='Dose (Gy)',
-            xaxis_title='Axial pos Z (mm)',
+            xaxis_title='Z (Bx frame)',
             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
@@ -838,7 +845,7 @@ def production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patien
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='Dose (Gy)',
-            xaxis_title='Axial pos Z (mm)',
+            xaxis_title='Z (Bx frame)',
             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
@@ -888,7 +895,7 @@ def production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(pat
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
         fig.update_layout(
             yaxis_title='Dose (Gy)',
-            xaxis_title='Axial pos Z (mm)',
+            xaxis_title='Z (Bx frame)',
             title='Dosimetric profile (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
             hovermode="x unified"
         )
@@ -1409,8 +1416,8 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
             axial_Z_point_wise_for_pd_data_frame_list = axial_Z_point_wise_for_pd_data_frame_list + bx_points_bx_coords_sys_arr[:,2].tolist()     
             
         containment_output_dict_by_MC_trial_for_pandas_data_frame = {"Structure ROI": ROI_name_point_wise_for_pd_data_frame_list, 
-                                                                     "Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, 
-                                                                     "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
+                                                                     "R (Bx frame)": pt_radius_point_wise_for_pd_data_frame_list, 
+                                                                     "Z (Bx frame)": axial_Z_point_wise_for_pd_data_frame_list, 
                                                                      "Mean probability (binom est)": binom_est_point_wise_for_pd_data_frame_list, 
                                                                      "Total successes": total_successes_point_wise_for_pd_data_frame_list, 
                                                                      "STD err": std_err_point_wise_for_pd_data_frame_list,
@@ -1432,7 +1439,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Mean probability (binom est)"], 
                     eval_x = z_vals_to_evaluate, N=num_bootstraps_for_regression_plots_input, conf_interval=0.95
                 )
@@ -1441,7 +1448,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_lower, \
                 all_MC_trials_containment_vs_axial_Z_non_parametric_regression_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == containment_structure_ROI, "Mean probability (binom est)"], 
                     eval_x = z_vals_to_evaluate, N=num_bootstraps_for_regression_plots_input, conf_interval=0.95, bandwidth = NPKR_bandwidth
                 )
@@ -1459,7 +1466,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
             # one with error bars on binom est, one without error bars
             if plot_type == 'with_errors':
                 fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
-                                        x="Axial pos Z (mm)", 
+                                        x="Z (Bx frame)", 
                                         y="Mean probability (binom est)", 
                                         color = "Structure ROI", 
                                         symbol = "Nominal containment",
@@ -1470,7 +1477,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                                         )
             if plot_type == '':
                 fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
-                                        x="Axial pos Z (mm)", 
+                                        x="Z (Bx frame)", 
                                         y="Mean probability (binom est)", 
                                         color = "Structure ROI",
                                         symbol = "Nominal containment",
@@ -1610,7 +1617,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
 
             fig_regression_only.update_layout(
                 yaxis_title='Conditional mean probability',
-                xaxis_title='Axial pos Z (mm)',
+                xaxis_title='Z (Bx frame)',
                 title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                 hovermode="x unified"
             )
@@ -1728,8 +1735,8 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
         nominal_point_wise_for_pd_data_frame_list = nominal_point_wise_for_pd_data_frame_list + miss_structure_nominal_list
             
         containment_output_dict_by_MC_trial_for_pandas_data_frame = {"Structure ROI": ROI_name_point_wise_for_pd_data_frame_list, 
-                                                                    "Radial pos (mm)": pt_radius_point_wise_for_pd_data_frame_list, 
-                                                                    "Axial pos Z (mm)": axial_Z_point_wise_for_pd_data_frame_list, 
+                                                                    "R (Bx frame)": pt_radius_point_wise_for_pd_data_frame_list, 
+                                                                    "Z (Bx frame)": axial_Z_point_wise_for_pd_data_frame_list, 
                                                                     "Mean probability (binom est)": binom_est_point_wise_for_pd_data_frame_list, 
                                                                     "STD err": std_err_point_wise_for_pd_data_frame_list,
                                                                     "Nominal containment": nominal_point_wise_for_pd_data_frame_list,
@@ -1739,8 +1746,8 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
         
         containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
 
-        specific_bx_structure["Output data frames"]["Mutual containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Mutual containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+        specific_bx_structure["Output data frames"]["Mutual containment output by bx point"] = containment_output_by_MC_trial_pandas_data_frame
+        specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
@@ -1754,7 +1761,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Mean probability (binom est)"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
                 )
@@ -1762,7 +1769,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI lower vals"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
                 )
@@ -1770,7 +1777,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_LOWESS_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI upper vals"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95
                 )
@@ -1779,7 +1786,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Mean probability (binom est)"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
                 )
@@ -1787,7 +1794,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI lower vals"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
                 )
@@ -1795,7 +1802,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                 bootstrap_lower, \
                 bootstrap_upper = mf.non_param_kernel_regression_with_confidence_bounds_bootstrap_parallel(
                     parallel_pool,
-                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Axial pos Z (mm)"], 
+                    x = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "Z (Bx frame)"], 
                     y = containment_output_by_MC_trial_pandas_data_frame.loc[containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == roi_to_regress, "CI upper vals"], 
                     eval_x = z_vals_to_evaluate, N=1, conf_interval=0.95, bandwidth = NPKR_bandwidth
                 )
@@ -1815,7 +1822,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
             # one with error bars on binom est, one without error bars
             if plot_type == 'with_errors':
                 fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
-                                        x="Axial pos Z (mm)", 
+                                        x="Z (Bx frame)", 
                                         y="Mean probability (binom est)", 
                                         color = "Structure ROI", 
                                         symbol = "Nominal containment",
@@ -1826,7 +1833,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
                                         )
             if plot_type == '':
                 fig_global = px.scatter(containment_output_by_MC_trial_pandas_data_frame, 
-                                        x="Axial pos Z (mm)", 
+                                        x="Z (Bx frame)", 
                                         y="Mean probability (binom est)", 
                                         color = "Structure ROI",
                                         symbol = "Nominal containment",
@@ -1969,7 +1976,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
 
             fig_regression_only.update_layout(
                 yaxis_title='Conditional mean probability',
-                xaxis_title='Axial pos Z (mm)',
+                xaxis_title='Z (Bx frame)',
                 title='Containment probability (axial) of biopsy core (' + patientUID +', '+ bx_struct_roi+')',
                 hovermode="x unified"
             )
@@ -2788,6 +2795,230 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
     html_dose_fig_name = general_plot_name_string+'.html'
     html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
     fig.write_html(html_dose_fig_file_path) 
+
+
+
+def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
+                                              master_st_ds_info_dict,
+                                              miss_structure_complement_label,
+                                              all_ref_key,
+                                              color_discrete_map_by_sim_type,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string,
+                                            cohort_output_figures_dir,
+                                            box_plot_points_option = 'outliers',
+                                            notch_option = True,
+                                            boxmean_option = 'sd'
+                                            ):
+    
+    num_biopsies_by_bx_type_dict = master_st_ds_info_dict["Global"]["Num biopsies by bx type dict"]
+
+    all_patients_global_containment_scores_by_tissue_class = pandas.DataFrame()
+    for patientUID,pydicom_item in master_structure_ref_dict.items():
+
+        all_biopsies_global_containment_scores_by_tissue_class = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Global tissue class statistics all patients"]
+    
+        all_patients_global_containment_scores_by_tissue_class = pandas.concat([all_patients_global_containment_scores_by_tissue_class,all_biopsies_global_containment_scores_by_tissue_class])
+
+
+    tissue_types_list = all_patients_global_containment_scores_by_tissue_class['Structure ROI'].unique().tolist()
+    tissue_types_list.remove(miss_structure_complement_label)
+
+    simulated_types_list = all_patients_global_containment_scores_by_tissue_class["Simulated type"].unique()
+
+    fig = make_subplots(rows=1, 
+                        cols=len(tissue_types_list)
+                        )
+    
+     
+    for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+        for sim_type_index, sim_type in enumerate(simulated_types_list):
+            fig.append_trace(go.Box(
+                y = all_patients_global_containment_scores_by_tissue_class[(all_patients_global_containment_scores_by_tissue_class['Structure ROI'] == tissue_type) & (all_patients_global_containment_scores_by_tissue_class["Simulated type"] == sim_type)]['Global mean binom est'],
+                name = tissue_type +' - '+  sim_type,
+                marker_color = color_discrete_map_by_sim_type[sim_type],
+                boxpoints = box_plot_points_option,
+                notched = notch_option,
+                boxmean = boxmean_option,
+                #customdata = np.full(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"].size, np.std(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"])) 
+            ), row =1 , col = tissue_type_index+1)
+
+   
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    for index in range(len(tissue_types_list)):
+        fig.update_xaxes(title_text="Tissue classification", row=1, col=index+1)
+        fig.update_yaxes(title_text="Probability", range = [0,1.01], row=1, col=index+1)
+    
+
+    text_1 = 'Patient cohort tissue classification probability'
+    num_biopsies_by_type_string_list = [bpsy_type +': '+ str(num_bxs_sp_type) for bpsy_type, num_bxs_sp_type in num_biopsies_by_bx_type_dict.items()]
+    text_2 = ', '.join(num_biopsies_by_type_string_list)
+
+    text_list_for_annotation = [text_1,text_2]
+    fig_description_text_for_annotation = ' | '.join(text_list_for_annotation)
+    fig.add_annotation(text=fig_description_text_for_annotation,
+                            xref="paper", 
+                            yref="paper",
+                            x=0.99, 
+                            y=1.1, 
+                            showarrow=False,
+                            font=dict(family="Courier New, monospace", 
+                                        size=16, 
+                                        color="#000000"),
+                            bordercolor="#000000",
+                            borderwidth=2,
+                            borderpad=4,
+                            bgcolor="#ffffff",
+                            opacity=1
+                            )
+
+
+    num_bpsy_types = len(simulated_types_list)
+    comb_seed_list = list(range(0,num_bpsy_types))
+    combs_list_for_p_vals = []
+    for subset in itertools.combinations(comb_seed_list, 2):
+        combs_list_for_p_vals.append(list(subset))
+
+
+
+    for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+        fig = add_p_value_annotation(fig, 
+                            combs_list_for_p_vals, 
+                            subplot=tissue_type_index +1, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        
+    fig.update_layout(
+        margin=dict(t=60*len(combs_list_for_p_vals))
+        )
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+    #print('test')
+
+
+
+
+
+
+def production_plot_tissue_volume_box_plots_patient_cohort_NEW(master_cohort_patient_data_and_dataframes,
+                                              master_st_ds_info_dict,
+                                              color_discrete_map_by_sim_type,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string,
+                                            cohort_output_figures_dir,
+                                            box_plot_points_option = 'outliers',
+                                            notch_option = True,
+                                            boxmean_option = 'sd'
+                                            ):
+    
+    num_biopsies_by_bx_type_dict = master_st_ds_info_dict["Global"]["Num biopsies by bx type dict"]
+
+    cohort_tissue_volume_above_threshold_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue volume above threshold"] 
+
+
+    probability_threshold_list = cohort_tissue_volume_above_threshold_dataframe['Probability threshold'].unique().tolist()
+
+    simulated_types_list = cohort_tissue_volume_above_threshold_dataframe["Bx type"].unique()
+    
+    fig = make_subplots(rows=1, 
+                        cols=len(probability_threshold_list)
+                        )
+
+    for probability_threshold_index, probability_threshold in enumerate(probability_threshold_list):
+        for sim_type_index, sim_type in enumerate(simulated_types_list):
+            fig.append_trace(go.Box(
+                y = cohort_tissue_volume_above_threshold_dataframe[(cohort_tissue_volume_above_threshold_dataframe["Probability threshold"] == probability_threshold) & 
+                                                                   (cohort_tissue_volume_above_threshold_dataframe["Bx type"] == sim_type)]["Volume of DIL tissue"],
+                name = str(probability_threshold) + ' - ' +  sim_type,
+                marker_color = color_discrete_map_by_sim_type[sim_type],
+                boxpoints = box_plot_points_option,
+                notched = notch_option,
+                boxmean = boxmean_option
+            ), row =1 , col = probability_threshold_index+1)
+        
+
+    
+
+
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    for index in range(len(probability_threshold_list)):
+        fig.update_xaxes(title_text="Probability threshold", row=1, col=index+1)
+        fig.update_yaxes(title_text="Tissue volume (cmm)", row=1, col=index+1)
+    
+    
+    
+    text_1 = 'Patient cohort tissue volume above given threshold'
+    num_biopsies_by_type_string_list = [bpsy_type +': '+ str(num_bxs_sp_type) for bpsy_type, num_bxs_sp_type in num_biopsies_by_bx_type_dict.items()]
+    text_2 = ', '.join(num_biopsies_by_type_string_list)
+
+    text_list_for_annotation = [text_1,text_2]
+    fig_description_text_for_annotation = ' | '.join(text_list_for_annotation)
+    fig.add_annotation(text=fig_description_text_for_annotation,
+                            xref="paper", 
+                            yref="paper",
+                            x=0.99, 
+                            y=1.1, 
+                            showarrow=False,
+                            font=dict(family="Courier New, monospace", 
+                                        size=16, 
+                                        color="#000000"),
+                            bordercolor="#000000",
+                            borderwidth=2,
+                            borderpad=4,
+                            bgcolor="#ffffff",
+                            opacity=1
+                            )
+    
+    
+    num_bpsy_types = len(simulated_types_list)
+    comb_seed_list = list(range(0,num_bpsy_types))
+    combs_list_for_p_vals = []
+    for subset in itertools.combinations(comb_seed_list, 2):
+        combs_list_for_p_vals.append(list(subset))
+
+
+
+    for probability_threshold_index, probability_threshold in enumerate(probability_threshold_list):
+        fig = add_p_value_annotation(fig, 
+                            combs_list_for_p_vals, 
+                            subplot=probability_threshold_index +1, 
+                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            )
+        
+    fig.update_layout(
+        margin=dict(t=60*len(combs_list_for_p_vals))
+        )
+
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+
+
+
+
+
+
+
+
+
+
 
 
 def production_plot_tissue_length_box_plots_patient_cohort(patient_cohort_dataframe,
@@ -3657,6 +3888,565 @@ def production_plot_guidance_maps_max_planes(patientUID,
             html_dose_fig_name = general_plot_name_string+' - (maxplane - ' +patient_plane_dict[patient_plane_determiner_str]+' - '+specific_dil_structureID+').html'
             html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
             fig.write_html(html_dose_fig_file_path)
+
+
+
+
+
+"""
+def production_plot_cohort_biopsy_maps_dil_coord_frame(patientUID,
+                            patient_sp_output_figures_dir,
+                            pydicom_item,
+                            all_ref_key,
+                            oar_ref,
+                            svg_image_scale,
+                            svg_image_width,
+                            svg_image_height,
+                            general_plot_name_string
+                            ):
+
+
+    sp_patient_relative_dil_dataframe = pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["Nearest DILs info dataframe"]
+
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram2dContour(
+            x = x,
+            y = y,
+            colorscale = 'Blues',
+            reversescale = True,
+            xaxis = 'x',
+            yaxis = 'y'
+        ))
+    fig.add_trace(go.Scatter(
+            x = x,
+            y = y,
+            xaxis = 'x',
+            yaxis = 'y',
+            mode = 'markers',
+            marker = dict(
+                color = 'rgba(0,0,0,0.3)',
+                size = 3
+            )
+        ))
+    fig.add_trace(go.Histogram(
+            y = y,
+            xaxis = 'x2',
+            marker = dict(
+                color = 'rgba(0,0,0,1)'
+            )
+        ))
+    fig.add_trace(go.Histogram(
+            x = x,
+            yaxis = 'y2',
+            marker = dict(
+                color = 'rgba(0,0,0,1)'
+            )
+        ))
+
+    fig.update_layout(
+        autosize = False,
+        xaxis = dict(
+            zeroline = False,
+            domain = [0,0.85],
+            showgrid = False
+        ),
+        yaxis = dict(
+            zeroline = False,
+            domain = [0,0.85],
+            showgrid = False
+        ),
+        xaxis2 = dict(
+            zeroline = False,
+            domain = [0.85,1],
+            showgrid = False
+        ),
+        yaxis2 = dict(
+            zeroline = False,
+            domain = [0.85,1],
+            showgrid = False
+        ),
+        height = 600,
+        width = 600,
+        bargap = 0,
+        hovermode = 'closest',
+        showlegend = False
+    )
+
+    fig.show()
+
+
+
+"""
+
+
+
+
+def scatter_matrix_dil_features_cohort(master_cohort_patient_data_and_dataframes,
+                                       dil_ref):
+
+    structure_cohort_3d_radiomic_features_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: 3D radiomic features all OAR and DIL structures"]
+
+    dils_only_structure_cohort_3d_radiomic_features_dataframe = structure_cohort_3d_radiomic_features_dataframe[structure_cohort_3d_radiomic_features_dataframe["Structure type"] == dil_ref]
+
+    list_of_feature_columns = ["Volume",
+     "Surface area",
+     "Surface area to volume ratio",
+     "Sphericity",
+     "Compactness 1",
+     "Compactness 2", 
+     "Spherical disproportion",
+     "Maximum 3D diameter",
+     "PCA major",
+     "PCA minor",
+     "PCA least",
+     "Major axis (equivalent ellipse)",
+     "Minor axis (equivalent ellipse)",
+     "Least axis (equivalent ellipse)",
+     "Elongation",
+     "Flatness",
+     "L/R dimension at centroid",
+     "A/P dimension at centroid",
+     "S/I dimension at centroid"]
+    
+    dils_only_structure_cohort_3d_radiomic_features_dataframe_only_features = dils_only_structure_cohort_3d_radiomic_features_dataframe[list_of_feature_columns]
+    
+    
+
+
+
+def global_tissue_class_target_dil_score_versus_target_3d_segmentation_radiomic_features(cohort_global_tissue_scores_with_target_dil_radiomic_features_df):
+
+
+    # Assuming 'df' is your DataFrame
+    features = [
+        "Volume",
+        "Surface area",
+        "Surface area to volume ratio",
+        "Sphericity",
+        "Compactness 1",
+        "Compactness 2",
+        "Spherical disproportion",
+        "Maximum 3D diameter",
+        "PCA major",
+        "PCA minor",
+        "PCA least",
+        "Major axis (equivalent ellipse)",
+        "Minor axis (equivalent ellipse)",
+        "Least axis (equivalent ellipse)",
+        "Elongation",
+        "Flatness",
+        "L/R dimension at centroid",
+        "A/P dimension at centroid",
+        "S/I dimension at centroid"
+    ]
+
+    for feature in features:
+        sns.lmplot(x=feature, y="Global mean binom est", hue="Simulated type", data=cohort_global_tissue_scores_with_target_dil_radiomic_features_df, 
+                aspect=1.5, ci=None, palette="Set1")
+        plt.title(f'Global mean binom est vs. {feature} by Simulated type')
+        plt.xlabel(feature)
+        plt.ylabel("Global mean binom est")
+        plt.show()
+
+
+
+def production_plot_binom_est_ridge_plot_by_voxel(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_tissue_class_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict):
+
+    plt.ioff()
+    cohort_all_dose_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+    df = cohort_all_dose_data_by_trial_and_pt 
+
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+    #output_directory = Path(output_directory_path)
+    #output_directory.mkdir(parents=True, exist_ok=True)
+
+    dpi = 100
+    figure_width_in = 1920 / dpi
+    figure_height_in = 1080 / dpi
+
+    for (patient_id, bx_index, structure_roi), group in df.groupby(['Patient ID', 'Bx index', 'Structure ROI']):
+        bx_structure_roi = group['Bx structure ROI'].iloc[0]
+
+        # Ensure the column is in the correct numerical format
+        group["Mean probability (binom est)"] = pandas.to_numeric(group["Mean probability (binom est)"], errors='coerce')
+        group.dropna(subset=["Mean probability (binom est)"], inplace=True)
+
+        num_voxels = len(group['Voxel index'].unique())
+        pal = sns.color_palette("husl", num_voxels)
+
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=figure_height_in / num_voxels, palette=pal)
+
+        g.map(sns.kdeplot, "Mean probability (binom est)", bw_adjust=0.5, clip_on=False, fill=True, alpha=1, linewidth=1.5)
+        g.map(sns.kdeplot, "Mean probability (binom est)", clip_on=False, color="w", lw=2, bw_adjust=0.5)
+        g.refline(y=0, linewidth=2, linestyle="-", color=None, clip_on=False)
+
+        for ax in g.axes.flat:
+            ax.set_xlim(0, 1)
+
+        def annotate_stats(x, color, label):
+            label_float = float(label)
+            specific_group = group[group['Voxel index'] == label_float]
+
+            if not specific_group.empty:
+                mean_prob = np.mean(x)
+                std_prob = np.std(x)
+                if np.std(x) < 1e-6 or len(np.unique(x)) <= 1:
+                    # Data lacks variability, skip KDE and use placeholders for max density value
+                    max_density_value = "N/A"  # Placeholder
+                else:
+                    try:
+                        kde = gaussian_kde(x)
+                        x_grid = np.linspace(0, 1, 1000)
+                        max_density_value = x_grid[np.argmax(kde(x_grid))]
+                        max_density_value = f"{max_density_value:.2f}"
+                    except np.linalg.LinAlgError:
+                        max_density_value = "Error"  # In case of an unexpected error
+                
+                
+
+                nominal_mean = specific_group['Nominal containment'].mean()
+                nominal_std = specific_group['Nominal containment'].std()
+
+                voxel_begin = specific_group['Voxel begin (Z)'].iloc[0]
+                voxel_end = specific_group['Voxel end (Z)'].iloc[0]
+
+                ax = plt.gca()
+                annotation_text = f'({voxel_begin}, {voxel_end})\nMean: {mean_prob:.2f}, SD: {std_prob:.2f}, Max Density Value: {max_density_value}\nNominal Mean: {nominal_mean:.2f}, Nominal STD: {nominal_std:.2f}'
+                ax.text(1, 0.3, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        g.map(annotate_stats, "Mean probability (binom est)")
+
+        g.figure.subplots_adjust(hspace=-0.25)
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=True, left=True)
+
+        g.set_axis_labels("Mean probability", "")
+
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        # Title now includes Structure ROI
+        plt.suptitle(f'Patient ID: {patient_id}, Bx structure ROI: {bx_structure_roi}, Structure ROI: {structure_roi}', fontsize=16, fontweight='bold', y=0.95)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_tissue_class_general_plot_name_string+str(bx_structure_roi)+ str(structure_roi)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+
+
+def production_plot_dose_ridge_plot_by_voxel(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_dose_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict
+                                            ):
+    plt.ioff()
+    cohort_all_dose_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"]
+    df = cohort_all_dose_data_by_trial_and_pt 
+
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+    for (patient_id, bx_index), group in df.groupby(['Patient ID', 'Bx index']):
+        bx_id = group['Bx ID'].iloc[0]
+
+        num_voxels = len(group['Voxel index'].unique())
+        pal = sns.color_palette("husl", num_voxels)
+
+        ridge_height = 1
+        figure_height = num_voxels * ridge_height + 1
+
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=ridge_height, palette=pal)
+
+        g.map(sns.kdeplot, "Dose (Gy)", bw_adjust=0.5, clip_on=False, fill=True, alpha=1, linewidth=1.5)
+        g.map(sns.kdeplot, "Dose (Gy)", clip_on=False, color="w", lw=2, bw_adjust=0.5)
+        g.refline(y=0, linewidth=2, linestyle="-", color=None, clip_on=False)
+
+        def annotate_stats(x, color, label, **kwargs):
+            label_float = float(label)
+            voxel_row = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)].iloc[0]
+            nominal_dose = voxel_row['Dose (Gy)'] if not voxel_row.empty else 'N/A'
+
+            mean = np.mean(x)
+            std = np.std(x)
+            kde = gaussian_kde(x)
+            x_grid = np.linspace(x.min(), x.max(), 1000)
+            max_density_dose = x_grid[np.argmax(kde(x_grid))]
+            voxel_begin = voxel_row['Voxel begin (Z)']
+            voxel_end = voxel_row['Voxel end (Z)']
+            ax = plt.gca()
+            annotation_text = f'Voxel position ({voxel_begin}, {voxel_end})\nMean: {mean:.2f}, SD: {std:.2f}, argmax(Density): {max_density_dose:.2f}, Nominal: {nominal_dose:.2f}'
+            ax.text(0.95, 0.5, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        g.map(annotate_stats, "Dose (Gy)")
+
+        g.figure.subplots_adjust(hspace=-0.25)
+        g.set_titles("")
+        g.set(yticks=[],)
+        g.despine(bottom=True, left=True)
+
+        g.set_axis_labels("Dose (Gy)", "")
+
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+
+
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_general_plot_name_string+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+
+
+
+### For the transverse plane accuracy plots cohort
+
+def draw_ellipse(position, covariance, ax, **kwargs):
+    """Draw an ellipse with a given position and covariance"""
+    if covariance.shape == (2, 2):
+        U, s, Vt = np.linalg.svd(covariance)
+        angle = np.degrees(np.arctan2(U[1, 0], U[0, 0]))
+        width, height = 2 * np.sqrt(s)
+    else:
+        angle = 0
+        width = height = 2 * np.sqrt(covariance)
+    
+    for nsig in range(1, 3):
+        ax.add_patch(Ellipse(xy = position, width = nsig * width, height = nsig * height, angle = angle, **kwargs))
+
+def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit(cohort_nearest_dils_dataframe,
+                                         general_plot_name_string,
+                                        cohort_output_figures_dir):
+
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = df[df['Simulated bool'] == False]
+    x = df_filtered['Bx (X, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(10, 10))
+    gs = fig.add_gridspec(4, 4)
+    ax_main = fig.add_subplot(gs[1:4, 0:3])
+    ax_xDist = fig.add_subplot(gs[0, 0:3], sharex=ax_main)
+    ax_yDist = fig.add_subplot(gs[1:4, 3], sharey=ax_main)
+
+    # Main scatter plot
+    ax_main.scatter(x, y, alpha=0.5)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.2, color='red', edgecolor='black')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color="m")
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color="m")
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'kx', markersize=10, markeredgewidth=2)
+
+    # Annotations for mean, std, and RMSE
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+    ax_xDist.text(0.95, 0.7, f'Mean: {mean_x:.2f}\nStd: {std_x:.2f}', transform=ax_xDist.transAxes, horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.5))
+    ax_yDist.text(0.7, 0.95, f'Mean: {mean_y:.2f}\nStd: {std_y:.2f}', transform=ax_yDist.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5), rotation=-90)
+
+    ax_main.set_xlabel('(L/R) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Transverse plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+
+def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit(cohort_nearest_dils_dataframe,
+                                         general_plot_name_string,
+                                        cohort_output_figures_dir):
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = df[df['Simulated bool'] == False]
+    x = df_filtered['Bx (Z, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(10, 10))
+    gs = fig.add_gridspec(4, 4)
+    ax_main = fig.add_subplot(gs[1:4, 0:3])
+    ax_xDist = fig.add_subplot(gs[0, 0:3], sharex=ax_main)
+    ax_yDist = fig.add_subplot(gs[1:4, 3], sharey=ax_main)
+
+    # Main scatter plot
+    ax_main.scatter(x, y, alpha=0.5)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.2, color='red', edgecolor='black')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color="m")
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color="m")
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'kx', markersize=10, markeredgewidth=2)
+
+    # Annotations for mean, std, and RMSE
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+    ax_xDist.text(0.95, 0.7, f'Mean: {mean_x:.2f}\nStd: {std_x:.2f}', transform=ax_xDist.transAxes, horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.5))
+    ax_yDist.text(0.7, 0.95, f'Mean: {mean_y:.2f}\nStd: {std_y:.2f}', transform=ax_yDist.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5), rotation=-90)
+
+    ax_main.set_xlabel('(S/I) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Sagittal plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+
+
+
+
+
+def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame(cohort_nearest_dils_dataframe,
+                                                                              general_plot_name_string,
+                                                                              cohort_output_figures_dir):
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    # Filter out rows where 'Simulated bool' is not False
+    df_filtered = df[df['Simulated bool'] == False]
+    
+    # Create a copy of df_filtered to rename without altering the original DataFrame
+    df_renamed = df_filtered.copy()
+    # Renaming the columns for plotting
+    rename_dict = {
+        'Bx (X, DIL centroid frame)': '(L/R)',
+        'Bx (Y, DIL centroid frame)': '(A/P)',
+        'Bx (Z, DIL centroid frame)': '(S/I)',
+    }
+    df_renamed.rename(columns=rename_dict, inplace=True)
+    
+    # Subset the DataFrame with renamed columns for plotting
+    cols_to_plot = list(rename_dict.values())  # ['(L/R)', '(A/P)', '(S/I)']
+    
+    # Pairplot with Seaborn with renamed columns
+    g = sns.pairplot(df_renamed[cols_to_plot], diag_kind='kde',
+                     plot_kws={'alpha':0.6, 's':80, 'edgecolor':'k'},
+                     diag_kws={'shade':True})
+    
+    # Adjusting scatter plots to center at (0, 0) and annotating the diagonal
+    for i in range(len(cols_to_plot)):
+        for j in range(len(cols_to_plot)):
+            ax = g.axes[i][j]
+            if i != j:  # For scatter plots
+                ax.axhline(0, ls='--', c='gray', lw=1)
+                ax.axvline(0, ls='--', c='gray', lw=1)
+            else:  # For the diagonal (distribution plots)
+                mean_val = df_renamed[cols_to_plot[i]].mean()
+                std_val = df_renamed[cols_to_plot[i]].std()
+                # Place text for mean and std dev
+                ax.text(0.95, 0.9, f'Mean: {mean_val:.2f}\nStd: {std_val:.2f}',
+                        verticalalignment='top', horizontalalignment='right',
+                        transform=ax.transAxes, fontsize=10, bbox=dict(facecolor='white', alpha=0.5))
+
+    # Update plot labels with the new variable names
+    for i in range(len(cols_to_plot)):
+        for j in range(len(cols_to_plot)):
+            # Set x-axis label
+            g.axes[len(cols_to_plot)-1][j].set_xlabel(cols_to_plot[j], fontsize=12)
+            # Set y-axis label
+            g.axes[i][0].set_ylabel(cols_to_plot[i], fontsize=12)
+    
+    plt.tight_layout()
+
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### HELPERS
+
+
+
+
+
+
+
+
+
+
 
 def add_p_value_annotation(fig, 
                            array_columns, 

@@ -41,6 +41,9 @@ cudf-cu11 = { index = "pypinvidia"}
 cuspatial-cu11 = { index = "pypinvidia"} 
 cupy-cuda11x = "*"
 pysimplegui = "*"
+seaborn = "*"
+astropy = "*"
+pyradiomics = "*"
 
 [dev-packages]
 ipykernel = "*"

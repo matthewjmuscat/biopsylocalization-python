@@ -1,13 +1,13 @@
-Date : 2024-02-10 22:53:24
+Date : 2024-03-18 18:41:41
 Directory : /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based
-Total : 38 files,  17753 codes, 2465 comments, 3672 blanks, all 23890 lines
+Total : 43 files,  26214 codes, 3611 comments, 4827 blanks, all 34652 lines
 
 Languages
 +----------+------------+------------+------------+------------+------------+
 | language | files      | code       | comment    | blank      | total      |
 +----------+------------+------------+------------+------------+------------+
-| Python   |         35 |     12,923 |      2,465 |      3,665 |     19,053 |
-| JSON     |          2 |      4,804 |          0 |          2 |      4,806 |
+| Python   |         40 |     15,414 |      3,611 |      4,820 |     23,845 |
+| JSON     |          2 |     10,774 |          0 |          2 |     10,776 |
 | CSS      |          1 |         26 |          0 |          5 |         31 |
 +----------+------------+------------+------------+------------+------------+
 
@@ -15,8 +15,8 @@ Directories
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 | path                                                                                                                                                | files      | code       | comment    | blank      | total      |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
-| .                                                                                                                                                   |         38 |     17,753 |      2,465 |      3,672 |     23,890 |
-| . (Files)                                                                                                                                           |         29 |     15,095 |      2,398 |      3,587 |     21,080 |
+| .                                                                                                                                                   |         43 |     26,214 |      3,611 |      4,827 |     34,652 |
+| . (Files)                                                                                                                                           |         34 |     23,556 |      3,544 |      4,742 |     31,842 |
 | Junk                                                                                                                                                |          8 |      2,658 |         67 |         84 |      2,809 |
 | my-lib                                                                                                                                              |          1 |          0 |          0 |          1 |          1 |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
@@ -33,35 +33,40 @@ Files
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/Junk/test_book.ipynb                  | JSON     |      2,388 |          0 |          1 |      2,389 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/Junk/test_delauney_triangulation.py   | Python   |         60 |         19 |         19 |         98 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/Junk/test_write.py                    | Python   |         19 |          0 |          7 |         26 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/MC_simulator_convex.py                | Python   |      1,425 |        321 |        410 |      2,156 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/MC_simulator_convex.py                | Python   |      1,610 |      1,055 |        673 |      3,338 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/Stopwatch_textual.css                 | CSS      |         26 |          0 |          5 |         31 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/anatomy_reconstructor_tools.py        | Python   |        345 |         31 |         51 |        427 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_creator.py                     | Python   |        308 |        125 |        157 |        590 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py    | Python   |      3,303 |        670 |        986 |      4,959 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py    | Python   |      3,746 |        796 |      1,206 |      5,748 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_prototyping.py    | Python   |        250 |        157 |        106 |        513 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_optimizer.py                   | Python   |        225 |         54 |        100 |        379 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_optimizer.py                   | Python   |        365 |        107 |        153 |        625 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_transporter.py                 | Python   |         49 |          6 |         12 |         67 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/centroid_finder.py                    | Python   |         22 |          0 |         12 |         34 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/csv_writers.py                        | Python   |        477 |          9 |        126 |        612 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/cupy_functions.py                     | Python   |        103 |         28 |         51 |        182 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py                 | Python   |        565 |          6 |        142 |        713 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py                 | Python   |        788 |          7 |        265 |      1,060 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dosimetric_localizer.py               | Python   |         46 |          6 |         17 |         69 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/fanova.py                             | Python   |        925 |        327 |        294 |      1,546 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/fanova_mathfuncs.py                   | Python   |         60 |          0 |         27 |         87 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/kD_data_tree_class.py                 | Python   |         65 |          4 |         14 |         83 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/loading_tools.py                      | Python   |         53 |          9 |         12 |         74 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/math_funcs.py                         | Python   |        193 |         41 |         56 |        290 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py                         | Python   |        283 |         73 |        134 |        490 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/machina_learning.py                   | Python   |         56 |         16 |         23 |         95 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/math_funcs.py                         | Python   |        211 |         62 |         60 |        333 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/meshing_tools.py                      | Python   |         45 |          3 |          5 |         53 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py                         | Python   |        458 |        158 |        233 |        849 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/my-lib/__init__.py                    | Python   |          0 |          0 |          1 |          1 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/patient_sample_analyser.py            | Python   |          0 |          0 |          1 |          1 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/pca.py                                | Python   |         13 |          2 |          4 |         19 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/plotting_funcs.py                     | Python   |        581 |         25 |        148 |        754 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/point_containment_tools.py            | Python   |        530 |         86 |        144 |        760 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py                   | Python   |      2,529 |        390 |        510 |      3,429 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/point_containment_tools.py            | Python   |        861 |        131 |        275 |      1,267 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py                   | Python   |      3,179 |        414 |        686 |      4,279 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/pysimplegui_demo.py                   | Python   |         67 |          3 |         13 |         83 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/ques_funcs.py                         | Python   |         46 |         13 |          7 |         66 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/rich_preambles.py                     | Python   |        169 |          5 |         36 |        210 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/rich_preambles.py                     | Python   |        179 |         25 |         36 |        240 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/stopwatch_textual.py                  | Python   |         68 |         15 |         24 |        107 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb                       | JSON     |      2,416 |          0 |          1 |      2,417 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb                       | JSON     |      8,386 |          0 |          1 |      8,387 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_textual.py                       | Python   |          9 |          0 |          3 |         12 |
-| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/uncertainty_file_writer.py            | Python   |        104 |          7 |         25 |        136 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/uncertainty_file_writer.py            | Python   |        157 |         10 |         41 |        208 |
 | /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/uncertainty_processor.py              | Python   |          2 |          0 |          1 |          3 |
-| Total                                                                                                                                               |          |     17,753 |      2,465 |      3,672 |     23,890 |
+| Total                                                                                                                                               |          |     26,214 |      3,611 |      4,827 |     34,652 |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
