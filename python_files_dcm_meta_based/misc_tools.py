@@ -16,7 +16,8 @@ import misc_tools
 from scipy import stats
 import meshing_tools
 from sklearn.decomposition import PCA
-
+import pandas
+from fuzzywuzzy import process, fuzz
 
 def checkdirs(live_display, important_info, *paths):
     created_a_dir = False
@@ -119,13 +120,7 @@ def structure_volume_calculator(structure_points_array,
 
     num_test_points = centered_cubic_lattice_sp_structure.shape[0]
 
-    """
-    structure_info = [structureID,
-                        structs,
-                        structure_reference_number,
-                        specific_structure_index
-                        ]
-    """
+
     
     # Extract and calculate relative structure info
     #interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
@@ -473,46 +468,94 @@ def bx_position_classifier_in_prostate_frame_sextant(bx_vec_in_prostate_frame,
 
 
 
-def prostate_selector(pydicom_item,
-                      oar_ref,
-                      prostate_contour_name):
+def specific_structure_selector(pydicom_item,
+                      ref_type,
+                      contour_name_string_list):
     
     patient_uid_str = pydicom_item["Patient UID (generated)"]
-    prostates_found_list = []
-    for specific_oar_structure in pydicom_item[oar_ref]:
-        oar_structureID = specific_oar_structure["ROI"]
-        if (prostate_contour_name in oar_structureID):
+    sp_structures_found_list = []
+    for specific_structure in pydicom_item[ref_type]:
+        sp_structureID = specific_structure["ROI"]
+        for contour_name_string in contour_name_string_list:
+            if (contour_name_string in sp_structureID):
 
-            prostate_structure_info = specific_structure_info_dict_creator('given', specific_structure = specific_oar_structure)
-            
-            prostates_found_list.append(prostate_structure_info)
-            del prostate_structure_info
+                prostate_structure_info = specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                
+                sp_structures_found_list.append(prostate_structure_info)
+                del prostate_structure_info
             
 
-    num_prostates_found = len(prostates_found_list)
+    num_prostates_found = len(sp_structures_found_list)
 
     if num_prostates_found >= 1:
-        selected_prostate_info = prostates_found_list[0] # select the prostate with the lowest index number 
-        prostate_found_bool = True
+        selected_structure_info = sp_structures_found_list[0] # select the prostate with the lowest index number 
+        structure_found_bool = True
 
     else:
-        prostate_structure_info_not_found = specific_structure_info_dict_creator('custom',
-                                        structid = 'Prostate not found', 
+        structure_info_not_found = specific_structure_info_dict_creator('custom',
+                                        structid = 'Structure not found', 
                                         sruct_ref_num = None, 
-                                        struct_ref_type = oar_ref, 
+                                        struct_ref_type = ref_type, 
                                         struct_index_num = None 
                                         )
-        
-        prostate_found_bool = False
-        
-        selected_prostate_info = prostate_structure_info_not_found
+        structure_found_bool = False
+        selected_structure_info = structure_info_not_found
         
     if num_prostates_found >= 1:
-        message_string = 'Number of prostates found: ' + str(num_prostates_found) + '. Prostate chosen: '+ selected_prostate_info["Structure ID"] + '. Patient: ' + str(patient_uid_str)
+        message_string = 'Number of prostates found: ' + str(num_prostates_found) + '. Prostate chosen: '+ selected_structure_info["Structure ID"] + '. Patient: ' + str(patient_uid_str)
     elif num_prostates_found == 0:
-        message_string = 'Prostate not found! Patient: ' + str(patient_uid_str)
-    return selected_prostate_info, message_string, prostate_found_bool, num_prostates_found
+        message_string = 'Structure not found! Patient: ' + str(patient_uid_str)
+    
+    return selected_structure_info, message_string, structure_found_bool, num_prostates_found
 
+
+
+def specific_structure_selector_dataframe_version(pydicom_item, 
+                                                  ref_type, 
+                                                  contour_name_string_list,
+                                                  select_style = 'closest'):
+    """
+    Select style refers to the way that the function selects a structure if more than one is found. 
+    closest: will pick the structure whose structure ID is closest to the first contour name string provided in the list 
+    first: simply selects the first one of the ones found (more random)
+    """
+    patient_uid_str = pydicom_item["Patient UID (generated)"]
+    sp_structures_found_df = pandas.DataFrame()  # Initialize an empty DataFrame
+
+    for specific_structure in pydicom_item[ref_type]:
+        sp_structureID = specific_structure["ROI"]
+        for contour_name_string in contour_name_string_list:
+            if contour_name_string in sp_structureID:
+                specific_structure_type_info_df = specific_structure_info_dataframe_creator('given', specific_structure=specific_structure)
+                sp_structures_found_df = pandas.concat([sp_structures_found_df, specific_structure_type_info_df], ignore_index=True)
+
+    num_structures_found = len(sp_structures_found_df)
+
+    if num_structures_found >= 1:
+        if select_style == 'closest':
+            priority_string = contour_name_string_list[0]
+            closest_match = process.extractOne(priority_string, sp_structures_found_df['Structure ID'], scorer = fuzz.token_sort_ratio)
+            selected_structure_info_df = sp_structures_found_df[sp_structures_found_df['Structure ID'] == closest_match[0]]
+        elif select_style == 'first': 
+            selected_structure_info_df = sp_structures_found_df.take([0])  # Select the first row
+        structure_found_bool = True
+    else:
+        selected_structure_info_df = specific_structure_info_dataframe_creator('custom',
+                                                                          structid=None, 
+                                                                          sruct_ref_num=None, 
+                                                                          struct_ref_type=ref_type, 
+                                                                          struct_index_num=None)
+        structure_found_bool = False
+
+    selected_structure_info_df["Struct found bool"] = structure_found_bool
+    selected_structure_info_df["Total num structs found"] = num_structures_found
+
+    if num_structures_found >= 1:
+        message_string = f'Num structures found: {num_structures_found}. Structure chosen: {selected_structure_info_df["Structure ID"].iloc[0]}. Patient: {patient_uid_str}, Struct type: {ref_type}'
+    elif num_structures_found == 0:
+        message_string = f'Structure not found! Patient: {patient_uid_str}, Struct type: {ref_type}'
+
+    return selected_structure_info_df, message_string
 
 
 def specific_structure_info_dict_creator(create_type,
@@ -558,6 +601,43 @@ def specific_structure_info_dict_creator(create_type,
     return structure_info
 
 
+
+
+def specific_structure_info_dataframe_creator(create_type,
+                                        specific_structure=None, 
+                                        structid='', 
+                                        sruct_ref_num=None, 
+                                        struct_ref_type=None, 
+                                        struct_index_num=None):
+    # create_type can be "given", "custom", or "null"
+
+    if create_type == 'given':
+        structureID_entry = specific_structure["ROI"]
+        struct_type_entry = specific_structure["Struct type"]
+        structure_reference_number_entry = specific_structure["Ref #"]
+        structure_index_number_entry = specific_structure["Index number"]
+
+    elif create_type == "null":
+        structureID_entry = None 
+        struct_type_entry = None
+        structure_reference_number_entry = None
+        structure_index_number_entry = None
+
+    elif create_type == 'custom':
+        structureID_entry = structid 
+        struct_type_entry = struct_ref_type
+        structure_reference_number_entry = sruct_ref_num
+        structure_index_number_entry = struct_index_num
+
+    # Return a DataFrame instead of a dictionary
+    structure_info_df = pandas.DataFrame({
+        "Structure ID": [structureID_entry],
+        "Struct ref type": [struct_type_entry],
+        "Dicom ref num": [structure_reference_number_entry],
+        "Index number": [structure_index_number_entry]
+    })
+
+    return structure_info_df
 
 
 
@@ -845,5 +925,157 @@ def include_vector_columns_in_dataframe(df,
     df[new_column_name_y] = vectors[df[reference_column_name].values, 1]
     df[new_column_name_z] = vectors[df[reference_column_name].values, 2]
 
+
+    return df
+
+
+
+
+
+
+
+def mean_of_adjacent_np(arr):
+    # Calculate the mean of adjacent values using vectorized operations
+    means = (arr[:-1] + arr[1:]) / 2
+    return means
+
+def distance_between_neighbors_np(arr):
+    # Calculate the distance between neighboring values using vectorized operations
+    distances = arr[1:] - arr[:-1]
+    return distances
+
+
+
+def convert_categorical_columns(df, columns, types):
+    """
+    Convert specified categorical columns in a DataFrame to given types if they are categorical.
+    Non-categorical columns are silently skipped without conversion.
+
+    Parameters:
+        df (pd.DataFrame): The DataFrame containing the columns.
+        columns (list of str): List of column names to check for categorical type.
+        types (list of type): List of types to convert the corresponding columns to if they are categorical.
+
+    Returns:
+        pd.DataFrame: The DataFrame with the specified columns converted if they were categorical.
+    """
+    if len(columns) != len(types):
+        raise ValueError("The length of 'columns' and 'types' must be equal.")
+
+    for column, dtype in zip(columns, types):
+        # Check if the column dtype is an instance of pd.CategoricalDtype
+        if isinstance(df[column].dtype, pandas.CategoricalDtype):
+            df[column] = df[column].astype(dtype)
+
+    return df
+
+
+
+def point_remover_from_numpy_arr(all_points_2d_arr, points_to_remove_2d_arr):
+    if not points_to_remove_2d_arr.size:
+        return all_points_2d_arr  # Return original if no points to remove
+
+    # Create a combined array to check matches
+    # This avoids looping and repeatedly calling np.where()
+    points_to_remove_2d_arr = np.unique(points_to_remove_2d_arr, axis=0)  # Remove duplicates to optimize
+    all_points_unique, indices = np.unique(all_points_2d_arr, axis=0, return_inverse=True)
+    mask = np.ones(len(all_points_unique), dtype=bool)
+    
+    # Find indices to remove in the unique array
+    for point in points_to_remove_2d_arr:
+        matches = np.all(all_points_unique == point, axis=1)
+        mask &= ~matches  # Update mask to remove points
+
+    # Apply mask to the unique list of points and remap to original order
+    final_array = all_points_unique[mask][indices]
+
+    return final_array
+
+
+def point_remover_from_numpy_arr_v2(all_points_2d_arr, points_to_remove_2d_arr):
+    # Check if removal array is empty
+    if not points_to_remove_2d_arr.size:
+        return all_points_2d_arr
+
+    # Broadcasting to create a mask of points to keep
+    # Reshape `all_points_2d_arr` to (N, 1, 3) and `points_to_remove_2d_arr` to (1, M, 3)
+    points_to_keep_mask = ~np.any(np.all(all_points_2d_arr[:, np.newaxis] == points_to_remove_2d_arr, axis=2), axis=1)
+    
+    # Apply mask
+    final_array = all_points_2d_arr[points_to_keep_mask]
+    return final_array
+
+
+def intersect_dataframes(df_list):
+    """
+    Returns a DataFrame that is the intersection of rows from a list of DataFrames
+    based on the columns 'Test location (X)', 'Test location (Y)', 'Test location (Z)'.
+
+    Args:
+    df_list (list of pd.DataFrame): List of DataFrames with identical columns.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing only the rows that have the same values in 
+    'Test location (X)', 'Test location (Y)', 'Test location (Z)' across all provided DataFrames.
+    """
+
+    if not df_list:
+        return pandas.DataFrame()  # Return empty DataFrame if the list is empty
+
+    # Start with the first DataFrame
+    result_df = df_list[0]
+
+    # Define columns to keep after merge, assuming these columns are common and relevant
+    key_columns = ['Test location (X)', 'Test location (Y)', 'Test location (Z)']
+    
+    # Merge using only key columns and necessary columns
+    for df in df_list[1:]:
+        # Perform an inner merge to get the intersection based on key columns
+        result_df = pandas.merge(result_df, df[key_columns], on=key_columns, how='inner', suffixes=(False, False))
+
+    return result_df
+
+
+
+def unnormalize_color_values(color_array):
+    # Check if the input is a numpy array
+    if not isinstance(color_array, np.ndarray):
+        raise TypeError("Input must be a numpy array.")
+    
+    if np.any(color_array < 0) or np.any(color_array > 1):
+        raise ValueError("Array values must be between 0 and 1.")
+
+    # Convert the 0-1 float values to 0-255 integers
+    normalized_array = (color_array * 255).astype(int)
+
+    return normalized_array
+
+
+
+
+def assign_plane_indices(df, grid_spacing, x_col_name, y_col_name, z_col_name):
+    """
+    Assigns plane indices to each point in the DataFrame along each orthogonal axis.
+    
+    Parameters:
+    - df: DataFrame containing the lattice points.
+    - grid_spacing: The spacing of the grid along each dimension.
+    - x_col_name: Column name for the X-coordinate.
+    - y_col_name: Column name for the Y-coordinate.
+    - z_col_name: Column name for the Z-coordinate.
+
+    Returns:
+    - df: Modified DataFrame with new columns for plane indices.
+    """
+    # Assign indices by dividing by the grid spacing and converting to integer
+    coords = {
+        'X': x_col_name,
+        'Y': y_col_name,
+        'Z': z_col_name
+    }
+    for coord, col_name in coords.items():
+        index_col = f'{coord}_plane_index'
+        # Calculate the index as integer division of the coordinate by the grid spacing
+        df[index_col] = (df[col_name] / grid_spacing).astype(int)
 
     return df

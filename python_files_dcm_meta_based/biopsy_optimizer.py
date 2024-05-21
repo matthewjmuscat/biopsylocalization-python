@@ -355,11 +355,11 @@ def find_dil_optimal_sampling_position(patientUID,
                                                     "Relative DIL type": [structure_info["Struct ref type"]]*num_points_in_cubic_lattice_plus_centroid,
                                                     "Relative DIL ref num": [structure_info["Dicom ref num"]]*num_points_in_cubic_lattice_plus_centroid,
                                                     "Relative DIL index": [structure_info["Index number"]]*num_points_in_cubic_lattice_plus_centroid,
-                                                    'Test location vector': list(centered_cubic_lattice_sp_structure_with_dil_centroid),
+                                                    #'Test location vector': [tuple(vec) for vec in centered_cubic_lattice_sp_structure_with_dil_centroid],
                                                     'Test location (X)': centered_cubic_lattice_sp_structure_with_dil_centroid[:,0],
                                                     'Test location (Y)': centered_cubic_lattice_sp_structure_with_dil_centroid[:,1],
                                                     'Test location (Z)': centered_cubic_lattice_sp_structure_with_dil_centroid[:,2],
-                                                    'Test location to DIL centroid vector': list(test_location_to_dil_centroid_arr),
+                                                    #'Test location to DIL centroid vector': [tuple(vec) for vec in test_location_to_dil_centroid_arr],
                                                     'Test location to DIL centroid (X)': test_location_to_dil_centroid_arr[:,0],
                                                     'Test location to DIL centroid (Y)': test_location_to_dil_centroid_arr[:,1],
                                                     'Test location to DIL centroid (Z)': test_location_to_dil_centroid_arr[:,2],
@@ -368,7 +368,7 @@ def find_dil_optimal_sampling_position(patientUID,
                                                     'Selected prostate type': [selected_prostate_info["Struct ref type"]]*num_points_in_cubic_lattice_plus_centroid,
                                                     'Selected prostate ref num': [selected_prostate_info["Dicom ref num"]]*num_points_in_cubic_lattice_plus_centroid,
                                                     'Selected prostate index': [selected_prostate_info["Index number"]]*num_points_in_cubic_lattice_plus_centroid,
-                                                    'Test location vector (Prostate centroid origin)': list(prostate_centroid_to_test_location_arr),
+                                                    #'Test location vector (Prostate centroid origin)': [tuple(vec) for vec in prostate_centroid_to_test_location_arr],
                                                     'Test location (Prostate centroid origin) (X)': prostate_centroid_to_test_location_arr[:,0],
                                                     'Test location (Prostate centroid origin) (Y)': prostate_centroid_to_test_location_arr[:,1],
                                                     'Test location (Prostate centroid origin) (Z)': prostate_centroid_to_test_location_arr[:,2],
@@ -405,8 +405,10 @@ def find_dil_optimal_sampling_position(patientUID,
 
         
     # PICK OUT THE OPTIMAL POSITION BY SELECTING THE HIGHEST PROPORTION OF POINTS CONTAINED! (If more than one, select one closest to DIL, if the optimal points are all equidistant to dil, then randomly select one)
-    optimal_locations_dataframe = potential_optimal_locations_dataframe[potential_optimal_locations_dataframe['Number of normal dist points contained'] == potential_optimal_locations_dataframe['Number of normal dist points contained'].max()].reset_index()
+    #live_display.stop()
+    optimal_locations_dataframe = potential_optimal_locations_dataframe[potential_optimal_locations_dataframe['Number of normal dist points contained'] == potential_optimal_locations_dataframe['Number of normal dist points contained'].max()].reset_index(drop = True)
     num_optimal_points = len(optimal_locations_dataframe)
+    #live_display.start()
     if num_optimal_points > 1:
         # If there are ties for the optimal position, pick the one closest to the dil centroid! 
         optimal_locations_dataframe = optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()]
@@ -422,7 +424,7 @@ def find_dil_optimal_sampling_position(patientUID,
         struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(structure_points_array, color = np.array([0,0,1]))
         optimal_points_np_array = np.empty([num_optimal_points,3])
         for arr_index, (index, row) in enumerate(optimal_locations_dataframe.iterrows()):
-            optimal_points_np_array[arr_index,0:3] = np.array(row['Test location vector'])
+            optimal_points_np_array[arr_index,0:3] = np.array([row['Test location (X)'], row['Test location (Y)'], row['Test location (Z)']])
         # optimal positions are colored green
         optimal_points_pcd = point_containment_tools.create_point_cloud(optimal_points_np_array.reshape((-1,3)), color = np.array([0,1,0]))
         structure_global_centroid_pcd = point_containment_tools.create_point_cloud(structure_global_centroid.reshape((-1,3)), color = np.array([1,0,1])) 
@@ -453,11 +455,11 @@ def find_dil_optimal_sampling_position(patientUID,
                                                     "Relative DIL type": [structure_info["Struct ref type"]]*num_points_in_zero_cubic_lattice,
                                                     "Relative DIL ref num": [structure_info["Dicom ref num"]]*num_points_in_zero_cubic_lattice,
                                                     "Relative DIL index": [structure_info["Index number"]]*num_points_in_zero_cubic_lattice,
-                                                    'Test location vector': list(all_points_to_set_to_zero_arr),
+                                                    #'Test location vector': [tuple(vec) for vec in all_points_to_set_to_zero_arr],
                                                     'Test location (X)': all_points_to_set_to_zero_arr[:,0],
                                                     'Test location (Y)': all_points_to_set_to_zero_arr[:,1],
                                                     'Test location (Z)': all_points_to_set_to_zero_arr[:,2],
-                                                    'Test location to DIL centroid vector': list(zero_location_to_dil_centroid_arr),
+                                                    #'Test location to DIL centroid vector': [tuple(vec) for vec in zero_location_to_dil_centroid_arr],
                                                     'Test location to DIL centroid (X)': zero_location_to_dil_centroid_arr[:,0],
                                                     'Test location to DIL centroid (Y)': zero_location_to_dil_centroid_arr[:,1],
                                                     'Test location to DIL centroid (Z)': zero_location_to_dil_centroid_arr[:,2],
@@ -466,7 +468,7 @@ def find_dil_optimal_sampling_position(patientUID,
                                                     'Selected prostate type': [selected_prostate_info["Struct ref type"]]*num_points_in_zero_cubic_lattice,
                                                     'Selected prostate ref num': [selected_prostate_info["Dicom ref num"]]*num_points_in_zero_cubic_lattice,
                                                     'Selected prostate index': [selected_prostate_info["Index number"]]*num_points_in_zero_cubic_lattice,
-                                                    'Test location vector (Prostate centroid origin)': list(prostate_centroid_to_zero_location_arr),
+                                                    #'Test location vector (Prostate centroid origin)': [tuple(vec) for vec in prostate_centroid_to_zero_location_arr],
                                                     'Test location (Prostate centroid origin) (X)': prostate_centroid_to_zero_location_arr[:,0],
                                                     'Test location (Prostate centroid origin) (Y)': prostate_centroid_to_zero_location_arr[:,1],
                                                     'Test location (Prostate centroid origin) (Z)': prostate_centroid_to_zero_location_arr[:,2],
@@ -489,7 +491,7 @@ def find_dil_optimal_sampling_position(patientUID,
 
 def guidance_map_cumulative_projection_dataframe_creator(all_dils_and_non_dil_optimization_lattices_result_dataframe):
     
-    #all_dils_and_non_dil_optimization_lattices_result_dataframe = pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (all points within prostate) dataframe"]
+    #all_dils_and_non_dil_optimization_lattices_result_dataframe = pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe"]
 
     df_simple = all_dils_and_non_dil_optimization_lattices_result_dataframe[['Test location (Prostate centroid origin) (X)','Test location (Prostate centroid origin) (Y)','Test location (Prostate centroid origin) (Z)','Proportion of normal dist points contained']]
     
@@ -534,41 +536,67 @@ def guidance_map_max_planes_dataframe(sp_dil_potential_optimal_locations_datafra
                                       important_info,
                                       live_display):
     
-    sp_dil_optimal_location_vec = np.array(sp_dil_optimal_locations_dataframe.iloc[0]['Test location vector (Prostate centroid origin)'])
-    
+    # swapped out this line because getting rid of the vector columns in the dataframes, they are redundant and take up a lot of memory!
+    #sp_dil_optimal_location_vec = np.array(sp_dil_optimal_locations_dataframe.iloc[0]['Test location vector (Prostate centroid origin)'])
+    # sp_dil_optimal_location_vec = np.array([sp_dil_optimal_locations_dataframe.at[0,'Test location (Prostate centroid origin) (X)'], 
+    #                                         sp_dil_optimal_locations_dataframe.at[0,'Test location (Prostate centroid origin) (Y)'], 
+    #                                         sp_dil_optimal_locations_dataframe.at[0,'Test location (Prostate centroid origin) (Z)']])
 
+    
 
     #point_containment_tools.take_closest_numpy(indexed_array, np.array([sp_dil_optimal_location_zval]))
 
     df_simple = sp_dil_potential_optimal_locations_dataframe_centroid_dropped[['Test location (Prostate centroid origin) (X)',
                                                                                'Test location (Prostate centroid origin) (Y)',
                                                                                'Test location (Prostate centroid origin) (Z)',
-                                                                               'Proportion of normal dist points contained']]
+                                                                               'Proportion of normal dist points contained',
+                                                                               'X_plane_index',
+                                                                               'Y_plane_index',
+                                                                               'Z_plane_index']]
     
 
     
     zero_locations_simple_dataframe = zero_locations_dataframe[['Test location (Prostate centroid origin) (X)',
                                                                                'Test location (Prostate centroid origin) (Y)',
                                                                                'Test location (Prostate centroid origin) (Z)',
-                                                                               'Proportion of normal dist points contained']]
+                                                                               'Proportion of normal dist points contained',
+                                                                               'X_plane_index',
+                                                                               'Y_plane_index',
+                                                                               'Z_plane_index']]
 
+    index_to_column_dict = {0: 'Test location (Prostate centroid origin) (X)', 
+                            1: 'Test location (Prostate centroid origin) (Y)', 
+                            2: 'Test location (Prostate centroid origin) (Z)'
+                        }
+    
+    index_to_coord_dict = {0: 'X', 
+                           1: 'Y', 
+                           2: 'Z'
+                        }
     
     dfmax_all_planes = pandas.DataFrame()
     coord_index_arr = np.array([0,1,2])
     plane_combinations = [(0,1),(0,2),(2,1)] # This defines Transverse (X,Y), Coronal (X,Z) and Saggital (Z,Y)
     for combination in plane_combinations:
-        index_to_column_dict = {0: 'Test location (Prostate centroid origin) (X)', 
-                                1: 'Test location (Prostate centroid origin) (Y)', 
-                                2: 'Test location (Prostate centroid origin) (Z)'
-                                }
+        
         
         # this assumes there are only 3 coordindates.. we live in 3 dimensions after all! ;)
         const_plane_coordinate = np.setdiff1d(coord_index_arr, combination)[0] # setdiff1d returns the values that are in arr1 that are not in arr2
-        sp_dil_optimal_location_sp_coord_val = sp_dil_optimal_location_vec[const_plane_coordinate]
         
+        const_plane_coordinate_str = index_to_coord_dict[const_plane_coordinate]
+
+        
+        #sp_dil_optimal_location_sp_coord_val = sp_dil_optimal_location_vec[const_plane_coordinate]
+        
+        const_plane_index = sp_dil_optimal_locations_dataframe.at[0,f'{const_plane_coordinate_str}_plane_index']
+
         # select the points from the original all potential optimization points dataframe within the dil that are within a certain tolerance of the max plane coordinate
-        sp_dil_max_plane_df = df_simple[(df_simple[index_to_column_dict[const_plane_coordinate]] <= sp_dil_optimal_location_sp_coord_val + 0.25*voxel_size_for_dil_optimizer_grid) &
-                                         (df_simple[index_to_column_dict[const_plane_coordinate]] >= sp_dil_optimal_location_sp_coord_val - 0.25*voxel_size_for_dil_optimizer_grid)]#[[index_to_column_dict[combination[0]], index_to_column_dict[combination[1]], 'Proportion of normal dist points contained']]
+        # sp_dil_max_plane_df = df_simple[(df_simple[index_to_column_dict[const_plane_coordinate]] <= sp_dil_optimal_location_sp_coord_val + 0.25*voxel_size_for_dil_optimizer_grid) &
+        #                                  (df_simple[index_to_column_dict[const_plane_coordinate]] >= sp_dil_optimal_location_sp_coord_val - 0.25*voxel_size_for_dil_optimizer_grid)]#[[index_to_column_dict[combination[0]], index_to_column_dict[combination[1]], 'Proportion of normal dist points contained']]
+        
+        # modified to allow for collecting constant plane by adding a plane index column earlier in the code!
+        sp_dil_max_plane_df = df_simple[df_simple[f'{const_plane_coordinate_str}_plane_index'] == const_plane_index]
+        
         # Check if there are duplicate points in the plane
         if sp_dil_max_plane_df.duplicated(subset=[index_to_column_dict[combination[0]],index_to_column_dict[combination[1]]]).any() == True:
             message_string = "Duplicates found in your max-plane optimization dataframe! Your lattice may be on an angle relative to the planes of interest!"
@@ -582,10 +610,13 @@ def guidance_map_max_planes_dataframe(sp_dil_potential_optimal_locations_datafra
 
         
         # Extract points in the max plane of interest that are not in the dil
-        points_not_in_sp_dil_max_plane_simple_df = zero_locations_simple_dataframe[(zero_locations_simple_dataframe[index_to_column_dict[const_plane_coordinate]] <= sp_dil_optimal_location_sp_coord_val + 0.25*voxel_size_for_dil_optimizer_grid) &
-                                         (zero_locations_simple_dataframe[index_to_column_dict[const_plane_coordinate]] >= sp_dil_optimal_location_sp_coord_val - 0.25*voxel_size_for_dil_optimizer_grid)]#[[index_to_column_dict[combination[0]], index_to_column_dict[combination[1]], 'Proportion of normal dist points contained']]
+        # points_not_in_sp_dil_max_plane_simple_df = zero_locations_simple_dataframe[(zero_locations_simple_dataframe[index_to_column_dict[const_plane_coordinate]] <= sp_dil_optimal_location_sp_coord_val + 0.25*voxel_size_for_dil_optimizer_grid) &
+        #                                  (zero_locations_simple_dataframe[index_to_column_dict[const_plane_coordinate]] >= sp_dil_optimal_location_sp_coord_val - 0.25*voxel_size_for_dil_optimizer_grid)]#[[index_to_column_dict[combination[0]], index_to_column_dict[combination[1]], 'Proportion of normal dist points contained']]
         
         
+        # modified to allow for collecting constant plane by adding a plane index column earlier in the code!
+        points_not_in_sp_dil_max_plane_simple_df = zero_locations_simple_dataframe[zero_locations_simple_dataframe[f'{const_plane_coordinate_str}_plane_index'] == const_plane_index]
+
         entire_lattice_sp_dil_with_other_dils_set_to_0_simple_df = pandas.concat([sp_dil_max_plane_df,points_not_in_sp_dil_max_plane_simple_df])
  
         hor_axis_name = index_to_column_dict[combination[0]][-2]

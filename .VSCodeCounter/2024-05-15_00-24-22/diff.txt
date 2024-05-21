@@ -1,0 +1,34 @@
+Date : 2024-05-15 00:24:22
+Directory : /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based
+Total : 9 files,  4145 codes, 493 comments, 456 blanks, all 5094 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| JSON     |          1 |      2,947 |          0 |          0 |      2,947 |
+| Python   |          8 |      1,198 |        493 |        456 |      2,147 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                                             | files      | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                                                |          9 |      4,145 |        493 |        456 |      5,094 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                                                                                         | language | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/advanced_guidance_map_creator.py   | Python   |        635 |        238 |        231 |      1,104 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py | Python   |        269 |        126 |        121 |        516 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_optimizer.py                | Python   |          6 |         10 |         10 |         26 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/machina_learning.py                | Python   |         47 |         10 |         12 |         69 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py                      | Python   |         24 |         22 |         10 |         56 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/plotting_funcs.py                  | Python   |         33 |          9 |         15 |         57 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py                | Python   |        176 |         26 |         51 |        253 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/rich_preambles.py                  | Python   |          8 |         52 |          6 |         66 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb                    | JSON     |      2,947 |          0 |          0 |      2,947 |
+| Total                                                                                                                                            |          |      4,145 |        493 |        456 |      5,094 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

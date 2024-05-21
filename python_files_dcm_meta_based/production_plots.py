@@ -21,7 +21,15 @@ import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 from matplotlib.patches import Ellipse
 from sklearn.metrics import mean_squared_error
-
+from statsmodels.nonparametric.kernel_regression import KernelReg
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
+from scipy.spatial import cKDTree
+import advanced_guidance_map_creator
+import matplotlib.ticker as ticker
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.lines import Line2D
+import copy
 
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
@@ -85,7 +93,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     structure_name_and_shift_type_dict_for_pandas_data_frame['Shift magnitude'] = shift_vec_mag_arr
 
     structure_name_and_shift_type_dict_pandas_data_frame = pandas.DataFrame(data=structure_name_and_shift_type_dict_for_pandas_data_frame)
-    pydicom_item[all_ref_key]["Multi-structure output data frames dict"]["All shift vector magnitudes by structure and shift type"] = structure_name_and_shift_type_dict_pandas_data_frame
+    pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["All shift vector magnitudes by structure and shift type"] = structure_name_and_shift_type_dict_pandas_data_frame
     
     
     fig = px.box(structure_name_and_shift_type_dict_pandas_data_frame, x="StructureID", y="Shift magnitude", color="Struct type")
@@ -134,6 +142,96 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     html_dose_fig_name = patientUID + general_plot_name_string+'.html'
     html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
     fig.write_html(html_dose_fig_file_path)
+
+
+def production_plot_axial_dose_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
+                                                                                 patientUID,
+                                                                                 bx_ref,
+                                                                                 patient_sp_output_figures_dir_dict,
+                                                                                 general_plot_name_string):
+    # plotting function
+    def plot_quantile_regression_and_more_corrected(df):
+        plt.ioff()
+        fig = plt.figure(figsize=(12, 8))
+
+        # Generate a common x_range for plotting
+        x_range = np.linspace(df['Z (Bx frame)'].min(), df['Z (Bx frame)'].max(), 500)
+
+        # Placeholder dictionaries for regression results
+        y_regressions = {}
+
+        # Function to perform and plot kernel regression
+        def perform_and_plot_kernel_regression(x, y, x_range, label, color):
+            kr = KernelReg(endog=y, exog=x, var_type='c', bw = [1])
+            y_kr, _ = kr.fit(x_range)
+            plt.plot(x_range, y_kr, label=label, color=color, linewidth=2)
+
+        # Perform kernel regression for each quantile and store the y-values
+        for quantile in [0.05, 0.25, 0.75, 0.95]:
+            q_df = df.groupby('Z (Bx frame)')['Dose (Gy)'].quantile(quantile).reset_index()
+            kr = KernelReg(endog=q_df['Dose (Gy)'], exog=q_df['Z (Bx frame)'], var_type='c', bw = [1])
+            y_kr, _ = kr.fit(x_range)
+            y_regressions[quantile] = y_kr
+
+        # Filling the space between the quantile lines
+        plt.fill_between(x_range, y_regressions[0.05], y_regressions[0.25], color='green', alpha=0.3)
+        plt.fill_between(x_range, y_regressions[0.25], y_regressions[0.75], color='blue', alpha=0.3)
+        plt.fill_between(x_range, y_regressions[0.75], y_regressions[0.95], color='green', alpha=0.3)
+        
+        # Additional plot enhancements
+        # Plot line for MC trial num = 0
+        # Kernel regression for MC trial num = 0 subset
+        
+        mc_trial_0 = df[df['MC trial num'] == 0]
+        perform_and_plot_kernel_regression(mc_trial_0['Z (Bx frame)'], mc_trial_0['Dose (Gy)'], x_range, 'Nominal', 'red')
+        
+
+        # KDE and mean dose per Original pt index
+        kde_max_doses = []
+        mean_doses = []
+        z_vals = []
+        for z_val in df['Z (Bx frame)'].unique():
+            pt_data = df[df['Z (Bx frame)'] == z_val]
+            kde = gaussian_kde(pt_data['Dose (Gy)'])
+            kde_doses = np.linspace(pt_data['Dose (Gy)'].min(), pt_data['Dose (Gy)'].max(), 500)
+            max_density_dose = kde_doses[np.argmax(kde(kde_doses))]
+            kde_max_doses.append(max_density_dose)
+            mean_doses.append(pt_data['Dose (Gy)'].mean())
+            z_vals.append(z_val)
+        
+        perform_and_plot_kernel_regression(z_vals, kde_max_doses, x_range, 'KDE Max Density Dose', 'magenta')
+        perform_and_plot_kernel_regression(z_vals, mean_doses, x_range, 'Mean Dose', 'orange')
+        
+
+        
+
+        plt.title('Quantile Regression with Filled Areas Between Lines')
+        plt.xlabel('Z (Bx frame)')
+        plt.ylabel('Dose (Gy)')
+        plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal', 'Max density dose', 'Mean dose'], loc='best', facecolor = 'white')
+        plt.grid(True, which='major', linestyle='--', linewidth=0.5)
+        plt.tight_layout()
+        
+        return fig
+    
+    # plotting loop
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        
+        dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
+
+        fig = plot_quantile_regression_and_more_corrected(dose_output_nominal_and_all_MC_trials_pandas_data_frame)
+
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+            
 
 
 
@@ -192,7 +290,7 @@ def production_plot_axial_dose_distribution_all_trials_and_regression_by_patient
         
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = pandas.DataFrame.from_dict(data = dose_output_dict_by_MC_trial_for_pandas_data_frame)
         """
-        dose_output_dict_by_MC_trial_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Point-wise dose output by MC trial number"]
+        #dose_output_dict_by_MC_trial_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Point-wise dose output by MC trial number"]
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 
         # do non parametric kernel regression (local linear)
@@ -406,7 +504,7 @@ def production_plot_axial_dose_distribution_quantile_scatter_by_patient(patient_
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
 
-        dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
+        #dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
         
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
         #pt_radius_bx_coord_sys = np.linalg.norm(bx_points_XY_bx_coords_sys_arr_list, axis = 1)
@@ -534,7 +632,7 @@ def production_plot_axial_dose_distribution_quantile_regressions_by_patient(pati
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
 
-        dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
+        #dose_output_dict_for_pandas_data_frame = specific_bx_structure["Output dicts for data frames"]["Dose output Z and radius"]
         pt_radius_bx_coord_sys = dose_output_dict_for_pandas_data_frame["R (Bx frame)"]
 
         bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
@@ -826,18 +924,8 @@ def production_plot_voxelized_axial_dose_distribution_box_plot_by_patient(patien
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
-        # create box plots of voxelized data
-        stats_dose_val_all_MC_trials_voxelized = specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"]
-        dose_vals_in_voxel = stats_dose_val_all_MC_trials_voxelized["All dose vals in voxel list"]
-        z_range_of_voxel = stats_dose_val_all_MC_trials_voxelized["Voxel z range rounded"]
 
-        max_points_in_voxel = max(len(x) for x in dose_vals_in_voxel)
-
-        dose_output_voxelized_dict_for_pandas_data_frame = {str(z_range_of_voxel[i]): misc_tools.pad_or_truncate(dose_vals_in_voxel[i], max_points_in_voxel) for i in range(len(z_range_of_voxel))}
-        dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
-
-        specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Dose output voxelized"] = dose_output_voxelized_dict_for_pandas_data_frame
+        dose_output_voxelized_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output voxelized"]
 
         # box plot
         fig = px.box(dose_output_voxelized_pandas_data_frame, points = False)
@@ -875,19 +963,8 @@ def production_plot_voxelized_axial_dose_distribution_violin_plot_by_patient(pat
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
-        # create box plots of voxelized data
-        stats_dose_val_all_MC_trials_voxelized = specific_bx_structure["MC data: voxelized dose results dict (dict of lists)"]
-        dose_vals_in_voxel = stats_dose_val_all_MC_trials_voxelized["All dose vals in voxel list"]
-        z_range_of_voxel = stats_dose_val_all_MC_trials_voxelized["Voxel z range rounded"]
 
-        max_points_in_voxel = max(len(x) for x in dose_vals_in_voxel)
-
-        dose_output_voxelized_dict_for_pandas_data_frame = {str(z_range_of_voxel[i]): misc_tools.pad_or_truncate(dose_vals_in_voxel[i], max_points_in_voxel) for i in range(len(z_range_of_voxel))}
-        dose_output_voxelized_pandas_data_frame = pandas.DataFrame(data=dose_output_voxelized_dict_for_pandas_data_frame)
-
-        specific_bx_structure["Output data frames"]["Dose output voxelized"] = dose_output_voxelized_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Dose output voxelized"] = dose_output_voxelized_dict_for_pandas_data_frame
-
+        dose_output_voxelized_pandas_data_frame = specific_bx_structure["Output data frames"]["Dose output voxelized"]
 
         # violin plot
         fig = px.violin(dose_output_voxelized_pandas_data_frame, box=True, points = False)
@@ -926,28 +1003,11 @@ def production_plot_differential_DVH_showing_N_trials_by_patient(patient_sp_outp
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
         # create differential dvh plots
-        differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
-        differential_dvh_histogram_percent_by_MC_trial_arr = differential_dvh_dict["Percent arr"]
-        differential_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
-        differential_dvh_dose_vals_list = differential_dvh_dose_vals_by_MC_trial_1darr.tolist()
-        differential_dvh_dose_bins_categorical_list = ['['+str(round(differential_dvh_dose_vals_list[i],1))+','+str(round(differential_dvh_dose_vals_list[i+1],1))+']' for i in range(len(differential_dvh_dose_vals_by_MC_trial_1darr)-1)]
-        differential_dvh_histogram_percent_by_MC_trial_list_of_lists = differential_dvh_histogram_percent_by_MC_trial_arr.tolist()
         
-        percent_vals_list = []
-        dose_bins_list = differential_dvh_dose_bins_categorical_list*num_differential_dvh_plots_to_show 
-        mc_trial_index_list = []
-        for mc_trial_index in range(num_differential_dvh_plots_to_show):
-            percent_vals_list = percent_vals_list + differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
-            mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
-        differential_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
-                                                    "Dose (Gy)": dose_bins_list,
-                                                    "MC trial": mc_trial_index_list}
-        differential_dvh_pandas_dataframe = pandas.DataFrame.from_dict(differential_dvh_dict_for_pandas_dataframe)
+        differential_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Differential DVH by MC trial"]
+        differential_dvh_pandas_dataframe_N_trials = differential_dvh_pandas_dataframe[differential_dvh_pandas_dataframe["MC trial"] < num_differential_dvh_plots_to_show]
 
-        specific_bx_structure["Output data frames"]["Differential DVH by MC trial"] = differential_dvh_pandas_dataframe
-        specific_bx_structure["Output dicts for data frames"]["Differential DVH by MC trial"] = differential_dvh_dict_for_pandas_dataframe
-
-        fig_global = px.line(differential_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
+        fig_global = px.line(differential_dvh_pandas_dataframe_N_trials, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
         fig_global.update_layout(
             title = 'Differential DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_differential_dvh_plots_to_show)+' trials)',
             hovermode = "x unified"
@@ -989,8 +1049,8 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
         percent_volume_binned_dict_for_pandas_data_frame = {str(differential_dvh_dose_bins_list[i]): differential_dvh_histogram_percent_by_dose_bin_arr[i,:] for i in range(len(differential_dvh_dose_bins_list))}
         percent_volume_binned_dict_pandas_data_frame = pandas.DataFrame(data=percent_volume_binned_dict_for_pandas_data_frame)
 
-        specific_bx_structure["Output data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_for_pandas_data_frame
+        #specific_bx_structure["Output data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_pandas_data_frame
+        #specific_bx_structure["Output dicts for data frames"]["Differential DVH dose binned"] = percent_volume_binned_dict_for_pandas_data_frame
         
         """
         # box plot
@@ -1047,6 +1107,302 @@ def production_plot_differential_dvh_quantile_box_plot(patient_sp_output_figures
         fig_global.write_html(html_dose_fig_file_path)
 
 
+
+
+def production_plot_differential_dvh_quantile_plot_NEW(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_structs,
+                                                general_plot_name_string,
+                                                important_info,
+                                                live_display
+                                                ):
+    plt.ioff()
+
+    def plot_kernel_regression(x, y, label, color):
+        try:
+            kr = KernelReg(endog=y, exog=x, var_type='c')
+            x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
+            y_kr, _ = kr.fit(x_range)
+            plt.plot(x_range, y_kr, label=label, color=color)
+        except np.linalg.LinAlgError:
+            important_info.add_text_line("SVD did not converge for nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+            plt.plot(x, y, label=label, color=color, linestyle='-', marker=None)
+
+            
+    def plot_filled_quantiles(df, x_col, y_col, patientUID, bx_struct_roi):
+        fig = plt.figure(figsize=(10, 6))  # Adjust size as needed
+
+        # Calculate and plot kernel regressions for the desired quantiles
+        quantiles = [0.05, 0.25, 0.75, 0.95]
+        quantile_dfs = {}
+        x_ranges = {}
+        y_krs = {}
+        
+        for q in quantiles:
+            q_df = df.groupby(x_col)[y_col].quantile(q).reset_index()
+            quantile_dfs[q] = q_df
+            x_range = np.linspace(df[x_col].min(), df[x_col].max(), 500)
+            x_ranges[q] = x_range
+
+            try:
+                kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
+                y_kr, _ = kr.fit(x_range)
+                y_krs[q] = y_kr
+            except np.linalg.LinAlgError:
+                important_info.add_text_line(f"SVD did not converge for quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+                # Perform linear interpolation
+                if not q_df.empty:
+                    y_kr = np.interp(x_range, q_df[x_col], q_df[y_col])
+                else:
+                    y_kr = np.zeros_like(x_range)
+                y_krs[q] = y_kr  # Use interpolated values as a fallback or all zeros if have an empty dataframe, which we should never have
+            
+
+        # Filling the areas between quantile regressions
+        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='green', alpha=0.3)
+        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='blue', alpha=0.3)
+        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='green', alpha=0.3)
+
+        # 3. Kernel regression for 'MC trial' == 0
+        df_trial_0 = df[df['MC trial'] == 0]
+        plot_kernel_regression(df_trial_0[x_col], df_trial_0[y_col], 'Nominal', 'red')
+
+        # Scatter plot for the data points
+        plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+
+        plt.title('Differential DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+        plt.grid(True, which='major', linestyle='--', linewidth=0.5)
+        #handles, labels = plt.gca().get_legend_handles_labels()
+        #plt.legend(handles[:1], labels[:1], title="Legend", frameon=True, facecolor='white')
+        plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal'], loc='best', facecolor = 'white')
+        plt.tight_layout()
+
+        return fig
+
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        differential_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Differential DVH by MC trial"]
+
+        df = differential_dvh_pandas_dataframe
+
+        fig = plot_filled_quantiles(df, 'Dose bin center (Gy)', 'Percent volume', patientUID, bx_struct_roi)
+        
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+
+
+
+def production_plot_differential_dvh_violin_NEW(patient_sp_output_figures_dir_dict,
+                                                pydicom_item,
+                                                patientUID,
+                                                bx_structs,
+                                                general_plot_name_string):
+    nominal_scatter_marker = 'circle'
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+
+        differential_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Differential DVH by MC trial"]
+        differential_dvh_pandas_dataframe_nominal = differential_dvh_pandas_dataframe[differential_dvh_pandas_dataframe["MC trial"] == 0]
+        
+        sns.violinplot(x="Dose bin (Gy)", 
+                        y="Percent volume",
+                        data=differential_dvh_pandas_dataframe, 
+                        palette="Set3")
+
+
+        # 's' is the size of the points, and 'color' specifies the color of the points
+        plt.scatter(x=["Dose bin (Gy)"] * len(differential_dvh_pandas_dataframe_nominal), 
+                    y=differential_dvh_pandas_dataframe_nominal["Percent volume"], 
+                    color='red', 
+                    s=100, 
+                    edgecolor='k', 
+                    alpha=0.7, 
+                    label='Nominal')
+
+        # Adding titles and labels for clarity
+        plt.title('Violin Plot differential DVH - ' + bx_struct_roi)
+        plt.xlabel('Dose bin (Gy)')
+        plt.ylabel('Percent volume')
+        plt.legend()
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        plt.savefig(svg_dose_fig_file_path, format='svg')
+
+
+
+def production_plot_cumulative_DVH_kernel_quantile_regression_NEW(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_ref,
+                                                num_cumulative_dvh_plots_to_show,
+                                                general_plot_name_string):
+    
+    def plot_quantile_regression(df, num_samples_to_show = 50):
+        fig = plt.figure(figsize=(12, 8))
+        sns.set_style("whitegrid")
+
+
+        # Plotting all lines in grey with low alpha, except for MC trial == 0 in red
+        # Plot each MC trial as a separate line, except for MC trial == 0
+        unique_trials = df['MC trial'].unique()
+        if len(unique_trials) > num_samples_to_show:
+            selected_trials = random.sample(list(unique_trials[unique_trials != 0]), num_samples_to_show - 1) + [0]
+        else:
+            selected_trials = unique_trials
+
+        for trial in selected_trials:
+            if trial == 0:
+                sns.lineplot(x="Dose (Gy)", y="Percent volume", data=df[df['MC trial'] == trial], color='red', alpha=1)
+            else:
+                sns.lineplot(x="Dose (Gy)", y="Percent volume", data=df[df['MC trial'] == trial], color='grey', alpha=0.01, legend=None)
+
+
+        # Corrected quantile regression and filling
+        quantiles = [5, 25, 75, 95]
+        quantile_values = {q: [] for q in quantiles}
+        x_vals = np.linspace(df["Dose (Gy)"].min(), df["Dose (Gy)"].max(), 100)
+
+        # Computing quantiles for each x value
+        for x in x_vals:
+            # Find rows where Dose (Gy) is close to x to mitigate exact match issue
+            dose_df = df[np.abs(df['Dose (Gy)'] - x) < (df['Dose (Gy)'].max() - df['Dose (Gy)'].min()) / 100]
+            for q in quantiles:
+                quantile_values[q].append(dose_df['Percent volume'].quantile(q/100))
+
+        # Plotting filled areas between quantiles with correct colors
+        plt.fill_between(x_vals, quantile_values[5], quantile_values[25], color='green', alpha=0.7, label='5th-25th Quantile')
+        plt.fill_between(x_vals, quantile_values[25], quantile_values[75], color='blue', alpha=0.7, label='25th-75th Quantile')
+        plt.fill_between(x_vals, quantile_values[75], quantile_values[95], color='green', alpha=0.7, label='75th-95th Quantile')
+
+        plt.xlabel("Dose (Gy)")
+        plt.ylabel("Percent volume")
+        plt.title(f"Dose vs. Percent Volume by MC Trial with Quantile Regressions for ROI {bx_struct_roi}")
+        plt.legend()
+        return fig
+
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+
+        cumulative_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] 
+        df = cumulative_dvh_pandas_dataframe
+        fig = plot_quantile_regression(df, num_samples_to_show = num_cumulative_dvh_plots_to_show)
+
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+                
+
+
+
+def production_plot_cumulative_DVH_kernel_quantile_regression_NEW_v2(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_structs,
+                                                general_plot_name_string,
+                                                important_info,
+                                                live_display
+                                                ):
+    plt.ioff()
+
+    def plot_kernel_regression(x, y, label, color):
+        try:
+            kr = KernelReg(endog=y, exog=x, var_type='c')
+            x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
+            y_kr, _ = kr.fit(x_range)
+            plt.plot(x_range, y_kr, label=label, color=color)
+        except np.linalg.LinAlgError:
+            important_info.add_text_line("SVD did not converge for nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+            plt.plot(x, y, label=label, color=color, linestyle='-', marker=None)
+            
+    def plot_filled_quantiles(df, x_col, y_col, patientUID, bx_struct_roi):
+        fig = plt.figure(figsize=(10, 6))  # Adjust size as needed
+
+        # Calculate and plot kernel regressions for the desired quantiles
+        quantiles = [0.05, 0.25, 0.75, 0.95]
+        quantile_dfs = {}
+        x_ranges = {}
+        y_krs = {}
+        
+        for q in quantiles:
+            q_df = df.groupby(x_col)[y_col].quantile(q).reset_index()
+            quantile_dfs[q] = q_df
+            x_range = np.linspace(df[x_col].min(), df[x_col].max(), 500)
+            x_ranges[q] = x_range
+
+            try:
+                kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
+                y_kr, _ = kr.fit(x_range)
+                y_krs[q] = y_kr
+            except np.linalg.LinAlgError:
+                important_info.add_text_line(f"SVD did not converge for quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+                # Perform linear interpolation
+                if not q_df.empty:
+                    y_kr = np.interp(x_range, q_df[x_col], q_df[y_col])
+                else:
+                    y_kr = np.zeros_like(x_range)
+                y_krs[q] = y_kr  # Use interpolated values as a fallback or all zeros if have an empty dataframe, which we should never have
+            
+
+        # Filling the areas between quantile regressions
+        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='green', alpha=0.3)
+        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='blue', alpha=0.3)
+        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='green', alpha=0.3)
+
+        # 3. Kernel regression for 'MC trial' == 0
+        df_trial_0 = df[df['MC trial'] == 0]
+        plot_kernel_regression(df_trial_0[x_col], df_trial_0[y_col], 'Nominal', 'red')
+
+        # Scatter plot for the data points
+        plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+
+        plt.title('Cumulative DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+        plt.grid(True, which='major', linestyle='--', linewidth=0.5)
+        #handles, labels = plt.gca().get_legend_handles_labels()
+        #plt.legend(handles[:1], labels[:1], title="Legend", frameon=True, facecolor='white')
+        plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal'], loc='best', facecolor = 'white')
+        plt.tight_layout()
+
+        return fig
+
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        cumulative_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"]
+
+        df = cumulative_dvh_pandas_dataframe
+
+        fig = plot_filled_quantiles(df, 'Dose (Gy)', 'Percent volume', patientUID, bx_struct_roi)
+        
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+
+
+
 def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output_figures_dir_dict,
                                                 patientUID,
                                                 pydicom_item,
@@ -1062,26 +1418,12 @@ def production_plot_cumulative_DVH_showing_N_trials_by_patient(patient_sp_output
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
         bx_struct_roi = specific_bx_structure["ROI"]
         # create cumulative DVH plots
-        cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
-        cumulative_dvh_histogram_percent_by_MC_trial_arr = cumulative_dvh_dict["Percent arr"]
-        cumulative_dvh_dose_vals_by_MC_trial_1darr = cumulative_dvh_dict["Dose vals arr (Gy)"]
-        cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists = cumulative_dvh_histogram_percent_by_MC_trial_arr.tolist()
-        cumulative_dvh_dose_vals_by_MC_trial_list = cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist()
-        percent_vals_list = []
-        dose_vals_list = cumulative_dvh_dose_vals_by_MC_trial_list*num_cumulative_dvh_plots_to_show 
-        mc_trial_index_list = []
-        for mc_trial_index in range(num_cumulative_dvh_plots_to_show):
-            percent_vals_list = percent_vals_list + cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
-            mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
-        cumulative_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
-                                                    "Dose (Gy)": dose_vals_list,
-                                                    "MC trial": mc_trial_index_list}
-        cumulative_dvh_pandas_dataframe = pandas.DataFrame.from_dict(cumulative_dvh_dict_for_pandas_dataframe)
 
-        specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_pandas_dataframe
-        specific_bx_structure["Output dicts for data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_dict_for_pandas_dataframe
+        cumulative_dvh_pandas_dataframe = specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"]
+        cumulative_dvh_pandas_dataframe_N_trials = cumulative_dvh_pandas_dataframe[cumulative_dvh_pandas_dataframe["MC trial"] < num_cumulative_dvh_plots_to_show]
 
-        fig_global = px.line(cumulative_dvh_pandas_dataframe, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
+
+        fig_global = px.line(cumulative_dvh_pandas_dataframe_N_trials, x="Dose (Gy)", y="Percent volume", color = "MC trial", width  = svg_image_width, height = svg_image_height)
         fig_global.update_layout(
             title='Cumulative DVH of biopsy core (' + patientUID +', '+ bx_struct_roi+'), (Displaying '+str(num_cumulative_dvh_plots_to_show)+' trials)',
             hovermode="x unified"
@@ -1427,7 +1769,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
         containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
 
         specific_bx_structure["Output data frames"]["Containment ouput by bx point"] = containment_output_by_MC_trial_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+        #specific_bx_structure["Output dicts for data frames"]["Containment ouput by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
@@ -1747,7 +2089,7 @@ def production_plot_mutual_containment_probabilities_by_patient(patient_sp_outpu
         containment_output_by_MC_trial_pandas_data_frame = pandas.DataFrame.from_dict(data=containment_output_dict_by_MC_trial_for_pandas_data_frame)
 
         specific_bx_structure["Output data frames"]["Mutual containment output by bx point"] = containment_output_by_MC_trial_pandas_data_frame
-        specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+        #specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
         # do non parametric kernel regression (local linear)
         z_vals_to_evaluate = np.linspace(min(bx_points_bx_coords_sys_arr[:,2]), max(bx_points_bx_coords_sys_arr[:,2]), num=num_z_vals_to_evaluate_for_regression_plots)
@@ -2818,7 +3160,7 @@ def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
     all_patients_global_containment_scores_by_tissue_class = pandas.DataFrame()
     for patientUID,pydicom_item in master_structure_ref_dict.items():
 
-        all_biopsies_global_containment_scores_by_tissue_class = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Global tissue class statistics all patients"]
+        all_biopsies_global_containment_scores_by_tissue_class = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Global tissue class statistics"]
     
         all_patients_global_containment_scores_by_tissue_class = pandas.concat([all_patients_global_containment_scores_by_tissue_class,all_biopsies_global_containment_scores_by_tissue_class])
 
@@ -3624,11 +3966,26 @@ def production_plot_guidance_maps_max_planes(patientUID,
                                             pydicom_item,
                                             dil_ref,
                                             oar_ref,
+                                            all_ref_key,
                                             svg_image_scale,
                                             svg_image_width,
                                             svg_image_height,
                                             general_plot_name_string
                                             ):
+    
+
+    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
+
+    specific_prostate_info_df = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref]
+    selected_prostate_info = specific_prostate_info_df.to_dict('records')[0]
+    prostate_structure_index = selected_prostate_info["Index number"]
+    prostate_found_bool = selected_prostate_info["Struct found bool"]
+
+
+    if prostate_found_bool == True:
+        selected_prostate_centroid = pydicom_item[oar_ref][prostate_structure_index]["Structure global centroid"].reshape(3)
+    else: 
+        selected_prostate_centroid = np.array([0,0,0])
     
 
     column_to_index_dict = {'Test location (Prostate centroid origin) (X)': 0, 
@@ -3640,8 +3997,10 @@ def production_plot_guidance_maps_max_planes(patientUID,
         specific_dil_structureID = specific_dil_structure["ROI"]
         sp_dil_guidance_map_max_planes_dataframe = specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"]
         sp_dil_optimal_locations_dataframe = specific_dil_structure["Biopsy optimization: Optimal biopsy location dataframe"]
-        selected_prostate_info_and_centroid_dict = specific_dil_structure["Biopsy optimization: selected relative prostate dict"]
-        selected_prostate_centroid = selected_prostate_info_and_centroid_dict["Centroid vector array"]
+        #selected_prostate_info_and_centroid_dict = specific_dil_structure["Biopsy optimization: selected relative prostate dict"]
+        #selected_prostate_centroid = selected_prostate_info_and_centroid_dict["Centroid vector array"]
+        
+        
 
         list_of_max_plane_types = sp_dil_guidance_map_max_planes_dataframe['Patient plane'].unique().tolist()
         for plane in list_of_max_plane_types:
@@ -3889,6 +4248,123 @@ def production_plot_guidance_maps_max_planes(patientUID,
             html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
             fig.write_html(html_dose_fig_file_path)
 
+
+
+
+
+
+def guidance_map_transducer_angle_sagittal(patientUID,
+                                            patient_sp_output_figures_dir,
+                                            pydicom_item,
+                                            dil_ref,
+                                            oar_ref,
+                                            rectum_ref,
+                                            all_ref_key,
+                                            structs_referenced_dict,
+                                            plot_open3d_structure_set_complete_demonstration_bool,
+                                            biopsy_fire_travel_distances,
+                                            biopsy_needle_compartment_length,
+                                            important_info,
+                                            live_display,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string
+                                            ):
+    
+    
+    contour_plot_list_of_dicts = advanced_guidance_map_creator.create_advanced_guidance_map_contour_plot(patientUID,
+                                                                                    pydicom_item,
+                                                                                    dil_ref,
+                                                                                    all_ref_key,
+                                                                                    oar_ref,
+                                                                                    rectum_ref,
+                                                                                    structs_referenced_dict,
+                                                                                    plot_open3d_structure_set_complete_demonstration_bool,
+                                                                                    biopsy_fire_travel_distances,
+                                                                                    biopsy_needle_compartment_length,
+                                                                                    important_info,
+                                                                                    live_display,
+                                                                                    transducer_plane_grid_spacing = 2)
+    
+    for contour_plot_dict in contour_plot_list_of_dicts:
+        dil_id = contour_plot_dict["DIL ID"]
+        contour_plot = contour_plot_dict["Contour plot"]
+        
+        svg_dose_fig_name = f"{dil_id} - {general_plot_name_string}.svg"
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        contour_plot.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = f"{dil_id} - {general_plot_name_string}.html"
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        contour_plot.write_html(html_dose_fig_file_path)
+
+
+def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
+                                            patient_sp_output_figures_dir,
+                                            pydicom_item,
+                                            dil_ref,
+                                            oar_ref,
+                                            rectum_ref,
+                                            all_ref_key,
+                                            structs_referenced_dict,
+                                            plot_open3d_structure_set_complete_demonstration_bool,
+                                            biopsy_fire_travel_distances,
+                                            biopsy_needle_compartment_length,
+                                            interp_inter_slice_dist,
+                                            interp_intra_slice_dist,
+                                            radius_for_normals_estimation,
+                                            max_nn_for_normals_estimation,
+                                            important_info,
+                                            live_display,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string
+                                            ):
+    
+    
+    trus_plane_sagittal_contour_plot_list_of_dicts, transverse_contour_plot_list_of_dicts = advanced_guidance_map_creator.create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot(patientUID,
+                                                                                    pydicom_item,
+                                                                                    dil_ref,
+                                                                                    all_ref_key,
+                                                                                    oar_ref,
+                                                                                    rectum_ref,
+                                                                                    structs_referenced_dict,
+                                                                                    plot_open3d_structure_set_complete_demonstration_bool,
+                                                                                    biopsy_fire_travel_distances,
+                                                                                    biopsy_needle_compartment_length,
+                                                                                    interp_inter_slice_dist,
+                                                                                    interp_intra_slice_dist,
+                                                                                    radius_for_normals_estimation,
+                                                                                    max_nn_for_normals_estimation,
+                                                                                    important_info,
+                                                                                    live_display,
+                                                                                    transducer_plane_grid_spacing = 2)
+    
+    for contour_plot_dict in trus_plane_sagittal_contour_plot_list_of_dicts:
+        dil_id = contour_plot_dict["DIL ID"]
+        contour_plot = contour_plot_dict["Contour plot"]
+        
+        svg_dose_fig_name = f"{dil_id} - {general_plot_name_string} - TRUS plane MAX sagittal.svg"
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        contour_plot.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = f"{dil_id} - {general_plot_name_string} - TRUS plane MAX sagittal.html"
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        contour_plot.write_html(html_dose_fig_file_path)
+
+    for contour_plot_dict in transverse_contour_plot_list_of_dicts:
+        dil_id = contour_plot_dict["DIL ID"]
+        contour_plot = contour_plot_dict["Contour plot"]
+        
+        svg_dose_fig_name = f"{dil_id} - {general_plot_name_string} - Transverse plane MAX.svg"
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        contour_plot.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = f"{dil_id} - {general_plot_name_string} - Transverse plane MAX.html"
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        contour_plot.write_html(html_dose_fig_file_path)
 
 
 
@@ -4152,6 +4628,124 @@ def production_plot_binom_est_ridge_plot_by_voxel(master_cohort_patient_data_and
         plt.close(g.fig)
 
 
+def production_plot_binom_est_ridge_plot_by_voxel_v2(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_tissue_class_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict,
+                                            cancer_tissue_label):
+
+    plt.ioff()
+    cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+    df = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+
+    # Define the colormap with a more scientific approach
+    cmap = plt.cm.RdYlGn
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    dirac_delta_color = plt.cm.RdYlGn(0.01)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+
+    # density plotting, coloring and annotator function
+    def annotate_and_color(x, color, label, **kwargs):
+        label_float = float(label)
+        specific_group = group[group['Voxel index'] == label_float]
+
+        if not specific_group.empty:
+            mean_prob = np.mean(x)
+            std_prob = np.std(x)
+            nominal_mean = specific_group['Nominal containment'].mean()
+            nominal_std = specific_group['Nominal containment'].std()
+
+            ax = plt.gca()
+
+            if np.std(x) < 1e-6 or len(np.unique(x)) <= 1:
+                # Data lacks variability, skip KDE and use placeholders for max density value
+                if np.all(x == 0):
+                    # If all values are zero, plot a spike at 0
+                    ax.axvline(x=0, color=dirac_delta_color, linestyle='-', lw=2)
+                    max_density_value = 0
+                else:
+                    max_density_value = mean_prob  # If there is no variability then the argmax should just be the mean
+            else:
+                try:
+                    kde = gaussian_kde(x)
+                    x_grid = np.linspace(0, 1, 1000)
+                    max_density_value = x_grid[np.argmax(kde(x_grid))]
+                    max_density_value = f"{max_density_value:.2f}"
+
+                    density_color = cmap(norm(nominal_mean))
+
+                    y_density = kde(x_grid)
+                    
+                    # Find the maximum y-density value and calculate the scaling factor
+                    max_density = np.max(y_density)
+                    scaling_factor = 1.0 / max_density if max_density > 0 else 1
+                    
+                    # Scale the density values
+                    scaled_density = y_density * scaling_factor
+                    
+                    # Plot the scaled density as filled area and overlay with a black ridgeline
+                    ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+                except np.linalg.LinAlgError:
+                    max_density_value = "Error"  # In case of an unexpected error
+            
+        
+
+            voxel_begin = specific_group['Voxel begin (Z)'].iloc[0]
+            voxel_end = specific_group['Voxel end (Z)'].iloc[0]
+
+            
+            annotation_text = f'Tissue segment (mm): ({voxel_begin}, {voxel_end})\nMean: {mean_prob:.2f} | SD: {std_prob:.2f} | argmax(Density): {max_density_value}\nNominal Mean: {nominal_mean:.2f} | Nominal SD: {nominal_std:.2f}'
+            ax.text(0.98, 0.6, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        
+    # Main loop for plotting
+    for (patient_id, bx_index), group in df.groupby(['Patient ID', 'Bx index']):
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+        bx_id = group['Bx structure ROI'].iloc[0]
+
+        # Setup for each subplot (FacetGrid)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g.map(annotate_and_color, "Mean probability (binom est)")
+
+
+        # Adjust layout to make room for the colorbar
+        g.fig.subplots_adjust(right=0.85, left= 0.07)
+        cbar_ax = g.fig.add_axes([0.9, 0.1, 0.05, 0.7])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        # Final adjustments
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Probability", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+        # Title and figure size
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_tissue_class_general_plot_name_string+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+
 
 def production_plot_dose_ridge_plot_by_voxel(master_cohort_patient_data_and_dataframes,
                                              svg_image_width,
@@ -4195,7 +4789,7 @@ def production_plot_dose_ridge_plot_by_voxel(master_cohort_patient_data_and_data
             ax = plt.gca()
             annotation_text = f'Voxel position ({voxel_begin}, {voxel_end})\nMean: {mean:.2f}, SD: {std:.2f}, argmax(Density): {max_density_dose:.2f}, Nominal: {nominal_dose:.2f}'
             ax.text(0.95, 0.5, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
-
+    
         g.map(annotate_stats, "Dose (Gy)")
 
         g.figure.subplots_adjust(hspace=-0.25)
@@ -4227,6 +4821,469 @@ def production_plot_dose_ridge_plot_by_voxel(master_cohort_patient_data_and_data
         plt.close(g.fig)
 
 
+def production_plot_dose_ridge_plot_by_voxel_v2(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_dose_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict
+                                            ):
+    plt.ioff()
+    cohort_all_dose_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"]
+    df = cohort_all_dose_data_by_trial_and_pt 
+
+
+    # Define the colormap with a more scientific approach
+    cmap = plt.cm.turbo
+    norm = Normalize(vmin=13.5, vmax=30)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+    
+
+    # Define functions outside the loop
+    def annotate_and_color(x, color, label, **kwargs):
+        label_float = float(label)
+        voxel_row = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)].iloc[0]
+        nominal_dose = voxel_row['Dose (Gy)'] if not voxel_row.empty else 'N/A'
+
+        mean = np.mean(x)
+        std = np.std(x)
+        kde = gaussian_kde(x)
+        x_grid = np.linspace(x.min(), x.max(), 1000)
+        max_density_dose = x_grid[np.argmax(kde(x_grid))]
+        voxel_begin = voxel_row['Voxel begin (Z)']
+        voxel_end = voxel_row['Voxel end (Z)']
+        ax = plt.gca()
+        annotation_text = f'Tissue segment (mm): ({voxel_begin}, {voxel_end})\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
+        ax.text(0.98, 0.7, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        rounded_max_dose = np.clip(round(max_density_dose), 0, 50)
+        density_color = cmap(norm(rounded_max_dose))
+
+        y_density = kde(x_grid)
+        
+        # Find the maximum y-density value and calculate the scaling factor
+        max_density = np.max(y_density)
+        scaling_factor = 1.0 / max_density if max_density > 0 else 1
+        
+        # Scale the density values
+        scaled_density = y_density * scaling_factor
+        
+        # Plot the scaled density as filled area and overlay with a black ridgeline
+        ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+        #sns.kdeplot(x, bw_adjust=0.5, clip_on=False, fill=True, alpha=1, linewidth=1.5, color=density_color, ax=ax)  # For fill color based on logic
+        #sns.kdeplot(x, bw_adjust=0.5, clip_on=False, color="black", lw=2, ax=ax)  # For black ridgeline
+
+    # Main loop for plotting
+    for (patient_id, bx_index), group in df.groupby(['Patient ID', 'Bx index']):
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+        bx_id = group['Bx ID'].iloc[0]
+
+        # Setup for each subplot (FacetGrid)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g.map(annotate_and_color, "Dose (Gy)")
+
+        # Adjust layout to make room for the colorbar
+        g.fig.subplots_adjust(right=0.85, left= 0.07)
+        cbar_ax = g.fig.add_axes([0.9, 0.1, 0.05, 0.7])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        # Final adjustments
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Dose (Gy)", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+        # Title and figure size
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_general_plot_name_string+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+
+def production_plot_dose_ridge_plot_by_voxel_v3(multi_or_sp_patient_dose_df,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_dose_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict,
+                                            all_ref
+                                            ):
+    plt.ioff()
+    #sp_patient_all_dose_data_by_trial_and_pt = pydicom_item[all_ref]["Dosimetry - All points and trials"]
+    df = multi_or_sp_patient_dose_df
+
+    # Define the colormap with a more scientific approach
+    cmap = plt.cm.turbo
+    norm = Normalize(vmin=13.5, vmax=30)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+    
+
+    # Define functions outside the loop
+    def annotate_and_color(x, color, label, **kwargs):
+        label_float = float(label)
+        voxel_row = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)].iloc[0]
+        nominal_dose = voxel_row['Dose (Gy)'] if not voxel_row.empty else 'N/A'
+
+        mean = np.mean(x)
+        std = np.std(x)
+        kde = gaussian_kde(x)
+        x_grid = np.linspace(x.min(), x.max(), 1000)
+        max_density_dose = x_grid[np.argmax(kde(x_grid))]
+        voxel_begin = voxel_row['Voxel begin (Z)']
+        voxel_end = voxel_row['Voxel end (Z)']
+        ax = plt.gca()
+        annotation_text = f'Tissue segment (mm): ({voxel_begin}, {voxel_end})\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
+        ax.text(0.98, 0.7, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        rounded_max_dose = np.clip(round(max_density_dose), 0, 50)
+        density_color = cmap(norm(rounded_max_dose))
+
+        y_density = kde(x_grid)
+        
+        # Find the maximum y-density value and calculate the scaling factor
+        max_density = np.max(y_density)
+        scaling_factor = 1.0 / max_density if max_density > 0 else 1
+        
+        # Scale the density values
+        scaled_density = y_density * scaling_factor
+        
+        # Plot the scaled density as filled area and overlay with a black ridgeline
+        ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+        #sns.kdeplot(x, bw_adjust=0.5, clip_on=False, fill=True, alpha=1, linewidth=1.5, color=density_color, ax=ax)  # For fill color based on logic
+        #sns.kdeplot(x, bw_adjust=0.5, clip_on=False, color="black", lw=2, ax=ax)  # For black ridgeline
+
+    # Main loop for plotting
+    for (patient_id, bx_index), group in df.groupby(['Patient ID', 'Bx index']):
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+        bx_id = group['Bx ID'].iloc[0]
+
+        # Setup for each subplot (FacetGrid)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g.map(annotate_and_color, "Dose (Gy)")
+
+        # Adjust layout to make room for the colorbar
+        g.fig.subplots_adjust(right=0.85, left= 0.07)
+        cbar_ax = g.fig.add_axes([0.9, 0.1, 0.05, 0.7])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        # Final adjustments
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Dose (Gy)", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+        # Title and figure size
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_general_plot_name_string+' - '+str(patient_id)+' - '+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+
+def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring(master_cohort_patient_data_and_dataframes,
+                                             svg_image_width,
+                                             svg_image_height,
+                                             dpi,
+                                             ridge_line_dose_and_binom_general_plot_name_string,
+                                            patient_sp_output_figures_dir_dict,
+                                            cancer_tissue_label
+                                            ):
+    plt.ioff()
+    cohort_all_dose_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"]
+    df_dose = cohort_all_dose_data_by_trial_and_pt 
+
+    cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+    df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+
+    # Define the colormap with a more scientific approach
+    cmap = plt.cm.RdYlGn
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+
+    # Define functions outside the loop
+    def annotate_and_color(x, color, label, **kwargs):
+        label_float = float(label)
+        voxel_row = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)].iloc[0]
+        nominal_dose = voxel_row['Dose (Gy)'] if not voxel_row.empty else 'N/A'
+
+        mean = np.mean(x)
+        std = np.std(x)
+        kde = gaussian_kde(x)
+        x_grid = np.linspace(x.min(), x.max(), 1000)
+        max_density_dose = x_grid[np.argmax(kde(x_grid))]
+        voxel_begin = voxel_row['Voxel begin (Z)']
+        voxel_end = voxel_row['Voxel end (Z)']
+        ax = plt.gca()
+        annotation_text = f'Tissue segment (mm): ({voxel_begin}, {voxel_end})\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
+        ax.text(0.98, 0.7, annotation_text, horizontalalignment='right', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        # find the kde density color based on the tissue class dataframe
+        tissue_voxel = df_tissue[(df_tissue['Voxel index'] == label_float) & 
+                                    (df_tissue['Patient ID'] == patient_id) & 
+                                    (df_tissue['Bx index'] == bx_index)]
+        binom_mean = tissue_voxel["Mean probability (binom est)"].mean()
+
+        density_color = cmap(norm(binom_mean))
+
+        # Rescale and plot the densities
+        y_density = kde(x_grid)
+        
+        # Find the maximum y-density value and calculate the scaling factor
+        max_density = np.max(y_density)
+        scaling_factor = 1.0 / max_density if max_density > 0 else 1
+        
+        # Scale the density values
+        scaled_density = y_density * scaling_factor
+        
+        # Plot the scaled density as filled area and overlay with a black ridgeline
+        ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+
+    # Main loop for plotting
+    for (patient_id, bx_index), group in df_dose.groupby(['Patient ID', 'Bx index']):
+        bx_id = group['Bx ID'].iloc[0]
+
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+        # Setup for each subplot (FacetGrid)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g.map(annotate_and_color, "Dose (Gy)", df_tissue = df_tissue, patient_id = patient_id, bx_index = bx_index)
+
+        # Adjust layout to make room for the colorbar
+        g.fig.subplots_adjust(right=0.85, left= 0.07)
+        cbar_ax = g.fig.add_axes([0.9, 0.1, 0.05, 0.7])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        # Final adjustments
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Dose (Gy)", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+        # Title and figure size
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_and_binom_general_plot_name_string+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_cohort(sp_patient_dose_df,
+                                                                                        sp_patient_binom_df,
+                                                                                        svg_image_width,
+                                                                                        svg_image_height,
+                                                                                        dpi,
+                                                                                        ridge_line_dose_and_binom_general_plot_name_string,
+                                                                                        patient_sp_output_figures_dir_dict,
+                                                                                        cancer_tissue_label
+                                                                                        ):
+    plt.ioff()
+    #cohort_all_dose_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"]
+    df_dose = sp_patient_dose_df
+
+    #cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+    #df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Structure ROI"] == cancer_tissue_label]
+
+    # Define the colormap with a more scientific approach
+    #cmap = plt.cm.RdYlGn
+    # Invert the colormap
+    #cmap = cmap.reversed()
+
+    # Define colors in the order you want: green, blue, red
+    colors = ["green", "blue", "black"]  # Hex codes or RGB tuples can also be used
+
+    # Create the colormap
+    cmap = LinearSegmentedColormap.from_list("GreenBlueRed", colors, N=10)  # N is the number of color bins
+
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+
+    # Define functions outside the loop
+    def annotate_and_color(x, color, label, **kwargs):
+        label_float = float(label)
+        voxel_row = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)].iloc[0]
+        voxel_df = group[(group['Voxel index'] == label_float) & (group['MC trial num'] == 0)]
+        nominal_dose = voxel_df['Dose (Gy)'].mean() if not voxel_row.empty else 'N/A'
+
+        mean = np.mean(x)
+        std = np.std(x)
+        kde = gaussian_kde(x)
+        x_grid = np.linspace(x.min(), x.max(), 1000)
+        max_density_dose = x_grid[np.argmax(kde(x_grid))]
+        voxel_begin = voxel_row['Voxel begin (Z)']
+        voxel_end = voxel_row['Voxel end (Z)']
+
+        # find the kde density color based on the tissue class dataframe
+        tissue_voxel = df_tissue[(df_tissue['Voxel index'] == label_float) & 
+                                    (df_tissue['Patient ID'] == patient_id) & 
+                                    (df_tissue['Bx index'] == bx_index)]
+        binom_mean = tissue_voxel["Mean probability (binom est)"].mean()
+
+
+        ax = plt.gca()
+        annotation_text = f'Tissue segment (mm): ({voxel_begin:.1f}, {voxel_end:.1f}) | Tumor tissue score: {binom_mean:.2f}\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
+        ax.text(1.03, 0.7, annotation_text, horizontalalignment='left', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        # Plot vertical lines
+        ax.axvline(x=max_density_dose, color='magenta', linestyle='-', label='Max Density (Gy)')
+        ax.axvline(x=mean, color='orange', linestyle='-', label='Mean (Gy)')
+        ax.axvline(x=nominal_dose, color='red', linestyle='-', label='Nominal (Gy)')
+
+        density_color = cmap(norm(binom_mean))
+
+        # Rescale and plot the densities
+        y_density = kde(x_grid)
+        
+        # Find the maximum y-density value and calculate the scaling factor
+        max_density = np.max(y_density)
+        scaling_factor = 1.0 / max_density if max_density > 0 else 1
+        
+        # Scale the density values
+        scaled_density = y_density * scaling_factor
+        
+        # Plot the scaled density as filled area and overlay with a black ridgeline
+        ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+
+    # Calculate maximum x-axis limit from 95th quantile
+    max_95th_quantile = df_dose.groupby('Voxel index')['Dose (Gy)'].quantile(0.95).max()
+
+    # Calculate maximum x-axis limit from 95th quantile
+    min_5th_quantile = df_dose.groupby('Voxel index')['Dose (Gy)'].quantile(0.05).min()
+
+    # Define legend handles
+    legend_handles = [
+        Line2D([0], [0], color='magenta', lw=2, linestyle='-', label='Max Density (Gy)'),
+        Line2D([0], [0], color='orange', lw=2, linestyle='-', label='Mean (Gy)'),
+        Line2D([0], [0], color='red', lw=2, linestyle='-', label='Nominal (Gy)')
+    ]
+
+    # Main loop for plotting
+    for (patient_id, bx_index), group in df_dose.groupby(['Patient ID', 'Bx index']):
+        #bx_id = group['Bx ID'].iloc[0]
+        bx_id = group.at[0,'Bx ID']
+
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+        # Setup for each subplot (FacetGrid)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g.map(annotate_and_color, "Dose (Gy)", df_tissue = df_tissue, patient_id = patient_id, bx_index = bx_index)
+
+        # Set the x-axis limits uniformly
+        g.set(xlim=(min_5th_quantile, max_95th_quantile))
+
+
+        # Adjust layout to make room for the colorbar and text annotations
+        g.fig.subplots_adjust(right=0.53, left= 0.07, top = 0.95, bottom = 0.05)
+        cbar_ax = g.fig.add_axes([0.9, 0.2, 0.03, 0.6])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        # Final adjustments
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Dose (Gy)", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+        g.fig.text(0.88, 0.5, 'Tumor tissue score', va='center', rotation='vertical', fontsize=12)
+
+        # Adjust subplot widths to 75% of figure
+        for ax in g.axes.flat:
+            #pos = ax.get_position()
+            #ax.set_position([pos.x0, pos.y0, pos.width * 0.5, pos.height])
+            
+            # Setting major and minor ticks
+            #ax.xaxis.set_major_locator(ticker.AutoLocator())  # Auto-set major ticks
+            #ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(2))  # Set two minor ticks between major ticks
+
+            # Optional: Customize tick appearance
+            #ax.tick_params(axis='x', which='major', length=7, width=2, color='black', direction='inout')
+            #ax.tick_params(axis='x', which='minor', length=4, color='gray')
+
+            # Enable vertical grid for major and minor ticks
+            ax.grid(True, which='both', axis='x', linestyle='-', color='gray', linewidth=0.5)
+            ax.set_axisbelow(True)  # Ensures grid is behind plot elements
+
+            #ax.xaxis.set_tick_params(which='both', labelbottom=True)
+        #plt.grid(True)
+
+        # Create the legend
+        g.fig.legend(handles=legend_handles, loc='upper center', bbox_to_anchor=(0.9, 1), ncol=1, frameon=True, facecolor='white')
+
+
+        # Title and figure size
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        dpi = 100  # DPI setting for saving the image
+
+        # Calculate the figure size in inches for the desired dimensions in pixels
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_and_binom_general_plot_name_string+' - '+str(patient_id)+' - '+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
 
 
 ### For the transverse plane accuracy plots cohort
@@ -4250,9 +5307,27 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit(cohort_n
 
     plt.ioff()
     df = cohort_nearest_dils_dataframe
-    df_filtered = df[df['Simulated bool'] == False]
+    df_filtered = df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)]
+    
+    """
+    # Combine position columns into a single categorical column
+    df_filtered['Position Category'] = df_filtered.apply(
+        lambda row: f"{row['Bx position in prostate LR']} {row['Bx position in prostate AP']} {row['Bx position in prostate SI']}",
+        axis=1
+    )
+
+    # Map position categories to colors
+    unique_categories = df_filtered['Position Category'].unique()
+    color_map = {category: plt.cm.tab20(i / len(unique_categories)) for i, category in enumerate(unique_categories)}
+
+    # Assign colors based on the mapping
+    df_filtered['Color'] = df_filtered['Position Category'].map(color_map)
+    """
+
+    # Extract values and colors
     x = df_filtered['Bx (X, DIL centroid frame)'].values
     y = df_filtered['Bx (Y, DIL centroid frame)'].values
+    #colors = df_filtered['Color'].values
 
     # Calculate means and standard deviations
     mean_x, std_x = np.mean(x), np.std(x)
@@ -4269,7 +5344,7 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit(cohort_n
     ax_yDist = fig.add_subplot(gs[1:4, 3], sharey=ax_main)
 
     # Main scatter plot
-    ax_main.scatter(x, y, alpha=0.5)
+    ax_main.scatter(x, y, color=colors)
     draw_ellipse(mean, cov, ax=ax_main, alpha=0.2, color='red', edgecolor='black')
     ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
     ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
@@ -4302,6 +5377,128 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit(cohort_n
     svg_dose_fig_name = general_plot_name_string+'.svg'
     svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
     plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
+
+
+def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring(cohort_nearest_dils_dataframe,
+                                                                                                     cohort_global_tissue_class_dataframe,
+                                         general_plot_name_string,
+                                        cohort_output_figures_dir):
+
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
+    # Rename columns to match df_tissue for a successful merge
+    df_filtered.rename(columns={
+        'Relative DIL ID': 'Relative structure ROI',
+        'Relative struct type': 'Relative structure type',
+        'Relative DIL index': 'Relative structure index'
+    }, inplace=True)
+
+    df_tissue = cohort_global_tissue_class_dataframe
+    
+    # Merge df_filtered with df_tissue to get the 'Global mean binom est' for coloring
+    df_filtered = df_filtered.merge(
+        df_tissue[['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type', 'Global mean binom est']],
+        on=['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type'],
+        how='left'
+    )
+
+    # Define the color mapping based on 'Global mean binom est'
+    colors = ["green", "blue", "black"]  # Adjust colors as needed
+    cmap = LinearSegmentedColormap.from_list("CustomCmap", colors, N=10)  # More bins for smoother color transitions
+
+    # Normalize the 'Global mean binom est' values for color mapping
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Apply color mapping
+    df_filtered['Color'] = df_filtered['Global mean binom est'].apply(lambda x: sm.to_rgba(x))
+
+
+
+    # Extract values and colors
+    x = df_filtered['Bx (X, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+    colors = df_filtered['Color'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(10, 10))
+    gs = fig.add_gridspec(5, 5)
+    ax_main = fig.add_subplot(gs[1:4, 0:3])
+    ax_xDist = fig.add_subplot(gs[0, 0:3], sharex=ax_main)
+    ax_yDist = fig.add_subplot(gs[1:4, 3], sharey=ax_main)
+    cbar_ax = fig.add_axes([0.8, 0.3, 0.05, 0.4])  # Adjust color bar position
+
+    # Main scatter plot
+    ax_main.scatter(x, y, c=colors, edgecolor='none', s=100)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.1, color='red')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Adding color bar
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+    cbar.set_label('DIL specific tumor tissue score')
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'k+', markersize=10, markeredgewidth=2)
+    #plt.rcParams['text.usetex'] = True  # Enable LaTeX rendering
+
+    # Annotations for mean, std, and RMSE
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+    ax_xDist.text(0, 1.15, r'$\mu$: {:.2f} $\sigma$: {:.2f} (mm)'.format(mean_x, std_x),
+              transform=ax_xDist.transAxes, horizontalalignment='left', verticalalignment='top',
+              bbox=dict(facecolor='white', alpha=0.5))
+    ax_yDist.text(0, 1.05, r'$\mu$: {:.2f} $\sigma$: {:.2f} (mm)'.format(mean_y, std_y),
+              transform=ax_yDist.transAxes, horizontalalignment='left', verticalalignment='top',
+              bbox=dict(facecolor='white', alpha=0.5))
+    #ax_yDist.text(0.7, 0.95, r'Mean: {mean_y:.2f}\nStd: {std_y:.2f}', transform=ax_yDist.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5), rotation=-90)
+
+    ax_main.set_xlabel('(L/R) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Transverse plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    # Adding point annotations and legend
+    unique_patient_ids = df_filtered['Patient ID'].unique()
+    patient_id_to_number = {pid: i + 1 for i, pid in enumerate(unique_patient_ids)}
+
+    for i, row in df_filtered.iterrows():
+        ax_main.annotate(patient_id_to_number[row['Patient ID']], (row['Bx (X, DIL centroid frame)'], row['Bx (Y, DIL centroid frame)']), fontsize=9, color='red')
+
+    legend_labels = [f"{num}: {pid}" for pid, num in patient_id_to_number.items()]
+    legend_text = "\n".join(legend_labels)
+    ax_main.text(1.05, 0.5, legend_text, transform=ax_main.transAxes, verticalalignment='center', bbox=dict(facecolor='white', alpha=0.5))
+
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
 
 
 def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit(cohort_nearest_dils_dataframe,
@@ -4364,6 +5561,110 @@ def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit(cohort_nea
 
 
 
+def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring(cohort_nearest_dils_dataframe,
+                                                                                                    cohort_global_tissue_class_dataframe,
+                                                                                                    general_plot_name_string,
+                                                                                                    cohort_output_figures_dir):
+
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
+    # Rename columns to match df_tissue for a successful merge
+    df_filtered.rename(columns={
+        'Relative DIL ID': 'Relative structure ROI',
+        'Relative struct type': 'Relative structure type',
+        'Relative DIL index': 'Relative structure index'
+    }, inplace=True)
+
+    df_tissue = cohort_global_tissue_class_dataframe
+    
+    # Merge df_filtered with df_tissue to get the 'Global mean binom est' for coloring
+    df_filtered = df_filtered.merge(
+        df_tissue[['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type', 'Global mean binom est']],
+        on=['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type'],
+        how='left'
+    )
+
+    # Define the color mapping based on 'Global mean binom est'
+    colors = ["green", "blue", "black"]  # Adjust colors as needed
+    cmap = LinearSegmentedColormap.from_list("CustomCmap", colors, N=10)  # More bins for smoother color transitions
+
+    # Normalize the 'Global mean binom est' values for color mapping
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Apply color mapping
+    df_filtered['Color'] = df_filtered['Global mean binom est'].apply(lambda x: sm.to_rgba(x))
+
+
+
+    # Extract values and colors
+    x = df_filtered['Bx (Z, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+    colors = df_filtered['Color'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(10, 10))
+    gs = fig.add_gridspec(5, 5)
+    ax_main = fig.add_subplot(gs[1:4, 0:3])
+    ax_xDist = fig.add_subplot(gs[0, 0:3], sharex=ax_main)
+    ax_yDist = fig.add_subplot(gs[1:4, 3], sharey=ax_main)
+    cbar_ax = fig.add_axes([0.8, 0.3, 0.05, 0.4])  # Adjust color bar position
+
+    # Main scatter plot
+    ax_main.scatter(x, y, c=colors, edgecolor='none', s=100)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.1, color='red')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Adding color bar
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+    cbar.set_label('DIL specific tumor tissue score')
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'k+', markersize=10, markeredgewidth=2)
+    #plt.rcParams['text.usetex'] = True  # Enable LaTeX rendering
+
+    # Annotations for mean, std, and RMSE
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+    ax_xDist.text(0, 1.15, r'$\mu$: {:.2f} $\sigma$: {:.2f} (mm)'.format(mean_x, std_x),
+              transform=ax_xDist.transAxes, horizontalalignment='left', verticalalignment='top',
+              bbox=dict(facecolor='white', alpha=0.5))
+    ax_yDist.text(0, 1.05, r'$\mu$: {:.2f} $\sigma$: {:.2f} (mm)'.format(mean_y, std_y),
+              transform=ax_yDist.transAxes, horizontalalignment='left', verticalalignment='top',
+              bbox=dict(facecolor='white', alpha=0.5))
+    #ax_yDist.text(0.7, 0.95, r'Mean: {mean_y:.2f}\nStd: {std_y:.2f}', transform=ax_yDist.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5), rotation=-90)
+
+    ax_main.set_xlabel('(S/I) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Sagittal plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
 
 
 
@@ -4373,7 +5674,9 @@ def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame(co
     plt.ioff()
     df = cohort_nearest_dils_dataframe
     # Filter out rows where 'Simulated bool' is not False
-    df_filtered = df[df['Simulated bool'] == False]
+    #df_filtered = df[df['Simulated bool'] == False]
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
     
     # Create a copy of df_filtered to rename without altering the original DataFrame
     df_renamed = df_filtered.copy()

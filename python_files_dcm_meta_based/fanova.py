@@ -12,6 +12,8 @@ import cudf
 import fanova_mathfuncs
 import scipy
 import itertools
+import misc_tools
+import pandas
 
 def fanova_analysis(
             parallel_pool, 
@@ -40,7 +42,10 @@ def fanova_analysis(
             perform_dose_fanova,
             perform_containment_fanova,
             structure_miss_probability_roi,
-            cancer_tissue_label
+            cancer_tissue_label,
+            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+            cupy_array_upper_limit_NxN_size_input,
+            plot_cupy_containment_distribution_fanova_results
             ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -262,7 +267,10 @@ def fanova_analysis(
                     
                     #structure_shifted_bx_data_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: bx and structure shifted dict"] 
                     
-                    relative_structure_containment_results_data_frames_list = []
+                    biopsy_structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure) 
+                    
+                    containment_info_grand_all_structures_pandas_dataframe = pandas.DataFrame()
+                    #relative_structure_containment_results_data_frames_list = []
                     for matrix_key,shifted_bx_data_3darr_cp in shifted_bx_data_dict.items():
                         
                         shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_cp)
@@ -293,9 +301,17 @@ def fanova_analysis(
                                 #combined_nominal_and_shifted_bx_pts_2d_arr_XYZ = np.vstack((unshifted_bx_sampled_pts_arr, shifted_bx_data_stacked_2darr_from_all_trials_3darray))
                                 shifted_bx_pts_2d_arr_XY = shifted_bx_pts_2d_arr_XYZ[:,0:2]
                                 shifted_bx_pts_2d_arr_Z = shifted_bx_pts_2d_arr_XYZ[:,2]
-                        
-                                shifted_nearest_interpolated_zslice_index_array, shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,shifted_bx_pts_2d_arr_Z)
-                        
+                                
+
+                                ## VERY SLOW
+                                #shifted_nearest_interpolated_zslice_index_array, shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,shifted_bx_pts_2d_arr_Z)
+                                
+                                # THIS IS QUICKER!
+                                shifted_nearest_interpolated_zslice_index_array, shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
+                                                                                                                                                            shifted_bx_pts_2d_arr_Z,
+                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                            structures_progress
+                                                                                                                                                            )
                                 shifted_bx_data_XY_interleaved_1darr = shifted_bx_pts_2d_arr_XY.flatten()
                                 shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(shifted_bx_data_XY_interleaved_1darr)
 
@@ -307,26 +323,51 @@ def fanova_analysis(
                                                 specific_non_bx_structure_index
                                                 ]
                                 
+                                # SLOW
+                                """
                                 containment_info_grand_cudf_dataframe = point_containment_tools.cuspatial_points_contained_FANOVA(non_bx_struct_zslices_polygons_cuspatial_geoseries,
-                                shifted_bx_data_XY_cuspatial_geoseries_points, 
-                                shifted_bx_pts_2d_arr_XYZ, 
-                                shifted_nearest_interpolated_zslice_index_array,
-                                shifted_nearest_interpolated_zslice_vals_array,
-                                non_bx_struct_max_zval,
-                                non_bx_struct_min_zval, 
-                                num_sample_pts_in_bx,
-                                num_FANOVA_containment_simulations_input,
-                                structure_info,
-                                matrix_key
-                                )
+                                    shifted_bx_data_XY_cuspatial_geoseries_points, 
+                                    shifted_bx_pts_2d_arr_XYZ, 
+                                    shifted_nearest_interpolated_zslice_index_array,
+                                    shifted_nearest_interpolated_zslice_vals_array,
+                                    non_bx_struct_max_zval,
+                                    non_bx_struct_min_zval, 
+                                    num_sample_pts_in_bx,
+                                    num_FANOVA_containment_simulations_input,
+                                    structure_info,
+                                    matrix_key
+                                    )
+                                """
+                                # FAST
+                                containment_info_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_mc_sim_cupy_pandas(non_bx_struct_zslices_polygons_cuspatial_geoseries,
+                                    shifted_bx_data_XY_cuspatial_geoseries_points, 
+                                    shifted_bx_pts_2d_arr_XYZ, 
+                                    shifted_nearest_interpolated_zslice_index_array,
+                                    shifted_nearest_interpolated_zslice_vals_array,
+                                    non_bx_struct_max_zval,
+                                    non_bx_struct_min_zval,  
+                                    num_sample_pts_in_bx,
+                                    num_FANOVA_containment_simulations_input,
+                                    patientUID,
+                                    biopsy_structure_info,
+                                    structure_info,
+                                    layout_groups,
+                                    live_display,
+                                    biopsies_progress,
+                                    indeterminate_progress_sub,
+                                    upper_limit_size_input = cupy_array_upper_limit_NxN_size_input,
+                                    matrix_key = matrix_key
+                                    )
 
-                                relative_structure_containment_results_data_frames_list.append(containment_info_grand_cudf_dataframe)
+                                containment_info_grand_all_structures_pandas_dataframe = pandas.concat([containment_info_grand_all_structures_pandas_dataframe,containment_info_grand_pandas_dataframe], ignore_index=True)
+
+                                #relative_structure_containment_results_data_frames_list.append(containment_info_grand_cudf_dataframe)
 
                                 if (show_fanova_containment_demonstration_plots == True) & (non_bx_struct_type == 'DIL ref'):
                                     for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr_num_FANOVA_containment_sims_cutoff):
-                                        bx_test_pts_color_R = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
-                                        bx_test_pts_color_G = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
-                                        bx_test_pts_color_B = containment_info_grand_cudf_dataframe[containment_info_grand_cudf_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
+                                        bx_test_pts_color_R = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
+                                        bx_test_pts_color_G = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
+                                        bx_test_pts_color_B = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
                                         bx_test_pts_color_arr = np.empty([num_sample_pts_in_bx,3])
                                         bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
                                         bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
@@ -336,15 +377,49 @@ def fanova_analysis(
                                         #plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
                                         #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
                                         #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
-                        
+
+                                ### PLOT ALL RESULTS AGAINST SINGLE STRUCTURE
+                                if plot_cupy_containment_distribution_fanova_results == True:
+
+                                    # Extract and rebuild pts color data
+                                    bx_test_pts_color_R = containment_info_grand_pandas_dataframe["Pt clr R"].to_numpy()
+                                    bx_test_pts_color_G = containment_info_grand_pandas_dataframe["Pt clr G"].to_numpy()
+                                    bx_test_pts_color_B = containment_info_grand_pandas_dataframe["Pt clr B"].to_numpy()
+                                    bx_test_pts_color_arr = np.empty([len(containment_info_grand_pandas_dataframe.index),3])
+                                    bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
+                                    bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
+                                    bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
+
+                                    # Extract and rebuild pts vector data
+                                    bx_test_pts_X = containment_info_grand_pandas_dataframe["Test pt X"].to_numpy()
+                                    bx_test_pts_Y = containment_info_grand_pandas_dataframe["Test pt Y"].to_numpy()
+                                    bx_test_pts_Z = containment_info_grand_pandas_dataframe["Test pt Z"].to_numpy()
+                                    bx_test_pts_arr = np.empty([len(containment_info_grand_pandas_dataframe.index),3])
+                                    bx_test_pts_arr[:,0] = bx_test_pts_X
+                                    bx_test_pts_arr[:,1] = bx_test_pts_Y
+                                    bx_test_pts_arr[:,2] = bx_test_pts_Z
+
+                                    # Create point cloud
+                                    colored_bx_test_pts_pcd = point_containment_tools.create_point_cloud_with_colors_array(bx_test_pts_arr, bx_test_pts_color_arr)
+
+                                    # Extract relative structure point cloud
+                                    non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                                    non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                                    non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+
+                                    stopwatch.stop()
+                                    plotting_funcs.plot_geometries(colored_bx_test_pts_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                                    stopwatch.start()
+
                         structures_progress.update(testing_each_fanova_matrix_containment_task, advance=1)
                     
                     
                     # concatenate containment results into a single dataframe
-                    containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
-                    del relative_structure_containment_results_data_frames_list
+                    #containment_info_grand_all_structures_cudf_dataframe = cudf.concat(relative_structure_containment_results_data_frames_list, ignore_index=True)
+                    #del relative_structure_containment_results_data_frames_list
+                    
                     # Update the master dictionary
-                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sim containment raw results dataframe"] = containment_info_grand_all_structures_cudf_dataframe.to_pandas()
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: sim containment raw results dataframe"] = containment_info_grand_all_structures_pandas_dataframe
 
                     structures_progress.remove_task(testing_each_fanova_matrix_containment_task)
                     
@@ -367,7 +442,8 @@ def fanova_analysis(
                     patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (cuspatial) [{}]...".format(patientUID))
                     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                         shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
-                        containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
+                        #containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
+                        containment_info_grand_all_structures_pandas_dataframe = specific_bx_structure["FANOVA: sim containment raw results dataframe"]
                         for relative_structure_info in structure_organized_for_bx_data_blank_dict.keys():
                             structure_roi = relative_structure_info[0]
                             non_bx_structure_type = relative_structure_info[1]
@@ -379,9 +455,9 @@ def fanova_analysis(
                             non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
                             
                             for matrix_key in shifted_bx_data_dict.keys():
-                                grand_cudf_dataframe = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
-                                                                                & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
-                                                                                & (containment_info_grand_all_structures_cudf_dataframe["Matrix key"] == matrix_key)
+                                grand_cudf_dataframe = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Relative structure index"] == structure_index)
+                                                                                & (containment_info_grand_all_structures_pandas_dataframe["Matrix key"] == matrix_key)
                                                                                 ].reset_index()
 
                                 # Extract and rebuild pts color data
@@ -440,7 +516,8 @@ def fanova_analysis(
                     num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                     specific_bx_structure_roi = specific_bx_structure["ROI"]
                     biopsies_progress.update(compiling_results_biopsy_containment_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
-                    containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
+                    #containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(specific_bx_structure["FANOVA: sim containment raw results dataframe"])
+                    containment_info_grand_all_structures_pandas_dataframe = specific_bx_structure["FANOVA: sim containment raw results dataframe"]
                     shifted_bx_data_dict = specific_bx_structure["FANOVA: bx only shifted 3darr dict"]
                     
                     
@@ -463,9 +540,9 @@ def fanova_analysis(
                         for matrix_key in shifted_bx_data_dict.keys():
                             matrix_specific_results_dict = copy.deepcopy(matrix_specific_results_dict_empty)
                             # Shifted, note that we now want to count the total success within a single trial, and then divide by the number of sampled biopsy points to obtain the binomial estimator
-                            bx_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Relative structure ROI"] == structure_roi)  
-                                                                            & (containment_info_grand_all_structures_cudf_dataframe["Relative structure index"] == structure_index)
-                                                                            & (containment_info_grand_all_structures_cudf_dataframe["Matrix key"] == matrix_key)
+                            bx_containment_counter_by_org_pt_ind_list = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"] == structure_roi)  
+                                                                            & (containment_info_grand_all_structures_pandas_dataframe["Relative structure index"] == structure_index)
+                                                                            & (containment_info_grand_all_structures_pandas_dataframe["Matrix key"] == matrix_key)
                                                                             ].reset_index()[
                                                                                 ["Pt contained bool","Trial num"]
                                                                                 ].groupby(["Trial num"]).sum().sort_index().to_numpy().T.flatten(order = 'C').tolist()

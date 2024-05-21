@@ -3,6 +3,7 @@ import math
 from statsmodels.nonparametric import kernel_regression
 import statsmodels.api as sm
 import scipy.stats as stats
+from scipy.stats import gaussian_kde
 
 
 def binomial_likelihood(p, num_trials, num_successes):
@@ -331,3 +332,17 @@ def confidence_intervals_95_from_calculated_SE(values_arr, se_arr):
 
 def add_in_quadrature(array):
     return np.sqrt((array**2).sum())
+
+
+
+
+def find_max_kde_dose(dose_series, num_eval_pts = 1000):
+    if len(dose_series) > 1:  # KDE requires more than one data point
+        kde = gaussian_kde(dose_series)
+        xgrid = np.linspace(dose_series.min(), dose_series.max(), num_eval_pts)
+        max_density_dose = xgrid[np.argmax(kde(xgrid))]
+
+    else:
+        max_density_dose = dose_series.at[dose_series.index[0]] if not dose_series.empty else np.nan  # Handle cases with one or zero points
+    
+    return max_density_dose

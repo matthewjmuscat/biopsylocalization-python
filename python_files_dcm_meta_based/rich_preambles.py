@@ -181,19 +181,85 @@ class Header:
 
 class info_output:
     """display important information"""
-    def __init__(self):
-        self.text_important_Text = Text()
+    def __init__(self, max_lines=20):
+        self.text_lines = []  # Store lines as a list of strings
+        #self.text_important_Text = Text()
         self.line_num = 1
+        self.max_lines = max_lines
 
+    """
     def __rich__(self) -> Panel:
         return Panel(self.text_important_Text, title="Important information", title_align='left')
+    """
 
+    def __rich__(self) -> Panel:
+        combined_text = Text()  # Combine all Text objects into one for display
+        for text_obj in self.text_lines:
+            combined_text.append(text_obj)
+        return Panel(combined_text, title="Important information", title_align='left')
+
+    """
     def add_text_line(self,text_str, live_display_obj):
         self.text_important_Text.append("[{}]".format(self.line_num), style = 'cyan')
         self.text_important_Text.append("[{}]".format(datetime.now().strftime("%H:%M:%S")), style = 'magenta')
         self.text_important_Text.append("> "+text_str+"\n")
         self.line_num = self.line_num + 1
         live_display_obj.refresh() # refresh the live display everytime you add a text line
+    """
+    """
+    def add_text_line(self, text_str, live_display_obj):
+        if len(self.text_important_Text.lines) >= self.max_lines:
+            # Remove the oldest line (first three segments: line number, timestamp, text)
+            self.text_important_Text.plain = "\n".join(self.text_important_Text.plain.split("\n")[3:])
+        self.text_important_Text.append("[{}] ".format(self.line_num), style='cyan')
+        self.text_important_Text.append("[{}] ".format(datetime.now().strftime("%H:%M:%S")), style='magenta')
+        self.text_important_Text.append("> "+text_str+"\n")
+        self.line_num += 1
+        live_display_obj.refresh()  # Refresh the live display every time you add a text line
+    """
+    """
+    def add_text_line(self, text_str, live_display_obj):
+        # Compose the new line
+        new_line = f"[{self.line_num}] [cyan][{datetime.now().strftime('%H:%M:%S')}][/] > {text_str}\n"
+        
+        # Add new line to the list
+        self.text_lines.append(new_line)
+
+        # Check if the total number of lines exceeds the maximum allowed
+        if len(self.text_lines) > self.max_lines:
+            # Remove the oldest line
+            self.text_lines.pop(0)
+
+        # Update the Text object with the current list of lines
+        self.text_important_Text.plain = "".join(self.text_lines)
+
+        # Increment the line number
+        self.line_num += 1
+
+        # Refresh the live display
+        live_display_obj.refresh()
+    """
+
+    def add_text_line(self, text_str, live_display_obj):
+        # Create a new Text object with styling for the new line
+        new_line = Text()
+        new_line.append(f"[{self.line_num}]", style='cyan')
+        new_line.append(f"[{datetime.now().strftime('%H:%M:%S')}]", style='magenta')
+        new_line.append(f"> {text_str}\n")
+
+        # Add the new Text object to the list
+        self.text_lines.append(new_line)
+
+        # Check if the total number of lines exceeds the maximum allowed
+        if len(self.text_lines) > self.max_lines:
+            # Remove the oldest Text object
+            self.text_lines.pop(0)
+
+        # Refresh the live display by calling refresh on the live display object
+        live_display_obj.refresh()
+
+        # Increment the line number
+        self.line_num += 1
 
 
 

@@ -1,0 +1,33 @@
+Date : 2024-04-09 16:55:23
+Directory : /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based
+Total : 8 files,  4488 codes, 318 comments, 289 blanks, all 5095 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| JSON     |          1 |      4,020 |          0 |          0 |      4,020 |
+| Python   |          7 |        468 |        318 |        289 |      1,075 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                                             | files      | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                                                |          8 |      4,488 |        318 |        289 |      5,095 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                                                                                         | language | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/MC_simulator_convex.py             | Python   |        -96 |        131 |        -32 |          3 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py | Python   |        165 |         10 |         83 |        258 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/csv_writers.py                     | Python   |        -21 |         28 |         -5 |          2 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py              | Python   |        184 |         13 |         92 |        289 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/machina_learning.py                | Python   |          1 |          0 |          2 |          3 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/misc_tools.py                      | Python   |          6 |          2 |          8 |         16 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py                | Python   |        229 |        134 |        141 |        504 |
+| /home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb                    | JSON     |      4,020 |          0 |          0 |      4,020 |
+| Total                                                                                                                                            |          |      4,488 |        318 |        289 |      5,095 |
++--------------------------------------------------------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

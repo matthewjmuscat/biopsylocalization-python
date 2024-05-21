@@ -751,4 +751,119 @@ def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_
     
     fig.show()
 
+
+
+def create_colored_lines_point_cloud(directions, centroids, lengths, colors):
+    """
+    Creates a line set in Open3D where each line can have its own color.
     
+    Parameters:
+    - directions (list of np.array): Direction vectors of the lines.
+    - centroids (list of np.array): Centroid positions of each line.
+    - lengths (list of float): Lengths of each line.
+    - colors (list of list): Colors for each line in RGB format.
+    
+    Returns:
+    - o3d.geometry.LineSet: An Open3D line set object with colored lines.
+    """
+    points = []
+    lines = []
+    line_colors = []
+
+    point_index = 0
+    for direction, centroid, length, color in zip(directions, centroids, lengths, colors):
+        # Normalize the direction vector
+        direction = np.array(direction)
+        norm_direction = direction / np.linalg.norm(direction)
+        
+        # Calculate endpoints
+        half_length = length / 2
+        point1 = centroid + norm_direction * half_length
+        point2 = centroid - norm_direction * half_length
+        
+        # Add endpoints to the points list
+        points.append(point1)
+        points.append(point2)
+        
+        # Add line indices (these are indices in the points list)
+        lines.append([point_index, point_index + 1])
+        point_index += 2
+        
+        # Add the color for this line
+        line_colors.append(color)
+
+    # Create an Open3D line set
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(np.array(points))
+    line_set.lines = o3d.utility.Vector2iVector(np.array(lines))
+    line_set.colors = o3d.utility.Vector3dVector(np.array(line_colors))
+    
+    return line_set
+
+
+def create_colored_origin_axes_o3d_lineset(colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                                    lengths = [100,100,100]):
+    # add the axes directions to the pointclouds
+    directions = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0,0,1])]
+    centroids = [np.array([0, 0, 0]), np.array([0, 0, 0]), np.array([0, 0, 0])]
+    
+    axes_line_set = create_colored_lines_point_cloud(directions, centroids, lengths, colors)
+
+    return axes_line_set
+
+
+
+def dataframe_to_point_cloud_colored_by_value(df, 
+                                              x_col_name, 
+                                              y_col_name, 
+                                              z_col_name, 
+                                              color_value_column_name, 
+                                              colormap='RdYlGn', 
+                                              filter_below_threshold=False, 
+                                              threshold=0.05):
+    # Extract coordinates
+    points = df[[x_col_name, y_col_name, z_col_name]].values
+    
+    # Reference column for coloring and possibly filtering
+    proportions = df[color_value_column_name].values
+
+    if filter_below_threshold:
+        # Filter points where proportions are below the threshold
+        mask = proportions >= threshold
+        points = points[mask]
+        proportions = proportions[mask]
+
+    # Normalize 'Proportion of normal dist points contained' for coloring
+    min_val = np.min(proportions)
+    max_val = np.max(proportions)
+    colors = (proportions - min_val) / (max_val - min_val)  # Normalize between 0 and 1
+    
+    # Map normalized values to a colormap (e.g., viridis)
+    cm = plt.get_cmap(colormap)
+    colors = cm(colors)[:, :3]  # Ignore alpha channel from matplotlib colors
+
+    # Create Open3D point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+
+    return pcd
+
+
+
+def dataframe_to_point_cloud_simple(df, 
+                                    x_col_name, 
+                                    y_col_name, 
+                                    z_col_name,
+                                    pcd_color = np.array([0,0,0])):
+    # Extract coordinates
+    points = df[[x_col_name, y_col_name, z_col_name]].values
+    
+    # Create Open3D point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+
+    # Paint the entire point cloud a single color
+    pcd.paint_uniform_color(pcd_color)  # pcd_color should be a list or array of 3 elements [R, G, B]
+
+    return pcd

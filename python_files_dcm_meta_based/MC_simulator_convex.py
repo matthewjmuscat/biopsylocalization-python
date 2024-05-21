@@ -593,26 +593,42 @@ def simulator_parallel(parallel_pool,
                 ### COMPUTE INDEPENDENT PROBABILITIES
                 
                 # convert from pandas to cudf
-                containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(containment_info_grand_all_structures_pandas_dataframe)
+                ### COMMENTED OUT BECAUSE TRYING PANDAS INSTEAD
+                #containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(containment_info_grand_all_structures_pandas_dataframe)
 
 
                 # compute independent probabilities
                 # Shifted, note that the nominal position is indicated by Trial num = 0
 
+                ### MEMORY ERROR (GRAPHICAL) HERE WHEN DOING N=10000 TRIALS, MAY WANT TO TRY PANDAS INSTEAD 
+                """
                 mc_compiled_results_for_fixed_bx_dataframe = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Trial num"] != 0)
                                                                     ][["Relative structure ROI","Relative structure type","Pt contained bool","Original pt index", "Relative structure index"]
                                                                       ].groupby(["Relative structure ROI","Relative structure type","Relative structure index","Original pt index"]).sum().sort_index().reset_index().rename(columns={"Pt contained bool": "Total successes"})
-                
+                """
+                # OKAY TRYING IT!
+                mc_compiled_results_for_fixed_bx_dataframe = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Trial num"] != 0)
+                                                                    ][["Relative structure ROI","Relative structure type","Pt contained bool","Original pt index", "Relative structure index"]
+                                                                      ].groupby(["Relative structure ROI","Relative structure type","Relative structure index","Original pt index"]).sum().sort_index().reset_index().rename(columns={"Pt contained bool": "Total successes"})
+
                 # calculate binomial estimator
                 mc_compiled_results_for_fixed_bx_dataframe["Binomial estimator"] = mc_compiled_results_for_fixed_bx_dataframe["Total successes"]/num_MC_containment_simulations
                 
-                
+                ### MEMORY ERROR (GRAPHICAL) HERE WHEN DOING N=10000 TRIALS, MAY WANT TO TRY PANDAS INSTEAD 
                 # Nominal, note that the nominal position is indicated by Trial num = 0
+                """
                 mc_compiled_results_for_fixed_bx_dataframe_nominal = containment_info_grand_all_structures_cudf_dataframe[(containment_info_grand_all_structures_cudf_dataframe["Trial num"] == 0)
                                                                     ][
                                                                         ["Relative structure ROI","Relative structure type","Relative structure index","Original pt index", "Pt contained bool"]
                                                                         ].reset_index(drop = True).rename(columns={"Pt contained bool": "Nominal"})
-                
+                """
+                # OKAY TRYING IT! SEE ALSO LINE 652 and 674 BELOW, WE DONT CONVERT THE RESULTS DATAFRAME TO PANDAS ANYMORE!
+                mc_compiled_results_for_fixed_bx_dataframe_nominal = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["Trial num"] == 0)
+                                                                    ][
+                                                                        ["Relative structure ROI","Relative structure type","Relative structure index","Original pt index", "Pt contained bool"]
+                                                                        ].reset_index(drop = True).rename(columns={"Pt contained bool": "Nominal"})
+
+
                 # convert nominal column from bool to uint8
                 mc_compiled_results_for_fixed_bx_dataframe_nominal = mc_compiled_results_for_fixed_bx_dataframe_nominal.astype({'Nominal': 'uint8'})              
 
@@ -632,8 +648,9 @@ def simulator_parallel(parallel_pool,
                 mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
                 mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Patient ID', patientUID)
 
+                ### HERE!!!!
                 # to pandas
-                mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.to_pandas()
+                #mc_compiled_results_for_fixed_bx_dataframe = mc_compiled_results_for_fixed_bx_dataframe.to_pandas()
 
                 # add biopsy point location in the bx frame 
 
@@ -652,9 +669,9 @@ def simulator_parallel(parallel_pool,
                 mc_compiled_results_for_fixed_bx_dataframe['CI upper vals'] = CI_results.apply(lambda x: x[1])
                 
                 
-                
+                # HERE!!!!!!
                 # save memory
-                del containment_info_grand_all_structures_cudf_dataframe
+                #del containment_info_grand_all_structures_cudf_dataframe
                 del mc_compiled_results_for_fixed_bx_dataframe_nominal
 
 
@@ -689,11 +706,16 @@ def simulator_parallel(parallel_pool,
                                                                             ].groupby(["Original pt index","Trial num"]).all().groupby(["Original pt index"]).sum().reset_index().rename(columns={"Pt contained bool": "Total successes"})
                     bx_mutual_containment_sp_combo_by_org_pt_dataframe["Binomial estimator"] = bx_mutual_containment_sp_combo_by_org_pt_dataframe["Total successes"]/num_MC_containment_simulations
                     
-    
-                    bx_mutual_containment_sp_combo_by_org_pt_dataframe.insert(loc=0, column="Structure combination", value=[set(combo_list_for_dataframe_checker)]*num_sample_pts_in_bx)
-                    
+                    structure_id_combination = [x[0] for x in structure_info_combination_tuple]
+                    structure_type_combination = [x[1] for x in structure_info_combination_tuple]
+                    structure_index_combination = [x[3] for x in structure_info_combination_tuple]
 
-                    bx_mutual_containment_by_org_pt_all_combos_dataframe = pandas.concat([bx_mutual_containment_by_org_pt_all_combos_dataframe, bx_mutual_containment_sp_combo_by_org_pt_dataframe])
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe.insert(loc=0, column="Structure index combination", value=[tuple(structure_index_combination)]*num_sample_pts_in_bx)
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe.insert(loc=0, column="Structure type combination", value=[tuple(structure_type_combination)]*num_sample_pts_in_bx)
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe.insert(loc=0, column="Structure ID combination", value=[tuple(structure_id_combination)]*num_sample_pts_in_bx)
+
+
+                    bx_mutual_containment_by_org_pt_all_combos_dataframe = pandas.concat([bx_mutual_containment_by_org_pt_all_combos_dataframe, bx_mutual_containment_sp_combo_by_org_pt_dataframe], ignore_index = True)
                     
                     
                     del bx_mutual_containment_sp_combo_by_org_pt_dataframe
@@ -701,7 +723,7 @@ def simulator_parallel(parallel_pool,
                 del containment_info_grand_all_structures_pandas_dataframe
                 
                 
-                bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
+                #bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
 
 
                 ###
@@ -741,22 +763,31 @@ def simulator_parallel(parallel_pool,
 
                     MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
 
-
+                #live_display.stop()
                 non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
                 structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
                 mutual_MC_compiled_results_for_fixed_bx_dict = {}
                 for structure_info_combination_tuple in structure_info_combinations_list:
-                    comparison_set = {(x[0],x[1],x[3]) for x in structure_info_combination_tuple}
+                    #comparison_set = {(x[0],x[1],x[3]) for x in structure_info_combination_tuple}
                     
+                    structure_id_combination = tuple([x[0] for x in structure_info_combination_tuple])
+                    structure_type_combination = tuple([x[1] for x in structure_info_combination_tuple])
+                    structure_index_combination = tuple([x[3] for x in structure_info_combination_tuple])
+
                     combination_structure_specific_results_dict = mutual_structure_specific_results_dict_empty.copy()
 
-                    bx_mutual_containment_counter_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure combination"] == comparison_set].sort_values(by = 'Original pt index')['Total successes'].to_list()
+                    bx_mutual_containment_counter_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[(bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure ID combination"] == structure_id_combination) &
+                                                                                                                            (bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure type combination"] == structure_type_combination) &
+                                                                                                                            (bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure index combination"] == structure_index_combination)].sort_values(by = 'Original pt index')['Total successes'].to_list()
                     combination_structure_specific_results_dict["Total successes (containment) list"] = bx_mutual_containment_counter_by_org_pt_ind_list
                     
-                    bx_containment_combination_binomial_estimator_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure combination"] == comparison_set].sort_values(by = 'Original pt index')['Binomial estimator'].to_list()
+                    bx_containment_combination_binomial_estimator_by_org_pt_ind_list = bx_mutual_containment_by_org_pt_all_combos_dataframe[(bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure ID combination"] == structure_id_combination) &
+                                                                                                                            (bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure type combination"] == structure_type_combination) &
+                                                                                                                            (bx_mutual_containment_by_org_pt_all_combos_dataframe["Structure index combination"] == structure_index_combination)].sort_values(by = 'Original pt index')['Binomial estimator'].to_list()
                     combination_structure_specific_results_dict["Binomial estimator list"] = bx_containment_combination_binomial_estimator_by_org_pt_ind_list
 
                     mutual_MC_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple] = combination_structure_specific_results_dict
+                #live_display.start()
                 #### EVERNTUALLY WANT TO PHASE OUT THIS CODE!
                 
 
@@ -764,8 +795,11 @@ def simulator_parallel(parallel_pool,
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 ###                
                 
-                
+                #live_display.stop()
                 # Update the master dictionary
+                mc_compiled_results_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_for_fixed_bx_dataframe, threshold=0.25)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(bx_mutual_containment_by_org_pt_all_combos_dataframe, threshold=0.25)
+                #live_display.start()
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
 
@@ -1195,9 +1229,10 @@ def simulator_parallel(parallel_pool,
                                                                                                                                                                                                 miss_structure_complement_label,
                                                                                                                                                                                                 biopsy_z_voxel_length
                                                                                                                                                                                                 )
-                        
+                containment_output_by_MC_trial_pandas_data_frame = dataframe_builders.convert_columns_to_categorical_and_downcast(containment_output_by_MC_trial_pandas_data_frame, threshold=0.25)
+
                 specific_bx_structure["Output data frames"]["Mutual containment output by bx point"] = containment_output_by_MC_trial_pandas_data_frame
-                specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
+                #specific_bx_structure["Output dicts for data frames"]["Mutual containment output by bx point"] = containment_output_dict_by_MC_trial_for_pandas_data_frame
 
 
 
@@ -1212,6 +1247,7 @@ def simulator_parallel(parallel_pool,
                 bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
                 z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
                 """
+                #live_display.stop()
                 bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
                 all_thresholds_volume_of_tissue_above_threshold_dataframe = pandas.DataFrame()
                 for probability_threshold in tissue_length_above_probability_threshold_list:
@@ -1240,6 +1276,9 @@ def simulator_parallel(parallel_pool,
                 """
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
                 """
+                #live_display.start()
+                all_thresholds_volume_of_tissue_above_threshold_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(all_thresholds_volume_of_tissue_above_threshold_dataframe, threshold=0.25)
+
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["Output data frames"]["Tissue volume above threshold"] = all_thresholds_volume_of_tissue_above_threshold_dataframe 
 
 
@@ -1256,6 +1295,9 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, visible = False)
         completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete,visible = True)
         live_display.refresh()
+
+
+        """
         
         # voxelize containment results
         biopsy_voxelize_containment_task = patients_progress.add_task("[red]Voxelizing containment results [{}]...".format("initializing"), total=num_patients)
@@ -1376,7 +1418,7 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
         
-
+        """
 
 
 
@@ -1890,6 +1932,10 @@ def simulator_parallel(parallel_pool,
                 specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
                 specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict 
                 specific_bx_structure["MC data: dose volume metrics dict"] = dvh_metric_vol_dose_percent_dict 
+                
+                
+                dvh_metric_dataframe_per_biopsy = dataframe_builders.convert_columns_to_categorical_and_downcast(dvh_metric_dataframe_per_biopsy, threshold=0.25)
+
                 specific_bx_structure["Output data frames"]["DVH metrics"] = dvh_metric_dataframe_per_biopsy
 
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
@@ -2372,13 +2418,13 @@ def simulator_parallel(parallel_pool,
 
 
 
-
-
+        """
+  
         # voxelize dose results
         biopsy_voxelize_dose_task = patients_progress.add_task("[red]Voxelizing dose results [{}]...".format("initializing"), total=num_patients)
         biopsy_voxelize_dose_task_complete = completed_progress.add_task("[green]Voxelizing dose results", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
-            patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
+            patients_progress.update(biopsy_voxelize_dose_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
             
             sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
@@ -2515,7 +2561,7 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(biopsy_voxelize_dose_task, visible = False)
         completed_progress.update(biopsy_voxelize_dose_task_complete,visible = True)
         live_display.refresh()
-
+        """
 
         
         master_structure_info_dict['Global']["MC info"]['MC containment sim performed'] = perform_mc_containment_sim
@@ -3315,6 +3361,8 @@ def tissue_volume_calculator(patientUID,
     total_structure_volume = specific_bx_structure["Structure volume"]
 
     # volume of dil tissue
+    # need to convert this particular column back to float so that we can compare >=
+    #containment_output_by_MC_trial_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_MC_trial_pandas_data_frame, ["Mean probability (binom est)"], [float])
     containment_output_by_MC_trial_pandas_data_frame_DIL_and_min_threshold_subset = containment_output_by_MC_trial_pandas_data_frame[(containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == cancer_tissue_label) &
                                                     (containment_output_by_MC_trial_pandas_data_frame["Mean probability (binom est)"] >= probability_threshold)]    
     num_dil_voxels_in_subset = containment_output_by_MC_trial_pandas_data_frame_DIL_and_min_threshold_subset.shape[0]

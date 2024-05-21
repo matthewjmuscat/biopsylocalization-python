@@ -309,7 +309,8 @@ def cuspatial_points_contained_mc_sim_cupy_pandas(polygons_geoseries,
                                live_display,
                                progress_bar_level_task_obj,
                                indeterminate_bar_level_task_obj,
-                               upper_limit_size_input = 1e9
+                               upper_limit_size_input = 1e9,
+                               matrix_key = None
                                ):
     
     num_zslices = len(polygons_geoseries)
@@ -523,26 +524,48 @@ def cuspatial_points_contained_mc_sim_cupy_pandas(polygons_geoseries,
     indeterminate_task = indeterminate_bar_level_task_obj.add_task("[cyan]~~creating dictionary (8)", total = None)
     ###
 
-    results_dictionary = {"Patient ID": patientUID,
-                          "Bx ID": biopsy_structure_info["Structure ID"],
-                          "Biopsy refnum": biopsy_structure_info["Dicom ref num"],
-                          "Bx index": biopsy_structure_info["Index number"],
-                          "Relative structure ROI": structure_info[0],
-                          "Relative structure type": structure_info[1],
-                          "Relative structure index": structure_info[3],
-                          "Original pt index": points_arr_org_index.get(),
-                          "Pt contained bool": contain_bool_arr.get(),
-                          "Nearest zslice zval": nearest_zslices_vals_arr,
-                          "Nearest zslice index": nearest_zslices_indices_arr,
-                          "Pt clr R": contain_color_arr[:,0].get(),
-                          "Pt clr G": contain_color_arr[:,1].get(),
-                          "Pt clr B": contain_color_arr[:,2].get(),
-                          "Test pt X": test_points_array[:,0],
-                          "Test pt Y": test_points_array[:,1],
-                          "Test pt Z": test_points_array[:,2],
-                          "Trial num": trial_number_arr.get()
-                          }
-    
+    if matrix_key == None:
+        results_dictionary = {"Patient ID": patientUID,
+                            "Bx ID": biopsy_structure_info["Structure ID"],
+                            "Biopsy refnum": biopsy_structure_info["Dicom ref num"],
+                            "Bx index": biopsy_structure_info["Index number"],
+                            "Relative structure ROI": structure_info[0],
+                            "Relative structure type": structure_info[1],
+                            "Relative structure index": structure_info[3],
+                            "Original pt index": points_arr_org_index.get(),
+                            "Pt contained bool": contain_bool_arr.get(),
+                            "Nearest zslice zval": nearest_zslices_vals_arr,
+                            "Nearest zslice index": nearest_zslices_indices_arr,
+                            "Pt clr R": contain_color_arr[:,0].get(),
+                            "Pt clr G": contain_color_arr[:,1].get(),
+                            "Pt clr B": contain_color_arr[:,2].get(),
+                            "Test pt X": test_points_array[:,0],
+                            "Test pt Y": test_points_array[:,1],
+                            "Test pt Z": test_points_array[:,2],
+                            "Trial num": trial_number_arr.get()
+                            }
+    else:
+        results_dictionary = {"Patient ID": patientUID,
+                            "Bx ID": biopsy_structure_info["Structure ID"],
+                            "Biopsy refnum": biopsy_structure_info["Dicom ref num"],
+                            "Bx index": biopsy_structure_info["Index number"],
+                            "Relative structure ROI": structure_info[0],
+                            "Relative structure type": structure_info[1],
+                            "Relative structure index": structure_info[3],
+                            "Original pt index": points_arr_org_index.get(),
+                            "Matrix key": matrix_key,
+                            "Pt contained bool": contain_bool_arr.get(),
+                            "Nearest zslice zval": nearest_zslices_vals_arr,
+                            "Nearest zslice index": nearest_zslices_indices_arr,
+                            "Pt clr R": contain_color_arr[:,0].get(),
+                            "Pt clr G": contain_color_arr[:,1].get(),
+                            "Pt clr B": contain_color_arr[:,2].get(),
+                            "Test pt X": test_points_array[:,0],
+                            "Test pt Y": test_points_array[:,1],
+                            "Test pt Z": test_points_array[:,2],
+                            "Trial num": trial_number_arr.get()
+                            }
+        
     ###
     indeterminate_bar_level_task_obj.update(indeterminate_task, visible = False)
     ###

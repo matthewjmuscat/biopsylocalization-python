@@ -51,8 +51,13 @@ def biopsy_transporter_optimal(pydicom_item,
     optimal_locations_dataframe = pydicom_item[relative_structure_struct_type_from_bx_info][simulated_bx_relative_to_specific_structure_index]["Biopsy optimization: Optimal biopsy location dataframe"]
     # optimal_locations_dataframe should have only one row, however we do it this way just in case it doesnt't! ie if it has more
     # than one value, we take the position that is closest to the dil centroid!
-    relative_structure_for_sim_optimal_position_vector = np.array(optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location vector'])
 
+    # Swapped these lines because getting rid of the vector columns in the data frames, they are redundany and take up a lot of memory!
+    #relative_structure_for_sim_optimal_position_vector = np.array(optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location vector'])
+    relative_structure_for_sim_optimal_position_vector = np.array([optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (X)'],
+                                                                   optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (Y)'],
+                                                                   optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (Z)']])
+    
     
     threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
     simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
