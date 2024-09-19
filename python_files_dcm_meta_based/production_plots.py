@@ -30,6 +30,11 @@ import matplotlib.ticker as ticker
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 import copy
+import string
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.offsetbox import AnnotationBbox, TextArea
+import warnings
+import dataframe_builders
 
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
@@ -174,9 +179,9 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
             y_regressions[quantile] = y_kr
 
         # Filling the space between the quantile lines
-        plt.fill_between(x_range, y_regressions[0.05], y_regressions[0.25], color='green', alpha=0.3)
-        plt.fill_between(x_range, y_regressions[0.25], y_regressions[0.75], color='blue', alpha=0.3)
-        plt.fill_between(x_range, y_regressions[0.75], y_regressions[0.95], color='green', alpha=0.3)
+        plt.fill_between(x_range, y_regressions[0.05], y_regressions[0.25], color='springgreen', alpha=1)
+        plt.fill_between(x_range, y_regressions[0.25], y_regressions[0.75], color='dodgerblue', alpha=1)
+        plt.fill_between(x_range, y_regressions[0.75], y_regressions[0.95], color='springgreen', alpha=1)
         
         # Additional plot enhancements
         # Plot line for MC trial num = 0
@@ -201,6 +206,13 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         
         perform_and_plot_kernel_regression(z_vals, kde_max_doses, x_range, 'KDE Max Density Dose', 'magenta')
         perform_and_plot_kernel_regression(z_vals, mean_doses, x_range, 'Mean Dose', 'orange')
+
+        num_mc_trials_plus_nom = df['MC trial num'].nunique()
+
+        # Line plot for each trial
+        for trial in range(1,num_mc_trials_plus_nom):
+            df_sp_trial = df[df["MC trial num"] == trial]
+            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
         
 
         
@@ -1121,12 +1133,17 @@ def production_plot_differential_dvh_quantile_plot_NEW(patient_sp_output_figures
 
     def plot_kernel_regression(x, y, label, color):
         try:
-            kr = KernelReg(endog=y, exog=x, var_type='c')
-            x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
-            y_kr, _ = kr.fit(x_range)
-            plt.plot(x_range, y_kr, label=label, color=color)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                kr = KernelReg(endog=y, exog=x, var_type='c')
+                x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
+                y_kr, _ = kr.fit(x_range)
+                plt.plot(x_range, y_kr, label=label, color=color)
+                if w:
+                    for warning in w:
+                        important_info.add_text_line(f"Warning encountered for differential DVH nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}: {warning}", live_display)
         except np.linalg.LinAlgError:
-            important_info.add_text_line("SVD did not converge for nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+            important_info.add_text_line("SVD did not converge for differential DVH nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
             plt.plot(x, y, label=label, color=color, linestyle='-', marker=None)
 
             
@@ -1146,11 +1163,17 @@ def production_plot_differential_dvh_quantile_plot_NEW(patient_sp_output_figures
             x_ranges[q] = x_range
 
             try:
-                kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
-                y_kr, _ = kr.fit(x_range)
-                y_krs[q] = y_kr
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.simplefilter("always")
+                    kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
+                    y_kr, _ = kr.fit(x_range)
+                    y_krs[q] = y_kr
+                    if w:
+                        for warning in w:
+                            important_info.add_text_line(f"Warning encountered for differential DVH quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}: {warning}", live_display)
+
             except np.linalg.LinAlgError:
-                important_info.add_text_line(f"SVD did not converge for quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+                important_info.add_text_line(f"SVD did not converge for differential DVH quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
                 # Perform linear interpolation
                 if not q_df.empty:
                     y_kr = np.interp(x_range, q_df[x_col], q_df[y_col])
@@ -1160,16 +1183,25 @@ def production_plot_differential_dvh_quantile_plot_NEW(patient_sp_output_figures
             
 
         # Filling the areas between quantile regressions
-        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='green', alpha=0.3)
-        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='blue', alpha=0.3)
-        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='green', alpha=0.3)
+        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='springgreen', alpha=1)
+        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='dodgerblue', alpha=1)
+        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='springgreen', alpha=1)
 
         # 3. Kernel regression for 'MC trial' == 0
         df_trial_0 = df[df['MC trial'] == 0]
         plot_kernel_regression(df_trial_0[x_col], df_trial_0[y_col], 'Nominal', 'red')
 
         # Scatter plot for the data points
-        plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+        #plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+        # Line plot for the data points
+        #plt.plot(df[x_col], df[y_col], color='grey', alpha=0.1, linewidth=1)  # 'linewidth' controls the thickness of the line
+
+        num_mc_trials_plus_nom = df['MC trial'].nunique()
+
+        # Line plot for each trial
+        for trial in range(1,num_mc_trials_plus_nom):
+            df_sp_trial = df[df["MC trial"] == trial]
+            plt.plot(df_sp_trial[x_col], df_sp_trial[y_col], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
 
         plt.title('Differential DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
         plt.xlabel(x_col)
@@ -1323,12 +1355,17 @@ def production_plot_cumulative_DVH_kernel_quantile_regression_NEW_v2(patient_sp_
 
     def plot_kernel_regression(x, y, label, color):
         try:
-            kr = KernelReg(endog=y, exog=x, var_type='c')
-            x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
-            y_kr, _ = kr.fit(x_range)
-            plt.plot(x_range, y_kr, label=label, color=color)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                kr = KernelReg(endog=y, exog=x, var_type='c')
+                x_range = np.linspace(x.min(), x.max(), 500)  # Ensure this range aligns with your x-axis
+                y_kr, _ = kr.fit(x_range)
+                plt.plot(x_range, y_kr, label=label, color=color)
+                if w:
+                    for warning in w:
+                        important_info.add_text_line(f"Warning encountered for differential DVH nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}: {warning}", live_display)
         except np.linalg.LinAlgError:
-            important_info.add_text_line("SVD did not converge for nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+            important_info.add_text_line("SVD did not converge for differential DVH nominal - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
             plt.plot(x, y, label=label, color=color, linestyle='-', marker=None)
             
     def plot_filled_quantiles(df, x_col, y_col, patientUID, bx_struct_roi):
@@ -1347,11 +1384,17 @@ def production_plot_cumulative_DVH_kernel_quantile_regression_NEW_v2(patient_sp_
             x_ranges[q] = x_range
 
             try:
-                kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
-                y_kr, _ = kr.fit(x_range)
-                y_krs[q] = y_kr
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.simplefilter("always")
+                    kr = KernelReg(endog=q_df[y_col], exog=q_df[x_col], var_type='c')
+                    y_kr, _ = kr.fit(x_range)
+                    y_krs[q] = y_kr
+                    if w:
+                        for warning in w:
+                            important_info.add_text_line(f"Warning encountered for differential DVH quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}: {warning}", live_display)
+            
             except np.linalg.LinAlgError:
-                important_info.add_text_line(f"SVD did not converge for quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
+                important_info.add_text_line(f"SVD did not converge for differential DVH quantile {q} - Patient: {patientUID}, Bx ID: {bx_struct_roi}", live_display)
                 # Perform linear interpolation
                 if not q_df.empty:
                     y_kr = np.interp(x_range, q_df[x_col], q_df[y_col])
@@ -1361,16 +1404,24 @@ def production_plot_cumulative_DVH_kernel_quantile_regression_NEW_v2(patient_sp_
             
 
         # Filling the areas between quantile regressions
-        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='green', alpha=0.3)
-        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='blue', alpha=0.3)
-        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='green', alpha=0.3)
+        plt.fill_between(x_ranges[0.05], y_krs[0.05], y_krs[0.25], color='springgreen', alpha=1)
+        plt.fill_between(x_ranges[0.25], y_krs[0.25], y_krs[0.75], color='dodgerblue', alpha=1)
+        plt.fill_between(x_ranges[0.75], y_krs[0.75], y_krs[0.95], color='springgreen', alpha=1)
 
         # 3. Kernel regression for 'MC trial' == 0
         df_trial_0 = df[df['MC trial'] == 0]
         plot_kernel_regression(df_trial_0[x_col], df_trial_0[y_col], 'Nominal', 'red')
 
         # Scatter plot for the data points
-        plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+        #plt.scatter(df[x_col], df[y_col], color='grey', alpha=0.1, s=10)  # 's' controls size, 'alpha' controls transparency
+        
+        num_mc_trials_plus_nom = df['MC trial'].nunique()
+
+        # Line plot for each trial
+        for trial in range(1,num_mc_trials_plus_nom):
+            df_sp_trial = df[df["MC trial"] == trial]
+            plt.plot(df_sp_trial[x_col], df_sp_trial[y_col], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+
 
         plt.title('Cumulative DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
         plt.xlabel(x_col)
@@ -3140,7 +3191,7 @@ def production_plot_tissue_patient_cohort(patient_cohort_dataframe,
 
 
 
-def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
+def production_plot_tissue_patient_cohort_NEW(master_cohort_patient_data_and_dataframes,
                                               master_st_ds_info_dict,
                                               miss_structure_complement_label,
                                               all_ref_key,
@@ -3157,12 +3208,7 @@ def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
     
     num_biopsies_by_bx_type_dict = master_st_ds_info_dict["Global"]["Num biopsies by bx type dict"]
 
-    all_patients_global_containment_scores_by_tissue_class = pandas.DataFrame()
-    for patientUID,pydicom_item in master_structure_ref_dict.items():
-
-        all_biopsies_global_containment_scores_by_tissue_class = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Global tissue class statistics"]
-    
-        all_patients_global_containment_scores_by_tissue_class = pandas.concat([all_patients_global_containment_scores_by_tissue_class,all_biopsies_global_containment_scores_by_tissue_class])
+    all_patients_global_containment_scores_by_tissue_class = copy.deepcopy(master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: tissue class global scores (tissue type)'])
 
 
     tissue_types_list = all_patients_global_containment_scores_by_tissue_class['Structure ROI'].unique().tolist()
@@ -3170,72 +3216,198 @@ def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
 
     simulated_types_list = all_patients_global_containment_scores_by_tissue_class["Simulated type"].unique()
 
-    fig = make_subplots(rows=1, 
-                        cols=len(tissue_types_list)
-                        )
-    
-     
-    for tissue_type_index, tissue_type in enumerate(tissue_types_list):
-        for sim_type_index, sim_type in enumerate(simulated_types_list):
-            fig.append_trace(go.Box(
-                y = all_patients_global_containment_scores_by_tissue_class[(all_patients_global_containment_scores_by_tissue_class['Structure ROI'] == tissue_type) & (all_patients_global_containment_scores_by_tissue_class["Simulated type"] == sim_type)]['Global mean binom est'],
-                name = tissue_type +' - '+  sim_type,
-                marker_color = color_discrete_map_by_sim_type[sim_type],
-                boxpoints = box_plot_points_option,
-                notched = notch_option,
-                boxmean = boxmean_option,
-                #customdata = np.full(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"].size, np.std(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"])) 
-            ), row =1 , col = tissue_type_index+1)
 
-   
+    metric_types_list = ['Global mean binom est', 'Global min binom est', 'Global max binom est']
+
+    fig = make_subplots(rows=len(tissue_types_list), 
+                        cols=len(metric_types_list)
+                        )
+
+    for metric_type_index, metric_type in enumerate(metric_types_list):
+
+        for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+            for sim_type_index, sim_type in enumerate(simulated_types_list):
+                fig.append_trace(go.Box(
+                    y = all_patients_global_containment_scores_by_tissue_class[(all_patients_global_containment_scores_by_tissue_class['Structure ROI'] == tissue_type) & (all_patients_global_containment_scores_by_tissue_class["Simulated type"] == sim_type)][metric_type],
+                    name = tissue_type +' - '+  sim_type,
+                    marker_color = color_discrete_map_by_sim_type[sim_type],
+                    boxpoints = box_plot_points_option,
+                    notched = notch_option,
+                    boxmean = boxmean_option,
+                    #customdata = np.full(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"].size, np.std(patient_cohort_dataframe[(patient_cohort_dataframe["Tissue type"] == tissue_types_list[index]) & (patient_cohort_dataframe["Simulated bool"] == True)]["Mean probability"])) 
+                ), row =tissue_type_index + 1 , col = metric_type_index + 1)
+
     
-    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
-    for index in range(len(tissue_types_list)):
-        fig.update_xaxes(title_text="Tissue classification", row=1, col=index+1)
-        fig.update_yaxes(title_text="Probability", range = [0,1.01], row=1, col=index+1)
-    
+        
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+        for index in range(len(tissue_types_list)):
+            fig.update_xaxes(title_text="Tissue classification", row=1, col=index+1)
+            fig.update_yaxes(title_text="Probability", range = [0,1.01], row=1, col=index+1)
+        
+
+        text_1 = 'Patient cohort tissue classification probability'
+        num_biopsies_by_type_string_list = [bpsy_type +': '+ str(num_bxs_sp_type) for bpsy_type, num_bxs_sp_type in num_biopsies_by_bx_type_dict.items()]
+        text_2 = ', '.join(num_biopsies_by_type_string_list)
+
+        text_list_for_annotation = [text_1,text_2]
+        fig_description_text_for_annotation = ' | '.join(text_list_for_annotation)
+        fig.add_annotation(text=fig_description_text_for_annotation,
+                                xref="paper", 
+                                yref="paper",
+                                x=0.99, 
+                                y=1.4, 
+                                showarrow=False,
+                                font=dict(family="Courier New, monospace", 
+                                            size=16, 
+                                            color="#000000"),
+                                bordercolor="#000000",
+                                borderwidth=2,
+                                borderpad=4,
+                                bgcolor="#ffffff",
+                                opacity=1
+                                )
+
+
+        num_bpsy_types = len(simulated_types_list)
+        comb_seed_list = list(range(0,num_bpsy_types))
+        combs_list_for_p_vals = []
+        for subset in itertools.combinations(comb_seed_list, 2):
+            combs_list_for_p_vals.append(list(subset))
+
+
+
+        for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+            fig = add_p_value_annotation(fig, 
+                                combs_list_for_p_vals, 
+                                subplot=tissue_type_index +1, 
+                                _format=dict(interline=0.07, text_height=1.05, color='black')
+                                )
+            
+        fig.update_layout(
+            margin=dict(t=60*len(combs_list_for_p_vals))
+            )
+
+        svg_dose_fig_name = general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+        html_dose_fig_name = general_plot_name_string+'.html'
+        html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+        #print('test')
+
+
+
+def production_plot_tissue_patient_cohort_NEW_v2(master_cohort_patient_data_and_dataframes,
+                                              master_st_ds_info_dict,
+                                              miss_structure_complement_label,
+                                              all_ref_key,
+                                              color_discrete_map_by_sim_type,
+                                            svg_image_scale,
+                                            svg_image_width,
+                                            svg_image_height,
+                                            general_plot_name_string,
+                                            cohort_output_figures_dir,
+                                            box_plot_points_option = 'outliers',
+                                            notch_option = True,
+                                            boxmean_option = 'sd'
+                                            ):
+
+    num_biopsies_by_bx_type_dict = master_st_ds_info_dict["Global"]["Num biopsies by bx type dict"]
+
+    all_patients_global_containment_scores_by_tissue_class = copy.deepcopy(master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: tissue class global scores (tissue type)'])
+
+    tissue_types_list = all_patients_global_containment_scores_by_tissue_class['Structure ROI'].unique().tolist()
+    tissue_types_list.remove(miss_structure_complement_label)
+
+    simulated_types_list = all_patients_global_containment_scores_by_tissue_class["Simulated type"].unique()
+
+    metric_types_list = ['Global mean binom est', 'Global min binom est', 'Global max binom est']
+
+    # Create subplots with increased spacing
+    fig = make_subplots(
+        rows=len(tissue_types_list), 
+        cols=len(metric_types_list),
+        vertical_spacing=0.2,  # Increase vertical spacing
+        horizontal_spacing=0.05  # Increase horizontal spacing
+    )
+    for metric_type_index, metric_type in enumerate(metric_types_list):
+        for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+            for sim_type_index, sim_type in enumerate(simulated_types_list):
+                fig.append_trace(go.Box(
+                    y=all_patients_global_containment_scores_by_tissue_class[
+                        (all_patients_global_containment_scores_by_tissue_class['Structure ROI'] == tissue_type) & 
+                        (all_patients_global_containment_scores_by_tissue_class["Simulated type"] == sim_type)][metric_type],
+                    name= sim_type,
+                    marker_color=color_discrete_map_by_sim_type[sim_type],
+                    boxpoints=box_plot_points_option,
+                    notched=notch_option,
+                    boxmean=boxmean_option,
+                ), row=tissue_type_index + 1, col=metric_type_index + 1)
+
+    # Fix plotly grid lines
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis=True, x_axis=False)
+
+    # Update axis titles
+    for metric_type_index, metric_type in enumerate(metric_types_list):
+        for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+            fig.update_xaxes(title_text="Biopsy group", row=tissue_type_index + 1, col=metric_type_index+1)
+            fig.update_yaxes(title_text="Probability", range=[0, 1.01], row=tissue_type_index + 1, col=metric_type_index + 1)
+            # Access the domain of the specific subplot
+            x_domain = fig['layout'][f'xaxis{metric_type_index + 1 + tissue_type_index * len(metric_types_list)}']['domain']
+            y_domain = fig['layout'][f'yaxis{metric_type_index + 1 + tissue_type_index * len(metric_types_list)}']['domain']
+            
+            fig.add_annotation(
+                x=x_domain[0] + (x_domain[1] - x_domain[0]) / 2, 
+                y=y_domain[1] + 0.11,
+                xref="paper",
+                yref="paper",
+                text=f"{tissue_type} - {metric_type}",
+                showarrow=False,
+                font=dict(size=14),
+                xanchor='center'
+            )
+
 
     text_1 = 'Patient cohort tissue classification probability'
-    num_biopsies_by_type_string_list = [bpsy_type +': '+ str(num_bxs_sp_type) for bpsy_type, num_bxs_sp_type in num_biopsies_by_bx_type_dict.items()]
+    num_biopsies_by_type_string_list = [bpsy_type + ': ' + str(num_bxs_sp_type) for bpsy_type, num_bxs_sp_type in num_biopsies_by_bx_type_dict.items()]
     text_2 = ', '.join(num_biopsies_by_type_string_list)
 
-    text_list_for_annotation = [text_1,text_2]
+    text_list_for_annotation = [text_1, text_2]
     fig_description_text_for_annotation = ' | '.join(text_list_for_annotation)
     fig.add_annotation(text=fig_description_text_for_annotation,
-                            xref="paper", 
-                            yref="paper",
-                            x=0.99, 
-                            y=1.1, 
-                            showarrow=False,
-                            font=dict(family="Courier New, monospace", 
-                                        size=16, 
-                                        color="#000000"),
-                            bordercolor="#000000",
-                            borderwidth=2,
-                            borderpad=4,
-                            bgcolor="#ffffff",
-                            opacity=1
-                            )
-
+                    xref="paper",
+                    yref="paper",
+                    x=0.99,
+                    y=-0.1,
+                    showarrow=False,
+                    font=dict(family="Courier New, monospace",
+                                size=16,
+                                color="#000000"),
+                    bordercolor="#000000",
+                    borderwidth=2,
+                    borderpad=4,
+                    bgcolor="#ffffff",
+                    opacity=1
+                    )
 
     num_bpsy_types = len(simulated_types_list)
-    comb_seed_list = list(range(0,num_bpsy_types))
+    comb_seed_list = list(range(0, num_bpsy_types))
     combs_list_for_p_vals = []
     for subset in itertools.combinations(comb_seed_list, 2):
         combs_list_for_p_vals.append(list(subset))
 
+    subplot_index = 1
+    for metric_type_index, metric_type in enumerate(metric_types_list):
+        for tissue_type_index, tissue_type in enumerate(tissue_types_list):
+            fig = add_p_value_annotation_v2(fig,
+                                        combs_list_for_p_vals,
+                                        subplot=subplot_index,
+                                        _format=dict(color='black')
+                                        )
+            subplot_index += 1
 
-
-    for tissue_type_index, tissue_type in enumerate(tissue_types_list):
-        fig = add_p_value_annotation(fig, 
-                            combs_list_for_p_vals, 
-                            subplot=tissue_type_index +1, 
-                            _format=dict(interline=0.07, text_height=1.05, color='black')
-                            )
-        
-    fig.update_layout(
-        margin=dict(t=60*len(combs_list_for_p_vals))
-        )
+    fig = add_significance_annotation(fig, x=0, y=-0.1, _format=dict(color='black'))
 
     svg_dose_fig_name = general_plot_name_string+'.svg'
     svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -3244,11 +3416,6 @@ def production_plot_tissue_patient_cohort_NEW(master_structure_ref_dict,
     html_dose_fig_name = general_plot_name_string+'.html'
     html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
     fig.write_html(html_dose_fig_file_path) 
-    #print('test')
-
-
-
-
 
 
 def production_plot_tissue_volume_box_plots_patient_cohort_NEW(master_cohort_patient_data_and_dataframes,
@@ -3282,7 +3449,7 @@ def production_plot_tissue_volume_box_plots_patient_cohort_NEW(master_cohort_pat
             fig.append_trace(go.Box(
                 y = cohort_tissue_volume_above_threshold_dataframe[(cohort_tissue_volume_above_threshold_dataframe["Probability threshold"] == probability_threshold) & 
                                                                    (cohort_tissue_volume_above_threshold_dataframe["Bx type"] == sim_type)]["Volume of DIL tissue"],
-                name = str(probability_threshold) + ' - ' +  sim_type,
+                name = f"{probability_threshold:.2f}" + ' - ' +  sim_type,
                 marker_color = color_discrete_map_by_sim_type[sim_type],
                 boxpoints = box_plot_points_option,
                 notched = notch_option,
@@ -3332,10 +3499,10 @@ def production_plot_tissue_volume_box_plots_patient_cohort_NEW(master_cohort_pat
 
 
     for probability_threshold_index, probability_threshold in enumerate(probability_threshold_list):
-        fig = add_p_value_annotation(fig, 
+        fig = add_p_value_annotation_v2(fig, 
                             combs_list_for_p_vals, 
                             subplot=probability_threshold_index +1, 
-                            _format=dict(interline=0.07, text_height=1.05, color='black')
+                            _format=dict(color='black')
                             )
         
     fig.update_layout(
@@ -5286,6 +5453,175 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
         plt.close(g.fig)
 
 
+
+
+
+def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_cohort_v2(sp_bx_dose_distribution_all_trials_df,
+                                                                                          sp_patient_and_sp_bx_dose_dataframe_by_voxel,
+                                                                                          sp_patient_binom_df,
+                                                                                          svg_image_width,
+                                                                                          svg_image_height,
+                                                                                          dpi,
+                                                                                          ridge_line_dose_and_binom_general_plot_name_string,
+                                                                                          patient_sp_output_figures_dir_dict,
+                                                                                          cancer_tissue_label):
+    plt.ioff()
+    
+
+    df_dose = sp_bx_dose_distribution_all_trials_df
+    df_dose = misc_tools.convert_categorical_columns(df_dose, ['Voxel index', "Dose (Gy)"], [int, float])
+
+    df_dose_stats_by_voxel = sp_patient_and_sp_bx_dose_dataframe_by_voxel
+    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Structure ROI"] == cancer_tissue_label]
+
+    colors = ["green", "blue", "black"]
+    cmap = LinearSegmentedColormap.from_list("GreenBlueRed", colors, N=10)
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+    def annotate_and_color_v2(x, color, label, **kwargs):
+        label_float = float(label)
+        voxel_row = df_dose_stats_by_voxel[(df_dose_stats_by_voxel['Voxel index'] == label_float) & 
+                           (df_dose_stats_by_voxel['Patient ID'] == patient_id) & 
+                           (df_dose_stats_by_voxel['Bx index'] == bx_index)].iloc[0]
+
+        nominal_dose = voxel_row['Global nominal mean dose']
+        mean = voxel_row['Global mean dose']
+        std = voxel_row['Global standard deviation dose']
+        max_density_dose = voxel_row['Global max density dose']
+        voxel_begin = voxel_row['Voxel begin (Z)']
+        voxel_end = voxel_row['Voxel end (Z)']
+
+        q05_dose = voxel_row['Global q05 dose']
+        q25_dose = voxel_row['Global q25 dose']
+        q50_dose = voxel_row['Global q50 dose']
+        q75_dose = voxel_row['Global q75 dose']
+        q95_dose = voxel_row['Global q95 dose']
+
+        tissue_voxel = df_tissue[(df_tissue['Voxel index'] == label_float) & 
+                                 (df_tissue['Patient ID'] == patient_id) & 
+                                 (df_tissue['Bx index'] == bx_index)]
+        binom_mean = tissue_voxel["Mean probability (binom est)"].mean()
+
+        ax = plt.gca()
+        annotation_text = f'Tissue segment (mm): ({voxel_begin:.1f}, {voxel_end:.1f}) | Tumor tissue score: {binom_mean:.2f}\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
+        ax.text(1.03, 0.7, annotation_text, horizontalalignment='left', verticalalignment='center', transform=ax.transAxes, color=color, fontsize=9)
+
+        ax.axvline(x=max_density_dose, color='magenta', linestyle='-', label='Max Density (Gy)')
+        ax.axvline(x=mean, color='orange', linestyle='-', label='Mean (Gy)')
+        ax.axvline(x=nominal_dose, color='red', linestyle='-', label='Nominal (Gy)')
+
+        # Added loop for plotting dotted gray vertical lines for each quantile
+        for quantile_value in [q05_dose, q25_dose, q50_dose, q75_dose, q95_dose]:
+            ax.axvline(x=quantile_value, color='gray', linestyle='--', linewidth=1)
+
+        density_color = cmap(norm(binom_mean))
+
+        kde = gaussian_kde(x)
+        x_grid = np.linspace(x.min(), x.max(), 1000)
+        y_density = kde(x_grid)
+
+        max_density = np.max(y_density)
+        scaling_factor = 1.0 / max_density if max_density > 0 else 1
+        scaled_density = y_density * scaling_factor
+
+        ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+    max_95th_quantile = df_dose_stats_by_voxel['Global q95 dose'].max()
+    min_5th_quantile = df_dose_stats_by_voxel['Global q05 dose'].min()
+
+    # Define legend handles
+    legend_handles = [
+        Line2D([0], [0], color='magenta', lw=2, linestyle='-', label='Max Density (Gy)'),
+        Line2D([0], [0], color='orange', lw=2, linestyle='-', label='Mean (Gy)'),
+        Line2D([0], [0], color='red', lw=2, linestyle='-', label='Nominal (Gy)'),
+        Line2D([0], [0], color='gray', lw=2, linestyle='--', label='Quantiles (05, 25, 50, 75, 95)')
+    ]
+
+    for (patient_id, bx_index), group in df_dose.groupby(['Patient ID', 'Bx index']):
+        bx_id = group.iloc[0]['Bx ID']
+
+        unique_voxels = group['Voxel index'].unique()
+        palette_black = {voxel: "black" for voxel in unique_voxels}
+
+
+        # Ensure that the FacetGrid is only created for valid voxel indices
+        valid_voxel_indices = [voxel for voxel in group['Voxel index'].unique() if voxel in palette_black]
+        if len(valid_voxel_indices) == 0:
+            print(f"No valid voxel indices for Patient ID: {patient_id}, Bx index: {bx_index}")
+            continue
+        
+        #g = sns.FacetGrid(group[group['Voxel index'].isin(valid_voxel_indices)], row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+        g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=15, height=1, palette=palette_black)
+
+        g.map(annotate_and_color_v2, "Dose (Gy)")
+
+        g.set(xlim=(min_5th_quantile, max_95th_quantile))
+
+        g.fig.subplots_adjust(right=0.53, left=0.07, top=0.95, bottom=0.05)
+        cbar_ax = g.fig.add_axes([0.9, 0.2, 0.03, 0.6])
+        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+
+        g.set_titles("")
+        g.set(yticks=[])
+        g.despine(bottom=False, left=True)
+        g.set_axis_labels("Dose (Gy)", "")
+        g.fig.text(0.04, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+        g.fig.text(0.88, 0.5, 'Tumor tissue score', va='center', rotation='vertical', fontsize=12)
+
+        for ax in g.axes.flat:
+            ax.grid(True, which='both', axis='x', linestyle='-', color='gray', linewidth=0.5)
+            ax.set_axisbelow(True)
+
+        # Update legend to include quantiles
+        g.fig.legend(handles=legend_handles, loc='upper center', bbox_to_anchor=(0.9, 1), ncol=1, frameon=True, facecolor='white')
+
+        plt.suptitle(f'Patient ID: {patient_id}, Bx ID: {bx_id}', fontsize=16, fontweight='bold', y=0.98)
+        
+        figure_width_in = svg_image_width / dpi
+        figure_height_in = svg_image_height / dpi
+
+        g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+        patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patient_id]
+        svg_dose_fig_name = ridge_line_dose_and_binom_general_plot_name_string+' - '+str(patient_id)+' - '+str(bx_id)+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+        plt.close(g.fig)
+
+    df_dose = dataframe_builders.convert_columns_to_categorical_and_downcast(df_dose, threshold=0.25)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### For the transverse plane accuracy plots cohort
 
 def draw_ellipse(position, covariance, ax, **kwargs):
@@ -5498,6 +5834,464 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_t
     plt.savefig(svg_dose_fig_file_path, format='svg')
 
     plt.close(fig)
+
+
+
+
+
+def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring_with_table(cohort_nearest_dils_dataframe,
+                                                                                                    cohort_global_tissue_class_dataframe,
+                                                                                                    general_plot_name_string,
+                                                                                                    cohort_output_figures_dir):
+
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
+    # Rename columns to match df_tissue for a successful merge
+    df_filtered.rename(columns={
+        'Relative DIL ID': 'Relative structure ROI',
+        'Relative struct type': 'Relative structure type',
+        'Relative DIL index': 'Relative structure index'
+    }, inplace=True)
+
+    df_tissue = cohort_global_tissue_class_dataframe
+
+    # Merge df_filtered with df_tissue to get the 'Global mean binom est' for coloring
+    df_filtered = df_filtered.merge(
+        df_tissue[['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type', 'Global mean binom est']],
+        on=['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type'],
+        how='left'
+    )
+
+    # Define the color mapping based on 'Global mean binom est'
+    colors = ["green", "blue", "black"]  # Adjust colors as needed
+    cmap = LinearSegmentedColormap.from_list("CustomCmap", colors, N=10)  # More bins for smoother color transitions
+
+    # Normalize the 'Global mean binom est' values for color mapping
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Apply color mapping
+    df_filtered['Color'] = df_filtered['Global mean binom est'].apply(lambda x: sm.to_rgba(x))
+
+    # Extract values and colors
+    x = df_filtered['Bx (X, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+    colors = df_filtered['Color'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(24, 12))
+    ax_main = fig.add_subplot(111)
+
+    # Main scatter plot
+    scatter = ax_main.scatter(x, y, c=colors, edgecolor='none', s=100)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.1, color='red')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Ensure the main plot is square with equal increments on both axes
+    ax_main.set_aspect('equal', adjustable='box')
+
+    # Determine the symmetric limits around zero
+    max_limit = round(max(abs(x).max(), abs(y).max())) + max(1, round(0.05 * round(max(abs(x).max(), abs(y).max()))))  # the addition adds 5% of padding of the max limit
+
+    # Set symmetric limits and ticks around zero
+    ax_main.set_xlim([-max_limit, max_limit])
+    ax_main.set_ylim([max_limit, -max_limit])  # Flip the y-axis
+
+    # Set tick increments
+    tick_increment = 1  # Change this value to your desired tick increment
+    ax_main.set_xticks(np.arange(-max_limit, max_limit + tick_increment, tick_increment))
+    ax_main.set_yticks(np.arange(-max_limit, max_limit + tick_increment, tick_increment))
+
+    # Use make_axes_locatable to create new axes that are dynamically sized relative to the main plot
+    divider = make_axes_locatable(ax_main)
+    ax_xDist = divider.append_axes("top", size="15%", pad=0.5, sharex=ax_main)
+    ax_yDist = divider.append_axes("right", size="15%", pad=0.5, sharey=ax_main)
+    ax_cbar = divider.append_axes("left", size="5%", pad=2)
+    ax_legend = divider.append_axes("right", size="10%", pad=1)
+    ax_table = divider.append_axes("right", size="175%", pad=1)
+
+    # Adding color bar
+    cbar = fig.colorbar(sm, cax=ax_cbar, orientation='vertical')
+    cbar.set_label('DIL specific tumor tissue score')
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'k+', markersize=10, markeredgewidth=2)
+
+    # Annotations for mean, std, and RMSE
+    mean_std_text = f'$\mu_x$: {mean_x:.2f} $\sigma_x$: {std_x:.2f} (mm)\n$\mu_y$: {mean_y:.2f} $\sigma_y$: {std_y:.2f} (mm)'
+    fontsize = 10
+    text_area = TextArea(mean_std_text, textprops=dict(fontsize=fontsize))
+    annotation_box = AnnotationBbox(text_area, (0.5, 1.1), xycoords='axes fraction',
+                                    boxcoords="axes fraction", box_alignment=(0.5, 0), frameon=True,
+                                    bboxprops=dict(facecolor='white', edgecolor='black'))
+    ax_xDist.add_artist(annotation_box)
+
+    # Adjust text size dynamically
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox_annotation = text_area.get_window_extent(renderer)
+    while bbox_annotation.width > ax_xDist.bbox.width or bbox_annotation.height > ax_xDist.bbox.height:
+        fontsize -= 1
+        text_area = TextArea(mean_std_text, textprops=dict(fontsize=fontsize))
+        annotation_box = AnnotationBbox(text_area, (0.5, 1.1), xycoords='axes fraction',
+                                        boxcoords="axes fraction", box_alignment=(0.5, 0), frameon=True,
+                                        bboxprops=dict(facecolor='white', edgecolor='black'))
+        ax_xDist.add_artist(annotation_box)
+        fig.canvas.draw()
+        bbox_annotation = text_area.get_window_extent(renderer)
+
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
+    # Add direction annotations outside the plot area
+    ax_main.annotate('L', xy=(1, 0), xytext=(0, -30),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='right', va='center', fontsize=12)
+    ax_main.annotate('R', xy=(0, 0), xytext=(0, -30),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+    ax_main.annotate('A', xy=(0, 1), xytext=(-40, 0),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+    ax_main.annotate('P', xy=(0, 0), xytext=(-40, 0),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+
+    ax_main.set_xlabel('(L/R) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Transverse plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    # Adding point annotations and legend
+    unique_patient_ids = df_filtered['Patient ID'].unique()
+    patient_id_to_number = {pid: i + 1 for i, pid in enumerate(unique_patient_ids)}
+
+    unique_bx_ids = df_filtered.index
+    bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
+
+    annotation_strings = []
+    table_data = []
+
+    for i, row in df_filtered.iterrows():
+        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+        annotation_strings.append(annotation_str)
+        table_data.append([
+            row['Patient ID'],  # Add Patient ID column
+            annotation_str,
+            row['Bx ID'],
+            f"{row['Global mean binom est']:.2f}",  # Ensure two decimal places
+            f"{row['BX to DIL centroid distance']:.2f}",
+            row['Bx position in prostate LR'],
+            row['Bx position in prostate AP'],
+            row['Bx position in prostate SI']
+        ])
+        ax_main.annotate(annotation_str, 
+                        (row['Bx (X, DIL centroid frame)'], row['Bx (Y, DIL centroid frame)']),
+                        fontsize=9, color='black', 
+                        textcoords="offset points", xytext=(5,5))  # Offset by (5, 5)
+
+    # Create a DataFrame for the table data
+    df_table = pandas.DataFrame(table_data, columns=["Patient ID", "Annotation", "Bx ID", "DIL sp. TTS*", 'Bx Cent. to DIL Cent. (mm)', "Bx position LR", "Bx position AP", "Bx position SI"])
+
+    # Create the table with the "Patient ID" column
+    ax_table.axis('tight')
+    ax_table.axis('off')
+    table = ax_table.table(cellText=df_table.values, 
+                        colLabels=df_table.columns, 
+                        cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1.2, 1.2)
+
+    # Adjust column widths to minimize white space
+    max_colwidths = [max([len(str(cell)) for cell in df_table[col]]) for col in df_table.columns]
+    table.auto_set_column_width(list(range(len(df_table.columns))))
+    for col_idx, col in enumerate(df_table.columns):
+        for cell in table.get_celld().values():
+            if cell.get_text().get_text() == col:
+                cell.set_width(max_colwidths[col_idx] * 0.1)  # Adjust the multiplier as needed
+
+    # Adjust row heights to minimize squishing
+    # for row_idx in range(len(df_table)):
+    #     max_row_height = max([len(str(cell)) for cell in df_table.iloc[row_idx]])
+    #     table.scale(1, max_row_height * 0.1)  # Adjust the multiplier as needed
+
+    # Draw the figure to update the table position
+    fig.canvas.draw()
+
+    # Calculate the position below the table using the updated bbox
+    bbox = table.get_window_extent(fig.canvas.get_renderer())
+    x0, y0, width, height = bbox.transformed(fig.transFigure.inverted()).bounds
+
+    # Add italicized annotation below the table
+    fig.text(x0 + width / 2, y0 - 0.02, "*TTS = Tumor tissue score", ha='center', va='top', fontsize=10, style='italic', transform=fig.transFigure)
+
+    # Create the legend text
+    legend_labels = [f"{num}: {pid}" for pid, num in patient_id_to_number.items()]
+    legend_text = "\n".join(legend_labels)
+    ax_legend.text(0.5, 0.5, legend_text, transform=ax_legend.transAxes, verticalalignment='center', horizontalalignment='center', bbox=dict(facecolor='white', alpha=0.5))
+    ax_legend.axis('off')
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
+
+
+
+
+def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring_with_table(cohort_nearest_dils_dataframe,
+                                                                                                    cohort_global_tissue_class_dataframe,
+                                                                                                    general_plot_name_string,
+                                                                                                    cohort_output_figures_dir):
+    
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
+    # Rename columns to match df_tissue for a successful merge
+    df_filtered.rename(columns={
+        'Relative DIL ID': 'Relative structure ROI',
+        'Relative struct type': 'Relative structure type',
+        'Relative DIL index': 'Relative structure index'
+    }, inplace=True)
+
+    df_tissue = cohort_global_tissue_class_dataframe
+
+    # Merge df_filtered with df_tissue to get the 'Global mean binom est' for coloring
+    df_filtered = df_filtered.merge(
+        df_tissue[['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type', 'Global mean binom est']],
+        on=['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Relative structure index', 'Relative structure type'],
+        how='left'
+    )
+
+    # Define the color mapping based on 'Global mean binom est'
+    colors = ["green", "blue", "black"]  # Adjust colors as needed
+    cmap = LinearSegmentedColormap.from_list("CustomCmap", colors, N=10)  # More bins for smoother color transitions
+
+    # Normalize the 'Global mean binom est' values for color mapping
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Apply color mapping
+    df_filtered['Color'] = df_filtered['Global mean binom est'].apply(lambda x: sm.to_rgba(x))
+
+    # Extract values and colors
+    x = df_filtered['Bx (Z, DIL centroid frame)'].values
+    y = df_filtered['Bx (Y, DIL centroid frame)'].values
+    colors = df_filtered['Color'].values
+
+    # Calculate means and standard deviations
+    mean_x, std_x = np.mean(x), np.std(x)
+    mean_y, std_y = np.mean(y), np.std(y)
+    mean = [mean_x, mean_y]
+    cov = np.cov(x, y)
+    rmse = np.sqrt(mean_squared_error(y, np.full_like(y, mean_y)))  # Simplified RMSE calculation
+
+    # Setup main plot and marginal plots
+    fig = plt.figure(figsize=(24, 12))
+    ax_main = fig.add_subplot(111)
+
+    # Main scatter plot
+    scatter = ax_main.scatter(x, y, c=colors, edgecolor='none', s=100)
+    draw_ellipse(mean, cov, ax=ax_main, alpha=0.1, color='red')
+    ax_main.axhline(0, color='gray', linestyle='--', alpha=0.5)  # Horizontal line
+    ax_main.axvline(0, color='gray', linestyle='--', alpha=0.5)  # Vertical line
+
+    # Ensure the main plot is square with equal increments on both axes
+    ax_main.set_aspect('equal', adjustable='box')
+
+    # Determine the symmetric limits around zero
+    max_limit = round(max(abs(x).max(), abs(y).max())) + max(1, round(0.05 * round(max(abs(x).max(), abs(y).max()))))  # the addition adds 5% of padding of the max limit
+
+    # Set symmetric limits and ticks around zero
+    ax_main.set_xlim([-max_limit, max_limit])
+    ax_main.set_ylim([max_limit, -max_limit])  # Flip the y-axis
+
+    # Set tick increments
+    tick_increment = 1  # Change this value to your desired tick increment
+    ax_main.set_xticks(np.arange(-max_limit, max_limit + tick_increment, tick_increment))
+    ax_main.set_yticks(np.arange(-max_limit, max_limit + tick_increment, tick_increment))
+
+    # Use make_axes_locatable to create new axes that are dynamically sized relative to the main plot
+    divider = make_axes_locatable(ax_main)
+    ax_xDist = divider.append_axes("top", size="15%", pad=0.5, sharex=ax_main)
+    ax_yDist = divider.append_axes("right", size="15%", pad=0.5, sharey=ax_main)
+    ax_cbar = divider.append_axes("left", size="5%", pad=2)
+    ax_legend = divider.append_axes("right", size="10%", pad=1)
+    ax_table = divider.append_axes("right", size="175%", pad=1)
+
+    # Adding color bar
+    cbar = fig.colorbar(sm, cax=ax_cbar, orientation='vertical')
+    cbar.set_label('DIL specific tumor tissue score')
+
+    # Marginal distributions
+    sns.histplot(x=x, ax=ax_xDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+    sns.histplot(y=y, ax=ax_yDist, kde=True, stat="density", color='skyblue', line_kws={'color': 'k', 'lw': 2, 'linestyle': '-'})
+
+    # Dotted lines at 0 for marginal distributions
+    ax_xDist.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax_yDist.axhline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Formatting and cleanup for marginals
+    ax_xDist.tick_params(axis="x", labelbottom=False)
+    ax_yDist.tick_params(axis="y", labelleft=False)
+
+    # Plot mean as a black cross
+    ax_main.plot(mean_x, mean_y, 'k+', markersize=10, markeredgewidth=2)
+
+    # Annotations for mean, std, and RMSE
+    mean_std_text = f'$\mu_z$: {mean_x:.2f} $\sigma_z$: {std_x:.2f} (mm)\n$\mu_y$: {mean_y:.2f} $\sigma_y$: {std_y:.2f} (mm)'
+    fontsize = 10
+    text_area = TextArea(mean_std_text, textprops=dict(fontsize=fontsize))
+    annotation_box = AnnotationBbox(text_area, (0.5, 1.1), xycoords='axes fraction',
+                                    boxcoords="axes fraction", box_alignment=(0.5, 0), frameon=True,
+                                    bboxprops=dict(facecolor='white', edgecolor='black'))
+    ax_xDist.add_artist(annotation_box)
+
+    # Adjust text size dynamically
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox_annotation = text_area.get_window_extent(renderer)
+    while bbox_annotation.width > ax_xDist.bbox.width or bbox_annotation.height > ax_xDist.bbox.height:
+        fontsize -= 1
+        text_area = TextArea(mean_std_text, textprops=dict(fontsize=fontsize))
+        annotation_box = AnnotationBbox(text_area, (0.5, 1.1), xycoords='axes fraction',
+                                        boxcoords="axes fraction", box_alignment=(0.5, 0), frameon=True,
+                                        bboxprops=dict(facecolor='white', edgecolor='black'))
+        ax_xDist.add_artist(annotation_box)
+        fig.canvas.draw()
+        bbox_annotation = text_area.get_window_extent(renderer)
+
+    ax_main.text(0.05, 0.95, f'RMSE: {rmse:.2f}', transform=ax_main.transAxes, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
+    # Add direction annotations outside the plot area
+    ax_main.annotate('S', xy=(1, 0), xytext=(0, -30),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='right', va='center', fontsize=12)
+    ax_main.annotate('I', xy=(0, 0), xytext=(0, -30),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+    ax_main.annotate('A', xy=(0, 1), xytext=(-40, 0),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+    ax_main.annotate('P', xy=(0, 0), xytext=(-40, 0),
+                    xycoords=('axes fraction', 'axes fraction'),
+                    textcoords='offset points',
+                    ha='left', va='center', fontsize=12)
+
+    ax_main.set_xlabel('(S/I) (mm)')
+    ax_main.set_ylabel('(A/P) (mm)')
+
+    ax_main.text(0.2, 0.02, "Sagittal plane", transform=ax_main.transAxes, horizontalalignment='center', verticalalignment='bottom', fontsize=12, style='italic')
+
+    # Adding point annotations and legend
+    unique_patient_ids = df_filtered['Patient ID'].unique()
+    patient_id_to_number = {pid: i + 1 for i, pid in enumerate(unique_patient_ids)}
+
+    unique_bx_ids = df_filtered.index
+    bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
+
+    annotation_strings = []
+    table_data = []
+
+    for i, row in df_filtered.iterrows():
+        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+        annotation_strings.append(annotation_str)
+        table_data.append([
+            row['Patient ID'],  # Add Patient ID column
+            annotation_str,
+            row['Bx ID'],
+            f"{row['Global mean binom est']:.2f}",  # Ensure two decimal places
+            f"{row['BX to DIL centroid distance']:.2f}",
+            row['Bx position in prostate LR'],
+            row['Bx position in prostate AP'],
+            row['Bx position in prostate SI']
+        ])
+        ax_main.annotate(annotation_str, 
+                        (row['Bx (Z, DIL centroid frame)'], row['Bx (Y, DIL centroid frame)']),
+                        fontsize=9, color='black', 
+                        textcoords="offset points", xytext=(5,5))  # Offset by (5, 5)
+
+    # Create a DataFrame for the table data
+    df_table = pandas.DataFrame(table_data, columns=["Patient ID", "Annotation", "Bx ID", "DIL sp. TTS*", 'Bx Cent. to DIL Cent. (mm)', "Bx position LR", "Bx position AP", "Bx position SI"])
+
+    # Create the table with the "Patient ID" column
+    ax_table.axis('tight')
+    ax_table.axis('off')
+    table = ax_table.table(cellText=df_table.values, 
+                        colLabels=df_table.columns, 
+                        cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1.2, 1.2)
+
+    # Adjust column widths to minimize white space
+    max_colwidths = [max([len(str(cell)) for cell in df_table[col]]) for col in df_table.columns]
+    table.auto_set_column_width(list(range(len(df_table.columns))))
+    for col_idx, col in enumerate(df_table.columns):
+        for cell in table.get_celld().values():
+            if cell.get_text().get_text() == col:
+                cell.set_width(max_colwidths[col_idx] * 0.1)  # Adjust the multiplier as needed
+
+    # Adjust row heights to minimize squishing
+    # for row_idx in range(len(df_table)):
+    #     max_row_height = max([len(str(cell)) for cell in df_table.iloc[row_idx]])
+    #     table.scale(1, max_row_height * 0.1)  # Adjust the multiplier as needed
+
+    # Draw the figure to update the table position
+    fig.canvas.draw()
+
+    # Calculate the position below the table using the updated bbox
+    bbox = table.get_window_extent(fig.canvas.get_renderer())
+    x0, y0, width, height = bbox.transformed(fig.transFigure.inverted()).bounds
+
+    # Add italicized annotation below the table
+    fig.text(x0 + width / 2, y0 - 0.02, "*TTS = Tumor tissue score", ha='center', va='top', fontsize=10, style='italic', transform=fig.transFigure)
+
+    # Create the legend text
+    legend_labels = [f"{num}: {pid}" for pid, num in patient_id_to_number.items()]
+    legend_text = "\n".join(legend_labels)
+    ax_legend.text(0.5, 0.5, legend_text, transform=ax_legend.transAxes, verticalalignment='center', horizontalalignment='center', bbox=dict(facecolor='white', alpha=0.5))
+    ax_legend.axis('off')
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
+
 
 
 
@@ -5728,6 +6522,215 @@ def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame(co
 
 
 
+def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame_v2(cohort_nearest_dils_dataframe,
+                                                                              general_plot_name_string,
+                                                                              cohort_output_figures_dir):
+
+
+    plt.ioff()
+    df = cohort_nearest_dils_dataframe
+    df_filtered = copy.deepcopy(df[(df['Simulated bool'] == False) & (df["Target DIL (by centroids)"] == True)])
+
+    # Rename columns for plotting
+    rename_dict = {
+        'Bx (X, DIL centroid frame)': '(L/R)',
+        'Bx (Y, DIL centroid frame)': '(A/P)',
+        'Bx (Z, DIL centroid frame)': '(S/I)',
+    }
+    df_filtered.rename(columns=rename_dict, inplace=True)
+
+    # Define columns to plot
+    cols_to_plot = list(rename_dict.values())  # ['(L/R)', '(A/P)', '(S/I)']
+
+    # Set up the figure and axes
+    fig, axes = plt.subplots(nrows=len(cols_to_plot), ncols=len(cols_to_plot), figsize=(15, 15))
+
+    # Calculate universal limits for all plots with padding
+    max_limit = max(df_filtered[cols_to_plot].max().max(), abs(df_filtered[cols_to_plot].min().min()))
+    max_limit *= 1.1  # Add 10% padding
+
+    # Define dictionary for annotations on scatter axes
+    annotation_dict_map = {'(L/R)+': 'L',
+                       '(L/R)-': 'R',
+                       '(S/I)+': 'S',
+                       '(S/I)-': 'I',
+                       '(A/P)-': 'A',
+                       '(A/P)+': 'P'}
+
+    # Loop through each subplot position in the grid
+    for i, row_var in enumerate(cols_to_plot):
+        for j, col_var in enumerate(cols_to_plot):
+            ax = axes[i][j]
+            if i == j:  # Diagonal: KDE plot
+                data = df_filtered[col_var]
+                kde = gaussian_kde(data)
+                x = np.linspace(-max_limit, max_limit, 500)
+                density = kde(x)
+                ax.plot(x, density, color='blue', alpha=0.6)  # Plot the KDE line
+                ax.fill_between(x, density, color='blue', alpha=0.3)  # Shade under the curve
+                ax.set_xlim(-max_limit, max_limit)
+                ax.set_ylim(0, max(density))  # Adjust y-axis limits to match the density
+                ax.set_ylabel("Density")  # Set y-axis label for KDE plots
+                ax.axvline(0, ls='--', color='gray', lw=1)  # Only vertical line at x=0
+                # Display mean and std dev
+                mean_val = np.mean(data)
+                std_val = np.std(data)
+                textstr = f'Mean: {mean_val:.2f}\nStd Dev: {std_val:.2f}'
+                ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=10,
+                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+            else:  # Off-diagonal: Scatter plot
+                sns.scatterplot(x=df_filtered[col_var], y=df_filtered[row_var], ax=ax, alpha=0.6, edgecolor='k', s=40)
+                ax.set_xlim(-max_limit, max_limit)
+                ax.set_ylim(-max_limit, max_limit)
+                ax.axhline(0, ls='--', color='gray', lw=1)  # Horizontal line at y=0
+                ax.axvline(0, ls='--', color='gray', lw=1)  # Vertical line at x=0
+
+            # Set labels and annotations specific to their positions
+            if i == len(cols_to_plot) - 1:
+                ax.set_xlabel(col_var)
+            if j == 0:  # Set y-label only for the left column
+                ax.set_ylabel(row_var)
+
+            # Annotation positioning
+            if j == 0:
+                ax.annotate(annotation_dict_map[row_var + '-'], xy=(0, 0), xycoords='axes fraction',
+                            xytext=(-40, 0), textcoords='offset points',
+                            horizontalalignment='right', verticalalignment='center', fontsize=12)
+                ax.annotate(annotation_dict_map[row_var + '+'], xy=(0, 1), xycoords='axes fraction',
+                            xytext=(-40, 0), textcoords='offset points',
+                            horizontalalignment='right', verticalalignment='center', fontsize=12)
+
+            if i == len(cols_to_plot) - 1:
+                ax.annotate(annotation_dict_map[col_var + '-'], xy=(0, 0), xycoords='axes fraction',
+                            xytext=(0, -20), textcoords='offset points',
+                            horizontalalignment='center', verticalalignment='top', fontsize=12)
+                ax.annotate(annotation_dict_map[col_var + '+'], xy=(1, 0), xycoords='axes fraction',
+                            xytext=(0, -20), textcoords='offset points',
+                            horizontalalignment='center', verticalalignment='top', fontsize=12)
+
+    plt.tight_layout()
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_item,
+                                                                                 patientUID,
+                                                                                 bx_ref,
+                                                                                 all_ref_key,
+                                                                                 structs_referenced_dict,
+                                                                                 default_exterior_tissue,
+                                                                                 patient_sp_output_figures_dir_dict,
+                                                                                 general_plot_name_string):
+
+
+    def stacked_area_plot_with_confidence_intervals(df, stacking_order):
+        """
+        Create a stacked area plot for binomial estimator values with confidence intervals,
+        stacking the areas to sum to 1 at each Z (Bx frame) point. Confidence intervals are 
+        shown as black dotted lines, properly shifted to align with stacked lines.
+
+        :param df: pandas DataFrame containing the data
+        :param stacking_order: list of tissue class names, ordered by stacking hierarchy
+        """
+        plt.ioff()
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        # Generate a common x_range for plotting
+        x_range = np.linspace(df['Z (Bx frame)'].min(), df['Z (Bx frame)'].max(), 500)
+
+        # Initialize cumulative variables for stacking
+        y_cumulative = np.zeros_like(x_range)
+
+        # Set color palette for tissue classes
+        colors = plt.cm.viridis(np.linspace(0, 1, len(stacking_order)))
+
+        # Loop through the stacking order
+        for i, tissue_class in enumerate(stacking_order):
+            tissue_df = df[df['Tissue class'] == tissue_class]
+
+            # Perform kernel regression for binomial estimator
+            kr = KernelReg(endog=tissue_df['Binomial estimator'], exog=tissue_df['Z (Bx frame)'], var_type='c', bw=[1])
+            y_kr, _ = kr.fit(x_range)
+
+            # Perform kernel regression for CI lower and upper bounds
+            kr_lower = KernelReg(endog=tissue_df['CI lower vals'], exog=tissue_df['Z (Bx frame)'], var_type='c', bw=[1])
+            kr_upper = KernelReg(endog=tissue_df['CI upper vals'], exog=tissue_df['Z (Bx frame)'], var_type='c', bw=[1])
+            ci_lower_kr, _ = kr_lower.fit(x_range)
+            ci_upper_kr, _ = kr_upper.fit(x_range)
+
+            # Stack the binomial estimator values (fill between previous and new values)
+            ax.fill_between(x_range, y_cumulative, y_cumulative + y_kr, color=colors[i], alpha=0.7, label=tissue_class)
+
+            # Plot the black dotted lines for confidence intervals, shifted by the cumulative values
+            ax.plot(x_range, y_cumulative + ci_upper_kr, color='black', linestyle=':', linewidth=1)  # Upper confidence interval
+            ax.plot(x_range, y_cumulative + ci_lower_kr, color='black', linestyle=':', linewidth=1)  # Lower confidence interval
+
+            # Update cumulative binomial estimator for stacking
+            y_cumulative += y_kr
+
+        # Final plot adjustments
+        ax.set_title('Stacked Binomial Estimator with Confidence Intervals by Tissue Class')
+        ax.set_xlabel('Biopsy axial dimension (mm)')
+        ax.set_ylabel('Binomial Estimator')
+        ax.legend(loc='best', facecolor='white')
+        ax.grid(True, which='major', linestyle='--', linewidth=0.5)
+        plt.tight_layout()
+
+        return fig
+
+
+    # plotting loop
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+    tissue_heirarchy_list = misc_tools.tissue_heirarchy_list_creator_func(structs_referenced_dict,
+                                       append_default_exterior_tissue = True,
+                                       default_exterior_tissue = default_exterior_tissue
+                                       )
+
+    multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"]
+
+
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        
+        sp_structure_mc_sum_to_one_pt_wise_results_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
+
+        fig = stacked_area_plot_with_confidence_intervals(sp_structure_mc_sum_to_one_pt_wise_results_dataframe, tissue_heirarchy_list)
+
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5872,27 +6875,19 @@ def add_p_value_annotation(fig,
 
 
 
-
-
-
-def add_p_value_annotation_intra_column(fig, 
-                           column_names_list, 
-                           trace_names_list,
-                           subplot=1, 
-                           _format=dict(interline=0.07, text_height=1.07, color='black')
-                           ):
-    ''' Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
+def add_p_value_annotation_v2(fig, array_columns, subplot=1, show_p_val=True, _format=dict(color='black')):
+    '''
+    Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
     
     Parameters:
     ----------
     fig: figure
         plotly boxplot figure
-    column_names_list: list of column names, should be same length as trace_names_list
-        array of which columns to compare 
+    array_columns: list
+        list of which columns to compare 
         e.g.: [[0,1], [1,2]] compares column 0 with 1 and 1 with 2
-    trace_names_list: list of sublists, each sublist should be of length 2 and says which traces to compare for the column of the same 
-        index as column_names_list
-        specifies if the figures has subplots and what subplot to add the notation to
+    subplot: int
+        specifies the subplot number to add the notation to
     _format: dict
         format characteristics for the lines
 
@@ -5901,79 +6896,122 @@ def add_p_value_annotation_intra_column(fig,
     fig: figure
         figure with the added notation
     '''
-    # Specify in what y_range to plot for each pair of columns
-    y_range = np.zeros([len(column_names_list), 2])
-    for i in range(len(column_names_list)):
-        y_range[i] = [1.01+i*_format['interline'], 1.02+i*_format['interline']]
-
-    # Get values from figure
-    fig_dict = fig.to_dict()
-
     
+    # Specify in what y_range to plot for each pair of columns
+    y_range = np.zeros([len(array_columns), 2])
+    for i in range(len(array_columns)):
+        y_range[i] = [1.01 + i * 0.07, 1.02 + i * 0.07]
 
-
-    df_list = []
-    for trace in range(len(fig_dict['data'])):
-        df = pandas.DataFrame({'col name': fig_dict['data'][trace]['x'], 
-                                'vals': fig_dict['data'][trace]['y'], 
-                                'trace':trace})
-        df_list.append(df)
-    df_grand = pandas.concat(df_list, ignore_index = True)
+    # Get indices if working with subplots
+    if subplot:
+        subplot_str = str(subplot) if subplot > 1 else ''
+        indices = [i for i, data in enumerate(fig.data) if data['xaxis'] == 'x' + subplot_str]
+    else:
+        subplot_str = ''
+        indices = list(range(len(fig.data)))
 
     # Print the p-values
-    for index, column_name in enumerate(column_names_list):
+    for index, column_pair in enumerate(array_columns):
+        data_pair = [indices[column_pair[0]], indices[column_pair[1]]]
         
-
-        # Mare sure it is selecting the data and subplot you want
-        #print('0:', fig_dict['data'][data_pair[0]]['name'], fig_dict['data'][data_pair[0]]['xaxis'])
-        #print('1:', fig_dict['data'][data_pair[1]]['name'], fig_dict['data'][data_pair[1]]['xaxis'])
-        trace_1_name = trace_names_list[index][0]
-        trace_2_name = trace_names_list[index][1]
-
         # Get the p-value
-        pvalue = stats.ttest_ind(
-            df_grand[(df_grand['names'] == column_name) & (df_grand['trace name'] == trace_1_name)]['vals'].to_numpy(),
-            df_grand[(df_grand['names'] == column_name) & (df_grand['trace name'] == trace_2_name)]['vals'].to_numpy(),
-            equal_var=False,
-        )[1]
+        y1_data = fig.data[data_pair[0]].y
+        y2_data = fig.data[data_pair[1]].y
+        pvalue = stats.ttest_ind(y1_data, y2_data, equal_var=False)[1]
+        
         if pvalue >= 0.05:
             symbol = 'ns'
-        elif pvalue >= 0.01: 
+        elif pvalue >= 0.01:
             symbol = '*'
         elif pvalue >= 0.001:
             symbol = '**'
         else:
             symbol = '***'
-        # Vertical line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[0], y0=y_range[index][0], 
-            x1=column_pair[0], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        # Horizontal line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[0], y0=y_range[index][1], 
-            x1=column_pair[1], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        # Vertical line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[1], y0=y_range[index][0], 
-            x1=column_pair[1], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        ## add text at the correct x, y coordinates
-        ## for bars, there is a direct mapping from the bar number to 0, 1, 2...
-        fig.add_annotation(dict(font=dict(color=_format['color'],size=14),
-            x=(column_pair[0] + column_pair[1])/2,
-            y=y_range[index][1]*_format['text_height'],
-            showarrow=False,
-            text=symbol,
-            textangle=0,
-            xref="x"+subplot_str,
-            yref="y"+subplot_str+" domain"
-        ))
+
+        p_value_text = f'p = {pvalue:.1e} ({symbol})'
+        x1, x2 = column_pair
+        y0, y1 = y_range[index]
+
+        # Estimate the width of the p-value text
+        text_width = len(p_value_text) * 0.04  # Approximate width per character
+
+        # Draw the bracket with dynamically calculated gap for p-value
+        # Left vertical line
+        fig.add_shape(type="line", xref="x" + subplot_str, yref="y" + subplot_str + " domain",
+                      x0=x1, y0=y0, x1=x1, y1=y1, line=dict(color=_format['color'], width=2))
+
+        # Right vertical line
+        fig.add_shape(type="line", xref="x" + subplot_str, yref="y" + subplot_str + " domain",
+                      x0=x2, y0=y0, x1=x2, y1=y1, line=dict(color=_format['color'], width=2))
+
+        # Left horizontal line
+        fig.add_shape(type="line", xref="x" + subplot_str, yref="y" + subplot_str + " domain",
+                      x0=x1, y0=y1, x1=(x1 + x2) / 2 - text_width / 2, y1=y1, line=dict(color=_format['color'], width=2))
+
+        # Right horizontal line
+        fig.add_shape(type="line", xref="x" + subplot_str, yref="y" + subplot_str + " domain",
+                      x0=(x1 + x2) / 2 + text_width / 2, y0=y1, x1=x2, y1=y1, line=dict(color=_format['color'], width=2))
+
+        # Add p-value text with significance symbol
+        if show_p_val:
+            fig.add_annotation(dict(font=dict(color=_format['color'], size=14),
+                                    x=(x1 + x2) / 2,
+                                    y=y1+0.04,
+                                    showarrow=False,
+                                    text=p_value_text,
+                                    textangle=0,
+                                    xref="x" + subplot_str,
+                                    yref="y" + subplot_str + " domain",
+                                    align="center",
+                                    valign="middle"))
+    return fig
+
+
+
+
+def add_significance_annotation(fig, x=0.5, y=-0.1, _format=dict(color='black')):
+    '''
+    Adds an annotation to the figure explaining the significance symbols
+    
+    Parameters:
+    ----------
+    fig: figure
+        plotly figure to which the annotation will be added
+    x: float
+        x position of the annotation in paper coordinates (default is 0.5, centered)
+    y: float
+        y position of the annotation in paper coordinates (default is -0.1, below the figure)
+    _format: dict
+        format characteristics for the text
+
+    Returns:
+    -------
+    fig: figure
+        figure with the added annotation
+    '''
+    
+    # Significance explanation text
+    significance_text = (
+        "Significance symbols:\n"
+        "ns: p ≥ 0.05\n"
+        "*: 0.01 ≤ p < 0.05\n"
+        "**: 0.001 ≤ p < 0.01\n"
+        "***: p < 0.001"
+    )
+    
+    # Add the annotation
+    fig.add_annotation(
+        text=significance_text,
+        xref="paper", yref="paper",
+        x=x, y=y,
+        showarrow=False,
+        font=dict(color=_format['color'], size=12),
+        align="left",
+        bordercolor="black",
+        borderwidth=1,
+        borderpad=4,
+        bgcolor="white",
+        opacity=0.8
+    )
+    
     return fig

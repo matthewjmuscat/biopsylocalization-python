@@ -83,6 +83,7 @@ def simulator_parallel(parallel_pool,
                        layout_groups, 
                        master_structure_reference_dict, 
                        structs_referenced_list,
+                       structs_referenced_dict,
                        bx_ref,
                        oar_ref,
                        dil_ref, 
@@ -108,6 +109,7 @@ def simulator_parallel(parallel_pool,
                        plot_shifted_biopsies,
                        structure_miss_probability_roi,
                        cancer_tissue_label,
+                       default_exterior_tissue,
                        miss_structure_complement_label,
                        tissue_length_above_probability_threshold_list,
                        n_bootstraps_for_tissue_length_above_threshold,
@@ -667,6 +669,10 @@ def simulator_parallel(parallel_pool,
                 CI_results = mc_compiled_results_for_fixed_bx_dataframe.apply(lambda row: mf.binomial_CI_estimator_general(row['Binomial estimator'], num_MC_containment_simulations, confidence_level = 0.95), axis=1)
                 mc_compiled_results_for_fixed_bx_dataframe['CI lower vals'] = CI_results.apply(lambda x: x[0])
                 mc_compiled_results_for_fixed_bx_dataframe['CI upper vals'] = CI_results.apply(lambda x: x[1])
+
+                # Add voxel columns
+                reference_dimension_col_name = "Z (Bx frame)"
+                mc_compiled_results_for_fixed_bx_dataframe = dataframe_builders.add_voxel_columns_helper_func(mc_compiled_results_for_fixed_bx_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
                 
                 
                 # HERE!!!!!!
@@ -678,6 +684,64 @@ def simulator_parallel(parallel_pool,
                 ###
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 ###
+
+
+
+                ### CALC SUM TO 1 PROBABILITIES
+
+                ###
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing sum-to-one probabilities", total = None)
+                ###
+
+
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = compute_sum_to_one_probabilities_by_tissue_heirarchy_with_default_tissue_for_all_false_and_nominal(containment_info_grand_all_structures_pandas_dataframe,
+                                                        structs_referenced_dict,
+                                                        default_exterior_tissue = default_exterior_tissue)
+
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe["Binomial estimator"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe["Total successes"]/num_MC_containment_simulations                                        
+
+                # convert nominal column from bool to uint8
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.astype({'Nominal': 'uint8'})  
+
+
+                # add back patient, bx id information to dataframe
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Patient ID', patientUID)
+
+
+
+                # add biopsy point location in the bx frame 
+
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = misc_tools.include_vector_columns_in_dataframe(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, 
+                                                                                           bx_points_bx_coords_sys_arr, 
+                                                                                           reference_column_name = 'Original pt index', 
+                                                                                           new_column_name_x = "X (Bx frame)", 
+                                                                                           new_column_name_y = "Y (Bx frame)", 
+                                                                                           new_column_name_z = "Z (Bx frame)")
+                
+                # Calculate and add to dataframe the binom est standard error
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe['Binom est STD err'] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.apply(lambda row: mf.binomial_se_estimator(row['Binomial estimator'], num_MC_containment_simulations, row['Total successes']), axis=1)
+                CI_results = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.apply(lambda row: mf.binomial_CI_estimator_general(row['Binomial estimator'], num_MC_containment_simulations, confidence_level = 0.95), axis=1)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe['CI lower vals'] = CI_results.apply(lambda x: x[0])
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe['CI upper vals'] = CI_results.apply(lambda x: x[1])
+
+
+                # Add voxel columns
+                reference_dimension_col_name = "Z (Bx frame)"
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = dataframe_builders.add_voxel_columns_helper_func(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
+
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+                #################
+
+
 
                 ###
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing mutual probabilities", total = None)
@@ -721,7 +785,21 @@ def simulator_parallel(parallel_pool,
                     del bx_mutual_containment_sp_combo_by_org_pt_dataframe
 
                 del containment_info_grand_all_structures_pandas_dataframe
+
+                # Add x,y,z point coordinates
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = misc_tools.include_vector_columns_in_dataframe(bx_mutual_containment_by_org_pt_all_combos_dataframe, 
+                                                                                           bx_points_bx_coords_sys_arr, 
+                                                                                           reference_column_name = 'Original pt index', 
+                                                                                           new_column_name_x = "X (Bx frame)", 
+                                                                                           new_column_name_y = "Y (Bx frame)", 
+                                                                                           new_column_name_z = "Z (Bx frame)")
                 
+
+                # Add voxel columns
+                reference_dimension_col_name = "Z (Bx frame)"
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.add_voxel_columns_helper_func(bx_mutual_containment_by_org_pt_all_combos_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
+
                 
                 #bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
 
@@ -796,11 +874,17 @@ def simulator_parallel(parallel_pool,
                 ###                
                 
                 #live_display.stop()
+
+                
+
+
                 # Update the master dictionary
                 mc_compiled_results_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_for_fixed_bx_dataframe, threshold=0.25)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, threshold=0.25)
                 bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(bx_mutual_containment_by_org_pt_all_combos_dataframe, threshold=0.25)
                 #live_display.start()
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
 
                 
@@ -822,6 +906,7 @@ def simulator_parallel(parallel_pool,
         completed_progress.update(testing_biopsy_containment_patient_task_completed, visible = True)
         live_display.refresh()
         
+        #live_display.start()
 
 
         # This was removed in favour of doing one structure at a time since saving all the results from all patients 
@@ -3388,3 +3473,308 @@ def tissue_volume_calculator(patientUID,
     volume_of_tissue_above_threshold_dataframe = pandas.DataFrame(volume_of_tissue_above_threshold_dict_for_dataframe)
 
     return volume_of_tissue_above_threshold_dataframe
+
+
+
+
+
+
+
+
+
+
+
+def compute_sum_to_one_probabilities_by_tissue_heirarchy_with_default_tissue_for_all_false(containment_info_grand_all_structures_pandas_dataframe,
+                                                        structs_referenced_dict,
+                                                        default_exterior_tissue = 'Periprostatic'):
+
+    """
+    This function is designed to accept a heirachy of tissue types and then determine the number of total successes each tissue type receives
+    based on the heirarchy. For example if in trial 1, the pt was contained in both the urethra and prostate, and the heirachy is dictated as [urethra,prostate]
+    then the result would be urethra: 1, prostate: 0.
+    """
+
+    tissue_heirarchy_list = misc_tools.tissue_heirarchy_list_creator_func(structs_referenced_dict,
+                                       append_default_exterior_tissue = False
+                                       )
+
+    df = containment_info_grand_all_structures_pandas_dataframe[containment_info_grand_all_structures_pandas_dataframe['Trial num'] != 0]
+
+    # Define the structure hierarchy
+    #structure_hierarchy = ['DIL ref', 'Urethra ref', 'Rectum ref', 'OAR ref']
+
+    # Create a categorical column for the hierarchy
+    df['structure_priority'] = pandas.Categorical(df['Relative structure type'], categories=tissue_heirarchy_list, ordered=True)
+
+    # Sort the DataFrame by Original pt index, Trial num, and structure priority
+    df_sorted = df.sort_values(by=['Original pt index', 'Trial num', 'structure_priority'])
+
+    # Flag the rows where the point is contained
+    df_sorted['contained_flag'] = df_sorted['Pt contained bool'].astype(int)
+
+    # Apply a max flag to ensure only one success per tissue type is counted, regardless of how many structures within that tissue type are True
+    df_sorted['max_contained_flag'] = df_sorted.groupby(['Original pt index', 'Trial num', 'Relative structure type'])['contained_flag'].transform('max')
+
+    # Now apply cumulative sum logic to ensure the first tissue type that wins stops others from being counted
+    df_sorted['cumulative_sum'] = df_sorted.groupby(['Original pt index', 'Trial num'])['max_contained_flag'].cumsum()
+
+    # Filter to keep only the first tissue type that wins for each trial, respecting the hierarchy
+    df_filtered = df_sorted[df_sorted['cumulative_sum'] <= 1]
+
+    # Group by Original pt index and tissue type to count unique successes per trial
+    result_df = df_filtered.groupby(
+        ['Original pt index', 'Relative structure type']
+    ).agg({'max_contained_flag': 'sum'}).reset_index()
+
+    # Create all possible combinations of Original pt index and Relative structure type
+    all_combinations = pandas.MultiIndex.from_product(
+        [df['Original pt index'].unique(), tissue_heirarchy_list],
+        names=['Original pt index', 'Relative structure type']
+    ).to_frame(index=False)
+
+    # Merge the result_df with all_combinations to ensure all tissue types are included
+    final_result = pandas.merge(all_combinations, result_df, on=['Original pt index', 'Relative structure type'], how='left')
+
+    # Fill NaN values (where there was no success) with 0
+    final_result['max_contained_flag'] = final_result['max_contained_flag'].fillna(0).astype(int)
+
+    # Add default_exterior_tissue results by calculating the difference between trials and successes
+    periprostatic_rows = []
+    for pt_index in final_result['Original pt index'].unique():
+        num_trials = df[df['Original pt index'] == pt_index]['Trial num'].nunique()
+        total_successes = final_result[final_result['Original pt index'] == pt_index]['max_contained_flag'].sum()
+
+        # Calculate the difference and add to periprostatic_rows
+        periprostatic_rows.append({
+            'Original pt index': pt_index,
+            'Relative structure type': default_exterior_tissue,
+            'max_contained_flag': num_trials - total_successes
+        })
+
+    # Convert the default_exterior_tissue rows into a DataFrame
+    periprostatic_df = pandas.DataFrame(periprostatic_rows)
+
+    # Concatenate the default_exterior_tissue rows into the final result using pandas.concat
+    final_result = pandas.concat([final_result, periprostatic_df], ignore_index=True)
+
+    # Rename the 'max_contained_flag' column to 'Total successes'
+    final_result.rename(columns={'max_contained_flag': 'Total successes'}, inplace=True)
+
+    # Ensure no NaN values in 'Total successes' column
+    final_result['Total successes'] = final_result['Total successes'].fillna(0).astype(int)
+
+    # Create a mapping from Relative structure type to Tissue class name
+    tissue_class_mapping = {key: value['Tissue class name'] for key, value in structs_referenced_dict.items()}
+
+    # Add the periprostatic to the mapping so that it doesnt get mapped to NaN
+    tissue_class_mapping[default_exterior_tissue] = default_exterior_tissue
+
+    # Apply the mapping to the 'Relative structure type' column in the final_result DataFrame
+    final_result['Relative structure type'] = final_result['Relative structure type'].map(tissue_class_mapping)
+
+    # Rename the 'Relative structure type' column to 'Tissue class'
+    final_result.rename(columns={'Relative structure type': 'Tissue class'}, inplace=True)
+
+    # Define the desired order of columns
+    final_column_order = ['Tissue class', 'Original pt index', 'Total successes']
+
+    # Reorder the DataFrame columns
+    final_result = final_result[final_column_order]
+
+    
+
+    # Separate the nominal (0th trial) data
+    nominal_df = containment_info_grand_all_structures_pandas_dataframe[containment_info_grand_all_structures_pandas_dataframe['Trial num'] == 0]
+
+    # Apply the hierarchy logic to the nominal data
+    nominal_df['structure_priority'] = pandas.Categorical(nominal_df['Relative structure type'], categories=tissue_heirarchy_list, ordered=True)
+    nominal_df = nominal_df.sort_values(by=['Original pt index', 'structure_priority'])
+    nominal_df['contained_flag'] = nominal_df['Pt contained bool'].astype(int)
+    nominal_df['max_contained_flag'] = nominal_df.groupby(['Original pt index', 'Relative structure type'])['contained_flag'].transform('max')
+    nominal_df['cumulative_sum'] = nominal_df.groupby(['Original pt index'])['max_contained_flag'].cumsum()
+
+    # Filter to keep only the first tissue type that wins for nominal data
+    nominal_filtered = nominal_df[nominal_df['cumulative_sum'] <= 1]
+
+    # Group by Original pt index and tissue type to count unique successes for nominal
+    nominal_result = nominal_filtered.groupby(['Original pt index', 'Relative structure type']).agg({'max_contained_flag': 'sum'}).reset_index()
+
+    # Rename 'max_contained_flag' column to 'Nominal'
+    nominal_result.rename(columns={'max_contained_flag': 'Nominal'}, inplace=True)
+
+    # Merge the nominal result with the main result_df
+    final_result = pandas.merge(final_result, nominal_result[['Original pt index', 'Relative structure type', 'Nominal']], 
+                                on=['Original pt index', 'Relative structure type'], how='left')
+
+    return final_result
+
+
+def compute_sum_to_one_probabilities_by_tissue_heirarchy_with_default_tissue_for_all_false_and_nominal(containment_info_grand_all_structures_pandas_dataframe,
+                                                        structs_referenced_dict,
+                                                        default_exterior_tissue = 'Periprostatic'):
+    
+    """
+    This function is designed to accept a heirachy of tissue types and then determine the number of total successes each tissue type receives
+    based on the heirarchy. For example if in trial 1, the pt was contained in both the urethra and prostate, and the heirachy is dictated as [urethra,prostate]
+    then the result would be urethra: 1, prostate: 0. It also returns the nominal value based on the 0th trial.
+    """
+
+    tissue_heirarchy_list = misc_tools.tissue_heirarchy_list_creator_func(structs_referenced_dict,
+                                       append_default_exterior_tissue = False
+                                       )
+
+    df = containment_info_grand_all_structures_pandas_dataframe[containment_info_grand_all_structures_pandas_dataframe['Trial num'] != 0]
+
+    # Define the structure hierarchy
+    #structure_hierarchy = ['DIL ref', 'Urethra ref', 'Rectum ref', 'OAR ref']
+
+    # Create a categorical column for the hierarchy
+    df['structure_priority'] = pandas.Categorical(df['Relative structure type'], categories=tissue_heirarchy_list, ordered=True)
+
+    # Sort the DataFrame by Original pt index, Trial num, and structure priority
+    df_sorted = df.sort_values(by=['Original pt index', 'Trial num', 'structure_priority'])
+
+    # Flag the rows where the point is contained
+    df_sorted['contained_flag'] = df_sorted['Pt contained bool'].astype(int)
+
+    # Apply a max flag to ensure only one success per tissue type is counted, regardless of how many structures within that tissue type are True
+    df_sorted['max_contained_flag'] = df_sorted.groupby(['Original pt index', 'Trial num', 'Relative structure type'])['contained_flag'].transform('max')
+
+    # Now apply cumulative sum logic to ensure the first tissue type that wins stops others from being counted
+    df_sorted['cumulative_sum'] = df_sorted.groupby(['Original pt index', 'Trial num'])['max_contained_flag'].cumsum()
+
+    # Filter to keep only the first tissue type that wins for each trial, respecting the hierarchy
+    df_filtered = df_sorted[df_sorted['cumulative_sum'] <= 1]
+
+    # Group by Original pt index and tissue type to count unique successes per trial
+    result_df = df_filtered.groupby(
+        ['Original pt index', 'Relative structure type']
+    ).agg({'max_contained_flag': 'sum'}).reset_index()
+
+    # Create all possible combinations of Original pt index and Relative structure type
+    all_combinations = pandas.MultiIndex.from_product(
+        [df['Original pt index'].unique(), tissue_heirarchy_list],
+        names=['Original pt index', 'Relative structure type']
+    ).to_frame(index=False)
+
+    # Merge the result_df with all_combinations to ensure all tissue types are included
+    final_result = pandas.merge(all_combinations, result_df, on=['Original pt index', 'Relative structure type'], how='left')
+
+    # Fill NaN values (where there was no success) with 0
+    final_result['max_contained_flag'] = final_result['max_contained_flag'].fillna(0).astype(int)
+
+    # Add default_exterior_tissue results by calculating the difference between trials and successes
+    periprostatic_rows = []
+    for pt_index in final_result['Original pt index'].unique():
+        num_trials = df[df['Original pt index'] == pt_index]['Trial num'].nunique()
+        total_successes = final_result[final_result['Original pt index'] == pt_index]['max_contained_flag'].sum()
+
+        # Calculate the difference and add to periprostatic_rows
+        periprostatic_rows.append({
+            'Original pt index': pt_index,
+            'Relative structure type': default_exterior_tissue,
+            'max_contained_flag': num_trials - total_successes
+        })
+
+    # Convert the default_exterior_tissue rows into a DataFrame
+    periprostatic_df = pandas.DataFrame(periprostatic_rows)
+
+    # Concatenate the default_exterior_tissue rows into the final result using pandas.concat
+    final_result = pandas.concat([final_result, periprostatic_df], ignore_index=True)
+
+    # Rename the 'max_contained_flag' column to 'Total successes'
+    final_result.rename(columns={'max_contained_flag': 'Total successes'}, inplace=True)
+
+    # Ensure no NaN values in 'Total successes' column
+    final_result['Total successes'] = final_result['Total successes'].fillna(0).astype(int)
+
+    # Create a mapping from Relative structure type to Tissue class name
+    tissue_class_mapping = {key: value['Tissue class name'] for key, value in structs_referenced_dict.items()}
+
+    # Add the periprostatic to the mapping so that it doesnt get mapped to NaN
+    tissue_class_mapping[default_exterior_tissue] = default_exterior_tissue
+
+    # Apply the mapping to the 'Relative structure type' column in the final_result DataFrame
+    final_result['Relative structure type'] = final_result['Relative structure type'].map(tissue_class_mapping)
+
+    # Rename the 'Relative structure type' column to 'Tissue class'
+    final_result.rename(columns={'Relative structure type': 'Tissue class'}, inplace=True)
+
+
+    # Separate the nominal (0th trial) data
+    nominal_df = containment_info_grand_all_structures_pandas_dataframe[containment_info_grand_all_structures_pandas_dataframe['Trial num'] == 0]
+
+    # Apply the hierarchy logic to the nominal data
+    nominal_df['structure_priority'] = pandas.Categorical(nominal_df['Relative structure type'], categories=tissue_heirarchy_list, ordered=True)
+    nominal_df = nominal_df.sort_values(by=['Original pt index', 'structure_priority'])
+    nominal_df['contained_flag'] = nominal_df['Pt contained bool'].astype(int)
+    nominal_df['max_contained_flag'] = nominal_df.groupby(['Original pt index', 'Relative structure type'])['contained_flag'].transform('max')
+    nominal_df['cumulative_sum'] = nominal_df.groupby(['Original pt index'])['max_contained_flag'].cumsum()
+
+    # Filter to keep only the first tissue type that wins for nominal data
+    nominal_filtered = nominal_df[nominal_df['cumulative_sum'] <= 1]
+
+    # Group by Original pt index and tissue type to count unique successes for nominal
+    nominal_result = nominal_filtered.groupby(['Original pt index', 'Relative structure type']).agg({'max_contained_flag': 'sum'}).reset_index()
+
+    # Create all possible combinations of Original pt index and Relative structure type
+    all_combinations = pandas.MultiIndex.from_product(
+        [df['Original pt index'].unique(), tissue_heirarchy_list],
+        names=['Original pt index', 'Relative structure type']
+    ).to_frame(index=False)
+
+    # Merge the result_df with all_combinations to ensure all tissue types are included
+    nominal_result = pandas.merge(all_combinations, nominal_result, on=['Original pt index', 'Relative structure type'], how='left')
+
+    # Fill NaN values (where there was no success) with 0
+    nominal_result['max_contained_flag'] = nominal_result['max_contained_flag'].fillna(0).astype(int)
+
+    # Add default_exterior_tissue results for nominal by calculating the difference between trials and successes
+    periprostatic_rows_nominal = []
+    for pt_index in nominal_df['Original pt index'].unique():
+        num_trials_nominal = nominal_df[nominal_df['Original pt index'] == pt_index]['Trial num'].nunique()  # Should be 1 for nominal trial
+        total_successes_nominal = nominal_result[nominal_result['Original pt index'] == pt_index]['max_contained_flag'].sum()
+
+        # Calculate the difference and add to periprostatic_rows_nominal
+        periprostatic_rows_nominal.append({
+            'Original pt index': pt_index,
+            'Relative structure type': default_exterior_tissue,
+            'max_contained_flag': num_trials_nominal - total_successes_nominal
+        })
+
+    # Convert the periprostatic rows into a DataFrame for nominal
+    periprostatic_nominal_df = pandas.DataFrame(periprostatic_rows_nominal)
+
+    # Concatenate the default_exterior_tissue rows into the nominal result
+    nominal_result = pandas.concat([nominal_result, periprostatic_nominal_df], ignore_index=True)
+
+    # Rename 'max_contained_flag' column to 'Nominal'
+    nominal_result.rename(columns={'max_contained_flag': 'Nominal'}, inplace=True)
+
+    # Apply the mapping to the 'Relative structure type' column in the final_result DataFrame
+    nominal_result['Relative structure type'] = nominal_result['Relative structure type'].map(tissue_class_mapping)
+
+    # Sort nominal_result by 'Original pt index' and 'Relative structure type'
+    nominal_result_sorted = nominal_result.sort_values(by=['Original pt index', 'Relative structure type'])
+
+    # Rename the 'Relative structure type' column to 'Tissue class'
+    nominal_result_sorted.rename(columns={'Relative structure type': 'Tissue class'}, inplace=True)
+
+    # Merge the nominal result with the main result_df
+    final_result_with_nominal = pandas.merge(final_result, nominal_result_sorted[['Original pt index', 'Tissue class', 'Nominal']], 
+                                on=['Original pt index', 'Tissue class'], how='left')
+
+    # Ensure no NaN values in 'Nominal' column
+    #final_result['Nominal'] = final_result['Nominal'].fillna(0).astype(int)
+
+
+    # Define the desired order of columns
+    final_column_order = ['Tissue class', 'Original pt index', 'Total successes', 'Nominal']
+
+    # Reorder the DataFrame columns
+    final_result_with_nominal = final_result_with_nominal[final_column_order]
+
+    final_result_with_nominal_sorted = final_result_with_nominal.sort_values(by=['Original pt index', 'Tissue class']).reset_index(drop=True)
+
+    return final_result_with_nominal_sorted
+

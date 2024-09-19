@@ -85,6 +85,7 @@ from itertools import combinations
 import biopsy_transporter
 import machina_learning
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 
 def main():
@@ -115,7 +116,7 @@ def main():
     # the programme for generality
     data_folder_name = 'Data'
     input_data_folder_name = "Input data"
-    modality_list = ['RTSTRUCT','RTDOSE','RTPLAN']
+    modality_list = ['RTSTRUCT','RTDOSE','RTPLAN', 'MR']
     #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
     """
     Consider prostate only for OARs!
@@ -321,8 +322,8 @@ def main():
                                              "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
-                                        "Biopsy positions relative to target DILs density plots":\
-                                            {"Plot bool": True, 
+                                        "Biopsy positions relative to target DILs density plots": \
+                                            {"Plot bool": True, # No code behind this method yet
                                              "Plot name": " - biopsy_positions_relative_to_target_DILs_density_plots",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
@@ -413,10 +414,14 @@ def main():
                                              "Plot name": ' - tissue_class-regression-probabilities'
                                              },
                                         "Tissue classification mutual probabilities plot": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - tissue_class_mutual-regression-probabilities',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
+                                        "Tissue classification sum-to-one plot": \
+                                            {"Plot bool": True, #
+                                             "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
+                                            },
                                         "Axial tissue class voxelized ridgeline plot": \
                                             {"Plot bool": False, 
                                              "Plot name": ' - tissue_class_ridgeline',
@@ -522,6 +527,7 @@ def main():
     write_sobol_dose_data_to_file = True
     write_sobol_containment_data_to_file = True
     write_preprocessing_data_to_file = True
+    write_cohort_data_to_file = True
 
     cupy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR GPU MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR A 3080 TI WITH 12GB VRAM!
     numpy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR RAM MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR 32GB RAM!
@@ -531,6 +537,7 @@ def main():
     # for dataframe builder
     cancer_tissue_label = 'DIL'
     miss_structure_complement_label = structure_miss_probability_roi + ' complement'
+    default_exterior_tissue = 'Periprostatic' # For tissue class stuff! Basically dictates what to call tissue that doesnt lie in any defined structure!
 
     # non-user changeable variables, but need to be initiatied:
     all_ref_key = "All ref"
@@ -545,6 +552,8 @@ def main():
                                         "Default sigma Y": biopsy_default_sigma_Y,
                                         "Default sigma Z": biopsy_default_sigma_Z,
                                         'Test tissue class': None, # should always be None
+                                        'Tissue heirarchy': None, # should always be None
+                                        'Tissue class name': None, # Not used for anything as of yet..
                                         'PCD color': np.array([0.5, 0.0, 0.5])
                                         }, 
                                 oar_ref: {"Contour names": oaroi_contour_names,
@@ -552,6 +561,8 @@ def main():
                                           "Default sigma Y": oar_default_sigma_Y,
                                           "Default sigma Z": oar_default_sigma_Z,
                                           'Test tissue class': True,
+                                          'Tissue heirarchy': 3,
+                                          'Tissue class name': 'Prostatic', 
                                           'PCD color': np.array([0.86, 0.08, 0.24])
                                           }, 
                                 dil_ref: {"Contour names": dil_contour_names,
@@ -559,20 +570,26 @@ def main():
                                           "Default sigma Y": dil_default_sigma_Y,
                                           "Default sigma Z": dil_default_sigma_Z,
                                           'Test tissue class': True,
+                                          'Tissue heirarchy': 0,
+                                          'Tissue class name': cancer_tissue_label,
                                           'PCD color': np.array([0.13, 0.55, 0.13])
                                           },
                                 rectum_ref_key: {"Contour names": rectum_contour_names,
                                           "Default sigma X": 0,
                                           "Default sigma Y": 0,
                                           "Default sigma Z": 0,
-                                          'Test tissue class': False,
+                                          'Test tissue class': True,
+                                          'Tissue heirarchy': 2,
+                                          'Tissue class name': 'Rectal',
                                           'PCD color': np.array([1.0, 0.84, 0.0])
                                           },
                                 urethra_ref_key: {"Contour names": urethra_contour_names,
                                           "Default sigma X": 0,
                                           "Default sigma Y": 0,
                                           "Default sigma Z": 0,
-                                          'Test tissue class': False,
+                                          'Test tissue class': True,
+                                          'Tissue heirarchy': 1,
+                                          'Tissue class name': 'Urethral',
                                           'PCD color': np.array([0.0, 0.75, 1.0])
                                           } 
                                 }
@@ -580,6 +597,7 @@ def main():
     structs_referenced_list = [key for key, value in structs_referenced_dict.items() if value.get('Test tissue class', False)]
     structs_referenced_list.insert(0,bx_ref) # this inserts bx_ref to the beginning of the list!
     
+
     ### IMPORTANT
     # this is a generalized version of structs referenced list, structs referenced list is the list that is referenced 
     # for the main tissue containement testing pipeline. The generalized version contains references that are not 
@@ -631,6 +649,7 @@ def main():
                                                                 "Cohort: Nearest DILs to each biopsy": None,
                                                                 "Cohort: 3D radiomic features all OAR and DIL structures": None,
                                                                 "Cohort: structure specific mc results": None,
+                                                                "Cohort: sum-to-one mc results": None,
                                                                 "Cohort: mutual tissue class mc results": None,
                                                                 "Cohort: tissue class global scores (tissue type)": None,
                                                                 "Cohort: tissue class global scores (structure)": None,
@@ -895,6 +914,9 @@ def main():
                 RTst_dcms_dict = {}
                 RTdose_dcms_dict = {}
                 RTplan_dcms_dict = {}
+                F1_US_dcms_dict = defaultdict(list) # defaultdict(list) allows you to append to lists that are created automatically when a new key is created
+                MR_T2_dcms_dict = defaultdict(list)
+                MR_ADC_dcms_dict = defaultdict(list)
                 for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
                     if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
@@ -905,6 +927,14 @@ def main():
                     elif dicom_elems_modality_list[dicom_path_index] == modality_list[2]:
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
                             RTplan_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
+                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[3]:
+                        with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                            if py_dicom_item[0x0008,0x1030].value == 'F1_US':
+                                F1_US_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
+                            elif py_dicom_item[0x0008,0x1030].value == 'T2':
+                                MR_T2_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
+                            elif py_dicom_item[0x0008,0x1030].value == 'MR_ADC':
+                                MR_ADC_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
 
                 #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
                 #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
@@ -1066,8 +1096,9 @@ def main():
                 #important_info.add_text_line("important info will appear here1", live_display)
                 #rich_layout["main-right"].update(important_info_Text)
             
-
+                live_display.stop()
                 patientUID_default = "Initializing"
+                live_display.start()
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
                 processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
 
@@ -1276,7 +1307,7 @@ def main():
                 
 
 
-                #live_display.stop()
+                live_display.stop()
 
                 ### Selecting unqiue structures of each type (except biopsies and dils) for future calculations
 
@@ -1310,6 +1341,23 @@ def main():
 
                     pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"] = sp_patient_selected_structure_info_dataframe
 
+
+
+                    ### Now delete all the structures that were not chosen from the master ref dict 
+                    ### Note that this was done primarily for the MC simulation section to simplify modifying the code for testing tissue class against 
+                    ### individual structures. Instead of modifying that section of code heavily, I am simply removing the structures
+                    ### that weren't selected
+
+                    sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Total num structs found"] > 1]
+
+                    for row_index, row in sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe.iterrows():
+                        struct_selected_type = row["Struct ref type"]
+                        struct_delected_index = row["Index number"]
+                        
+                        updated_sp_structure_list = [pydicom_item[struct_selected_type][struct_delected_index]] if 0 <= struct_delected_index < len(pydicom_item[struct_selected_type]) else []
+
+                        pydicom_item[struct_selected_type] = updated_sp_structure_list
+
                     patients_progress.update(processing_patients_task, advance=1)
                     completed_progress.update(processing_patients_task_completed, advance=1)
                 patients_progress.update(processing_patients_task, visible=False)
@@ -1317,7 +1365,7 @@ def main():
 
 
 
-                #live_display.start()
+                live_display.start()
 
 
 
@@ -4214,7 +4262,7 @@ def main():
                     
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
                         # only consider non-simulated biopsies
-                        if specific_structure["Simulated bool"] == False:
+                        if specific_structure["Simulated bool"] == True:
                             continue
                         
                         mean_variation = specific_structure["Mean centroid variation"]
@@ -4947,6 +4995,7 @@ def main():
                                                                                             layout_groups, 
                                                                                             master_structure_reference_dict, 
                                                                                             structs_referenced_list,
+                                                                                            structs_referenced_dict,
                                                                                             bx_ref,
                                                                                             oar_ref,
                                                                                             dil_ref, 
@@ -4972,6 +5021,7 @@ def main():
                                                                                             plot_shifted_biopsies,
                                                                                             structure_miss_probability_roi,
                                                                                             cancer_tissue_label,
+                                                                                            default_exterior_tissue,
                                                                                             miss_structure_complement_label,
                                                                                             tissue_length_above_probability_threshold_list,
                                                                                             n_bootstraps_for_tissue_length_above_threshold,
@@ -5262,6 +5312,12 @@ def main():
                                                                                     all_ref_key)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: structure specific mc results"] = cohort_mc_structure_specific_pt_wise_results_dataframe
 
+
+                cohort_mc_sum_to_one_pt_wise_results_dataframe = dataframe_builders.cohort_and_multi_biopsy_mc_sum_to_one_pt_wise_results_dataframe_builder(master_structure_reference_dict,
+                                                                                    bx_ref,
+                                                                                    all_ref_key)
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"] = cohort_mc_sum_to_one_pt_wise_results_dataframe
+
                 cohort_mc_tissue_class_pt_wise_results_dataframe = dataframe_builders.cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(master_structure_reference_dict,
                                                                                     bx_ref,
                                                                                     all_ref_key)
@@ -5325,7 +5381,7 @@ def main():
                 else:
                     pass
                 #print('test')
-
+                live_display.start()
 
                 
                 
@@ -5409,9 +5465,9 @@ def main():
             # CREATE CSV DIRECTORIES ---------------------------
 
 
-            #live_display.stop()
+            live_display.stop()
             # create global csv output folder
-            if any([write_preprocessing_data_to_file, write_containment_to_file_ans, write_dose_to_file_ans, write_sobol_containment_data_to_file, write_sobol_dose_data_to_file]):
+            if any([write_preprocessing_data_to_file, write_containment_to_file_ans, write_dose_to_file_ans, write_sobol_containment_data_to_file, write_sobol_dose_data_to_file, write_cohort_data_to_file]):
                 csv_output_folder_name = 'Output CSVs'
                 csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
                 csv_output_dir.mkdir(parents=True, exist_ok=True)
@@ -5462,6 +5518,13 @@ def main():
                 global_fanova_output_csv_dir = fanova_csv_output_dir.joinpath('Global')
                 global_fanova_output_csv_dir.mkdir(parents=True, exist_ok=True)
                 fanova_patient_sp_output_csv_dir_dict["Global"] = global_fanova_output_csv_dir
+
+
+            # create cohort csv folder
+            if write_cohort_data_to_file == True:  
+                cohort_output_folder_name = 'Cohort'
+                cohort_csv_output_dir = csv_output_dir.joinpath(cohort_output_folder_name)
+                cohort_csv_output_dir.mkdir(parents=True, exist_ok=True)
 
 
             # CREATE CSVs -------------------------------
@@ -5636,6 +5699,19 @@ def main():
 
             else:
                 pass
+
+
+            # cohort 
+            if write_cohort_data_to_file == True:
+                important_info.add_text_line("Writing cohort CSVs to file.", live_display)
+
+                for dataframe_name, dataframe in master_cohort_patient_data_and_dataframes['Dataframes'].items():
+                    if isinstance(dataframe, pandas.DataFrame):
+
+                        dataframe_file_name = str(dataframe_name)+ '.csv'
+                        dataframe_file_path = cohort_csv_output_dir.joinpath(dataframe_file_name)
+                        dataframe.to_csv(dataframe_file_path)
+
     
             
             # CREATE PRODUCTION PLOT DIRECTORIES ----------------------------------------
@@ -5824,7 +5900,7 @@ def main():
                 else:
                     pass
 
-
+                print('Cohort - Scatter plot matrix targeting accuracy')
                 if production_plots_input_dictionary["Cohort - Scatter plot matrix targeting accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot matrix target accuracy...', total=None)
@@ -5836,7 +5912,7 @@ def main():
 
                     cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
 
-                    production_plots.production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame(cohort_nearest_dils_dataframe,
+                    production_plots.production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame_v2(cohort_nearest_dils_dataframe,
                                                                               general_plot_name_string,
                                                                               cohort_output_figures_dir)
                     
@@ -5846,7 +5922,8 @@ def main():
 
                 else: 
                     pass
-
+                
+                print('Cohort - Scatter plot 2d gaussian transverse accuracy')
                 if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian transverse accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss transverse accuracy...', total=None)
@@ -5859,7 +5936,7 @@ def main():
                     cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
                     cohort_global_tissue_score_by_structure_dataframe = master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: tissue class global scores (structure)']
 
-                    production_plots.production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring(cohort_nearest_dils_dataframe,
+                    production_plots.production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring_with_table(cohort_nearest_dils_dataframe,
                                                                                                                                     cohort_global_tissue_score_by_structure_dataframe,
                                                                                                                                     general_plot_name_string,
                                                                                                                                     cohort_output_figures_dir)
@@ -5871,7 +5948,7 @@ def main():
                 else: 
                     pass
 
-
+                print('Cohort - Scatter plot 2d gaussian sagittal accuracy')
                 if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian sagittal accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss sagittal accuracy...', total=None)
@@ -5884,7 +5961,7 @@ def main():
                     cohort_nearest_dils_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Nearest DILs to each biopsy"]
                     cohort_global_tissue_score_by_structure_dataframe = master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: tissue class global scores (structure)']
 
-                    production_plots.production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring(cohort_nearest_dils_dataframe,
+                    production_plots.production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring_with_table(cohort_nearest_dils_dataframe,
                                                                                                                                     cohort_global_tissue_score_by_structure_dataframe,
                                                                                                                                     general_plot_name_string,
                                                                                                                                     cohort_output_figures_dir)
@@ -6118,7 +6195,7 @@ def main():
 
                 # quantile regression of axial dose distribution NEW
 
-                
+                print('Axial dose distribution quantiles regression plot matplotlib')
                 if production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot name"]
@@ -6323,6 +6400,7 @@ def main():
                     pass
                 """
 
+                print('Axial dose and tissue colored voxelized ridgeline plot')
                 # Dose ridgeline plot with the densities colored according to tissue class
                 if production_plots_input_dictionary["Axial dose and tissue colored voxelized ridgeline plot"]["Plot bool"] == True:
 
@@ -6334,15 +6412,20 @@ def main():
 
                     cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
 
+                    cohort_voxel_dose_dataframe_by_voxel = master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: Global dosimetry by voxel']
+
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
                         
                         #sp_patient_all_dose_data_by_trial_and_pt = pydicom_item[all_ref_key]["Dosimetry - All points and trials"]
                         sp_patient_all_binom_data_by_trial_and_pt = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Patient ID"] == patientUID]
 
                         for specific_bx_structure in pydicom_item[bx_ref]:
-                            
+                            bx_id = specific_bx_structure['ROI']
                             sp_bx_dose_distribution_all_trials_df = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 
+                            sp_patient_and_sp_bx_dose_dataframe_by_voxel = cohort_voxel_dose_dataframe_by_voxel[(cohort_voxel_dose_dataframe_by_voxel['Patient ID'] == patientUID) & 
+                                                                                                                (cohort_voxel_dose_dataframe_by_voxel['Bx ID'] == bx_id)]
+                            """
                             production_plots.production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_cohort(sp_bx_dose_distribution_all_trials_df,
                                                                                                                                 sp_patient_all_binom_data_by_trial_and_pt,
                                                                                                                 svg_image_width,
@@ -6352,7 +6435,17 @@ def main():
                                                                                                                 patient_sp_output_figures_dir_dict,
                                                                                                                 cancer_tissue_label
                                                                                                                 )
-
+                            """
+                            ### This new function version uses the dataframe that was created describing all dose statistics globally by voxel
+                            production_plots.production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_cohort_v2(sp_bx_dose_distribution_all_trials_df,
+                                                                                                                                sp_patient_and_sp_bx_dose_dataframe_by_voxel,
+                                                                                                                                sp_patient_all_binom_data_by_trial_and_pt,
+                                                                                                                                svg_image_width,
+                                                                                                                                svg_image_height,
+                                                                                                                                dpi_for_seaborn_plots,
+                                                                                                                                ridge_line_dose_and_binom_general_plot_name_string,
+                                                                                                                                patient_sp_output_figures_dir_dict,
+                                                                                                                                cancer_tissue_label)
 
                     indeterminate_progress_main.update(main_indeterminate_task, visible = False)
                     completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
@@ -6484,7 +6577,7 @@ def main():
                         
                     
                 # Show quantile regression from all trials of differential DVH data
-
+                print('Differential DVH dose quantiles plot seaborn')
                 if production_plots_input_dictionary["Differential DVH dose quantiles plot seaborn"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Differential DVH dose quantiles plot seaborn"]["Plot name"]
@@ -6520,7 +6613,7 @@ def main():
 
 
                 # quantile regression of cumulative DVH plots NEW
-
+                print('Cumulative DVH quantile regression seaborn')
                 if production_plots_input_dictionary["Cumulative DVH quantile regression seaborn"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Cumulative DVH quantile regression seaborn"]["Plot name"]
@@ -6647,6 +6740,49 @@ def main():
 
                 # perform containment probabilities plots and regressions
                 #live_display.stop()
+
+
+
+                if production_plots_input_dictionary["Tissue classification sum-to-one plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Tissue classification sum-to-one plot"]["Plot name"]
+
+
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating tissue class sum-to-one plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num patients"])
+                    processing_patient_production_plot_description_completed = "Creating tissue class sum-to-one plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating tissue class sum-to-one plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_item,
+                                                                                 patientUID,
+                                                                                 bx_ref,
+                                                                                 all_ref_key,
+                                                                                 structs_referenced_dict,
+                                                                                 default_exterior_tissue,
+                                                                                 patient_sp_output_figures_dir_dict,
+                                                                                 general_plot_name_string)
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass
+
+
+
+
+
+
                 if production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot name"]
@@ -6812,7 +6948,7 @@ def main():
                 else: 
                     pass
 
-
+                print('Cohort - Tissue class global score by biopsy type')
                 if production_plots_input_dictionary["Cohort - Tissue class global score by biopsy type"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue class global by bx group...', total=None)
@@ -6824,7 +6960,7 @@ def main():
                     structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue class global score by biopsy type"]["Structure miss ROI"]
 
 
-                    production_plots.production_plot_tissue_patient_cohort_NEW(master_structure_reference_dict,
+                    production_plots.production_plot_tissue_patient_cohort_NEW_v2(master_cohort_patient_data_and_dataframes,
                                               master_structure_info_dict,
                                               miss_structure_complement_label,
                                               all_ref_key,
@@ -6846,7 +6982,7 @@ def main():
                 else: 
                     pass
                 
-
+                print('Cohort - Tissue volume by biopsy type')
                 if production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue volume by threshold...', total=None)
@@ -7231,6 +7367,9 @@ def structure_referencer(structure_dcm_dict,
                          "MC data: bx and structure shifted dict": None, 
                          "MC data: MC sim translation results dict": None,
                          "MC data: MC sim containment raw results dataframe": None, 
+                         "MC data: compiled sim results dataframe": None,
+                         "MC data: compiled sim sum-to-one results dataframe": None,
+                         "MC data: mutual compiled sim results dataframe": None,
                          "MC data: compiled sim results": None, 
                          "MC data: mutual compiled sim results": None,
                          "MC data: tumor tissue probability": None,
@@ -7325,6 +7464,9 @@ def structure_referencer(structure_dcm_dict,
                                 "MC data: bx and structure shifted dict": None, 
                                 "MC data: MC sim translation results dict": None,
                                 "MC data: MC sim containment raw results dataframe": None,
+                                "MC data: compiled sim results dataframe": None,
+                                "MC data: compiled sim sum-to-one results dataframe": None,
+                                "MC data: mutual compiled sim results dataframe": None,
                                 "MC data: compiled sim results": None,
                                 "MC data: mutual compiled sim results": None, 
                                 "MC data: tumor tissue probability": None,
@@ -7393,6 +7535,7 @@ def structure_referencer(structure_dcm_dict,
                         "Multi-structure MC simulation output dataframes dict": {"Tissue class - Global tissue class statistics": pandas.DataFrame(),
                                                                                  "Tissue class - Global tissue by structure statistics": pandas.DataFrame(),
                                                                                  "Tissue class - Tissue length above threshold": pandas.DataFrame(),
+                                                                                 "Tissue class - sum-to-one mc results": pandas.DataFrame(),
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
                                                                                  "DVH metrics": pandas.DataFrame(),
                                                                                  "All shift vector magnitudes by structure and shift type": pandas.DataFrame()}, 

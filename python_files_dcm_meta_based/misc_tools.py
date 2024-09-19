@@ -1079,3 +1079,17 @@ def assign_plane_indices(df, grid_spacing, x_col_name, y_col_name, z_col_name):
         df[index_col] = (df[col_name] / grid_spacing).astype(int)
 
     return df
+
+
+def tissue_heirarchy_list_creator_func(structs_referenced_dict,
+                                       append_default_exterior_tissue = False,
+                                       default_exterior_tissue = 'Periprostatic'):
+    
+    heirarchy_list = [key for key, value in sorted(structs_referenced_dict.items(), 
+                                                       key=lambda x: (x[1]['Tissue heirarchy'] is None, x[1]['Tissue heirarchy'])) 
+                           if value.get('Tissue heirarchy') is not None]
+    
+    if append_default_exterior_tissue == True:
+        heirarchy_list.append(default_exterior_tissue)
+    
+    return heirarchy_list

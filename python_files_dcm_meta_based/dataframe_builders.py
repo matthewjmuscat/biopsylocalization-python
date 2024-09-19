@@ -138,6 +138,30 @@ def cohort_and_multi_biopsy_mc_structure_specific_pt_wise_results_dataframe_buil
     return cohort_mc_structure_specific_pt_wise_results_dataframe
 
 
+def cohort_and_multi_biopsy_mc_sum_to_one_pt_wise_results_dataframe_builder(master_structure_reference_dict,
+                                                                                    bx_ref,
+                                                                                    all_ref_key):
+    cohort_mc_sum_to_one_pt_wise_results_dataframe = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pandas.DataFrame()
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+
+            mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = specific_bx_structure["MC data: compiled sim sum-to-one results dataframe"]
+
+            multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pandas.concat([multi_structure_mc_sum_to_one_pt_wise_results_dataframe,mc_compiled_results_sum_to_one_for_fixed_bx_dataframe]).reset_index(drop = True)
+
+        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_sum_to_one_pt_wise_results_dataframe, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] = multi_structure_mc_sum_to_one_pt_wise_results_dataframe
+
+        cohort_mc_sum_to_one_pt_wise_results_dataframe = pandas.concat([cohort_mc_sum_to_one_pt_wise_results_dataframe,multi_structure_mc_sum_to_one_pt_wise_results_dataframe]).reset_index(drop = True)
+
+    cohort_mc_sum_to_one_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_sum_to_one_pt_wise_results_dataframe, threshold=0.25)
+
+    return cohort_mc_sum_to_one_pt_wise_results_dataframe
+
+
 def cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(master_structure_reference_dict,
                                                                                     bx_ref,
                                                                                     all_ref_key):
@@ -1259,11 +1283,11 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
             # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
             # ensures that erronous grouping combinations are not produced!
             #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)', 'Voxel index'], [float, int])
+            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], [float, int, float, float])
             sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0]
             
-            sp_bx_global_grouped_df = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(['Voxel index'])
-            sp_bx_nominal_global_grouped_df = sp_bx_point_wise_dose_output_nominal_pandas_data_frame.groupby(['Voxel index'])
+            sp_bx_global_grouped_df = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+            sp_bx_nominal_global_grouped_df = sp_bx_point_wise_dose_output_nominal_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
 
             global_by_voxel_mean_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].mean()
             global_by_voxel_dose_std_dev_series = sp_bx_global_grouped_df['Dose (Gy)'].std()
