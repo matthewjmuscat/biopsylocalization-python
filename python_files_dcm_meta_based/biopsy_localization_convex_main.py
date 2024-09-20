@@ -86,7 +86,7 @@ import biopsy_transporter
 import machina_learning
 import matplotlib.pyplot as plt
 from collections import defaultdict
-
+import lattice_reconstruction_tools
 
 def main():
     
@@ -116,7 +116,6 @@ def main():
     # the programme for generality
     data_folder_name = 'Data'
     input_data_folder_name = "Input data"
-    modality_list = ['RTSTRUCT','RTDOSE','RTPLAN', 'MR']
     #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
     """
     Consider prostate only for OARs!
@@ -171,7 +170,10 @@ def main():
     output_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict_results'
     output_master_structure_info_dict_for_export_name = 'master_structure_info_dict_results'
     lower_bound_dose_percent = 5
-    color_flattening_deg = 3 
+    lower_bound_mr_adc_value = 500
+    upper_bound_mr_adc_value = 900
+    color_flattening_deg = 3
+    color_flattening_deg_MR = 1 # 1 means it will not flatten
     interp_inter_slice_dist = 0.5
     interp_intra_slice_dist = 0.5 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 0.25
@@ -291,7 +293,7 @@ def main():
     notch_option = False
     boxmean_option = True # can be 'sd' or True
 
-    # plots to show:
+    ### plots to show:
     show_NN_dose_demonstration_plots = False # this shows one trial at a time!!!
     show_containment_demonstration_plots = False # this shows one trial at a time!!!
     show_3d_dose_renderings = False
@@ -309,6 +311,10 @@ def main():
     display_structure_surface_mesh_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
+    # MRs
+    show_3d_mr_adc_renderings = False
+    show_3d_mr_adc_renderings_thresholded = True
+
 
     # Final production plots to create:
     plot_immediately_after_simulation = True
@@ -616,6 +622,9 @@ def main():
 
     dose_ref = "Dose ref"
     plan_ref = "Plan ref"
+    mr_adc_ref = "MR ADC ref"
+    mr_t2_ref = "MR T2 ref"
+    us_ref = "US ref"
     num_simulated_bxs_to_create = sum([x["Create"] for x in bx_sim_locations_dict.values()])
     #num_simulated_bxs_to_create = len(bx_sim_locations)
     #if num_simulated_bxs_to_create == 0:
@@ -914,37 +923,46 @@ def main():
                 RTst_dcms_dict = {}
                 RTdose_dcms_dict = {}
                 RTplan_dcms_dict = {}
-                F1_US_dcms_dict = defaultdict(list) # defaultdict(list) allows you to append to lists that are created automatically when a new key is created
+                US_dcms_dict = defaultdict(list) # defaultdict(list) allows you to append to lists that are created automatically when a new key is created
                 MR_T2_dcms_dict = defaultdict(list)
                 MR_ADC_dcms_dict = defaultdict(list)
                 for dicom_path_index, dicom_path in enumerate(dicom_paths_list):
-                    if dicom_elems_modality_list[dicom_path_index] == modality_list[0]:
+                    if dicom_elems_modality_list[dicom_path_index] == 'RTSTRUCT':
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
                             RTst_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[1]:
+                    elif dicom_elems_modality_list[dicom_path_index] == 'RTDOSE':
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
                             RTdose_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[2]:
+                    elif dicom_elems_modality_list[dicom_path_index] == 'RTPLAN':
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
                             RTplan_dcms_dict[UID_generator(py_dicom_item)] = dicom_path
-                    elif dicom_elems_modality_list[dicom_path_index] == modality_list[3]:
+                    elif dicom_elems_modality_list[dicom_path_index] == 'US': # if the modality is US (likely exported from vitesse with option US or some other software that correctly identified it as US, because recall Vitesse exports US as MR if chosen as such)
                         with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
-                            if py_dicom_item[0x0008,0x1030].value == 'F1_US':
-                                F1_US_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
-                            elif py_dicom_item[0x0008,0x1030].value == 'T2':
+                            US_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)  
+                    elif dicom_elems_modality_list[dicom_path_index] == 'MR':
+                        with pydicom.dcmread(dicom_path, defer_size = '2 MB') as py_dicom_item: 
+                            if py_dicom_item[0x0008,0x103E].value == 'T2': # Must label MR T2 images with SeriesDescription as 'T2'
                                 MR_T2_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
-                            elif py_dicom_item[0x0008,0x1030].value == 'MR_ADC':
+                            elif py_dicom_item[0x0008,0x103E].value == 'ADC': # Must label MR ADC images with SeriesDescription as 'ADC'
                                 MR_ADC_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
+                            elif py_dicom_item[0x0018,0x0023].value == '': # Also identified as US if the modality is MR but the MRAcquisitionType tag is empty
+                                US_dcms_dict[UID_generator(py_dicom_item)].append(dicom_path)
 
                 #RTst_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[0]}
                 #RTdose_dcms_dict = {UID_generator(pydicom.dcmread(dicom_paths_list[j])): pydicom.dcmread(dicom_paths_list[j]) for j in range(num_dicoms) if dicom_elems_modality_list[j] == modality_list[1]}
-                #live_display.stop()
+                live_display.stop()
                 num_RTst_dcms_entries = len(RTst_dcms_dict)
                 num_RTdose_dcms_entries = len(RTdose_dcms_dict)
                 num_RTplan_dcms_entries = len(RTplan_dcms_dict)
+                num_MR_T2_dcms_entries = len(MR_T2_dcms_dict)
+                num_MR_ADC_dcms_entries = len(MR_ADC_dcms_dict)
+                num_US_dcms_entries = len(US_dcms_dict)
                 important_info.add_text_line("Found "+str(num_RTst_dcms_entries)+" unique patients with RT structure files.", live_display)
                 important_info.add_text_line("Found "+str(num_RTdose_dcms_entries)+" unique patients with RT dose files.", live_display)
                 important_info.add_text_line("Found "+str(num_RTplan_dcms_entries)+" unique patients with RT plan files.", live_display)
+                important_info.add_text_line("Found "+str(num_MR_T2_dcms_entries)+" unique patients with MR T2 images.", live_display)
+                important_info.add_text_line("Found "+str(num_MR_ADC_dcms_entries)+" unique patients with MR ADC images.", live_display)
+                important_info.add_text_line("Found "+str(num_US_dcms_entries)+" unique patients with US images.", live_display)
 
 
                 # check if the found files make sense
@@ -1048,24 +1066,52 @@ def main():
                 master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, 
                                                                                                 RTdose_dcms_dict,
                                                                                                 RTplan_dcms_dict, 
+                                                                                                US_dcms_dict,
+                                                                                                MR_T2_dcms_dict,
+                                                                                                MR_ADC_dcms_dict,
                                                                                                 oaroi_contour_names,
                                                                                                 dil_contour_names,
                                                                                                 biopsy_contour_names,
                                                                                                 structs_referenced_list_generalized,
                                                                                                 dose_ref,
                                                                                                 plan_ref,
+                                                                                                mr_adc_ref,
+                                                                                                mr_t2_ref,
+                                                                                                us_ref,
                                                                                                 all_ref_key,
                                                                                                 bx_sim_locations_dict,
                                                                                                 fanova_sobol_indices_names_by_index,
                                                                                                 rectum_contour_names,
                                                                                                 urethra_contour_names,
                                                                                                 interp_inter_slice_dist,
-                                                                                                interp_intra_slice_dist
+                                                                                                interp_intra_slice_dist,
+                                                                                                important_info,
+                                                                                                live_display
                                                                                                 )
                 indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num patients"])+" patients.", live_display)  
                 live_display.refresh()
+
+
+                ### Check if there are more than one ADC MRs for each patient:
+                multiple_mrs_flag = False
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    if mr_adc_ref not in pydicom_item:
+                        important_info.add_text_line("Notice! no ADC MR for: "+ str(patientUID), live_display)  
+                     
+                    elif len(master_structure_reference_dict[patientUID][mr_adc_ref]) > 1: 
+                        important_info.add_text_line("Notice! There are "+ str(len(master_structure_reference_dict[patientUID][mr_adc_ref]))+ "ADC MRs for: " +str(patientUID), live_display)   
+                        multiple_mrs_flag = True
+
+                if multiple_mrs_flag == True:
+                    sys.exit("> Multiple ADC MRs detected, exiting.")
+                else:
+                    del multiple_mrs_flag
+
+
+
+
 
                 #live_display.stop()
                 #print('test')
@@ -1098,7 +1144,6 @@ def main():
             
                 live_display.stop()
                 patientUID_default = "Initializing"
-                live_display.start()
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
                 processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
 
@@ -1164,7 +1209,6 @@ def main():
                     #phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C')
                     dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
 
-                    dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
                     
                     # saving dose grid point cloud to master reference dictionary has been shifted down since it is not pickleable
                     #dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
@@ -1181,6 +1225,8 @@ def main():
                     """
                     # plot dose point cloud cubic lattice (color only)
                     if show_3d_dose_renderings == True:
+                        dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
+
                         patients_progress.stop_task(processing_patients_dose_task)
                         completed_progress.stop_task(processing_patients_dose_task_completed)
                         stopwatch.stop()
@@ -1212,6 +1258,73 @@ def main():
                 completed_progress.update(processing_patients_dose_task_completed, visible=True)
 
 
+
+
+                patientUID_default = "Initializing"
+                processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID_default)
+                processing_patients_adc_mr_task_completed_main_description = "[green]Building ADC MR grids"
+
+                processing_patients_adc_mr_task = patients_progress.add_task(processing_patients_adc_mr_task_main_description, total=master_structure_info_dict["Global"]["Num patients"])
+                processing_patients_adc_mr_task_completed = completed_progress.add_task(processing_patients_adc_mr_task_completed_main_description, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_adc_mr_task, description=processing_patients_adc_mr_task_main_description)
+
+                    if mr_adc_ref not in pydicom_item:
+                        continue
+                    
+                    mr_adc_ref_dict = master_structure_reference_dict[patientUID][mr_adc_ref]
+
+                    for series_instance_uid, mr_adc_subdict in mr_adc_ref_dict.items():
+                        
+                        if show_3d_mr_adc_renderings or show_3d_mr_adc_renderings_thresholded:
+                            filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = True)
+                            # Don't store this, it is too large, just call the above function if you want to retrieve the MR information lattice
+                            #mr_adc_subdict["MR ADC phys space Nx4 arr (filtered, non-negative)"] = filtered_non_negative_adc_mr_phys_space_arr
+
+
+                        if show_3d_mr_adc_renderings == True:
+                            mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
+                                                                                      color_flattening_deg_MR, 
+                                                                                      paint_mr_color = True)
+
+                            patients_progress.stop_task(processing_patients_dose_task)
+                            completed_progress.stop_task(processing_patients_dose_task_completed)
+                            stopwatch.stop()
+                            plotting_funcs.plot_geometries(mr_adc_point_cloud)
+                            stopwatch.start()
+                            patients_progress.start_task(processing_patients_dose_task)
+                            completed_progress.start_task(processing_patients_dose_task_completed)
+
+                        
+                        
+                        # plot dose point cloud thresholded cubic lattice (color only)
+                        if show_3d_mr_adc_renderings_thresholded == True:
+                            thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
+                                                                                                                  color_flattening_deg_MR, 
+                                                                                                                  paint_mr_color = True, 
+                                                                                                                  lower_bound = lower_bound_mr_adc_value, 
+                                                                                                                  upper_bound = upper_bound_mr_adc_value, 
+                                                                                                                  z_val_range_list = [-59,-29])
+
+                            patients_progress.stop_task(processing_patients_dose_task)
+                            completed_progress.stop_task(processing_patients_dose_task_completed)
+                            stopwatch.stop()
+                            plotting_funcs.plot_geometries(thresholded_mr_adc_point_cloud)
+                            stopwatch.start()
+                            patients_progress.start_task(processing_patients_dose_task)
+                            completed_progress.start_task(processing_patients_dose_task_completed)
+
+
+                        if show_3d_mr_adc_renderings or show_3d_mr_adc_renderings_thresholded:
+                            del filtered_non_negative_adc_mr_phys_space_arr
+
+                    patients_progress.update(processing_patients_adc_mr_task, advance=1)
+                    completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
+                
+                patients_progress.update(processing_patients_adc_mr_task, visible=False)
+                completed_progress.update(processing_patients_adc_mr_task_completed, visible=True)
 
 
                 """
@@ -7168,20 +7281,28 @@ def UID_generator(pydicom_obj):
 
 def structure_referencer(structure_dcm_dict, 
                          dose_dcm_dict, 
-                         plan_dcm_dict, 
+                         plan_dcm_dict,
+                         US_dcms_dict,
+                         MR_T2_dcms_dict,
+                         MR_ADC_dcms_dict,
                          OAR_list,
                          DIL_list,
                          Bx_list,
                          st_ref_list,
                          ds_ref,
                          pln_ref,
+                         mr_adc_ref,
+                         mr_t2_ref,
+                         us_ref,
                          all_ref_key,
                          bx_sim_locations_dict,
                          fanova_sobol_indices_names_by_index,
                          rectum_list,
                          urethra_list,
                          interp_inter_slice_dist,
-                         interp_intra_slice_dist
+                         interp_intra_slice_dist,
+                         important_info,
+                         live_display
                          ):
     """
     A function that builds a reference library of the dicom elements passed to it so that 
@@ -7587,6 +7708,7 @@ def structure_referencer(structure_dcm_dict,
                                             "All ref": all_structs_info
                                         }
     
+    ### Dosimetry
     for UID, dose_item_path in dose_dcm_dict.items():
         with pydicom.dcmread(dose_item_path, defer_size = '2 MB') as dose_item: 
             dose_ID = UID + dose_item.StudyDate
@@ -7607,7 +7729,49 @@ def structure_referencer(structure_dcm_dict,
                              "KDtree": None
                              }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
+    
 
+    ### MR ADC
+    for UID, mr_adc_item_paths_list in MR_ADC_dcms_dict.items():
+        mr_adc_ref_dict = {}
+        for mr_adc_item_path in mr_adc_item_paths_list:
+            with pydicom.dcmread(mr_adc_item_path, defer_size = '2 MB') as mr_adc_item:
+                seriesinstanceUID = mr_adc_item.SeriesInstanceUID
+                mr_adc_ID = UID + mr_adc_item.StudyDate
+                if len(mr_adc_item.RealWorldValueMappingSequence) > 1:
+                    important_info.add_text_line("Multiple real world value mappings detected for ({UID}, {mr_adc_ID})) ", live_display)
+                if seriesinstanceUID not in mr_adc_ref_dict: 
+                    mr_adc_ref_subdict = {"MR ADC ID": mr_adc_ID, 
+                                    "Study date": mr_adc_item.StudyDate, 
+                                    "Pixel arr (all slices)": mr_adc_item.pixel_array, 
+                                    "Pixel spacing": np.array(mr_adc_item.PixelSpacing),
+                                    "Units": str(mr_adc_item.RealWorldValueMappingSequence[0].MeasurementUnitsCodeSequence[0].CodeMeaning),
+                                    "RWVSlope (all slices)": np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueSlope),
+                                    "RWVIntercept (all slices)": np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueIntercept),
+                                    "RWV Units": mr_adc_item.RealWorldValueMappingSequence[0].LUTLabel,
+                                    "Slice thickness":  mr_adc_item.SliceThickness,
+                                    "Image orientation patient": np.array(mr_adc_item.ImageOrientationPatient), 
+                                    "Image position patient (all slices)": np.array(mr_adc_item.ImagePositionPatient), 
+                                    "MR ADC phys space Nx4 arr": None,
+                                    "MR ADC phys space Nx4 arr (filtered, non-negative)": None, 
+                                    "KDtree": None
+                                    }
+                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
+                else:
+                    mr_adc_ref_subdict = mr_adc_ref_dict[seriesinstanceUID]
+                    mr_adc_ref_subdict["Pixel arr (all slices)"] = np.dstack((mr_adc_ref_subdict["Pixel arr (all slices)"], mr_adc_item.pixel_array))
+                    mr_adc_ref_subdict["RWVSlope (all slices)"] = np.hstack((mr_adc_ref_subdict["RWVSlope (all slices)"], np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueSlope)))
+                    mr_adc_ref_subdict["RWVIntercept (all slices)"] = np.hstack((mr_adc_ref_subdict["RWVIntercept (all slices)"], np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueIntercept)))
+                    mr_adc_ref_subdict["Image position patient (all slices)"] = np.vstack((mr_adc_ref_subdict["Image position patient (all slices)"], np.array(mr_adc_item.ImagePositionPatient)))
+                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
+
+        master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
+
+
+    
+    
+
+    ### Plan file
     for UID, plan_item_path in plan_dcm_dict.items():
         with pydicom.dcmread(plan_item_path, defer_size = '2 MB') as plan_item: 
             plan_ID = UID + plan_item.StudyDate

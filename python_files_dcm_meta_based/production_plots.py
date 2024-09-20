@@ -6635,7 +6635,10 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
                                                                                  general_plot_name_string):
 
 
-    def stacked_area_plot_with_confidence_intervals(df, stacking_order):
+    def stacked_area_plot_with_confidence_intervals(patientUID,
+                                                    bx_struct_roi,
+                                                    df, 
+                                                    stacking_order):
         """
         Create a stacked area plot for binomial estimator values with confidence intervals,
         stacking the areas to sum to 1 at each Z (Bx frame) point. Confidence intervals are 
@@ -6681,7 +6684,7 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
             y_cumulative += y_kr
 
         # Final plot adjustments
-        ax.set_title('Stacked Binomial Estimator with Confidence Intervals by Tissue Class')
+        ax.set_title(str(patientUID) + str(bx_struct_roi) + 'Stacked Binomial Estimator with Confidence Intervals by Tissue Class')
         ax.set_xlabel('Biopsy axial dimension (mm)')
         ax.set_ylabel('Binomial Estimator')
         ax.legend(loc='best', facecolor='white')
@@ -6694,7 +6697,7 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
     # plotting loop
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
 
-    tissue_heirarchy_list = misc_tools.tissue_heirarchy_list_creator_func(structs_referenced_dict,
+    tissue_heirarchy_list = misc_tools.tissue_heirarchy_list_tissue_names_creator_func(structs_referenced_dict,
                                        append_default_exterior_tissue = True,
                                        default_exterior_tissue = default_exterior_tissue
                                        )

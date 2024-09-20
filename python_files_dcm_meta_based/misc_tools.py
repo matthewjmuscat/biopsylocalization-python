@@ -1093,3 +1093,44 @@ def tissue_heirarchy_list_creator_func(structs_referenced_dict,
         heirarchy_list.append(default_exterior_tissue)
     
     return heirarchy_list
+
+
+def tissue_heirarchy_list_tissue_names_creator_func(structs_referenced_dict,
+                                       append_default_exterior_tissue = False,
+                                       default_exterior_tissue = 'Periprostatic'):
+    
+    heirarchy_list = [value["Tissue class name"] for key, value in sorted(structs_referenced_dict.items(), 
+                                                       key=lambda x: (x[1]['Tissue heirarchy'] is None, x[1]['Tissue heirarchy'])) 
+                           if value.get('Tissue heirarchy') is not None]
+    
+    if append_default_exterior_tissue == True:
+        heirarchy_list.append(default_exterior_tissue)
+    
+    return heirarchy_list
+
+
+
+def min_max_normalize_data(data):
+    """
+    Normalize a numpy array to scale between 0 and 1.
+
+    Parameters:
+    data (numpy.ndarray): The input numpy array of numbers to be normalized.
+
+    Returns:
+    numpy.ndarray: Normalized numpy array where each value is scaled between 0 and 1.
+    """
+    if data.size == 0:  # Check if the array is empty
+        return data
+
+    min_val = np.min(data)
+    max_val = np.max(data)
+    
+    # Check if all values are the same
+    if min_val == max_val:
+        return np.ones(data.shape)  # Return an array of 1.0 since all values are the same
+    
+    # Apply normalization formula
+    normalized_data = (data - min_val) / (max_val - min_val)
+    
+    return normalized_data

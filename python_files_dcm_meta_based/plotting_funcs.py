@@ -11,7 +11,7 @@ import plotly.express as px
 import point_containment_tools
 import copy
 import plotly.graph_objects as go
-
+import misc_tools
 
 
 def threeD_scatter_plotter(x,y,z):
@@ -867,3 +867,121 @@ def dataframe_to_point_cloud_simple(df,
     pcd.paint_uniform_color(pcd_color)  # pcd_color should be a list or array of 3 elements [R, G, B]
 
     return pcd
+
+
+
+
+
+
+
+
+
+
+
+
+
+### MR 
+
+def create_MR_point_cloud(data_all_slices_2d_arr, color_flattening_degree, paint_mr_color = True):
+    point_cloud = o3d.geometry.PointCloud()
+    num_points = data_all_slices_2d_arr.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr[:,0:3]
+    mr_val_data_all_slices_2d_arr = data_all_slices_2d_arr[:,3]
+    max_MR_val = np.amax(mr_val_data_all_slices_2d_arr)
+    min_MR_val = np.amin(mr_val_data_all_slices_2d_arr)
+    point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
+    if paint_mr_color == True:
+        root = 1/color_flattening_degree
+        pcd_color_arr = np.zeros((num_points,3))
+        mr_val_data_all_slices_2d_arr_nth_rooted = np.power(mr_val_data_all_slices_2d_arr,root)
+        max_MR_val_nth_rooted = np.power(max_MR_val,root)
+        pcd_color_arr[:,0] = mr_val_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr[:,2] = mr_val_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr = pcd_color_arr/max_MR_val_nth_rooted
+        pcd_color_arr[:,2] = 1 - pcd_color_arr[:,2]
+        #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+    else:
+        pcd_color = np.array([0,0,0]) # paint everything black
+        point_cloud.paint_uniform_color(pcd_color)
+
+    return point_cloud
+
+
+
+
+def create_thresholded_MR_ADC_point_cloud(data_all_slices_2d_arr, color_flattening_degree, paint_mr_color = True, lower_bound = None, upper_bound = None, z_val_range_list = None):
+    point_cloud = o3d.geometry.PointCloud()
+    mr_val_data_all_slices_2d_arr = data_all_slices_2d_arr[:,3]
+    min_og_mr_val = np.amin(mr_val_data_all_slices_2d_arr)
+    max_og_mr_val = np.amax(mr_val_data_all_slices_2d_arr)
+    if lower_bound == None:
+        lower_bound = min_og_mr_val
+    if upper_bound == None:
+        upper_bound = max_og_mr_val
+
+    data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr[data_all_slices_2d_arr[:, 3]  > float(lower_bound)]
+    data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr_thresholded[data_all_slices_2d_arr_thresholded[:, 3]  < float(upper_bound)]
+    
+    if z_val_range_list == None:
+        pass
+    else:
+        lower_z_val = z_val_range_list[0]
+        upper_z_val = z_val_range_list[1]
+        data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr_thresholded[data_all_slices_2d_arr_thresholded[:, 2]  <= float(upper_z_val)]
+        data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr_thresholded[data_all_slices_2d_arr_thresholded[:, 2]  >= float(lower_z_val)]
+
+
+
+
+    num_points = data_all_slices_2d_arr_thresholded.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr_thresholded[:,0:3]
+    mr_val_data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr_thresholded[:,3]
+
+    point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
+    if paint_mr_color == True:
+        root = 1/color_flattening_degree
+        pcd_color_arr = np.zeros((num_points,3))
+        mr_val_data_all_slices_2d_arr_thresholded_nth_rooted = np.power(mr_val_data_all_slices_2d_arr_thresholded,root)
+
+        renormalized_data = misc_tools.min_max_normalize_data(mr_val_data_all_slices_2d_arr_thresholded_nth_rooted)
+
+        pcd_color_arr[:,0] = renormalized_data
+        pcd_color_arr[:,1] = 0
+        pcd_color_arr[:,2] = 1
+
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+    else:
+        pcd_color = np.array([0,0,0]) # paint everything black
+        point_cloud.paint_uniform_color(pcd_color)
+
+    return point_cloud
+
+def create_thresholded_MR_point_cloud(data_all_slices_2d_arr, color_flattening_degree, paint_mr_color = True, lower_bound_percent = 10):
+    point_cloud = o3d.geometry.PointCloud()
+    mr_val_data_all_slices_2d_arr = data_all_slices_2d_arr[:,3]
+    max_mr_val_og = np.amax(mr_val_data_all_slices_2d_arr)
+    data_all_slices_2d_arr_thresholded = data_all_slices_2d_arr[data_all_slices_2d_arr[:, 3]  > float(max_mr_val_og*lower_bound_percent/100)]
+    num_points = data_all_slices_2d_arr_thresholded.shape[0]
+    position_data_all_slices_2d_arr = data_all_slices_2d_arr_thresholded[:,0:3]
+    mr_val_data_all_slices_2d_arr = data_all_slices_2d_arr_thresholded[:,3]
+    min_mr_val = np.amin(mr_val_data_all_slices_2d_arr)
+    point_cloud.points = o3d.utility.Vector3dVector(position_data_all_slices_2d_arr)
+    if paint_mr_color == True:
+        root = 1/color_flattening_degree
+        pcd_color_arr = np.zeros((num_points,3))
+        mr_val_data_all_slices_2d_arr_nth_rooted = np.power(mr_val_data_all_slices_2d_arr,root)
+        max_mr_val_og_nth_rooted = np.power(max_mr_val_og,root)
+        pcd_color_arr[:,0] = mr_val_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr[:,2] = mr_val_data_all_slices_2d_arr_nth_rooted
+        pcd_color_arr = pcd_color_arr/max_mr_val_og_nth_rooted
+        pcd_color_arr[:,2] = 1 - pcd_color_arr[:,2]
+        #pcd_color_arr[pcd_color_arr<0.1] = 1. # set all points less than a threshold to be white
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+    else:
+        pcd_color = np.array([0,0,0]) # paint everything black
+        point_cloud.paint_uniform_color(pcd_color)
+
+    return point_cloud
+
+
