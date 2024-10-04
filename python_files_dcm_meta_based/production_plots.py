@@ -98,7 +98,7 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     structure_name_and_shift_type_dict_for_pandas_data_frame['Shift magnitude'] = shift_vec_mag_arr
 
     structure_name_and_shift_type_dict_pandas_data_frame = pandas.DataFrame(data=structure_name_and_shift_type_dict_for_pandas_data_frame)
-    pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["All shift vector magnitudes by structure and shift type"] = structure_name_and_shift_type_dict_pandas_data_frame
+    pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["All MC structure shift vectors"] = structure_name_and_shift_type_dict_pandas_data_frame
     
     
     fig = px.box(structure_name_and_shift_type_dict_pandas_data_frame, x="StructureID", y="Shift magnitude", color="Struct type")
@@ -147,6 +147,165 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     html_dose_fig_name = patientUID + general_plot_name_string+'.html'
     html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
     fig.write_html(html_dose_fig_file_path)
+
+
+
+
+
+
+
+def production_plot_sampled_shift_vector_box_plots_by_patient_NEW(patientUID,
+                                              patient_sp_output_figures_dir_dict,
+                                              pydicom_item,
+                                              svg_image_scale,
+                                              svg_image_width,
+                                              svg_image_height,
+                                              general_plot_name_string,
+                                              struct_refs_to_include_list,
+                                              bx_ref,
+                                              bx_sim_types_to_include_list,
+                                              all_ref,
+                                              num_simulations):
+    
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+    
+    sp_patient_all_structure_shifts_pandas_data_frame = pydicom_item[all_ref]["Multi-structure MC simulation output dataframes dict"]["All MC structure shift vectors"]
+    
+    df = sp_patient_all_structure_shifts_pandas_data_frame
+
+    # Step 1: Include rows where 'Structure type' is in the list
+    condition1 = df['Structure type'].isin(struct_refs_to_include_list)
+
+    # Step 2: Apply specific filtering for biopsies and only include certain biopsy sim types
+    condition2 = ((df['Structure type'] != bx_ref) | df["Simulated type"].isin(bx_sim_types_to_include_list))
+
+    # Combine both conditions
+    subset_df = df[condition1 & condition2]
+
+
+    fig = go.Figure()
+    shift_components_to_trace_list = ['Shift magnitude','Shift X', 'Shift Y', 'Shift Z']
+    color_by_component_to_trace_list = ['rgba(0, 92, 171, 1)', 'rgba(227, 27, 35,1)', 'rgba(255, 195, 37,1)', 'rgba(0, 200, 255,1)']
+    color_by_trace_dict = {key: color_by_component_to_trace_list[i] for i,key in enumerate(shift_components_to_trace_list)}
+    for component_to_trace in shift_components_to_trace_list:
+        fig.add_trace(go.Box(
+            x=subset_df['Structure ID'],
+            y=subset_df[component_to_trace],
+            name = component_to_trace,
+            marker_color = color_by_trace_dict[component_to_trace]
+        ))
+
+    
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Sampled shift (mm)',
+        xaxis_title='Structure',
+        title=f'Sampled translation components ({patientUID}, Num simulations: {num_simulations})',
+        hovermode="x unified"
+    )
+    fig.update_layout(
+        boxmode='group'
+    )
+
+    svg_dose_fig_name = patientUID + general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = patientUID + general_plot_name_string+'.html'
+    html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path)
+
+
+
+def production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
+                                                          master_cohort_patient_data_and_dataframes,
+                                              svg_image_scale,
+                                              svg_image_width,
+                                              svg_image_height,
+                                              general_plot_name_string,
+                                              struct_refs_to_include_list,
+                                              bx_ref,
+                                              bx_sim_types_to_include_list):
+    
+    
+    df = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: All MC structure shift vectors"]
+    
+    # Step 1: Include rows where 'Structure type' is in the list
+    condition1 = df['Structure type'].isin(struct_refs_to_include_list)
+
+    # Step 2: Apply specific filtering for biopsies and only include certain biopsy sim types
+    condition2 = ((df['Structure type'] != bx_ref) | df["Simulated type"].isin(bx_sim_types_to_include_list))
+
+    # Combine both conditions
+    subset_df = df[condition1 & condition2]
+
+    fig = go.Figure()
+    shift_components_to_trace_list = ['Shift magnitude','Shift X', 'Shift Y', 'Shift Z']
+    color_by_component_to_trace_list = ['rgba(0, 92, 171, 1)', 'rgba(227, 27, 35,1)', 'rgba(255, 195, 37,1)', 'rgba(0, 200, 255,1)']
+    color_by_trace_dict = {key: color_by_component_to_trace_list[i] for i,key in enumerate(shift_components_to_trace_list)}
+    
+    # old way where all biopsies will be grouped together regardless of their type
+    """
+    for component_to_trace in shift_components_to_trace_list:
+        fig.add_trace(go.Box(
+            x=subset_df['Structure type'],
+            y=subset_df[component_to_trace],
+            name = component_to_trace,
+            marker_color = color_by_trace_dict[component_to_trace]
+        ))
+    """
+    # Separate non-biopsy structures
+    for component_to_trace in shift_components_to_trace_list:
+        fig.add_trace(go.Box(
+            x=subset_df[subset_df['Structure type'] != bx_ref]['Structure type'],
+            y=subset_df[subset_df['Structure type'] != bx_ref][component_to_trace],
+            name=component_to_trace,
+            marker_color=color_by_trace_dict[component_to_trace]
+        ))
+    
+    # Separate biopsy structures, grouped by "Simulated type"
+    biopsy_df = subset_df[subset_df['Structure type'] == bx_ref]
+
+    for simulated_type in biopsy_df["Simulated type"].unique():
+        for component_to_trace in shift_components_to_trace_list:
+            fig.add_trace(go.Box(
+                x=biopsy_df[biopsy_df["Simulated type"] == simulated_type]['Simulated type'],
+                y=biopsy_df[biopsy_df["Simulated type"] == simulated_type][component_to_trace],
+                name=f"{component_to_trace} ({simulated_type})",  # Include Simulated type in the trace name
+                marker_color=color_by_trace_dict[component_to_trace]
+            ))
+
+
+
+    fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
+    fig.update_layout(
+        yaxis_title='Sampled shift (mm)',
+        xaxis_title='Structure',
+        title='Sampled translation components (Cohort)',
+        hovermode="x unified"
+    )
+    fig.update_layout(
+        boxmode='group'
+    )
+
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
+
+    html_dose_fig_name = general_plot_name_string+'.html'
+    html_dose_fig_file_path = cohort_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
+
+
+
+
+
+
+
+
+
+
 
 
 def production_plot_axial_dose_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
@@ -6719,6 +6878,143 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
 
         # clean up for memory
         plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+########## MR PLOTS
+        
+def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
+                                                                                 patientUID,
+                                                                                 bx_ref,
+                                                                                 mr_type_ref,
+                                                                                 patient_sp_output_figures_dir_dict,
+                                                                                 general_plot_name_string,
+                                                                                 col_name_str_prefix,
+                                                                                 output_dataframe_str):
+    # plotting function
+    def plot_quantile_regression_and_more_corrected(df, col_name_str):
+        plt.ioff()
+        fig = plt.figure(figsize=(12, 8))
+
+        # Generate a common x_range for plotting
+        x_range = np.linspace(df['Z (Bx frame)'].min(), df['Z (Bx frame)'].max(), 500)
+
+        # Placeholder dictionaries for regression results
+        y_regressions = {}
+
+        # Function to perform and plot kernel regression
+        def perform_and_plot_kernel_regression(x, y, x_range, label, color):
+            kr = KernelReg(endog=y, exog=x, var_type='c', bw = [1])
+            y_kr, _ = kr.fit(x_range)
+            plt.plot(x_range, y_kr, label=label, color=color, linewidth=2)
+
+        # Perform kernel regression for each quantile and store the y-values
+        for quantile in [0.05, 0.25, 0.75, 0.95]:
+            q_df = df.groupby('Z (Bx frame)')[col_name_str].quantile(quantile).reset_index()
+            kr = KernelReg(endog=q_df[col_name_str], exog=q_df['Z (Bx frame)'], var_type='c', bw = [1])
+            y_kr, _ = kr.fit(x_range)
+            y_regressions[quantile] = y_kr
+
+        # Filling the space between the quantile lines
+        plt.fill_between(x_range, y_regressions[0.05], y_regressions[0.25], color='springgreen', alpha=1)
+        plt.fill_between(x_range, y_regressions[0.25], y_regressions[0.75], color='dodgerblue', alpha=1)
+        plt.fill_between(x_range, y_regressions[0.75], y_regressions[0.95], color='springgreen', alpha=1)
+        
+        # Additional plot enhancements
+        # Plot line for MC trial num = 0
+        # Kernel regression for MC trial num = 0 subset
+        
+        mc_trial_0 = df[df['MC trial num'] == 0]
+        perform_and_plot_kernel_regression(mc_trial_0['Z (Bx frame)'], mc_trial_0[col_name_str], x_range, 'Nominal', 'red')
+        
+
+        # KDE and mean dose per Original pt index
+        kde_max_doses = []
+        mean_doses = []
+        z_vals = []
+        for z_val in df['Z (Bx frame)'].unique():
+            pt_data = df[df['Z (Bx frame)'] == z_val]
+            kde = gaussian_kde(pt_data[col_name_str])
+            kde_doses = np.linspace(pt_data[col_name_str].min(), pt_data[col_name_str].max(), 500)
+            max_density_dose = kde_doses[np.argmax(kde(kde_doses))]
+            kde_max_doses.append(max_density_dose)
+            mean_doses.append(pt_data[col_name_str].mean())
+            z_vals.append(z_val)
+        
+        perform_and_plot_kernel_regression(z_vals, kde_max_doses, x_range, 'KDE Max Density', 'magenta')
+        perform_and_plot_kernel_regression(z_vals, mean_doses, x_range, 'Mean', 'orange')
+
+        num_mc_trials_plus_nom = df['MC trial num'].nunique()
+
+        # Line plot for each trial
+        for trial in range(1,num_mc_trials_plus_nom):
+            df_sp_trial = df[df["MC trial num"] == trial]
+            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial[col_name_str], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+        
+
+        
+
+        plt.title('Quantile Regression with Filled Areas Between Lines')
+        plt.xlabel('Z (Bx frame)')
+        plt.ylabel(col_name_str)
+        plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal', 'Max density', 'Mean'], loc='best', facecolor = 'white')
+        plt.grid(True, which='major', linestyle='--', linewidth=0.5)
+        plt.tight_layout()
+        
+        return fig
+    
+    # plotting loop
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+    mr_type_subdict = pydicom_item[mr_type_ref]
+    col_name_str = col_name_str_prefix + " " +str(mr_type_subdict["Units"])
+
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        
+        sp_bx_mr_distribution_all_trials_df = specific_bx_structure["Output data frames"][output_dataframe_str]
+
+        fig = plot_quantile_regression_and_more_corrected(sp_bx_mr_distribution_all_trials_df, col_name_str)
+
+        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+
+        fig.savefig(svg_dose_fig_file_path, format='svg')
+
+        # clean up for memory
+        plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

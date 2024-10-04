@@ -54,7 +54,7 @@ def fanova_analysis(
     with live_display:
         live_display.start(refresh = True)
 
-        num_patients = master_structure_info_dict["Global"]["Num patients"]
+        num_patients = master_structure_info_dict["Global"]["Num cases"]
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
         bx_sample_pt_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
 
@@ -241,7 +241,7 @@ def fanova_analysis(
             testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]FANOVA: Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 
-                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -524,7 +524,7 @@ def fanova_analysis(
                     # compute independent probabilities
                     fanova_compiled_results_for_fixed_bx_dict = copy.deepcopy(structure_organized_for_bx_data_blank_dict)
                     
-                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
                     compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
@@ -625,7 +625,7 @@ def fanova_analysis(
             for patientUID,pydicom_item in master_structure_reference_dict.items():
                 patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, description = "[red]Calculating mutual probabilities  [{}]...".format(patientUID))
                 
-                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -779,7 +779,7 @@ def fanova_analysis(
                     specific_bx_structure_roi = specific_bx_structure["ROI"]
                     biopsies_progress.update(calculating_sobol_containment_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                     
-                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -852,7 +852,7 @@ def fanova_analysis(
                     specific_bx_structure_roi = specific_bx_structure["ROI"]
                     biopsies_progress.update(calculating_sobol_containment_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                     
-                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1061,7 +1061,7 @@ def fanova_analysis(
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(calculating_sobol_containment_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
-                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1125,7 +1125,7 @@ def fanova_analysis(
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 biopsies_progress.update(bootstrapping_sobol_containment_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                 
-                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1472,7 +1472,7 @@ def fanova_analysis(
                     specific_bx_structure_roi = specific_bx_structure["ROI"]
                     biopsies_progress.update(calculating_sobol_dose_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
                     
-                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                    sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
                     

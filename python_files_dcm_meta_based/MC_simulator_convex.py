@@ -27,53 +27,6 @@ import dosimetric_localizer
 import dataframe_builders
 
 
-def simulator(master_structure_reference_dict, structs_referenced_list, num_simulations):
-
-    ref_list = ["Bx ref","OAR ref","DIL ref"] # note that Bx ref has to be the first entry for other parts of the code to work!
-    uncertainty_sources_list = []
-    uncertainty_sources_raw_dict = {}
-
-    num_biopsies = sum([len(patient_dict[1][ref_list[0]]) for patient_dict in master_structure_reference_dict.items()])
-
-    print('Number of biopsy tracks to simulate are: ', num_biopsies,'.')
-    print('Number of simulations per biopsy track has been set to: ', num_simulations,'.')
-    
-
-    st = time.time()
-    with loading_tools.Loader(num_biopsies,"Reconstructing and sampling biopsies...") as loader:
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            Bx_structs = structs_referenced_list[0]
-            for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]):
-                centroid_line = specific_BX_structure["Best fit line of centroid pts"]
-                origin_to_first_centroid_vector = specific_BX_structure["Centroid line sample pts"][0]
-                list_origin_to_first_centroid_vector = np.squeeze(origin_to_first_centroid_vector).tolist()
-                biopsy_samples = biopsy_creator.biopsy_points_reconstruction_and_uniform_sampler(list_origin_to_first_centroid_vector,centroid_line)
-                biopsy_samples_point_cloud = o3d.geometry.PointCloud()
-                biopsy_samples_point_cloud.points = o3d.utility.Vector3dVector(biopsy_samples[:,0:3])
-                pcd_color = np.random.uniform(0, 0.7, size=3)
-                biopsy_samples_point_cloud.paint_uniform_color(pcd_color)
-                master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Random uniformly sampled volume pts arr"] = biopsy_samples
-                biopsy_raw_point_cloud = master_structure_reference_dict[patientUID][Bx_structs][specific_BX_structure_index]["Point cloud raw"]
-                pcd_color = np.random.uniform(0, 0.7, size=3)
-                biopsy_raw_point_cloud.paint_uniform_color(pcd_color)
-
-                # plot point clouds?
-                o3d.visualization.draw_geometries([biopsy_raw_point_cloud,biopsy_samples_point_cloud])
-
-
-
-    with loading_tools.Loader(num_biopsies*num_simulations,"Simulating biopsy uncertainties...") as loader:
-        for patientUID,pydicom_item in master_structure_reference_dict.items():
-            Bx_structs = structs_referenced_list[0]
-            for specific_BX_structure_index, specific_BX_structure in enumerate(pydicom_item[Bx_structs]):
-                structure_uncertainty_array = np.empty([num_simulations, specific_BX_structure["Uncertainty params"].size])
-                for mu,sigma in specific_BX_structure["Uncertainty params"]: 
-                    specific_uncertainty_array = np.random.normal(mu, sigma, num_simulations)
-
-                    for j in range(0, num_simulations):
-                        print(1)
-                        
-    return master_structure_reference_dict
 
 
 
@@ -89,6 +42,7 @@ def simulator_parallel(parallel_pool,
                        dil_ref, 
                        dose_ref,
                        plan_ref, 
+                       all_ref_key,
                        master_structure_info_dict, 
                        biopsy_z_voxel_length, 
                        num_dose_calc_NN,
@@ -96,6 +50,7 @@ def simulator_parallel(parallel_pool,
                        dose_views_jsons_paths_list,
                        containment_views_jsons_paths_list,
                        show_NN_dose_demonstration_plots,
+                       show_NN_dose_demonstration_plots_all_trials_at_once,
                        show_containment_demonstration_plots,
                        biopsy_needle_compartment_length,
                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
@@ -127,7 +82,7 @@ def simulator_parallel(parallel_pool,
     
     with live_display:
         live_display.start(refresh = True)
-        num_patients = master_structure_info_dict["Global"]["Num patients"]
+        num_patients = master_structure_info_dict["Global"]["Num cases"]
         num_global_structures = master_structure_info_dict["Global"]["Num structures"]
         num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
         num_MC_containment_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
@@ -135,9 +90,11 @@ def simulator_parallel(parallel_pool,
         bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
         
         #live_display.stop()
-        max_simulations = max(num_MC_dose_simulations,num_MC_containment_simulations)
-        master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"] = max_simulations
+        max_simulations = master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"]
+        
 
+
+        """
         default_output = "Initializing"
         processing_patients_task_main_description = "[red]Generating {} MC samples for {} structures [{}]...".format(max_simulations,num_global_structures,default_output)
         processing_patients_task_completed_main_description = "[green]Generating {} MC samples for {} structures".format(max_simulations,num_global_structures)
@@ -180,9 +137,11 @@ def simulator_parallel(parallel_pool,
         
         simulation_info_important_line_str = "Simulation data: # MC containment simulations = {} | # MC dose simulations = {} | # lattice spacing for BX cores (mm) = {} | # biopsies = {} | # anatomical structures = {} | # patients = {}.".format(str(num_MC_containment_simulations), str(num_MC_dose_simulations), str(bx_sample_pt_lattice_spacing), str(num_biopsies_global), str(num_global_structures-num_biopsies_global), str(num_patients))
         important_info.add_text_line(simulation_info_important_line_str, live_display)
+        """
+
         
 
-
+        """
         #live_display.stop()
         default_patientUID = "initializing"
         translating_patients_main_desc = "[red]Transforming anatomy [{}]...".format(default_patientUID)
@@ -261,7 +220,7 @@ def simulator_parallel(parallel_pool,
                             total_rigid_shift_vectors_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples arr"])
                             plotting_funcs.plot_point_clouds(total_rigid_shift_vectors_arr)
                             plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays([total_rigid_shift_vectors_arr], title_text = str(patientUID) + str(specific_structure["ROI"]))
-
+        """
 
         """
         testing_nominal_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing nominal biopsy containment...", total=num_patients)
@@ -269,7 +228,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_structure_type]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -387,7 +346,7 @@ def simulator_parallel(parallel_pool,
             
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)          
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -568,10 +527,25 @@ def simulator_parallel(parallel_pool,
                         # Extract relative structure point cloud
                         non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                         non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
-                        non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
+                        non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1])) # paint tested structure in blue
+                        
+                        geom_list = [colored_bx_test_pts_pcd,non_bx_struct_interpolated_pts_pcd]
+                        
+                        # Extract all other structures
+                        for other_struct_type in structs_referenced_list:
+                            if other_struct_type == bx_ref:
+                                continue
+                            for sp_struct_ind, sp_struct in enumerate(master_structure_reference_dict[patientUID][other_struct_type]):
+                                if other_struct_type == non_bx_structure_type:
+                                    if structure_index == sp_struct_ind:
+                                        continue
+                                non_bx_unique_struct_interslice_interpolation_information = sp_struct["Inter-slice interpolation information"]
+                                non_bx_unique_struct_interpolated_pts_np_arr = non_bx_unique_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                                non_bx_unique_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_unique_struct_interpolated_pts_np_arr, color = np.array([1,0.65,0])) # paint non tested structure in orange
+                                geom_list.append(non_bx_unique_struct_interpolated_pts_pcd)
 
                         stopwatch.stop()
-                        plotting_funcs.plot_geometries(colored_bx_test_pts_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                        plotting_funcs.plot_geometries(*geom_list, label='Unknown')
                         stopwatch.start()
 
 
@@ -1003,7 +977,7 @@ def simulator_parallel(parallel_pool,
                 containment_info_grand_all_structures_cudf_dataframe = cudf.from_pandas(master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment raw results dataframe"])
                 MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 
-                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+                sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                 sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                 sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
                 compiling_results_each_non_bx_structure_containment_task = structures_progress.add_task("[cyan]~~For each structure [{}]...".format("initializing"), total=sp_patient_total_num_non_BXs)
@@ -1108,7 +1082,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calc_MC_stat_biopsy_containment_task, description = "[red]Calculating MC statistics [{}]...".format(patientUID))
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1169,7 +1143,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, description = "[red]Calculating mutual probabilities  [{}]...".format(patientUID))
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1391,7 +1365,7 @@ def simulator_parallel(parallel_pool,
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing containment results [{}]...".format(patientUID))
             structure_organized_for_bx_data_blank_dict = create_patient_specific_structure_dict_for_data(pydicom_item,structs_referenced_list)
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -1514,6 +1488,11 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calc_dose_NN_biopsy_containment_task, description = "[red]Calculating NN dosimetric localization (NEW) [{}]...".format(patientUID))
             # create KDtree for dose data
+            if dose_ref not in pydicom_item:
+                patients_progress.update(calc_dose_NN_biopsy_containment_task, advance = 1)
+                completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, advance = 1)
+                continue
+
             dose_ref_dict = pydicom_item[dose_ref]
             phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
             phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
@@ -1596,7 +1575,38 @@ def simulator_parallel(parallel_pool,
                 else:
                     pass
 
-                
+                if show_NN_dose_demonstration_plots_all_trials_at_once == True:
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+
+                    NN_pts_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe["Nearest phys space points"].to_numpy())
+                    queried_bx_pts_arr_concatenated = np.stack(dose_nearest_neighbour_results_dataframe["Struct test pt vec"].to_numpy())
+                    
+                    NN_doses_locations_pointcloud = point_containment_tools.create_point_cloud(NN_pts_on_comparison_struct_for_all_points_concatenated)
+                    queried_bx_pts_locations_pointcloud = point_containment_tools.create_point_cloud(queried_bx_pts_arr_concatenated, color = np.array([0,1,0]))
+
+                    pcd_list = [unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_doses_locations_pointcloud, queried_bx_pts_locations_pointcloud]
+                    
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(*pcd_list)
+                    stopwatch.start()
+
+                    # Now include background anatomy
+                    for other_struct_type in structs_referenced_list:
+                        if other_struct_type == bx_ref:
+                                continue
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[other_struct_type]):
+                            structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
+                            pcd_list.append(structure_pcd)
+                    
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(*pcd_list)
+                    stopwatch.start()
+
+
+                    del geometry_list_thresholded_dose_lattice
+                else:
+                    pass
 
 
                 # Cant save these dataframes, they take up too much memory! Need to parse data right away
@@ -1817,6 +1827,13 @@ def simulator_parallel(parallel_pool,
         calculate_biopsy_DVH_quantities_task_complete = completed_progress.add_task("[green]Calculating DVH quantities", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(calculate_biopsy_DVH_quantities_task, description = "[red]Compiling dosimetric localization results [{}]...".format(patientUID))
+            
+            if dose_ref not in pydicom_item:
+                patients_progress.update(calculate_biopsy_DVH_quantities_task, advance = 1)
+                completed_progress.update(calculate_biopsy_DVH_quantities_task_complete, advance = 1)
+                continue
+            
+            
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             calculate_biopsy_DVH_quantities_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
             ctv_dose = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
@@ -2202,12 +2219,18 @@ def simulator_parallel(parallel_pool,
 
         """
 
-
-
+        #### MAY NEED TO BRING THIS SECTION BACK, BUT I THINK EVERYTHING CAN BE MIGRATED NOW TO NEWER FUNCTIONS IF AN ERROR IS ENCOUNTERED DOWN THE PIPELINE
+        """
         computing_MLE_statistics_dose_task = patients_progress.add_task("[red]Computing dosimetric localization statistics (MLE) [{}]...".format("initializing"), total=num_patients)
         computing_MLE_statistics_dose_task_complete = completed_progress.add_task("[green]Computing dosimetric localization statistics (MLE)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(computing_MLE_statistics_dose_task, description = "[red]Computing dosimetric localization statistics (MLE) [{}]...".format(patientUID))
+            
+            if dose_ref not in pydicom_item:
+                patients_progress.update(computing_MLE_statistics_dose_task, advance = 1)
+                completed_progress.update(computing_MLE_statistics_dose_task_complete, advance = 1)
+                continue
+            
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             compile_results_dose_NN_biopsy_containment_by_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
@@ -2236,8 +2259,8 @@ def simulator_parallel(parallel_pool,
 
         patients_progress.update(computing_MLE_statistics_dose_task, visible = False)
         completed_progress.update(computing_MLE_statistics_dose_task_complete, visible = True)
-
-
+        """
+        #### MAY NEED TO BRING THIS SECTION BACK
 
         
         """
@@ -2248,7 +2271,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -2355,7 +2378,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_containment_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -2511,7 +2534,7 @@ def simulator_parallel(parallel_pool,
         for patientUID,pydicom_item in master_structure_reference_dict.items():
             patients_progress.update(biopsy_voxelize_dose_task, description = "[red]Voxelizing dose results [{}]...".format(patientUID))
             
-            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID]["All ref"]["Total num structs"]
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
@@ -2651,8 +2674,7 @@ def simulator_parallel(parallel_pool,
         
         master_structure_info_dict['Global']["MC info"]['MC containment sim performed'] = perform_mc_containment_sim
         master_structure_info_dict['Global']["MC info"]['MC dose sim performed'] = perform_mc_dose_sim
-        list_of_mc_sim_types = [perform_mc_dose_sim,perform_mc_containment_sim]
-        master_structure_info_dict['Global']['MC sim performed'] = any(list_of_mc_sim_types)
+        
         
 
         return master_structure_reference_dict, live_display
@@ -3778,3 +3800,16 @@ def compute_sum_to_one_probabilities_by_tissue_heirarchy_with_default_tissue_for
 
     return final_result_with_nominal_sorted
 
+
+
+
+def prepare_2d_stacked_arr_biopsy_only_shifted_with_nominal(specific_bx_structure,
+                                               num_simulations_cutoff):
+    bx_only_shifted_3darr = cp.asnumpy(specific_bx_structure["MC data: bx only shifted 3darr"]) # note that the 3rd dimension slices are each MC trial
+    bx_only_shifted_3darr_cutoff = bx_only_shifted_3darr[0:num_simulations_cutoff]
+    unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+    unshifted_bx_sampled_pts_arr_3darr = np.expand_dims(unshifted_bx_sampled_pts_arr, axis=0)
+    nominal_and_bx_only_shifted_3darr = np.concatenate((unshifted_bx_sampled_pts_arr_3darr,bx_only_shifted_3darr_cutoff))
+    bx_only_shifted_stacked_2darr = np.reshape(nominal_and_bx_only_shifted_3darr, (-1,3) , order = 'C')
+
+    return bx_only_shifted_stacked_2darr

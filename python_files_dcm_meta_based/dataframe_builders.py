@@ -8,6 +8,118 @@ from pandas.api.types import union_categoricals
 from scipy.stats import gaussian_kde
 import math_funcs
 
+
+
+
+def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
+                                  structs_referenced_list, 
+                                  bx_ref, 
+                                  max_simulations,
+                                  all_ref_key,
+                                  important_info,
+                                  live_display):
+    
+    cohort_all_structure_shifts_pandas_data_frame = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+    
+        total_structs = sum([len(pydicom_item[structs]) for structs in structs_referenced_list])
+        
+        # Preallocate lists with known size for efficiency
+        structureID_list = [None] * (total_structs * max_simulations)
+        structure_ref_num_list = [None] * (total_structs * max_simulations)
+        structure_type_list = [None] * (total_structs * max_simulations)
+        structure_index_list = [None] * (total_structs * max_simulations)
+        bx_sim_bool_list = [None] * (total_structs * max_simulations)
+        bx_sim_type_list = [None] * (total_structs * max_simulations)
+        shift_vec_x_arr = np.zeros(total_structs * max_simulations)
+        shift_vec_y_arr = np.zeros(total_structs * max_simulations)
+        shift_vec_z_arr = np.zeros(total_structs * max_simulations)
+        shift_vec_mag_arr = np.zeros(total_structs * max_simulations)
+        trial_list = [None] * (total_structs * max_simulations)  # Preallocate for trial numbers
+
+        idx = 0
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                structureID = specific_structure["ROI"]
+                structure_reference_number = specific_structure["Ref #"]
+
+                if structs == bx_ref:
+                    bx_simulated_bool = specific_structure['Simulated bool']
+                    bx_sim_type = specific_structure["Simulated type"]
+                    sampled_rigid_shifts = specific_structure["MC data: Total rigid shift vectors arr"]
+                else:
+                    bx_simulated_bool = None
+                    bx_sim_type = None
+                    sampled_rigid_shifts = specific_structure['MC data: Generated normal dist random samples arr']
+
+                sampled_rigid_shifts_magnitudes = np.linalg.norm(sampled_rigid_shifts, axis=1)
+                # Check if max_simulations is the same size as the sampling array!
+                if max_simulations != sampled_rigid_shifts.shape[0]:
+                    important_info.add_text_line(f"Warning! max_simulations != sampled_rigid_shifts array! Patient: {patientUID} | Structure: {structureID}", live_display)
+
+                # Generate trial numbers from 1 to max_simulations
+                trial_numbers = list(range(1, max_simulations + 1))
+                
+                # Slice into the preallocated arrays
+                start = idx
+                end = idx + max_simulations
+                
+                structureID_list[start:end] = [structureID] * max_simulations
+                structure_ref_num_list[start:end] = [structure_reference_number] * max_simulations
+                structure_type_list[start:end] = [structs] * max_simulations
+                structure_index_list[start:end] = [specific_structure_index] * max_simulations
+                bx_sim_bool_list[start:end] = [bx_simulated_bool] * max_simulations
+                bx_sim_type_list[start:end] = [bx_sim_type] * max_simulations
+
+                shift_vec_x_arr[start:end] = sampled_rigid_shifts[:, 0]
+                shift_vec_y_arr[start:end] = sampled_rigid_shifts[:, 1]
+                shift_vec_z_arr[start:end] = sampled_rigid_shifts[:, 2]
+                shift_vec_mag_arr[start:end] = sampled_rigid_shifts_magnitudes
+
+                trial_list[start:end] = trial_numbers  # Assign the trial numbers
+
+                idx += max_simulations
+
+        # Create the dictionary for DataFrame
+        sp_patient_all_structure_shifts_dict_for_pandas_data_frame = {
+            "Patient ID": patientUID,
+            "Structure ID": structureID_list,
+            "Simulated bool": bx_sim_bool_list,
+            "Simulated type": bx_sim_type_list,
+            "Structure type": structure_type_list,
+            "Structure ref num": structure_ref_num_list,
+            "Structure index": structure_index_list,
+            'Shift X': shift_vec_x_arr,
+            'Shift Y': shift_vec_y_arr,
+            'Shift Z': shift_vec_z_arr,
+            'Shift magnitude': shift_vec_mag_arr,
+            'Trial': trial_list
+        }
+
+        sp_patient_all_structure_shifts_pandas_data_frame = pandas.DataFrame(data=sp_patient_all_structure_shifts_dict_for_pandas_data_frame)
+                     
+        cohort_all_structure_shifts_pandas_data_frame = pandas.concat([cohort_all_structure_shifts_pandas_data_frame,sp_patient_all_structure_shifts_pandas_data_frame], ignore_index = True)
+
+        sp_patient_all_structure_shifts_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_patient_all_structure_shifts_pandas_data_frame, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["All MC structure shift vectors"] = sp_patient_all_structure_shifts_pandas_data_frame
+
+    
+    cohort_all_structure_shifts_pandas_data_frame = convert_columns_to_categorical_and_downcast(cohort_all_structure_shifts_pandas_data_frame, threshold=0.25)
+
+
+    return cohort_all_structure_shifts_pandas_data_frame
+
+
+
+
+
+
+
+
+
 def tissue_probability_dataframe_builder_by_bx_pt(patientUID,
                                                   specific_bx_structure,
                                                   specific_bx_structure_index,
@@ -774,54 +886,56 @@ def differential_dvh_dataframe_all_mc_trials_dataframe_builder(master_structure_
 
 def differential_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure_ref_dict, 
                                                                   master_structure_info_dict, 
-                                                                  bx_structs):
+                                                                  bx_structs,
+                                                                  dose_ref):
     num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
     num_MC_dose_simulations_plus_nominal = num_MC_dose_simulations + 1
 
     for patientUID, pydicom_item in master_structure_ref_dict.items():
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-            differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
-            histogram_percent_arr = differential_dvh_dict["Percent arr"]
-            dose_vals_edges_arr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
-            
-            # Calculate dose bin centers and widths using NumPy vectorized operations
-            dose_bin_centers = (dose_vals_edges_arr[:-1] + dose_vals_edges_arr[1:]) / 2
-            dose_bin_widths = np.diff(dose_vals_edges_arr)
-            
-            # Prepare data to fill DataFrame later
-            percent_vals_list = []
-            mc_trial_index_list = []
-            dose_bin_left_edges = np.tile(dose_vals_edges_arr[:-1], num_MC_dose_simulations_plus_nominal)
-            dose_bin_right_edges = np.tile(dose_vals_edges_arr[1:], num_MC_dose_simulations_plus_nominal)
-            repeated_dose_bin_centers = np.tile(dose_bin_centers, num_MC_dose_simulations_plus_nominal)
-            repeated_dose_bin_widths = np.tile(dose_bin_widths, num_MC_dose_simulations_plus_nominal)
-            repeated_bin_numbers = np.tile(np.arange(len(dose_bin_centers)), num_MC_dose_simulations_plus_nominal)
-            
-            for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
-                mc_histogram_percent = histogram_percent_arr[mc_trial_index]
-                percent_vals_list.extend(mc_histogram_percent)
-                mc_trial_index_list.extend([mc_trial_index] * len(mc_histogram_percent))
-            
-            # Creating the DataFrame from collected data
-            differential_dvh_dict_for_pandas_dataframe = {
-                "Percent volume": percent_vals_list,
-                "Dose bin edge (left) (Gy)": dose_bin_left_edges,
-                "Dose bin edge (right) (Gy)": dose_bin_right_edges,
-                "Dose bin center (Gy)": repeated_dose_bin_centers,
-                "Dose bin width (Gy)": repeated_dose_bin_widths,
-                "Dose bin number": repeated_bin_numbers,
-                "MC trial": mc_trial_index_list
-            }
-            differential_dvh_pandas_dataframe = pandas.DataFrame(differential_dvh_dict_for_pandas_dataframe)
-            
-            # Convert certain columns to categorical to save memory
-            differential_dvh_pandas_dataframe = convert_columns_to_categorical_and_downcast(
-                differential_dvh_pandas_dataframe, 
-                threshold=0.25
-            )
-            
-            
-            specific_bx_structure["Output data frames"]["Differential DVH by MC trial"] = differential_dvh_pandas_dataframe
+        if dose_ref in pydicom_item:
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
+                histogram_percent_arr = differential_dvh_dict["Percent arr"]
+                dose_vals_edges_arr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
+                
+                # Calculate dose bin centers and widths using NumPy vectorized operations
+                dose_bin_centers = (dose_vals_edges_arr[:-1] + dose_vals_edges_arr[1:]) / 2
+                dose_bin_widths = np.diff(dose_vals_edges_arr)
+                
+                # Prepare data to fill DataFrame later
+                percent_vals_list = []
+                mc_trial_index_list = []
+                dose_bin_left_edges = np.tile(dose_vals_edges_arr[:-1], num_MC_dose_simulations_plus_nominal)
+                dose_bin_right_edges = np.tile(dose_vals_edges_arr[1:], num_MC_dose_simulations_plus_nominal)
+                repeated_dose_bin_centers = np.tile(dose_bin_centers, num_MC_dose_simulations_plus_nominal)
+                repeated_dose_bin_widths = np.tile(dose_bin_widths, num_MC_dose_simulations_plus_nominal)
+                repeated_bin_numbers = np.tile(np.arange(len(dose_bin_centers)), num_MC_dose_simulations_plus_nominal)
+                
+                for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
+                    mc_histogram_percent = histogram_percent_arr[mc_trial_index]
+                    percent_vals_list.extend(mc_histogram_percent)
+                    mc_trial_index_list.extend([mc_trial_index] * len(mc_histogram_percent))
+                
+                # Creating the DataFrame from collected data
+                differential_dvh_dict_for_pandas_dataframe = {
+                    "Percent volume": percent_vals_list,
+                    "Dose bin edge (left) (Gy)": dose_bin_left_edges,
+                    "Dose bin edge (right) (Gy)": dose_bin_right_edges,
+                    "Dose bin center (Gy)": repeated_dose_bin_centers,
+                    "Dose bin width (Gy)": repeated_dose_bin_widths,
+                    "Dose bin number": repeated_bin_numbers,
+                    "MC trial": mc_trial_index_list
+                }
+                differential_dvh_pandas_dataframe = pandas.DataFrame(differential_dvh_dict_for_pandas_dataframe)
+                
+                # Convert certain columns to categorical to save memory
+                differential_dvh_pandas_dataframe = convert_columns_to_categorical_and_downcast(
+                    differential_dvh_pandas_dataframe, 
+                    threshold=0.25
+                )
+                
+                
+                specific_bx_structure["Output data frames"]["Differential DVH by MC trial"] = differential_dvh_pandas_dataframe
 
 
 
@@ -863,45 +977,47 @@ def cumulative_dvh_dataframe_all_mc_trials_dataframe_builder(master_structure_re
 
 def cumulative_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure_ref_dict, 
                                                                 master_structure_info_dict, 
-                                                                bx_structs):
+                                                                bx_structs,
+                                                                dose_ref):
     num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
     num_MC_dose_simulations_plus_nominal = num_MC_dose_simulations + 1
 
     for patientUID, pydicom_item in master_structure_ref_dict.items():
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-            cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
-            percent_arr = cumulative_dvh_dict["Percent arr"]
-            dose_vals_arr = cumulative_dvh_dict["Dose vals arr (Gy)"]
+        if dose_ref in pydicom_item:
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
+                cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
+                percent_arr = cumulative_dvh_dict["Percent arr"]
+                dose_vals_arr = cumulative_dvh_dict["Dose vals arr (Gy)"]
 
-            # Assuming each MC trial has the same number of dose points
-            num_dose_points = len(dose_vals_arr)  # Number of dose points in a single MC trial
-            total_data_points = num_dose_points * num_MC_dose_simulations_plus_nominal
+                # Assuming each MC trial has the same number of dose points
+                num_dose_points = len(dose_vals_arr)  # Number of dose points in a single MC trial
+                total_data_points = num_dose_points * num_MC_dose_simulations_plus_nominal
 
-            # Preallocate arrays for all data
-            percent_vals_array = np.empty(total_data_points)
-            dose_vals_array = np.tile(dose_vals_arr, num_MC_dose_simulations_plus_nominal)
-            mc_trial_index_array = np.repeat(np.arange(num_MC_dose_simulations_plus_nominal), num_dose_points)
+                # Preallocate arrays for all data
+                percent_vals_array = np.empty(total_data_points)
+                dose_vals_array = np.tile(dose_vals_arr, num_MC_dose_simulations_plus_nominal)
+                mc_trial_index_array = np.repeat(np.arange(num_MC_dose_simulations_plus_nominal), num_dose_points)
 
-            # Fill percent values array
-            start_idx = 0
-            for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
-                end_idx = start_idx + num_dose_points
-                percent_vals_array[start_idx:end_idx] = percent_arr[mc_trial_index]
-                start_idx = end_idx
-            
-            # Creating the DataFrame from preallocated data
-            cumulative_dvh_pandas_dataframe = pandas.DataFrame({
-                "Percent volume": percent_vals_array,
-                "Dose (Gy)": dose_vals_array,
-                "MC trial": mc_trial_index_array
-            })
+                # Fill percent values array
+                start_idx = 0
+                for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
+                    end_idx = start_idx + num_dose_points
+                    percent_vals_array[start_idx:end_idx] = percent_arr[mc_trial_index]
+                    start_idx = end_idx
+                
+                # Creating the DataFrame from preallocated data
+                cumulative_dvh_pandas_dataframe = pandas.DataFrame({
+                    "Percent volume": percent_vals_array,
+                    "Dose (Gy)": dose_vals_array,
+                    "MC trial": mc_trial_index_array
+                })
 
-            # Convert appropriate columns to categorical types to save memory
-            cumulative_dvh_pandas_dataframe = convert_columns_to_categorical_and_downcast(cumulative_dvh_pandas_dataframe, threshold=0.25)
+                # Convert appropriate columns to categorical types to save memory
+                cumulative_dvh_pandas_dataframe = convert_columns_to_categorical_and_downcast(cumulative_dvh_pandas_dataframe, threshold=0.25)
 
 
-            # Store the DataFrame in the structure dictionary
-            specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_pandas_dataframe
+                # Store the DataFrame in the structure dictionary
+                specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_pandas_dataframe
 
 
 
@@ -1052,59 +1168,60 @@ def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_NEW_no_co
 
 
 
-def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_ref_dict, bx_ref, biopsy_z_voxel_length, all_ref):
+def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_ref_dict, bx_ref, biopsy_z_voxel_length, dose_ref):
     for patientUID, pydicom_item in master_structure_ref_dict.items():
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-            # Extract relevant information
-            bx_structure_roi = specific_bx_structure["ROI"]
-            bx_structure_refnum = specific_bx_structure["Ref #"]
-            bx_structure_sim_bool = specific_bx_structure["Simulated bool"]
-            bx_structure_sim_type = specific_bx_structure["Simulated type"]
-            dose_vals_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
+        if dose_ref in pydicom_item:
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                # Extract relevant information
+                bx_structure_roi = specific_bx_structure["ROI"]
+                bx_structure_refnum = specific_bx_structure["Ref #"]
+                bx_structure_sim_bool = specific_bx_structure["Simulated bool"]
+                bx_structure_sim_type = specific_bx_structure["Simulated type"]
+                dose_vals_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
 
-            # Convert the dose values array into a DataFrame
-            sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dose_vals_arr)
-            
-            # Include coordinate columns using a helper function
-            bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-            sp_bx_dose_distribution_all_trials_df = misc_tools.include_vector_columns_in_dataframe(
-                sp_bx_dose_distribution_all_trials_df, 
-                bx_coords_sys_arr, 
-                'Original pt index', 
-                'X (Bx frame)', 
-                'Y (Bx frame)', 
-                'Z (Bx frame)'
-            )
+                # Convert the dose values array into a DataFrame
+                sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dose_vals_arr)
+                
+                # Include coordinate columns using a helper function
+                bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                sp_bx_dose_distribution_all_trials_df = misc_tools.include_vector_columns_in_dataframe(
+                    sp_bx_dose_distribution_all_trials_df, 
+                    bx_coords_sys_arr, 
+                    'Original pt index', 
+                    'X (Bx frame)', 
+                    'Y (Bx frame)', 
+                    'Z (Bx frame)'
+                )
 
-            # Compute the radial distance for each point
-            sp_bx_dose_distribution_all_trials_df["R (Bx frame)"] = np.sqrt(
-                sp_bx_dose_distribution_all_trials_df['X (Bx frame)']**2 + 
-                sp_bx_dose_distribution_all_trials_df["Y (Bx frame)"]**2
-            )
+                # Compute the radial distance for each point
+                sp_bx_dose_distribution_all_trials_df["R (Bx frame)"] = np.sqrt(
+                    sp_bx_dose_distribution_all_trials_df['X (Bx frame)']**2 + 
+                    sp_bx_dose_distribution_all_trials_df["Y (Bx frame)"]**2
+                )
 
-            # Add identifying and categorical information
-            sp_bx_dose_distribution_all_trials_df["Simulated bool"] = bx_structure_sim_bool
-            sp_bx_dose_distribution_all_trials_df["Simulated type"] = bx_structure_sim_type
-            sp_bx_dose_distribution_all_trials_df["Bx refnum"] = bx_structure_refnum
-            sp_bx_dose_distribution_all_trials_df["Bx index"] = specific_bx_structure_index
-            sp_bx_dose_distribution_all_trials_df["Bx ID"] = bx_structure_roi
-            sp_bx_dose_distribution_all_trials_df["Patient ID"] = patientUID
+                # Add identifying and categorical information
+                sp_bx_dose_distribution_all_trials_df["Simulated bool"] = bx_structure_sim_bool
+                sp_bx_dose_distribution_all_trials_df["Simulated type"] = bx_structure_sim_type
+                sp_bx_dose_distribution_all_trials_df["Bx refnum"] = bx_structure_refnum
+                sp_bx_dose_distribution_all_trials_df["Bx index"] = specific_bx_structure_index
+                sp_bx_dose_distribution_all_trials_df["Bx ID"] = bx_structure_roi
+                sp_bx_dose_distribution_all_trials_df["Patient ID"] = patientUID
 
-            # Add voxel information
-            sp_bx_dose_distribution_all_trials_df = add_voxel_columns_helper_func(
-                sp_bx_dose_distribution_all_trials_df, 
-                biopsy_z_voxel_length, 
-                "Z (Bx frame)"
-            )
+                # Add voxel information
+                sp_bx_dose_distribution_all_trials_df = add_voxel_columns_helper_func(
+                    sp_bx_dose_distribution_all_trials_df, 
+                    biopsy_z_voxel_length, 
+                    "Z (Bx frame)"
+                )
 
-            # Convert certain columns to categorical to save memory
-            sp_bx_dose_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(
-                sp_bx_dose_distribution_all_trials_df, 
-                threshold=0.25
-            )
+                # Convert certain columns to categorical to save memory
+                sp_bx_dose_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(
+                    sp_bx_dose_distribution_all_trials_df, 
+                    threshold=0.25
+                )
 
-            # Store the updated DataFrame in the structure dictionary
-            specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = sp_bx_dose_distribution_all_trials_df
+                # Store the updated DataFrame in the structure dictionary
+                specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = sp_bx_dose_distribution_all_trials_df
 
 
 
@@ -1168,90 +1285,92 @@ def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension
 
 def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                                                     bx_ref,
-                                                    all_ref_key):
+                                                    all_ref_key,
+                                                    dose_ref):
     
     cohort_global_dosimetry_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
 
-        sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                
+                bx_struct_roi = specific_bx_structure["ROI"]
+                num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+                simulated_bool = specific_bx_structure["Simulated bool"]
+                bx_type = specific_bx_structure["Simulated type"]
+                bx_refnum = specific_bx_structure["Ref #"]
 
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] 
+
+                # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
+                # ensures that erronous grouping combinations are not produced!
+                #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)'], [float])
+                sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0]
+
+                global_mean_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].mean()
+                global_dose_std_dev_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].std()
+                global_dose_std_err_in_mean_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].sem()
+                global_max_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].max()
+                global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
+                global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
+                global_quantiles_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
+                
+                global_nominal_mean_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].mean()
+                global_nominal_dose_std_dev_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].std()
+                global_nominal_dose_std_err_in_mean_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].sem()
+                global_nominal_max_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].max()
+                global_nominal_min_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].min()
+
+                global_max_density_dose = math_funcs.find_max_kde_dose(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'], num_eval_pts = 1000)
+
+                global_nominal_max_density_dose = math_funcs.find_max_kde_dose(sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'], num_eval_pts = 1000)
+                
+                sp_bx_global_dose_stats_dict = {"Patient ID": patientUID,
+                                                "Bx ID": bx_struct_roi,
+                                                "Bx index": specific_bx_structure_index,
+                                                "Bx refnum": bx_refnum,
+                                                "Simulated bool": simulated_bool,
+                                                "Simulated type": bx_type,
+                                                'Global max density dose': global_max_density_dose,
+                                                'Global mean dose': global_mean_dose_series, 
+                                                'Global max dose': global_max_dose_series, 
+                                                'Global min dose': global_min_dose_series, 
+                                                'Global standard deviation dose': global_dose_std_dev_series,
+                                                'Global standard error dose': global_dose_std_err_in_mean_series,
+                                                'Global q05 dose': global_quantiles_dose_series[0.05],
+                                                'Global q25 dose': global_quantiles_dose_series[0.25],
+                                                'Global q50 dose': global_quantiles_dose_series[0.5],
+                                                'Global q75 dose': global_quantiles_dose_series[0.75],
+                                                'Global q95 dose': global_quantiles_dose_series[0.95],
+                                                'Global nominal max density dose': global_nominal_max_density_dose,
+                                                'Global nominal mean dose': global_nominal_mean_dose_series, 
+                                                'Global nominal max dose': global_nominal_max_dose_series, 
+                                                'Global nominal min dose': global_nominal_min_dose_series, 
+                                                'Global nominal standard deviation dose': global_nominal_dose_std_dev_series,
+                                                'Global nominal standard error dose': global_nominal_dose_std_err_in_mean_series,
+                                                }
+                
+                sp_bx_global_dose_stats_dataframe = pandas.DataFrame(sp_bx_global_dose_stats_dict, index=[0])
+
+                sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple dose (lower)","Global CI 95 tuple dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean dose', 'Global standard error dose'), axis=1).tolist()
+                sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
+
+
+                sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
+                
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
+
+                specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
+
+            cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
             
-            bx_struct_roi = specific_bx_structure["ROI"]
-            num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
-            simulated_bool = specific_bx_structure["Simulated bool"]
-            bx_type = specific_bx_structure["Simulated type"]
-            bx_refnum = specific_bx_structure["Ref #"]
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
 
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] 
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry statistics"] = sp_patient_all_biopsies_global_dosimetry
 
-            # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
-            # ensures that erronous grouping combinations are not produced!
-            #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)'], [float])
-            sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0]
-
-            global_mean_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].mean()
-            global_dose_std_dev_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].std()
-            global_dose_std_err_in_mean_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].sem()
-            global_max_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].max()
-            global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
-            global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
-            global_quantiles_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
-            
-            global_nominal_mean_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].mean()
-            global_nominal_dose_std_dev_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].std()
-            global_nominal_dose_std_err_in_mean_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].sem()
-            global_nominal_max_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].max()
-            global_nominal_min_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].min()
-
-            global_max_density_dose = math_funcs.find_max_kde_dose(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'], num_eval_pts = 1000)
-
-            global_nominal_max_density_dose = math_funcs.find_max_kde_dose(sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'], num_eval_pts = 1000)
-            
-            sp_bx_global_dose_stats_dict = {"Patient ID": patientUID,
-                                            "Bx ID": bx_struct_roi,
-                                            "Bx index": specific_bx_structure_index,
-                                            "Bx refnum": bx_refnum,
-                                            "Simulated bool": simulated_bool,
-                                            "Simulated type": bx_type,
-                                            'Global max density dose': global_max_density_dose,
-                                            'Global mean dose': global_mean_dose_series, 
-                                            'Global max dose': global_max_dose_series, 
-                                            'Global min dose': global_min_dose_series, 
-                                            'Global standard deviation dose': global_dose_std_dev_series,
-                                            'Global standard error dose': global_dose_std_err_in_mean_series,
-                                            'Global q05 dose': global_quantiles_dose_series[0.05],
-                                            'Global q25 dose': global_quantiles_dose_series[0.25],
-                                            'Global q50 dose': global_quantiles_dose_series[0.5],
-                                            'Global q75 dose': global_quantiles_dose_series[0.75],
-                                            'Global q95 dose': global_quantiles_dose_series[0.95],
-                                            'Global nominal max density dose': global_nominal_max_density_dose,
-                                            'Global nominal mean dose': global_nominal_mean_dose_series, 
-                                            'Global nominal max dose': global_nominal_max_dose_series, 
-                                            'Global nominal min dose': global_nominal_min_dose_series, 
-                                            'Global nominal standard deviation dose': global_nominal_dose_std_dev_series,
-                                            'Global nominal standard error dose': global_nominal_dose_std_err_in_mean_series,
-                                            }
-            
-            sp_bx_global_dose_stats_dataframe = pandas.DataFrame(sp_bx_global_dose_stats_dict, index=[0])
-
-            sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple dose (lower)","Global CI 95 tuple dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean dose', 'Global standard error dose'), axis=1).tolist()
-            sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
-
-
-            sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
-            
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
-
-            specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
-
-        sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
-
-        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry statistics"] = sp_patient_all_biopsies_global_dosimetry
-
-        cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
     
     cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
@@ -1262,94 +1381,97 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
 
 def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_reference_dict,
                                                     bx_ref,
-                                                    all_ref_key):
+                                                    all_ref_key,
+                                                    dose_ref):
     
     cohort_global_dosimetry_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
 
-        sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                
+                bx_struct_roi = specific_bx_structure["ROI"]
+                num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+                simulated_bool = specific_bx_structure["Simulated bool"]
+                bx_type = specific_bx_structure["Simulated type"]
+                bx_refnum = specific_bx_structure["Ref #"]
 
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] 
+
+                # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
+                # ensures that erronous grouping combinations are not produced!
+                #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], [float, int, float, float])
+                sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0]
+                
+                sp_bx_global_grouped_df = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+                sp_bx_nominal_global_grouped_df = sp_bx_point_wise_dose_output_nominal_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+
+                global_by_voxel_mean_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].mean()
+                global_by_voxel_dose_std_dev_series = sp_bx_global_grouped_df['Dose (Gy)'].std()
+                global_by_voxel_dose_std_err_in_mean_series = sp_bx_global_grouped_df['Dose (Gy)'].sem()
+                global_by_voxel_max_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].max()
+                global_by_voxel_min_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].min()
+                global_by_voxel_min_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].min()
+                global_by_voxel_quantiles_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
+                global_by_voxel_quantiles_dose_series_unstacked = global_by_voxel_quantiles_dose_series.unstack()
+
+                
+                global_by_voxel_nominal_mean_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].mean()
+                global_by_voxel_nominal_dose_std_dev_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].std()
+                global_by_voxel_nominal_dose_std_err_in_mean_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].sem()
+                global_by_voxel_nominal_max_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].max()
+                global_by_voxel_nominal_min_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].min()
+                
+                global_by_voxel_max_density_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].apply(math_funcs.find_max_kde_dose, num_eval_pts=1000)
+
+                sp_bx_global_dose_stats_dict = {"Patient ID": patientUID,
+                                                "Bx ID": bx_struct_roi,
+                                                "Bx index": specific_bx_structure_index,
+                                                "Bx refnum": bx_refnum,
+                                                "Simulated bool": simulated_bool,
+                                                "Simulated type": bx_type,
+                                                'Global max density dose': global_by_voxel_max_density_dose_series,
+                                                'Global mean dose': global_by_voxel_mean_dose_series, 
+                                                'Global max dose': global_by_voxel_max_dose_series, 
+                                                'Global min dose': global_by_voxel_min_dose_series, 
+                                                'Global standard deviation dose': global_by_voxel_dose_std_dev_series,
+                                                'Global standard error dose': global_by_voxel_dose_std_err_in_mean_series,
+                                                'Global q05 dose': global_by_voxel_quantiles_dose_series_unstacked[0.05],
+                                                'Global q25 dose': global_by_voxel_quantiles_dose_series_unstacked[0.25],
+                                                'Global q50 dose': global_by_voxel_quantiles_dose_series_unstacked[0.5],
+                                                'Global q75 dose': global_by_voxel_quantiles_dose_series_unstacked[0.75],
+                                                'Global q95 dose': global_by_voxel_quantiles_dose_series_unstacked[0.95],
+                                                'Global nominal mean dose': global_by_voxel_nominal_mean_dose_series, 
+                                                'Global nominal max dose': global_by_voxel_nominal_max_dose_series, 
+                                                'Global nominal min dose': global_by_voxel_nominal_min_dose_series, 
+                                                'Global nominal standard deviation dose': global_by_voxel_nominal_dose_std_dev_series,
+                                                'Global nominal standard error dose': global_by_voxel_nominal_dose_std_err_in_mean_series,
+                                                }
+                
+                # the reset_index(drop=False) method is crucial to maintain the voxel index column which was used as a grouping column above
+                sp_bx_global_dose_stats_dataframe = pandas.DataFrame(sp_bx_global_dose_stats_dict).reset_index(drop=False)
+
+                sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple dose (lower)","Global CI 95 tuple dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean dose', 'Global standard error dose'), axis=1).tolist()
+                sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
+
+
+                sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
+                
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
+
+                specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
+
             
-            bx_struct_roi = specific_bx_structure["ROI"]
-            num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
-            simulated_bool = specific_bx_structure["Simulated bool"]
-            bx_type = specific_bx_structure["Simulated type"]
-            bx_refnum = specific_bx_structure["Ref #"]
-
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] 
-
-            # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
-            # ensures that erronous grouping combinations are not produced!
-            #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, ['Dose (Gy)', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], [float, int, float, float])
-            sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0]
+            cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
             
-            sp_bx_global_grouped_df = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
-            sp_bx_nominal_global_grouped_df = sp_bx_point_wise_dose_output_nominal_pandas_data_frame.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
 
-            global_by_voxel_mean_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].mean()
-            global_by_voxel_dose_std_dev_series = sp_bx_global_grouped_df['Dose (Gy)'].std()
-            global_by_voxel_dose_std_err_in_mean_series = sp_bx_global_grouped_df['Dose (Gy)'].sem()
-            global_by_voxel_max_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].max()
-            global_by_voxel_min_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].min()
-            global_by_voxel_min_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].min()
-            global_by_voxel_quantiles_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
-            global_by_voxel_quantiles_dose_series_unstacked = global_by_voxel_quantiles_dose_series.unstack()
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry by voxel statistics"] = sp_patient_all_biopsies_global_dosimetry
 
             
-            global_by_voxel_nominal_mean_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].mean()
-            global_by_voxel_nominal_dose_std_dev_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].std()
-            global_by_voxel_nominal_dose_std_err_in_mean_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].sem()
-            global_by_voxel_nominal_max_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].max()
-            global_by_voxel_nominal_min_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].min()
-            
-            global_by_voxel_max_density_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].apply(math_funcs.find_max_kde_dose, num_eval_pts=1000)
-
-            sp_bx_global_dose_stats_dict = {"Patient ID": patientUID,
-                                            "Bx ID": bx_struct_roi,
-                                            "Bx index": specific_bx_structure_index,
-                                            "Bx refnum": bx_refnum,
-                                            "Simulated bool": simulated_bool,
-                                            "Simulated type": bx_type,
-                                            'Global max density dose': global_by_voxel_max_density_dose_series,
-                                            'Global mean dose': global_by_voxel_mean_dose_series, 
-                                            'Global max dose': global_by_voxel_max_dose_series, 
-                                            'Global min dose': global_by_voxel_min_dose_series, 
-                                            'Global standard deviation dose': global_by_voxel_dose_std_dev_series,
-                                            'Global standard error dose': global_by_voxel_dose_std_err_in_mean_series,
-                                            'Global q05 dose': global_by_voxel_quantiles_dose_series_unstacked[0.05],
-                                            'Global q25 dose': global_by_voxel_quantiles_dose_series_unstacked[0.25],
-                                            'Global q50 dose': global_by_voxel_quantiles_dose_series_unstacked[0.5],
-                                            'Global q75 dose': global_by_voxel_quantiles_dose_series_unstacked[0.75],
-                                            'Global q95 dose': global_by_voxel_quantiles_dose_series_unstacked[0.95],
-                                            'Global nominal mean dose': global_by_voxel_nominal_mean_dose_series, 
-                                            'Global nominal max dose': global_by_voxel_nominal_max_dose_series, 
-                                            'Global nominal min dose': global_by_voxel_nominal_min_dose_series, 
-                                            'Global nominal standard deviation dose': global_by_voxel_nominal_dose_std_dev_series,
-                                            'Global nominal standard error dose': global_by_voxel_nominal_dose_std_err_in_mean_series,
-                                            }
-            
-            # the reset_index(drop=False) method is crucial to maintain the voxel index column which was used as a grouping column above
-            sp_bx_global_dose_stats_dataframe = pandas.DataFrame(sp_bx_global_dose_stats_dict).reset_index(drop=False)
-
-            sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple dose (lower)","Global CI 95 tuple dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean dose', 'Global standard error dose'), axis=1).tolist()
-            sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
-
-
-            sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
-            
-            sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
-
-            specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
-
-        sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
-
-        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry by voxel statistics"] = sp_patient_all_biopsies_global_dosimetry
-
-        cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
-    
     cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
@@ -1377,56 +1499,95 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
 
 
 
-def structure_volume_dataframe_builder(master_structure_ref_dict,
-                                       structs_referenced_list,
-                                       all_ref_key):
+def biopsy_basic_spatial_features_information_dataframe_builder(master_structure_ref_dict,
+                                       all_ref_key,
+                                       bx_ref):
     
+    cohort_biopsy_basic_spatial_features_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_ref_dict.items():
         structure_ID_list = []
         structure_type_list = []
         structure_volume_list = []
-        structure_max_pairwise_dist_list = []
+        structure_length_list = []
         structure_ref_num_list = []
         structure_index_list = []
         patient_ID_list = []
         voxel_size_list = []
-        for structs in structs_referenced_list:
-            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                structureID = specific_structure["ROI"]
-                structure_reference_number = specific_structure["Ref #"]
-                struct_type = structs
+        sim_type_list = []
+        sim_bool_list = []
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
+            structureID = specific_structure["ROI"]
+            structure_reference_number = specific_structure["Ref #"]
+            sim_type = specific_structure["Simulated type"]
+            sim_bool = specific_structure["Simulated bool"]
+            struct_type = bx_ref
 
-                maximum_distance = specific_structure["Maximum pairwise distance"]
-                structure_volume = specific_structure["Structure volume"]
-                voxel_size = specific_structure["Voxel size for structure volume calc"]
+            biopsy_length = specific_structure['Centroid line vec length (bx needle base to bx needle tip)']
+            #maximum_distance = specific_structure["Maximum pairwise distance"]
+            biopsy_volume = specific_structure["Structure volume"]
+            voxel_size = specific_structure["Voxel size for structure volume calc"]
 
-                structure_ID_list.append(structureID)
-                structure_type_list.append(struct_type)
-                structure_ref_num_list.append(structure_reference_number)
-                structure_max_pairwise_dist_list.append(maximum_distance)
-                structure_volume_list.append(structure_volume)
-                structure_index_list.append(specific_structure_index)
-                patient_ID_list.append(patientUID)
-                voxel_size_list.append(voxel_size)
+            structure_ID_list.append(structureID)
+            structure_type_list.append(struct_type)
+            structure_ref_num_list.append(structure_reference_number)
+            structure_length_list.append(biopsy_length)
+            structure_volume_list.append(biopsy_volume)
+            structure_index_list.append(specific_structure_index)
+            patient_ID_list.append(patientUID)
+            voxel_size_list.append(voxel_size)
+            sim_type_list.append(sim_type)
+            sim_bool_list.append(sim_bool)
 
         structure_info_dict_for_pandas_dataframe = {"Patient ID": patient_ID_list,
-                                                    "Structure ID": structure_ID_list,
-                                                    "Structure type": structure_type_list,
-                                                    "Structure ref num": structure_ref_num_list,
-                                                    "Structure index": structure_index_list,
-                                                    "Structure max pair-wise distance": structure_max_pairwise_dist_list,
-                                                    "Structure volume": structure_volume_list,
-                                                    "Voxel side length": voxel_size_list
+                                                    "Bx ID": structure_ID_list,
+                                                    "Simulated bool": sim_bool_list,
+                                                    "Simulated type": sim_type_list,
+                                                    "Struct type": structure_type_list,
+                                                    'Bx refnum': structure_ref_num_list,
+                                                    "Bx index": structure_index_list,
+                                                    "Length (mm)": structure_length_list,
+                                                    "Volume (mm3)": structure_volume_list,
+                                                    "Voxel side length (mm)": voxel_size_list
                                                     }
         
         structure_info_pandas_data_frame = pandas.DataFrame.from_dict(data = structure_info_dict_for_pandas_dataframe)
 
+        # Combine some information onto this dataframe
+        sp_patient_relative_dil_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Nearest DILs info dataframe"]
+        if sp_patient_relative_dil_dataframe.empty == False:
+            # Take the target DILs information
+            sp_patient_relative_dil_dataframe_subset = sp_patient_relative_dil_dataframe[sp_patient_relative_dil_dataframe["Target DIL (by centroids)"] == True][['Patient ID', 
+                                                                                                                                                                  'Bx ID', 
+                                                                                                                                                                  'Simulated bool', 
+                                                                                                                                                                  'Simulated type', 
+                                                                                                                                                                  'Struct type', 
+                                                                                                                                                                  'Bx refnum', 
+                                                                                                                                                                  'Bx index', 
+                                                                                                                                                                  'Relative DIL ID', 
+                                                                                                                                                                  'Relative DIL index', 
+                                                                                                                                                                  'BX to DIL centroid (X)', 
+                                                                                                                                                                  'BX to DIL centroid (Y)',  
+                                                                                                                                                                  'BX to DIL centroid (Z)', 
+                                                                                                                                                                  'BX to DIL centroid distance',  
+                                                                                                                                                                  'NN surface-surface distance', 
+                                                                                                                                                                  'Relative prostate ID', 
+                                                                                                                                                                  'Relative prostate index', 
+                                                                                                                                                                  'Bx position in prostate LR', 
+                                                                                                                                                                  'Bx position in prostate AP', 
+                                                                                                                                                                  'Bx position in prostate SI']]
+            
+            structure_info_pandas_data_frame = pandas.merge(structure_info_pandas_data_frame, sp_patient_relative_dil_dataframe_subset, how='left', on= ['Patient ID', 'Bx ID', 'Simulated bool', 'Simulated type', 'Struct type', 'Bx refnum', 'Bx index'])
+
+        cohort_biopsy_basic_spatial_features_dataframe = pandas.concat([cohort_biopsy_basic_spatial_features_dataframe,structure_info_pandas_data_frame]).reset_index(drop=True)
+
         structure_info_pandas_data_frame = convert_columns_to_categorical_and_downcast(structure_info_pandas_data_frame, threshold=0.25)
 
-        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Structure information"] = structure_info_pandas_data_frame
+        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy basic spatial features dataframe"] = structure_info_pandas_data_frame
 
-
+    cohort_biopsy_basic_spatial_features_dataframe = convert_columns_to_categorical_and_downcast(cohort_biopsy_basic_spatial_features_dataframe, threshold=0.25)
+    
+    return cohort_biopsy_basic_spatial_features_dataframe
 
 def structure_dimension_dataframe_builder(master_structure_ref_dict,
                                        structs_referenced_list,
@@ -1608,7 +1769,6 @@ def bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
 
 
 
-
                     patientUID_list = []
                     structureID_list = []
                     sim_type_list = []
@@ -1748,13 +1908,13 @@ def bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
 
                     sp_patient_relative_dil_dataframe_list.append(sp_bx_relative_dil_dataframe)
 
-                    
-
-        sp_patient_relative_dil_dataframe = pandas.concat(sp_patient_relative_dil_dataframe_list)
         
-        sp_patient_relative_dil_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_relative_dil_dataframe, threshold=0.25)
+            
+        sp_patient_relative_dil_dataframe = pandas.concat(sp_patient_relative_dil_dataframe_list).reset_index(drop=True)
 
         cohort_nearest_dils_dataframe = pandas.concat([cohort_nearest_dils_dataframe,sp_patient_relative_dil_dataframe]).reset_index(drop=True)
+        
+        sp_patient_relative_dil_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_relative_dil_dataframe, threshold=0.25)
 
         pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Nearest DILs info dataframe"] = sp_patient_relative_dil_dataframe
 
@@ -1821,25 +1981,27 @@ def dil_optimization_results_dataframe_builder(master_structure_reference_dict,
 
 def dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
                                             bx_ref,
-                                            all_ref_key):
+                                            all_ref_key,
+                                            dose_ref):
     
     cohort_all_bx_dvh_metric_dataframe = pandas.DataFrame()
     for patientUID,pydicom_item in master_structure_reference_dict.items():
-        all_bx_dvh_metrics_dataframe = pandas.DataFrame()
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        if dose_ref in pydicom_item:
+            all_bx_dvh_metrics_dataframe = pandas.DataFrame()
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
 
-            dvh_metric_dataframe_per_biopsy = specific_bx_structure["Output data frames"]["DVH metrics"]
+                dvh_metric_dataframe_per_biopsy = specific_bx_structure["Output data frames"]["DVH metrics"]
 
-            all_bx_dvh_metrics_dataframe = pandas.concat([all_bx_dvh_metrics_dataframe,dvh_metric_dataframe_per_biopsy], ignore_index = True)
+                all_bx_dvh_metrics_dataframe = pandas.concat([all_bx_dvh_metrics_dataframe,dvh_metric_dataframe_per_biopsy], ignore_index = True)
 
-            del specific_bx_structure["Output data frames"]["DVH metrics"]
-        
-        all_bx_dvh_metrics_dataframe = convert_columns_to_categorical_and_downcast(all_bx_dvh_metrics_dataframe, threshold=0.25)
+                del specific_bx_structure["Output data frames"]["DVH metrics"]
+            
+            cohort_all_bx_dvh_metric_dataframe = pandas.concat([cohort_all_bx_dvh_metric_dataframe, all_bx_dvh_metrics_dataframe], ignore_index = True)
+            
+            all_bx_dvh_metrics_dataframe = convert_columns_to_categorical_and_downcast(all_bx_dvh_metrics_dataframe, threshold=0.25)
 
-        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics"] = all_bx_dvh_metrics_dataframe
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics"] = all_bx_dvh_metrics_dataframe
 
-        cohort_all_bx_dvh_metric_dataframe = pandas.concat([cohort_all_bx_dvh_metric_dataframe, all_bx_dvh_metrics_dataframe], ignore_index = True)
-    
     cohort_all_bx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(cohort_all_bx_dvh_metric_dataframe, threshold=0.25)
 
     return cohort_all_bx_dvh_metric_dataframe
@@ -1909,6 +2071,338 @@ def bx_global_score_to_target_dil_3d_radiomic_features_dataframe_builder(structu
 
 
 
+
+
+
+
+
+
+
+#### MR DATAFRAME BUILDERS
+
+
+def all_mr_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_ref_dict, 
+                                                                        bx_ref, 
+                                                                        biopsy_z_voxel_length, 
+                                                                        mr_adc_ref,
+                                                                        mc_sim_arr_str,
+                                                                        col_name_str_prefix,
+                                                                        output_dataframe_str): 
+    for patientUID, pydicom_item in master_structure_ref_dict.items():
+        if mr_adc_ref not in pydicom_item:
+            continue
+
+        mr_adc_subdict = pydicom_item[mr_adc_ref]
+        col_name_str = col_name_str_prefix + " " +str(mr_adc_subdict["Units"])
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            # Extract relevant information
+            bx_structure_roi = specific_bx_structure["ROI"]
+            bx_structure_refnum = specific_bx_structure["Ref #"]
+            bx_structure_sim_bool = specific_bx_structure["Simulated bool"]
+            bx_structure_sim_type = specific_bx_structure["Simulated type"]
+            mr_vals_arr = specific_bx_structure[mc_sim_arr_str]
+
+            # Convert the dose values array into a DataFrame
+            
+            sp_bx_mr_distribution_all_trials_df = mr_NxD_array_to_dataframe_helper_function_v2(mr_vals_arr, col_name_str)
+            
+            # Include coordinate columns using a helper function
+            bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+            sp_bx_mr_distribution_all_trials_df = misc_tools.include_vector_columns_in_dataframe(
+                sp_bx_mr_distribution_all_trials_df, 
+                bx_coords_sys_arr, 
+                'Original pt index', 
+                'X (Bx frame)', 
+                'Y (Bx frame)', 
+                'Z (Bx frame)'
+            )
+
+            # Compute the radial distance for each point
+            sp_bx_mr_distribution_all_trials_df["R (Bx frame)"] = np.sqrt(
+                sp_bx_mr_distribution_all_trials_df['X (Bx frame)']**2 + 
+                sp_bx_mr_distribution_all_trials_df["Y (Bx frame)"]**2
+            )
+
+            # Add identifying and categorical information
+            sp_bx_mr_distribution_all_trials_df["Simulated bool"] = bx_structure_sim_bool
+            sp_bx_mr_distribution_all_trials_df["Simulated type"] = bx_structure_sim_type
+            sp_bx_mr_distribution_all_trials_df["Bx refnum"] = bx_structure_refnum
+            sp_bx_mr_distribution_all_trials_df["Bx index"] = specific_bx_structure_index
+            sp_bx_mr_distribution_all_trials_df["Bx ID"] = bx_structure_roi
+            sp_bx_mr_distribution_all_trials_df["Patient ID"] = patientUID
+
+            # Add voxel information
+            sp_bx_mr_distribution_all_trials_df = add_voxel_columns_helper_func(
+                sp_bx_mr_distribution_all_trials_df, 
+                biopsy_z_voxel_length, 
+                "Z (Bx frame)"
+            )
+
+            # Convert certain columns to categorical to save memory
+            sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(
+                sp_bx_mr_distribution_all_trials_df, 
+                threshold=0.25
+            )
+
+            # Store the updated DataFrame in the structure dictionary
+            specific_bx_structure["Output data frames"][output_dataframe_str] = sp_bx_mr_distribution_all_trials_df
+
+
+def global_mr_values_dataframe_builder(master_structure_reference_dict,
+                                                    bx_ref,
+                                                    all_ref_key,
+                                                    mr_adc_ref,
+                                                    col_name_str_prefix,
+                                                    output_dataframe_str,
+                                                    multi_structure_output_dataframe_str):
+    
+    cohort_global_mr_dataframe = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        if mr_adc_ref not in pydicom_item:
+            continue
+
+        mr_adc_subdict = pydicom_item[mr_adc_ref]
+        col_name_str = col_name_str_prefix + " " +str(mr_adc_subdict["Units"])
+
+        sp_patient_all_biopsies_global_mr = pandas.DataFrame()
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            
+            bx_struct_roi = specific_bx_structure["ROI"]
+            num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+            simulated_bool = specific_bx_structure["Simulated bool"]
+            bx_type = specific_bx_structure["Simulated type"]
+            bx_refnum = specific_bx_structure["Ref #"]
+
+            sp_bx_mr_distribution_all_trials_df = specific_bx_structure['Output data frames'][output_dataframe_str] 
+
+            # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
+            # ensures that erronous grouping combinations are not produced!
+            #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
+            sp_bx_mr_distribution_all_trials_df = misc_tools.convert_categorical_columns(sp_bx_mr_distribution_all_trials_df, [col_name_str], [float])
+            sp_bx_mr_distribution_all_trials_df_nominal = sp_bx_mr_distribution_all_trials_df[sp_bx_mr_distribution_all_trials_df['MC trial num'] == 0]
+            
+
+            global_mean_mr_series = sp_bx_mr_distribution_all_trials_df[col_name_str].mean()
+            global_mr_std_dev_series = sp_bx_mr_distribution_all_trials_df[col_name_str].std()
+            global_mr_std_err_in_mean_series = sp_bx_mr_distribution_all_trials_df[col_name_str].sem()
+            global_max_mr_series = sp_bx_mr_distribution_all_trials_df[col_name_str].max()
+            global_min_mr_series = sp_bx_mr_distribution_all_trials_df[col_name_str].min()
+            global_min_mr_series = sp_bx_mr_distribution_all_trials_df[col_name_str].min()
+            global_quantiles_mr_series = sp_bx_mr_distribution_all_trials_df[col_name_str].quantile([0.05,0.25,0.5,0.75,0.95])
+            
+            global_nominal_mean_mr_series = sp_bx_mr_distribution_all_trials_df_nominal[col_name_str].mean()
+            global_nominal_mr_std_dev_series = sp_bx_mr_distribution_all_trials_df_nominal[col_name_str].std()
+            global_nominal_mr_std_err_in_mean_series = sp_bx_mr_distribution_all_trials_df_nominal[col_name_str].sem()
+            global_nominal_max_mr_series = sp_bx_mr_distribution_all_trials_df_nominal[col_name_str].max()
+            global_nominal_min_mr_series = sp_bx_mr_distribution_all_trials_df_nominal[col_name_str].min()
+
+            global_max_density_mr = math_funcs.find_max_density_xval_via_kde(sp_bx_mr_distribution_all_trials_df[col_name_str], num_eval_pts = 1000)
+
+            global_nominal_max_density_mr = math_funcs.find_max_density_xval_via_kde(sp_bx_mr_distribution_all_trials_df_nominal[col_name_str], num_eval_pts = 1000)
+            
+            sp_bx_global_mr_stats_dict = {"Patient ID": patientUID,
+                                            "Bx ID": bx_struct_roi,
+                                            "Bx index": specific_bx_structure_index,
+                                            "Bx refnum": bx_refnum,
+                                            "Simulated bool": simulated_bool,
+                                            "Simulated type": bx_type,
+                                            'Units': str(mr_adc_subdict["Units"]),
+                                            'Global max density': global_max_density_mr,
+                                            'Global mean': global_mean_mr_series, 
+                                            'Global max': global_max_mr_series, 
+                                            'Global min': global_min_mr_series, 
+                                            'Global SD': global_mr_std_dev_series,
+                                            'Global SEM': global_mr_std_err_in_mean_series,
+                                            'Global q05': global_quantiles_mr_series[0.05],
+                                            'Global q25': global_quantiles_mr_series[0.25],
+                                            'Global q50': global_quantiles_mr_series[0.5],
+                                            'Global q75': global_quantiles_mr_series[0.75],
+                                            'Global q95': global_quantiles_mr_series[0.95],
+                                            'Global nominal max density': global_nominal_max_density_mr,
+                                            'Global nominal mean': global_nominal_mean_mr_series, 
+                                            'Global nominal max': global_nominal_max_mr_series, 
+                                            'Global nominal min': global_nominal_min_mr_series, 
+                                            'Global nominal SD': global_nominal_mr_std_dev_series,
+                                            'Global nominal SEM': global_nominal_mr_std_err_in_mean_series,
+                                            }
+            
+            sp_bx_global_mr_stats_dataframe = pandas.DataFrame(sp_bx_global_mr_stats_dict, index=[0])
+
+            sp_bx_global_mr_stats_dataframe[["Global CI 95 (lower)","Global CI 95 (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean', 'Global SEM'), axis=1).tolist()
+            sp_bx_global_mr_stats_dataframe[["Global CI 95 nominal (lower)","Global CI 95 nominal (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean', 'Global nominal SEM'), axis=1).tolist()
+
+
+            sp_patient_all_biopsies_global_mr = pandas.concat([sp_patient_all_biopsies_global_mr,sp_bx_global_mr_stats_dataframe], ignore_index = True)
+            
+            sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(sp_bx_mr_distribution_all_trials_df, threshold=0.25)
+
+            specific_bx_structure['Output data frames'][output_dataframe_str]  = sp_bx_mr_distribution_all_trials_df
+
+        cohort_global_mr_dataframe = pandas.concat([cohort_global_mr_dataframe,sp_patient_all_biopsies_global_mr], ignore_index = True)
+        
+        sp_patient_all_biopsies_global_mr = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_mr, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["MR - " + str(multi_structure_output_dataframe_str)] = sp_patient_all_biopsies_global_mr 
+    
+    cohort_global_mr_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_mr_dataframe, threshold=0.25)
+
+    return cohort_global_mr_dataframe
+
+
+
+
+def global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
+                                                    bx_ref,
+                                                    all_ref_key,
+                                                    mr_adc_ref,
+                                                    col_name_str_prefix,
+                                                    output_dataframe_str,
+                                                    multi_structure_output_dataframe_str):
+    
+    cohort_global_by_voxel_mr_dataframe = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+        if mr_adc_ref not in pydicom_item:
+            continue
+
+        mr_adc_subdict = pydicom_item[mr_adc_ref]
+        col_name_str = col_name_str_prefix + " " +str(mr_adc_subdict["Units"])
+
+        sp_patient_all_biopsies_global_mr = pandas.DataFrame()
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            
+            bx_struct_roi = specific_bx_structure["ROI"]
+            num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+            simulated_bool = specific_bx_structure["Simulated bool"]
+            bx_type = specific_bx_structure["Simulated type"]
+            bx_refnum = specific_bx_structure["Ref #"]
+
+            sp_bx_mr_distribution_all_trials_df = specific_bx_structure['Output data frames'][output_dataframe_str] 
+
+            # Note it is very important to convert grouping columns back to appropriate dtypes before grouping especially when grouping multiple columns simultaneously as this 
+            # ensures that erronous grouping combinations are not produced!
+            #containment_output_by_rel_structure_pandas_data_frame = misc_tools.convert_categorical_columns(containment_output_by_rel_structure_pandas_data_frame, ['Nominal'], [float])
+            sp_bx_mr_distribution_all_trials_df = misc_tools.convert_categorical_columns(sp_bx_mr_distribution_all_trials_df, [col_name_str, 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], [float, int, float, float])
+            sp_bx_mr_distribution_all_trials_df_nominal = sp_bx_mr_distribution_all_trials_df[sp_bx_mr_distribution_all_trials_df['MC trial num'] == 0]
+            
+            sp_bx_global_grouped_df = sp_bx_mr_distribution_all_trials_df.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+            sp_bx_nominal_global_grouped_df = sp_bx_mr_distribution_all_trials_df_nominal.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])
+
+            global_by_voxel_mean_mr_series = sp_bx_global_grouped_df[col_name_str].mean()
+            global_by_voxel_mr_std_dev_series = sp_bx_global_grouped_df[col_name_str].std()
+            global_by_voxel_mr_std_err_in_mean_series = sp_bx_global_grouped_df[col_name_str].sem()
+            global_by_voxel_max_mr_series = sp_bx_global_grouped_df[col_name_str].max()
+            global_by_voxel_min_mr_series = sp_bx_global_grouped_df[col_name_str].min()
+            global_by_voxel_min_mr_series = sp_bx_global_grouped_df[col_name_str].min()
+            global_by_voxel_quantiles_mr_series = sp_bx_global_grouped_df[col_name_str].quantile([0.05,0.25,0.5,0.75,0.95])
+            global_by_voxel_quantiles_mr_series_unstacked = global_by_voxel_quantiles_mr_series.unstack()
+
+            
+            global_by_voxel_nominal_mean_mr_series = sp_bx_nominal_global_grouped_df[col_name_str].mean()
+            global_by_voxel_nominal_mr_std_dev_series = sp_bx_nominal_global_grouped_df[col_name_str].std()
+            global_by_voxel_nominal_mr_std_err_in_mean_series = sp_bx_nominal_global_grouped_df[col_name_str].sem()
+            global_by_voxel_nominal_max_mr_series = sp_bx_nominal_global_grouped_df[col_name_str].max()
+            global_by_voxel_nominal_min_mr_series = sp_bx_nominal_global_grouped_df[col_name_str].min()
+            
+            global_by_voxel_max_density_mr_series = sp_bx_global_grouped_df[col_name_str].apply(math_funcs.find_max_density_xval_via_kde, num_eval_pts = 1000)
+
+            global_nominal_by_voxel_max_density_mr_series = sp_bx_nominal_global_grouped_df[col_name_str].apply(math_funcs.find_max_density_xval_via_kde, num_eval_pts = 1000)
+
+
+            sp_bx_global_mr_stats_dict = {"Patient ID": patientUID,
+                                            "Bx ID": bx_struct_roi,
+                                            "Bx index": specific_bx_structure_index,
+                                            "Bx refnum": bx_refnum,
+                                            "Simulated bool": simulated_bool,
+                                            "Simulated type": bx_type,
+                                            'Units': str(mr_adc_subdict["Units"]),
+                                            'Global max density': global_by_voxel_max_density_mr_series,
+                                            'Global mean': global_by_voxel_mean_mr_series, 
+                                            'Global max': global_by_voxel_max_mr_series, 
+                                            'Global min': global_by_voxel_min_mr_series, 
+                                            'Global SD': global_by_voxel_mr_std_dev_series,
+                                            'Global SEM': global_by_voxel_mr_std_err_in_mean_series,
+                                            'Global q05': global_by_voxel_quantiles_mr_series_unstacked[0.05],
+                                            'Global q25': global_by_voxel_quantiles_mr_series_unstacked[0.25],
+                                            'Global q50': global_by_voxel_quantiles_mr_series_unstacked[0.5],
+                                            'Global q75': global_by_voxel_quantiles_mr_series_unstacked[0.75],
+                                            'Global q95': global_by_voxel_quantiles_mr_series_unstacked[0.95],
+                                            'Global nominal max density': global_nominal_by_voxel_max_density_mr_series,
+                                            'Global nominal mean': global_by_voxel_nominal_mean_mr_series, 
+                                            'Global nominal max': global_by_voxel_nominal_max_mr_series, 
+                                            'Global nominal min': global_by_voxel_nominal_min_mr_series, 
+                                            'Global nominal SD': global_by_voxel_nominal_mr_std_dev_series,
+                                            'Global nominal SEM': global_by_voxel_nominal_mr_std_err_in_mean_series,
+                                            }
+            
+            # the reset_index(drop=False) method is crucial to maintain the voxel index column which was used as a grouping column above
+            sp_bx_global_mr_stats_dataframe = pandas.DataFrame(sp_bx_global_mr_stats_dict).reset_index(drop=False)
+
+            sp_bx_global_mr_stats_dataframe[["Global CI 95 (lower)","Global CI 95 (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean', 'Global SEM'), axis=1).tolist()
+            sp_bx_global_mr_stats_dataframe[["Global CI 95 nominal (lower)","Global CI 95 nominal (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean', 'Global nominal SEM'), axis=1).tolist()
+
+
+            sp_patient_all_biopsies_global_mr = pandas.concat([sp_patient_all_biopsies_global_mr,sp_bx_global_mr_stats_dataframe], ignore_index = True)
+            
+            sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(sp_bx_mr_distribution_all_trials_df, threshold=0.25)
+
+            specific_bx_structure['Output data frames'][output_dataframe_str]  = sp_bx_mr_distribution_all_trials_df
+
+        cohort_global_by_voxel_mr_dataframe = pandas.concat([cohort_global_by_voxel_mr_dataframe,sp_patient_all_biopsies_global_mr], ignore_index = True)
+        
+        sp_patient_all_biopsies_global_mr = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_mr, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["MR - " + str(multi_structure_output_dataframe_str)] = sp_patient_all_biopsies_global_mr
+
+    cohort_global_by_voxel_mr_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_by_voxel_mr_dataframe, threshold=0.25)
+
+    return cohort_global_by_voxel_mr_dataframe
+
+
+
+
+
+
+
+
+
+### THIS ONE IS WAY FASTER!
+def mr_NxD_array_to_dataframe_helper_function_v2(arr, col_name_str):
+    n_rows, n_cols = arr.shape
+    original_pt_index = np.repeat(np.arange(n_rows), n_cols)
+    dose_gy = arr.ravel()  # Flatten the array to a 1D array directly
+    mc_trial_num = np.tile(np.arange(n_cols), n_rows)
+
+    # Create DataFrame directly with preallocated arrays
+    df = pandas.DataFrame({
+        "Original pt index": original_pt_index,
+        str(col_name_str): dose_gy,
+        "MC trial num": mc_trial_num
+    })
+    
+    return df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### MEMORY SAVING FUNCTIONS
 
 
 

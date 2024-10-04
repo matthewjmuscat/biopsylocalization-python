@@ -49,6 +49,7 @@ networkx = "*"
 ortools = "*"
 fuzzywuzzy = "*"
 python-levenshtein = "*"
+gputil = "*"
 
 [dev-packages]
 ipykernel = "*"

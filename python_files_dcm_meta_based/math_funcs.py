@@ -346,3 +346,15 @@ def find_max_kde_dose(dose_series, num_eval_pts = 1000):
         max_density_dose = dose_series.at[dose_series.index[0]] if not dose_series.empty else np.nan  # Handle cases with one or zero points
     
     return max_density_dose
+
+
+def find_max_density_xval_via_kde(data_series, num_eval_pts = 1000):
+    if len(data_series) > 1:  # KDE requires more than one data point
+        kde = gaussian_kde(data_series)
+        xgrid = np.linspace(data_series.min(), data_series.max(), num_eval_pts)
+        max_density_xval = xgrid[np.argmax(kde(xgrid))]
+
+    else:
+        max_density_xval = data_series.at[data_series.index[0]] if not data_series.empty else np.nan  # Handle cases with one or zero points
+    
+    return max_density_xval

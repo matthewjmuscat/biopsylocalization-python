@@ -15,7 +15,12 @@ import math_funcs
 from itertools import combinations
 import misc_tools
 
-def find_dil_optimal_sampling_position(patientUID,
+def find_dil_optimal_sampling_position(specific_dil_structure,
+                                optimal_normal_dist_option,
+                                bias_LR_multiplier,
+                                bias_AP_multiplier,
+                                bias_SI_multiplier,
+                                patientUID,
                                 structs_referenced_dict,
                                 bx_ref,
                                 dil_ref,
@@ -198,22 +203,47 @@ def find_dil_optimal_sampling_position(patientUID,
 
 
     ### GENERATE THE 3D NORMAL DISTRIBUTION
-    default_biopsy_sigma_x = structs_referenced_dict[bx_ref]["Default sigma X"]
-    default_biopsy_sigma_y = structs_referenced_dict[bx_ref]["Default sigma Y"]
-    default_biopsy_sigma_z = structs_referenced_dict[bx_ref]["Default sigma Z"]
+    if optimal_normal_dist_option == 'biopsy_and_dil_sigmas':
+        default_biopsy_sigma_x_list = structs_referenced_dict[bx_ref]["Default sigma X"]
+        default_biopsy_sigma_y_list = structs_referenced_dict[bx_ref]["Default sigma Y"]
+        default_biopsy_sigma_z_list = structs_referenced_dict[bx_ref]["Default sigma Z"]
 
-    default_dil_sigma_x = structs_referenced_dict[dil_ref]["Default sigma X"]
-    default_dil_sigma_y = structs_referenced_dict[dil_ref]["Default sigma Y"]
-    default_dil_sigma_z = structs_referenced_dict[dil_ref]["Default sigma Z"]
+        default_dil_sigma_x_list = structs_referenced_dict[dil_ref]["Default sigma X"]
+        default_dil_sigma_y_list = structs_referenced_dict[dil_ref]["Default sigma Y"]
+        default_dil_sigma_z_list = structs_referenced_dict[dil_ref]["Default sigma Z"]
 
-    sigma_x_arr = np.array([default_biopsy_sigma_x,default_dil_sigma_x])
-    sigma_y_arr = np.array([default_biopsy_sigma_y,default_dil_sigma_y])
-    sigma_z_arr = np.array([default_biopsy_sigma_z,default_dil_sigma_z])
-    
-    normal_dist_sigma_x = math_funcs.add_in_quadrature(sigma_x_arr) 
-    normal_dist_sigma_y = math_funcs.add_in_quadrature(sigma_y_arr) 
-    normal_dist_sigma_z = math_funcs.add_in_quadrature(sigma_z_arr) 
-    
+        sigma_x_arr = np.array(default_biopsy_sigma_x_list + default_dil_sigma_x_list)
+        sigma_y_arr = np.array(default_biopsy_sigma_y_list + default_dil_sigma_y_list)
+        sigma_z_arr = np.array(default_biopsy_sigma_z_list + default_dil_sigma_z_list)
+        
+        normal_dist_sigma_x = math_funcs.add_in_quadrature(sigma_x_arr)*bias_LR_multiplier/2 
+        normal_dist_sigma_y = math_funcs.add_in_quadrature(sigma_y_arr)*bias_AP_multiplier/2  
+        normal_dist_sigma_z = math_funcs.add_in_quadrature(sigma_z_arr)*bias_SI_multiplier/2 
+
+    elif optimal_normal_dist_option == 'dil dimension driven':
+        sp_dil_features_dataframe = specific_dil_structure["Structure features dataframe"]
+
+        sp_struct_type = structure_info["Struct ref type"]
+        sp_struct_refnum = structure_info["Dicom ref num"]
+        sp_struct_id = structure_info["Structure ID"]
+
+        sp_dil_features_dataframe_ensured = sp_dil_features_dataframe[(sp_dil_features_dataframe["Patient ID"] == patientUID) & \
+                                                                      (sp_dil_features_dataframe["Structure refnum"] == sp_struct_refnum) & \
+                                                                      (sp_dil_features_dataframe["Structure type"] == sp_struct_type) & \
+                                                                      (sp_dil_features_dataframe["Structure ID"] == sp_struct_id)  ]
+        
+        sigma_x_arr = np.array([sp_dil_features_dataframe_ensured.at[0,"L/R dimension at centroid"]])
+        sigma_y_arr = np.array([sp_dil_features_dataframe_ensured.at[0,"A/P dimension at centroid"]])
+        sigma_z_arr = np.array([sp_dil_features_dataframe_ensured.at[0,"S/I dimension at centroid"]])
+
+        normal_dist_sigma_x = math_funcs.add_in_quadrature(sigma_x_arr)*bias_LR_multiplier/2 
+        normal_dist_sigma_y = math_funcs.add_in_quadrature(sigma_y_arr)*bias_AP_multiplier/2  
+        normal_dist_sigma_z = math_funcs.add_in_quadrature(sigma_z_arr)*bias_SI_multiplier/2 
+
+        
+        
+        
+
 
 
     three_d_normal_dist_points_x_cupy = cp.random.normal(loc=0,scale=normal_dist_sigma_x, size=num_normal_dist_points_for_biopsy_optimizer)
@@ -416,7 +446,8 @@ def find_dil_optimal_sampling_position(patientUID,
         if num_optimal_points > 1:
             # If they are still tied, pick random one
             optimal_locations_dataframe = optimal_locations_dataframe.sample()
-
+        
+        optimal_locations_dataframe = optimal_locations_dataframe.reset_index(drop=True)
     
 
     # SHOW THE OPTIMIZED LOCATION?
@@ -533,6 +564,8 @@ def guidance_map_max_planes_dataframe(sp_dil_potential_optimal_locations_datafra
                                       sp_dil_optimal_locations_dataframe,
                                       voxel_size_for_dil_optimizer_grid,
                                       zero_locations_dataframe,
+                                      structureID_dil,
+                                      patientUID,
                                       important_info,
                                       live_display):
     
@@ -599,11 +632,11 @@ def guidance_map_max_planes_dataframe(sp_dil_potential_optimal_locations_datafra
         
         # Check if there are duplicate points in the plane
         if sp_dil_max_plane_df.duplicated(subset=[index_to_column_dict[combination[0]],index_to_column_dict[combination[1]]]).any() == True:
-            message_string = "Duplicates found in your max-plane optimization dataframe! Your lattice may be on an angle relative to the planes of interest!"
+            message_string = f"PatientID: {patientUID}, Bx ID: {structureID_dil} | Duplicates found in your max-plane optimization dataframe! Your lattice may be on an angle relative to the planes of interest!"
             important_info.add_text_line(message_string,live_display)
             # Keep only the first lattice point of the duplicates, this is a quick and dirty fix! 
             sp_dil_max_plane_df = sp_dil_max_plane_df[sp_dil_max_plane_df.duplicated(subset=[index_to_column_dict[combination[0]],index_to_column_dict[combination[1]]], keep = 'first') == False]
-        
+
         # Removed max_val normalization
         #max_val = (sp_dil_max_plane_df['Proportion of normal dist points contained']).max()
         #sp_dil_max_plane_df['Proportion of normal dist points contained'] = dfcumulative['Proportion of normal dist points contained']/max_val

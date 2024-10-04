@@ -4,6 +4,8 @@ import loading_tools
 import math
 import misc_tools 
 import pandas
+import math_funcs
+import numpy as np
 
 def uncertainty_file_preper_global_sigma(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, global_sigma):
     global_header = ['Total num structs']
@@ -188,6 +190,106 @@ def uncertainty_file_preper_by_struct_type_dataframe(master_structure_reference_
                     sigma_z = float(structs_referenced_dict[structure_type]["Default sigma Z"])
                 
                 
+                dict_for_dataframe = {"Patient UID": [patientUID],
+                                      "Structure ID": [structure_info["Structure ID"]], 
+                                      "Structure type": [structure_info["Struct ref type"]],
+                                      "Structure dicom ref num": [structure_info["Dicom ref num"]], 
+                                      "Structure index": [structure_info["Index number"]],
+                                      "Frame of reference": [frame_of_reference],
+                                      "mu (X)": [0], 
+                                      "mu (Y)": [0], 
+                                      "mu (Z)": [0], 
+                                      "sigma (X)": [sigma_x], 
+                                      "sigma (Y)": [sigma_y], 
+                                      "sigma (Z)": [sigma_z] 
+                                      }
+
+
+                uncertainties_dataframe = pandas.concat([uncertainties_dataframe, pandas.DataFrame(dict_for_dataframe)])
+
+    return uncertainties_dataframe
+
+
+
+def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_reference_dict, 
+                                                 structs_referenced_list, 
+                                                 structs_referenced_dict,
+                                                 biopsy_variation_uncertainty_setting,
+                                                 non_biopsy_variation_uncertainty_setting,
+                                                 use_added_in_quad_errors_as,
+                                                 master_structure_info_dict):
+
+    headerbx = 'Biopsy'
+    headerLab = 'Lab'
+    
+    uncertainties_dataframe = pandas.DataFrame()
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        for structure_type in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structure_type]):
+                
+                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
+
+                if structure_type == structs_referenced_list[0]:
+                    frame_of_reference = headerbx
+                    #sub_header_row = headerunc_bx
+                else:
+                    frame_of_reference = headerLab
+
+                ### Biopsy handling
+                if structure_type == structs_referenced_list[0]:
+                    if biopsy_variation_uncertainty_setting == "Per biopsy max":
+                        maximum_projected_variation_sp_biopsy = specific_structure['Maximum projected distance between original centroids']
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [maximum_projected_variation_sp_biopsy])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [maximum_projected_variation_sp_biopsy])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [maximum_projected_variation_sp_biopsy])
+
+                    elif biopsy_variation_uncertainty_setting == "Per biopsy mean":
+                        mean_projected_variation_sp_biopsy = specific_structure['Mean centroid variation']
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [mean_projected_variation_sp_biopsy])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [mean_projected_variation_sp_biopsy])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [mean_projected_variation_sp_biopsy])
+                    
+                    elif biopsy_variation_uncertainty_setting == "Global mean":
+                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [mean_variation_of_biopsy_centroids_cohort])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [mean_variation_of_biopsy_centroids_cohort])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [mean_variation_of_biopsy_centroids_cohort])
+
+                    elif biopsy_variation_uncertainty_setting == "Default only":
+                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"])
+                    
+                    else: #  Just default to default
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"])
+                    
+
+                ### Not biopsy handling
+                elif structure_type != structs_referenced_list[0]:
+                    if non_biopsy_variation_uncertainty_setting == "Default only":
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"])
+                    
+                    else: #  Just default to default
+                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"])
+                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"])
+                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"])
+                
+                if use_added_in_quad_errors_as == 'sigma':
+                    sigma_x = math_funcs.add_in_quadrature(errs_X_arr)
+                    sigma_y = math_funcs.add_in_quadrature(errs_Y_arr)
+                    sigma_z = math_funcs.add_in_quadrature(errs_Z_arr)
+                
+                elif use_added_in_quad_errors_as == 'two sigma':
+                    sigma_x = math_funcs.add_in_quadrature(errs_X_arr)/2
+                    sigma_y = math_funcs.add_in_quadrature(errs_Y_arr)/2
+                    sigma_z = math_funcs.add_in_quadrature(errs_Z_arr)/2
+                
+
                 dict_for_dataframe = {"Patient UID": [patientUID],
                                       "Structure ID": [structure_info["Structure ID"]], 
                                       "Structure type": [structure_info["Struct ref type"]],

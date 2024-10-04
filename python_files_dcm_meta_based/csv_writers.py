@@ -24,9 +24,9 @@ def csv_writer_containment(live_display,
 
         patientUID_default = "Initializing"
         processing_patient_csv_writing_description = "Writing containment CSVs to file [{}]...".format(patientUID_default)
-        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num patients"])
+        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num cases"])
         processing_patient_csv_writing_description_completed = "Writing containment CSVs to file"
-        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
         
         for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -269,9 +269,9 @@ def csv_writer_containment(live_display,
 
         patientUID_default = "Initializing"
         processing_patient_csv_writing_voxelized_description = "Writing containment CSVs (voxelized) to file [{}]...".format(patientUID_default)
-        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num patients"])
+        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num cases"])
         processing_patient_csv_writing_voxelized_description_completed = "Writing containment CSVs (voxelized) to file"
-        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
         
         for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -349,9 +349,9 @@ def csv_writer_dosimetry(live_display,
 
         patientUID_default = "Initializing"
         processing_patient_csv_writing_description = "Writing dosimetry CSVs to file [{}]...".format(patientUID_default)
-        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num patients"])
+        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_description, total = master_structure_info_dict["Global"]["Num cases"])
         processing_patient_csv_writing_description_completed = "Writing dosimetry CSVs to file"
-        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
         
         for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -546,9 +546,9 @@ def csv_writer_dosimetry(live_display,
 
         patientUID_default = "Initializing"
         processing_patient_csv_writing_voxelized_description = "Writing dosimetry CSVs (voxelized) to file [{}]...".format(patientUID_default)
-        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num patients"])
+        processing_patients_task = patients_progress.add_task("[red]"+processing_patient_csv_writing_voxelized_description, total = master_structure_info_dict["Global"]["Num cases"])
         processing_patient_csv_writing_voxelized_description_completed = "Writing dosimetry CSVs (voxelized) to file"
-        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num patients"], visible=False)
+        processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_csv_writing_voxelized_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
         
         for patientUID,pydicom_item in master_structure_reference_dict.items():
 

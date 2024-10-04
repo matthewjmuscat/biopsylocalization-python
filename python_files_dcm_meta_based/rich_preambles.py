@@ -15,6 +15,8 @@ from rich.table import Table
 from rich.layout import Layout
 from rich.text import Text
 import time
+import psutil
+import GPUtil
 
 
 def get_completed_progress():
@@ -262,9 +264,9 @@ class info_output:
         self.line_num += 1
 
 
-
+"""
 class Footer:
-    """Display footer with elapsed and calculation time."""
+    # Display footer with elapsed and calculation time.
     def __init__(self,algo_global_start_time, stopwatch):
         self.algo_global_start_time = algo_global_start_time
         self.stopwatch = stopwatch
@@ -285,7 +287,77 @@ class Footer:
             "Developed by: MJM"
         )
         return Panel(grid)
+"""
 
+
+
+class Footer:
+    """Display footer with elapsed and calculation time, along with CPU, memory, and GPU memory usage."""
+    def __init__(self, algo_global_start_time, stopwatch):
+        self.algo_global_start_time = algo_global_start_time
+        self.stopwatch = stopwatch
+
+    def get_system_usage(self):
+        """Get the current CPU, memory, and GPU memory usage."""
+        cpu_usage = psutil.cpu_percent(interval=0.1)
+        memory_usage = psutil.virtual_memory().percent
+
+        # Available memory in GB (bytes to GB conversion)
+        free_memory_gb = psutil.virtual_memory().available / (1024 ** 3)
+
+        # Get GPU memory info using GPUtil
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            free_gpu_memory = gpus[0].memoryFree / 1024  # Convert to GB
+            total_gpu_memory = gpus[0].memoryTotal / 1024  # Convert to GB
+        else:
+            free_gpu_memory = None
+            total_gpu_memory = None
+
+        return cpu_usage, memory_usage, free_memory_gb, free_gpu_memory, total_gpu_memory
+
+    def __rich__(self) -> Panel:
+        grid = Table.grid(expand=True)
+        grid.add_column(justify="left", ratio=1)
+        grid.add_column(justify="right")
+        
+        # Calculate elapsed and calculation time
+        elapsed_seconds = time.time() - self.algo_global_start_time
+        elapsed_seconds_rounded = round(elapsed_seconds)
+        elapsed_delta_time = timedelta(seconds=elapsed_seconds_rounded)
+
+        calculation_seconds = self.stopwatch.duration
+        calculation_seconds_rounded = round(calculation_seconds)
+        calculation_delta_time = timedelta(seconds=calculation_seconds_rounded)
+
+        # Get system usage including GPU memory
+        cpu_usage, memory_usage, free_memory_gb, free_gpu_memory, total_gpu_memory = self.get_system_usage()
+
+        # GPU memory info formatting
+        if free_gpu_memory is not None:
+            gpu_info = "[bold cyan]GPU Mem: {:.2f}/{:.2f} GB".format(free_gpu_memory, total_gpu_memory)
+        else:
+            gpu_info = "[bold red]No GPU detected"
+
+        # Add content to the grid
+        grid.add_row(
+            "[bold magenta]Total elapsed time (H:MM:SS): {}".format(elapsed_delta_time) + ",    " +
+            "[bold magenta]Total calculation time (H:MM:SS): {}".format(calculation_delta_time),
+            "Developed by: MJM"
+        )
+
+        # CPU, RAM, and GPU info all on the same row
+        grid.add_row(
+            "[bold yellow]CPU usage: {:>4.2f}%".format(cpu_usage) + ",  " +
+            "[bold yellow]Memory usage: {:>4.2f}%".format(memory_usage) + ",  " +
+            "[bold yellow]Avail. Mem: {:>4.2f} GB".format(free_memory_gb) + ",  " + gpu_info,
+            ""
+        )
+
+        # Return a panel with the grid
+        return Panel(grid)
+
+# Function to define layout
 def make_layout() -> Layout:
     """Define the layout."""
     layout = Layout(name="root")
@@ -293,13 +365,12 @@ def make_layout() -> Layout:
     layout.split(
         Layout(name="header", minimum_size=3, size=3),
         Layout(name="main"),
-        Layout(name="footer", minimum_size=3, size=3),
+        Layout(name="footer", minimum_size=4, size=4),  
     )
     layout["main"].split_row(
         Layout(name="main-left"),
         Layout(name="main-right"),
     )
-    #layout["side"].split(Layout(name="box1"), Layout(name="box2"))
     return layout
 
 

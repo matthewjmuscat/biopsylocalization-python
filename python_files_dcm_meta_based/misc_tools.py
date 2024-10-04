@@ -18,6 +18,7 @@ import meshing_tools
 from sklearn.decomposition import PCA
 import pandas
 from fuzzywuzzy import process, fuzz
+import re 
 
 def checkdirs(live_display, important_info, *paths):
     created_a_dir = False
@@ -69,7 +70,7 @@ def structure_volume_calculator(structure_points_array,
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     #with live_display:
-    live_display.refresh()
+    live_display.start(refresh = True)
     # two points which are fruthest apart will occur as vertices of the convex hull
     candidates = structure_points_array[scipy.spatial.ConvexHull(structure_points_array).vertices]
 
@@ -248,7 +249,7 @@ def structure_dimensions_calculator(structure_points_array,
     completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     #with live_display:
-    live_display.refresh()
+    live_display.start(refresh = True)
     # two points which are fruthest apart will occur as vertices of the convex hull
     candidates = structure_points_array[scipy.spatial.ConvexHull(structure_points_array).vertices]
 
@@ -742,15 +743,60 @@ def compute_structure_triangle_mesh(interp_inter_slice_dist,
                                     interp_intra_slice_dist,
                                     threeDdata_array_fully_interpolated,
                                     radius_for_normals_estimation,
-                                    max_nn_for_normals_estimation
+                                    max_nn_for_normals_estimation,
                                     ):
+
     max_interp_dist = max([interp_inter_slice_dist, interp_intra_slice_dist])
     min_interp_dist = min([interp_inter_slice_dist, interp_intra_slice_dist])
     ball_radii = np.linspace(min_interp_dist, max_interp_dist*2, 3)
     structure_trimesh = meshing_tools.trimesh_reconstruction_ball_pivot(threeDdata_array_fully_interpolated, ball_radii, radius_for_normals_estimation,max_nn_for_normals_estimation)
     watertight_bool = structure_trimesh.is_watertight()
-
+        
     return structure_trimesh, watertight_bool
+    
+
+def compute_structure_triangle_mesh_non_blocking(interp_inter_slice_dist, 
+                                    interp_intra_slice_dist,
+                                    threeDdata_array_fully_interpolated,
+                                    radius_for_normals_estimation,
+                                    max_nn_for_normals_estimation,
+                                    live_display = None
+                                    ):
+    if live_display != None:
+        live_display.start(refresh = True)
+    max_interp_dist = max([interp_inter_slice_dist, interp_intra_slice_dist])
+    min_interp_dist = min([interp_inter_slice_dist, interp_intra_slice_dist])
+    ball_radii = np.linspace(min_interp_dist, max_interp_dist*2, 3)
+    structure_trimesh, live_display = meshing_tools.trimesh_reconstruction_ball_pivot_non_blocking(threeDdata_array_fully_interpolated, ball_radii, radius_for_normals_estimation,max_nn_for_normals_estimation, live_display=live_display)
+    watertight_bool = structure_trimesh.is_watertight()
+        
+    if live_display != None:
+        return structure_trimesh, watertight_bool, live_display
+    else:
+        return structure_trimesh, watertight_bool
+
+def compute_structure_triangle_mesh_parallel(interp_inter_slice_dist, 
+                                    interp_intra_slice_dist,
+                                    threeDdata_array_fully_interpolated,
+                                    radius_for_normals_estimation,
+                                    max_nn_for_normals_estimation,
+                                    parallel_pool,
+                                    live_display = None
+                                    ):
+    if live_display != None:
+        live_display.start(refresh = True)
+    max_interp_dist = max([interp_inter_slice_dist, interp_intra_slice_dist])
+    min_interp_dist = min([interp_inter_slice_dist, interp_intra_slice_dist])
+    ball_radii = np.linspace(min_interp_dist, max_interp_dist*2, 3)
+    structure_trimesh, live_display = meshing_tools.trimesh_reconstruction_ball_pivot_parallel(threeDdata_array_fully_interpolated, ball_radii, radius_for_normals_estimation,max_nn_for_normals_estimation, parallel_pool, live_display=live_display)
+    watertight_bool = structure_trimesh.is_watertight()
+        
+    if live_display != None:
+        return structure_trimesh, watertight_bool, live_display
+    else:
+        return structure_trimesh, watertight_bool
+    
+
 
 
 
@@ -1076,9 +1122,15 @@ def assign_plane_indices(df, grid_spacing, x_col_name, y_col_name, z_col_name):
     for coord, col_name in coords.items():
         index_col = f'{coord}_plane_index'
         # Calculate the index as integer division of the coordinate by the grid spacing
-        df[index_col] = (df[col_name] / grid_spacing).astype(int)
+        df[index_col] = (df[col_name] / grid_spacing).apply(round_half_up, decimals = 0).astype(int)
 
     return df
+
+
+def round_half_up(n, decimals=0):
+    # A function that changes how 0.5 is rounded, always rounding it upwards, in contrast to the default python behaviour of round which rounds to the nearest even number.
+    multiplier = 10 ** decimals
+    return np.floor(n * multiplier + 0.5) / multiplier
 
 
 def tissue_heirarchy_list_creator_func(structs_referenced_dict,
@@ -1134,3 +1186,36 @@ def min_max_normalize_data(data):
     normalized_data = (data - min_val) / (max_val - min_val)
     
     return normalized_data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def extract_number_from_string(s, allowed_prefixes):
+    # Note this method is case insensitive
+
+    # Create a regex pattern from allowed prefixes
+    prefix_pattern = '|'.join([re.escape(prefix) for prefix in allowed_prefixes])
+    # Define the regex to match the pattern and capture the number
+    pattern = rf"(?:{prefix_pattern})\s*(\d+)"
+    
+    # Search for the pattern in the input string
+    match = re.search(pattern, s, re.IGNORECASE)
+    
+    # If a match is found, return the number part; otherwise, return None
+    if match:
+        return int(match.group(1))
+    return None
