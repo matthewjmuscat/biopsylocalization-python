@@ -5537,7 +5537,7 @@ def main():
                 num_unique_patients = master_structure_info_dict['Global']['Num unique patient names']
 
                 # Output simulation information
-                simulation_info_important_line_str = f"Simulation data: # MC containment simulations = {num_MC_containment_simulations_input} | # MC dose simulations = {num_MC_dose_simulations_input} | # lattice spacing for BX cores (mm) = {bx_sample_pt_lattice_spacing} | # biopsies = {num_biopsies_global} | # anatomical structures = {num_global_structures-num_biopsies_global} | # cases = {num_cases} | # unique patients {num_unique_patients}."
+                simulation_info_important_line_str = f"Simulation data: # MC tissue class sims = {num_MC_containment_simulations_input} | # MC dose sims = {num_MC_dose_simulations_input} | # MC MR sims = {num_MC_MR_simulations_input} | Lattice spacing for BX cores (mm) = {bx_sample_pt_lattice_spacing} | # biopsies = {num_biopsies_global} | # anatomical structures = {num_global_structures-num_biopsies_global} | # cases = {num_cases} | # unique patients {num_unique_patients}."
                 important_info.add_text_line(simulation_info_important_line_str, live_display)
 
                 
