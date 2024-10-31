@@ -512,6 +512,10 @@ def main():
                                             {"Plot bool": True, 
                                              "Plot name": " - Cohort - biopsies_prostate_heatmap"
                                              },
+                                        "Cohort - Prostate DILs heatmap": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - Cohort - DILs_prostate_heatmap"
+                                             },   
                                         "Cohort - Scatter plot matrix targeting accuracy": \
                                             {"Plot bool": True, 
                                              "Plot name": ' - scatter_plot_matrix_targeting_accuracy'
@@ -6785,6 +6789,33 @@ def main():
                     live_display.refresh() 
                 else:
                     pass
+
+
+                if production_plots_input_dictionary["Cohort - Prostate DILs heatmap"]["Plot bool"] == True:
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Prostate DILs heatmap...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Prostate DILs heatmap', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Prostate DILs heatmap"]["Plot name"]
+
+                    structure_cohort_3d_radiomic_features_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: 3D radiomic features all OAR and DIL structures"]
+
+                    production_plots.production_plot_cohort_double_sextant_dil_distribution(structure_cohort_3d_radiomic_features_dataframe,
+                                                           general_plot_name_string,
+                                                           cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh() 
+                else:
+                    pass
+
+                
+
+
+
+
                 if production_plots_input_dictionary["Cohort - Scatter plot matrix targeting accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot matrix target accuracy...', total=None)

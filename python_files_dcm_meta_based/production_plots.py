@@ -6885,7 +6885,71 @@ def production_plot_cohort_double_sextant_biopsy_distribution(cohort_biopsy_basi
 
 
 
+def production_plot_cohort_double_sextant_dil_distribution(cohort_dil_spatial_features_dataframe,
+                                                           general_plot_name_string,
+                                                           cohort_output_figures_dir):
+    df = cohort_dil_spatial_features_dataframe
+    
+    # Filter for 'DIL ref' structures and Patient IDs containing 'F2'
+    df = df[(df['Structure type'] == 'DIL ref') & (df['Patient ID'].str.contains('F2'))]
+    
+    # Define the double sextant mapping based on the DIL location
+    def create_sextant_key(row):
+        return f"{row['DIL prostate sextant (LR)']}-{row['DIL prostate sextant (SI)']}"
+    
+    df['Sextant'] = df.apply(create_sextant_key, axis=1)
+    
+    # Count occurrences of DILs in each sextant for anterior and posterior slices
+    anterior_df = df[df['DIL prostate sextant (AP)'] == 'Anterior']
+    posterior_df = df[df['DIL prostate sextant (AP)'] == 'Posterior']
 
+    anterior_counts = anterior_df['Sextant'].value_counts().to_dict()
+    posterior_counts = posterior_df['Sextant'].value_counts().to_dict()
+    
+    # Define sextant regions
+    sextant_regions = ['Left-Base (Superior)', 'Right-Base (Superior)', 
+                       'Left-Mid', 'Right-Mid', 
+                       'Left-Apex (Inferior)', 'Right-Apex (Inferior)']
+
+    anterior_data = [anterior_counts.get(sextant, 0) for sextant in sextant_regions]
+    posterior_data = [posterior_counts.get(sextant, 0) for sextant in sextant_regions]
+
+    # Convert data to 2x3 grids for heatmaps
+    anterior_matrix = np.array([
+        [anterior_data[0], anterior_data[1]],  # Base row
+        [anterior_data[2], anterior_data[3]],  # Mid row
+        [anterior_data[4], anterior_data[5]]   # Apex row
+    ])
+
+    posterior_matrix = np.array([
+        [posterior_data[0], posterior_data[1]],  # Base row
+        [posterior_data[2], posterior_data[3]],  # Mid row
+        [posterior_data[4], posterior_data[5]]   # Apex row
+    ])
+
+    # Plot heatmaps for anterior and posterior slices
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Anterior heatmap
+    sns.heatmap(anterior_matrix, annot=True, cmap="Reds", fmt="d", cbar_kws={'label': 'Number of DILs'}, ax=axs[0])
+    axs[0].set_title('Anterior Slice')
+    axs[0].set_xticklabels(['Left', 'Right'])
+    axs[0].set_yticklabels(['Base', 'Mid', 'Apex'])
+
+    # Posterior heatmap
+    sns.heatmap(posterior_matrix, annot=True, cmap="Blues", fmt="d", cbar_kws={'label': 'Number of DILs'}, ax=axs[1])
+    axs[1].set_title('Posterior Slice')
+    axs[1].set_xticklabels(['Left', 'Right'])
+    axs[1].set_yticklabels(['Base', 'Mid', 'Apex'])
+
+    plt.tight_layout()
+
+    # Save the plot
+    svg_dose_fig_name = general_plot_name_string + '.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
 
 
 
