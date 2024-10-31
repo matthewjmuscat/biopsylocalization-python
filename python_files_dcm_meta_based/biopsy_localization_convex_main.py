@@ -114,6 +114,12 @@ def main():
     # prevents matplotlib plots from opening unless explicitely asked to with plt.show()
     plt.ioff()
 
+    # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
+    # specify the patient IDs and the list of biopsy names to remove from the dataset
+    data_removals_dict = {"189 (F2)": ["Bx_Tr LM1 blood"],
+                            "192 (F2)": ["Bx_trk LM blood"]
+                            }
+
 
     # The following could be user input, for now they are defined here, and used throughout 
     # the programme for generality
@@ -223,9 +229,9 @@ def main():
     # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
-    bx_sample_pts_lattice_spacing = 0.25
-    num_MC_containment_simulations_input = 1000
-    num_MC_dose_simulations_input = 1000 
+    bx_sample_pts_lattice_spacing = 0.5
+    num_MC_containment_simulations_input = 10000
+    num_MC_dose_simulations_input = 100
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -280,12 +286,12 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to": 'DIL',
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to": 'DIL',
                               "Identifier string": 'sim_optimal_dil'}
                             }
@@ -362,6 +368,7 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     plot_dimension_calculation_containment_result_bool = False
+    display_pca_fit_variation_for_biopsies_bool = False
 
     ###
 
@@ -416,7 +423,7 @@ def main():
                                              "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution_matplotlib"
                                              },
                                         "Axial dose distribution quantiles regression plot": \
@@ -433,7 +440,7 @@ def main():
                                              "Plot name": " - dose_voxelized_ridgeline",
                                              },
                                         "Axial dose and tissue colored voxelized ridgeline plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": " - dose_and_dil_tissue_colored_voxelized_ridgeline",
                                              },
                                         "Axial dose distribution voxelized violin plot": \
@@ -452,11 +459,11 @@ def main():
                                              "Nominal point color": 'rgba(227, 27, 35, 1)'
                                              },
                                         "Differential DVH dose quantiles plot seaborn": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False,  #
                                              "Plot name": ' - dose-differential_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH quantile regression seaborn": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-cumulative_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH showing N trials plot": \
@@ -476,7 +483,7 @@ def main():
                                              "Plot name": ' - tissue_class-regression-probabilities'
                                              },
                                         "Tissue classification mutual probabilities plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_mutual-regression-probabilities',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
@@ -484,18 +491,26 @@ def main():
                                             {"Plot bool": True, #
                                              "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
                                             },
+                                        "Tissue classification sum-to-one nominal plot": \
+                                            {"Plot bool": True, #
+                                             "Plot name": ' - tissue_class_sum-to-one_nominal_chart',
+                                            },
                                         "Axial tissue class voxelized ridgeline plot": \
                                             {"Plot bool": False, 
                                              "Plot name": ' - tissue_class_ridgeline',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Axial MR distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": True, # 
+                                            {"Plot bool": False, # 
                                              "Plot name": " - mr-regression-quantiles_axial_distribution_matplotlib"
                                              },
                                         "Cohort - Sampled translation vector magnitudes box plots": \
                                             {"Plot bool": True, 
                                              "Plot name": " - Cohort - sampled_translations_vecs_and_mags_boxplot"
+                                             },
+                                        "Cohort - Prostate biopsies heatmap": \
+                                            {"Plot bool": True, 
+                                             "Plot name": " - Cohort - biopsies_prostate_heatmap"
                                              },
                                         "Cohort - Scatter plot matrix targeting accuracy": \
                                             {"Plot bool": True, 
@@ -513,6 +528,22 @@ def main():
                                             {"Plot bool": True, 
                                              "Plot name": ' cohort - tissue_class_global_by_bx_type',
                                              "Structure miss ROI": structure_miss_probability_roi
+                                             },
+                                        "Cohort - Tissue class global score sum-to-one box plots": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_class_sum-to-one_global_scores_by_bx_type'
+                                             },
+                                        "Cohort - Tissue class sum-to-one spatial ridgeline plots": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_class_sum-to-one_ridgeline'
+                                             }, 
+                                        "Cohort - Tissue class sum-to-one spatial nominal heatmap": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_class_sum-to-one_nominal_heatmap'
+                                             },
+                                        "Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class": \
+                                            {"Plot bool": True, 
+                                             "Plot name": ' cohort - tissue_class_sum-to-one_all_biopsy_voxels_histogram_by_tissue_class'
                                              },
                                         "Cohort - Tissue volume by biopsy type": \
                                             {"Plot bool": True, 
@@ -601,7 +632,7 @@ def main():
 
     cupy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR GPU MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR A 3080 TI WITH 12GB VRAM!
     numpy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR RAM MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR 32GB RAM!
-    nearest_zslice_vals_and_indices_cupy_generic_max_size = 5e7
+    nearest_zslice_vals_and_indices_cupy_generic_max_size = 5e7 # 5e7 was stable
     nearest_zslice_vals_and_indices_numpy_generic_max_size = 1e9
 
     # for dataframe builder
@@ -730,6 +761,7 @@ def main():
                                                                 "Cohort: All MC structure shift vectors": None,
                                                                 "Cohort: structure specific mc results": None,
                                                                 "Cohort: sum-to-one mc results": None,
+                                                                "Cohort: global sum-to-one mc results": None,
                                                                 "Cohort: mutual tissue class mc results": None,
                                                                 "Cohort: tissue class global scores (tissue type)": None,
                                                                 "Cohort: tissue class global scores (structure)": None,
@@ -751,13 +783,14 @@ def main():
         #st = time.time()
 
         progress_group_info_list = rich_preambles.get_progress_all(spinner_type)
-        completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+        completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
 
         rich_layout = rich_preambles.make_layout()
 
         important_info = rich_preambles.info_output()
         app_header = rich_preambles.Header()
         app_footer = rich_preambles.Footer(algo_global_start, stopwatch)
+        completed_sections_manager = rich_preambles.CompletedSectionsManager(completed_sections_progress)
 
         layout_groups = (app_header,progress_group_info_list,important_info,app_footer)
         
@@ -951,8 +984,11 @@ def main():
                 sys.exit('>Programme exited.')
 
 
-
+            section_start_time = datetime.now() 
+    
             if skip_preprocessing == False:
+                
+
                 dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
                 important_info.add_text_line("Reading dicom data from: "+ str(input_dir), live_display)
                 important_info.add_text_line("Reading uncertainty data from: "+ str(uncertainty_dir), live_display)
@@ -1137,7 +1173,8 @@ def main():
                 # patient dictionary creation
                 building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
                 building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-                master_structure_reference_dict, master_structure_info_dict = structure_referencer(RTst_dcms_dict, 
+                master_structure_reference_dict, master_structure_info_dict = structure_referencer(data_removals_dict,
+                                                                                                RTst_dcms_dict, 
                                                                                                 RTdose_dcms_dict,
                                                                                                 RTplan_dcms_dict, 
                                                                                                 US_dcms_dict,
@@ -1165,7 +1202,7 @@ def main():
                                                                                                 important_info,
                                                                                                 live_display
                                                                                                 )
-                #live_display.start()
+                #live_display.stop()
                 indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num cases"])+" patients.", live_display)  
@@ -1199,7 +1236,18 @@ def main():
                     elif mr_adc_units != mr_adc_units:
                         important_info.add_text_line("The units of your MRs are not the same between patients! Detected on patient: "+ str(patientUID), live_display)   
 
-                    
+                
+                
+                
+                # check if there are any mr adcs to be analysed   
+                # This is a flag that can skip certain things that will cause errors if run because there are no mr adc images to analyse
+                no_cohort_mr_adc_flag = True
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    if mr_adc_ref in pydicom_item:
+                        no_cohort_mr_adc_flag = False
+                        break
+                    else:
+                        continue
 
 
 
@@ -3884,15 +3932,53 @@ def main():
                         line_start = centroid_line[0,:]
                         line_end = centroid_line[1,:]
                         variation_distance_arr = np.empty(structure_centroids_array.shape[0])
+                        closest_point_on_line_arr = np.empty_like(structure_centroids_array)
                         for index,point in enumerate(structure_centroids_array):
-                            distance = biopsy_creator.point_to_line_segment_distance(point, line_start, line_end)
+                            distance, closest_point_on_line = biopsy_creator.point_to_line_segment_distance(point, line_start, line_end)
                             variation_distance_arr[index] = distance
+                            closest_point_on_line_arr[index] = closest_point_on_line
                         mean_variation = np.mean(variation_distance_arr)
+
+
 
 
                         # calculate the maximum distance between the original biopsy centroids, where all points have been projected onto the plan given by the 
                         # normal vector of the pca line
                         maximum_2d_distance_between_centroids = biopsy_creator.distance_of_most_distant_points_2d_projection(structure_centroids_array, travel_vec)
+
+                        
+                        if display_pca_fit_variation_for_biopsies_bool == True:
+                            live_display.stop()
+                            
+                            # Create the point cloud
+                            biopsy_centroids_pcd = point_containment_tools.create_point_cloud(structure_centroids_array, np.array([0, 0, 1]))
+                            
+                            # Create the line set for pca biopsy
+                            line_color = np.array([0, 1, 1])
+                            centroid_line_set = o3d.geometry.LineSet()
+                            centroid_line_set.points = o3d.utility.Vector3dVector(centroid_line)
+                            centroid_line_set.lines = o3d.utility.Vector2iVector([[0, 1]])
+                            centroid_line_set.paint_uniform_color(line_color)
+                            
+                            # Create the line set for points between centroids and pca biopsy line 
+                            nearest_points_line_color = np.array([1, 0, 1])
+                            nearest_points_pca_to_centroids_line_set = o3d.geometry.LineSet()
+                            nearest_points_pca_to_centroids_line_set.points = o3d.utility.Vector3dVector(np.vstack((structure_centroids_array,closest_point_on_line_arr)))
+                            num_centroids_temp = structure_centroids_array.shape[0]
+                            lines_connections = [[i,i+num_centroids_temp] for i in range(0,num_centroids_temp)]
+                            nearest_points_pca_to_centroids_line_set.lines = o3d.utility.Vector2iVector(lines_connections)
+                            nearest_points_pca_to_centroids_line_set.paint_uniform_color(nearest_points_line_color)
+                            
+                            # Create the text annotation at the top-right corner of the bounding box
+                            print(f"Pt: {patientUID}, Bx: {structureID}, Mean variation: {mean_variation}, Max dinstance between centroids: {maximum_2d_distance_between_centroids}")
+
+                            # Plot the geometries with the text annotation
+                            plotting_funcs.plot_geometries(biopsy_centroids_pcd, centroid_line_set, nearest_points_pca_to_centroids_line_set)
+
+                            # Clean up
+                            del biopsy_centroids_pcd, centroid_line_set, nearest_points_pca_to_centroids_line_set, nearest_points_line_color, line_color, lines_connections, num_centroids_temp
+                            live_display.start()
+
 
 
 
@@ -4022,6 +4108,8 @@ def main():
                 completed_progress.update(processing_patients_task_completed,  visible=True)  
 
                 ############################ BIOPSY ONLY
+                
+                
 
 
                 ###  DETERMINE LENGTH FOR SIMULATED CORES
@@ -4268,7 +4356,7 @@ def main():
                         line_end = centroid_line[1,:]
                         variation_distance_arr = np.empty(structure_centroids_array.shape[0])
                         for index,point in enumerate(structure_centroids_array):
-                            distance = biopsy_creator.point_to_line_segment_distance(point, line_start, line_end)
+                            distance, _ = biopsy_creator.point_to_line_segment_distance(point, line_start, line_end)
                             variation_distance_arr[index] = distance
                         mean_variation = np.mean(variation_distance_arr)
 
@@ -4611,7 +4699,7 @@ def main():
                 master_structure_info_dict["Global"]["Mean biopsy centroid variation"] = mean_variation_of_biopsy_centroids_cohort
 
 
-                master_structure_info_dict["Global"]["Preprocessing performed"] = True
+                master_structure_info_dict["Global"]['Preprocessing info']["Preprocessing performed"] = True
                 ## END PREPROCESSING             
 
                 
@@ -4729,7 +4817,9 @@ def main():
                     completed_progress.update(export_preprocessed_data_task_indeterminate_skipped_completed, visible = True, refresh = True)
                     live_display.refresh()
 
-            
+                
+                
+
             elif skip_preprocessing == True:
                 live_display.stop()
                 live_display.console.print("[bold red]User input required:")
@@ -4986,8 +5076,10 @@ def main():
 
 
 
+            rich_preambles.section_completed("Preprocessing", section_start_time, completed_progress, completed_sections_manager)
 
 
+            section_start_time = datetime.now() 
 
             ### IMPORTANT THAT THIS IS PLACED PRECISELY HERE!!
             # Create the specific output directory folder
@@ -5043,7 +5135,9 @@ def main():
 
             # displays 3d renderings of patient contour data, dose data and MR data
             if show_processed_3d_datasets_renderings == True:
+                live_display.stop()
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    print(patientUID)
                     pcd_list = list()
 
                     # Include dose pcd
@@ -5085,7 +5179,7 @@ def main():
                         del pcd_list_MR_ADC
 
                     
-                    if mr_adc_ref and dose_ref in pydicom_item:
+                    if (mr_adc_ref in pydicom_item) and (dose_ref in pydicom_item):
 
                         # Include the MR ADC data and dose
                         pcd_list_MR_ADC_and_dose = pcd_list + [thresholded_mr_adc_point_cloud] + [dose_grid_pcd]
@@ -5095,7 +5189,7 @@ def main():
 
                     del pcd_list
                     
-
+                live_display.start()
 
 
             if show_processed_3d_datasets_renderings_plotly == True:
@@ -5513,6 +5607,13 @@ def main():
             """
 
 
+            rich_preambles.section_completed("Preparing for simulations", section_start_time, completed_progress, completed_sections_manager)
+
+
+            section_start_time = datetime.now() 
+
+
+
             ######
             ###### THIS IS WHERE THE IF STATEMENT OF THE FANOVA AND MC SIM WAS WAS MOVED TO! IF CODE BREAKS JUST DELETE THE IF BELOW!
             ######                
@@ -5577,7 +5678,7 @@ def main():
                 #live_display.stop()
                 # Run MC simulation
                 if perform_MC_sim == True:
-                    master_structure_reference_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
+                    master_structure_reference_dict, master_structure_info_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
                                                                                             live_display,
                                                                                             stopwatch, 
                                                                                             layout_groups, 
@@ -5625,22 +5726,22 @@ def main():
                                                                                             raw_data_mc_containment_dump_bool
                                                                                             )
 
-
-                    master_structure_reference_dict, live_display = MC_simulator_MR.simulator_parallel(live_display,
-                       layout_groups,
-                       master_structure_reference_dict,
-                       master_structure_info_dict,
-                       structs_referenced_list,
-                       mr_adc_ref,
-                       bx_ref,
-                       num_mr_calc_NN,
-                       idw_power,
-                       raw_data_mc_MR_dump_bool,
-                       show_NN_mr_adc_demonstration_plots,
-                       stopwatch,
-                       dose_views_jsons_paths_list,
-                       perform_mc_mr_sim,
-                       show_NN_mr_adc_demonstration_plots_all_trials_at_once)
+                    if no_cohort_mr_adc_flag == False:
+                        master_structure_reference_dict, master_structure_info_dict, live_display = MC_simulator_MR.simulator_parallel(live_display,
+                                                                                                        layout_groups,
+                                                                                                        master_structure_reference_dict,
+                                                                                                        master_structure_info_dict,
+                                                                                                        structs_referenced_list,
+                                                                                                        mr_adc_ref,
+                                                                                                        bx_ref,
+                                                                                                        num_mr_calc_NN,
+                                                                                                        idw_power,
+                                                                                                        raw_data_mc_MR_dump_bool,
+                                                                                                        show_NN_mr_adc_demonstration_plots,
+                                                                                                        stopwatch,
+                                                                                                        dose_views_jsons_paths_list,
+                                                                                                        perform_mc_mr_sim,
+                                                                                                        show_NN_mr_adc_demonstration_plots_all_trials_at_once)
 
 
                     mc_containment_sim_complete = master_structure_info_dict['Global']["MC info"]['MC containment sim performed']  
@@ -5649,7 +5750,7 @@ def main():
 
                     list_of_mc_sim_types = [mc_dose_sim_complete,mc_containment_sim_complete,mc_mr_sim_complete]
 
-                    master_structure_info_dict['Global']['MC sim performed'] = any(list_of_mc_sim_types)
+                    master_structure_info_dict['Global']["MC info"]['MC sim performed'] = any(list_of_mc_sim_types)
                 
                 if perform_fanova == True:
                     fanova.fanova_analysis(
@@ -5833,21 +5934,23 @@ def main():
                                 
     
 
-                
+            rich_preambles.section_completed("Simulations", section_start_time, completed_progress, completed_sections_manager)    
+            
 
+            section_start_time = datetime.now() 
             
             # BEGIN SECTION TO DO AFTER READING MASTER STRUCTURE AND INFO FILES
 
 
-            preprocessing_complete_bool = master_structure_info_dict["Global"]["Preprocessing performed"]
-            mc_sim_complete_bool = master_structure_info_dict['Global']['MC sim performed']
-            mc_containment_sim_complete_bool = master_structure_info_dict['Global']['MC containment sim performed']
-            mc_dose_sim_complete_bool = master_structure_info_dict['Global']['MC dose sim performed']
+            preprocessing_complete_bool = master_structure_info_dict["Global"]["Preprocessing info"]["Preprocessing performed"]
+            mc_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC sim performed']
+            mc_containment_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC containment sim performed']
+            mc_dose_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC dose sim performed']
             mc_mr_sim_complete = master_structure_info_dict['Global']["MC info"]['MC MR sim performed']
 
-            fanova_sim_complete_bool = master_structure_info_dict['Global']['FANOVA sim performed']
-            fanova_containment_sim_complete_bool = master_structure_info_dict['Global']['FANOVA containment sim performed']
-            fanova_dose_sim_complete_bool = master_structure_info_dict['Global']['FANOVA dose sim performed']
+            fanova_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA sim performed']
+            fanova_containment_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA containment sim performed']
+            fanova_dose_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA dose sim performed']
 
             num_patients = master_structure_info_dict["Global"]["Num cases"]
             interp_inter_slice_dist = master_structure_info_dict["Global"]["Preprocessing info"]["Interslice interp dist"]
@@ -5962,6 +6065,13 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"] = cohort_mc_sum_to_one_pt_wise_results_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
+
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2.1", total = None)
+                cohort_mc_sum_to_one_global_results_dataframe = dataframe_builders.cohort_mc_sum_to_one_global_scores_dataframe_builder(cohort_mc_sum_to_one_pt_wise_results_dataframe)
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: global sum-to-one mc results"] = cohort_mc_sum_to_one_global_results_dataframe
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+                
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None)
                 cohort_mc_tissue_class_pt_wise_results_dataframe = dataframe_builders.cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(master_structure_reference_dict,
                                                                                     bx_ref,
@@ -6066,25 +6176,43 @@ def main():
                                                                   dose_ref
                                                                   )
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
-
-
+                
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None) 
+                """
                 cohort_global_dosimetry_by_voxel_dataframe = dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder(master_structure_reference_dict,
                                                     bx_ref,
                                                     all_ref_key,
                                                     dose_ref)
+                """
+                
+                # for some reason it seems like the livedisplay can cause these functions to hang?
+                live_display.stop()
+                st = time.time()
+                # I made the below to try to make the execution quicker, however it turned out to not take almost exactly the same amount of time
+                cohort_global_dosimetry_by_voxel_dataframe = dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_reference_dict,
+                                                    bx_ref,
+                                                    all_ref_key,
+                                                    dose_ref)
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF2: {duration}")
                 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry by voxel"] = cohort_global_dosimetry_by_voxel_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
-
+                
+                st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None) 
                 cohort_global_dosimetry_dataframe = dataframe_builders.global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                                                     bx_ref,
                                                     all_ref_key,
                                                     dose_ref)
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF3: {duration}")
                 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"] = cohort_global_dosimetry_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                live_display.start()
 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 dataframe_builders.differential_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure_reference_dict,
@@ -6130,56 +6258,73 @@ def main():
 
 
                 ####
-                live_display.stop()
-                csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, MR)...', total=None)
-                csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, MR)', total=1, visible = False)
+                if mc_mr_sim_complete == True:
+                    csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, MR)...', total=None)
+                    csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, MR)', total=1, visible = False)
 
-                mc_sim_mr_adc_arr_str = "MC data: MR ADC vals for each sampled bx pt arr (nominal & all MC trials)"
-                output_mr_adc_dataframe_str = "Point-wise MR ADC output by MC trial number"
-                mr_adc_col_name_str_prefix = "MR ADC"
+                    mc_sim_mr_adc_arr_str = "MC data: MR ADC vals for each sampled bx pt arr (nominal & all MC trials)"
+                    output_mr_adc_dataframe_str = "Point-wise MR ADC output by MC trial number"
+                    mr_adc_col_name_str_prefix = "MR ADC"
 
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
-                dataframe_builders.all_mr_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_reference_dict, 
-                                                                        bx_ref, 
-                                                                        biopsy_z_voxel_length, 
-                                                                        mr_adc_ref,
-                                                                        mc_sim_mr_adc_arr_str,
-                                                                        mr_adc_col_name_str_prefix,
-                                                                        output_mr_adc_dataframe_str)
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
+                    dataframe_builders.all_mr_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_reference_dict, 
+                                                                            bx_ref, 
+                                                                            biopsy_z_voxel_length, 
+                                                                            mr_adc_ref,
+                                                                            mc_sim_mr_adc_arr_str,
+                                                                            mr_adc_col_name_str_prefix,
+                                                                            output_mr_adc_dataframe_str)
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None)
-                cohort_global_mr_dataframe = dataframe_builders.global_mr_values_dataframe_builder(master_structure_reference_dict,
-                                                    bx_ref,
-                                                    all_ref_key,
-                                                    mr_adc_ref,
-                                                    mr_adc_col_name_str_prefix,
-                                                    output_mr_adc_dataframe_str,
-                                                    mr_global_multi_structure_output_dataframe_str)
+                    live_display.stop()
+                    st = time.time()
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None)
+                    cohort_global_mr_dataframe = dataframe_builders.global_mr_values_dataframe_builder(master_structure_reference_dict,
+                                                        bx_ref,
+                                                        all_ref_key,
+                                                        mr_adc_ref,
+                                                        mr_adc_col_name_str_prefix,
+                                                        output_mr_adc_dataframe_str,
+                                                        mr_global_multi_structure_output_dataframe_str)
+                    et = time.time()
+                    duration = et-st
+                    print(f"MR DF2: {duration}")
 
-                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: " + mr_global_multi_structure_output_dataframe_str] = cohort_global_mr_dataframe
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: " + mr_global_multi_structure_output_dataframe_str] = cohort_global_mr_dataframe
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None)
-                cohort_global_by_voxel_mr_dataframe = dataframe_builders.global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
-                                                    bx_ref,
-                                                    all_ref_key,
-                                                    mr_adc_ref,
-                                                    mr_adc_col_name_str_prefix,
-                                                    output_mr_adc_dataframe_str,
-                                                    mr_global_by_voxel_multi_structure_output_dataframe_str)
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None)
+                    """
+                    cohort_global_by_voxel_mr_dataframe = dataframe_builders.global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
+                                                        bx_ref,
+                                                        all_ref_key,
+                                                        mr_adc_ref,
+                                                        mr_adc_col_name_str_prefix,
+                                                        output_mr_adc_dataframe_str,
+                                                        mr_global_by_voxel_multi_structure_output_dataframe_str)
+                    """
+                    # for some reason it seems that the livedisplay can cause this function to hang?
+                    st = time.time()
+                    cohort_global_by_voxel_mr_dataframe = dataframe_builders.global_mr_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_reference_dict,
+                                                            bx_ref,
+                                                            all_ref_key,
+                                                            mr_adc_ref,
+                                                            mr_adc_col_name_str_prefix,
+                                                            output_mr_adc_dataframe_str,
+                                                            mr_global_by_voxel_multi_structure_output_dataframe_str)
+                    et = time.time()
+                    duration = et-st
+                    print(f"MR DF3: {duration}")
+                    live_display.start()
+                    master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: " + mr_global_by_voxel_multi_structure_output_dataframe_str] = cohort_global_by_voxel_mr_dataframe
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: " + mr_global_by_voxel_multi_structure_output_dataframe_str] = cohort_global_by_voxel_mr_dataframe
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-
-                indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
-                completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
+                    indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
+                    completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
 
                 
-                print('test')
-                live_display.start()
 
 
 
@@ -6516,14 +6661,14 @@ def main():
 
 
 
+            rich_preambles.section_completed("Dataframes and directories", section_start_time, completed_progress, completed_sections_manager)    
 
-
-
+            section_start_time = datetime.now() 
 
             # CREATE PRODUCTION PLOTS ---------------------------------------------
 
 
-            #live_display.stop()
+            live_display.stop()
 
             ### PREPROCESSING FIGS AND OPTIMIZATION
             if create_at_least_one_production_plot == True and preprocessing_complete_bool == True:
@@ -6621,7 +6766,25 @@ def main():
                 else:
                     pass
 
-                print('Cohort - Scatter plot matrix targeting accuracy')
+                if production_plots_input_dictionary["Cohort - Prostate biopsies heatmap"]["Plot bool"] == True:
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Prostate biopsies heatmap...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Prostate biopsies heatmap', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Prostate biopsies heatmap"]["Plot name"]
+
+                    cohort_biopsy_basic_spatial_features_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Biopsy basic spatial features dataframe"]
+
+                    production_plots.production_plot_cohort_double_sextant_biopsy_distribution(cohort_biopsy_basic_spatial_features_dataframe,
+                                                                              general_plot_name_string,
+                                                                              cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh() 
+                else:
+                    pass
                 if production_plots_input_dictionary["Cohort - Scatter plot matrix targeting accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot matrix target accuracy...', total=None)
@@ -6644,7 +6807,6 @@ def main():
                 else: 
                     pass
                 
-                print('Cohort - Scatter plot 2d gaussian transverse accuracy')
                 if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian transverse accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss transverse accuracy...', total=None)
@@ -6669,7 +6831,6 @@ def main():
                 else: 
                     pass
 
-                print('Cohort - Scatter plot 2d gaussian sagittal accuracy')
                 if production_plots_input_dictionary["Cohort - Scatter plot 2d gaussian sagittal accuracy"]["Plot bool"] == True:
 
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - scatter plot Gauss sagittal accuracy...', total=None)
@@ -6723,8 +6884,8 @@ def main():
                     processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
 
                     bx_types_list = master_structure_info_dict["Global"]["Bx types list"]
-                    mc_containment_sim_complete_bool = master_structure_info_dict['Global']['MC containment sim performed']
-                    mc_dose_sim_complete_bool = master_structure_info_dict['Global']['MC dose sim performed']
+                    mc_containment_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC containment sim performed']
+                    mc_dose_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC dose sim performed']
                     mc_mr_sim_complete = master_structure_info_dict['Global']["MC info"]['MC MR sim performed']
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -6878,8 +7039,8 @@ def main():
 
 
                     bx_types_list = master_structure_info_dict["Global"]["Bx types list"]
-                    mc_containment_sim_complete_bool = master_structure_info_dict['Global']['MC containment sim performed']
-                    mc_dose_sim_complete_bool = master_structure_info_dict['Global']['MC dose sim performed']
+                    mc_containment_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC containment sim performed']
+                    mc_dose_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC dose sim performed']
                     mc_mr_sim_complete = master_structure_info_dict['Global']["MC info"]['MC MR sim performed']
 
                     # Tissue class 
@@ -6887,84 +7048,111 @@ def main():
                         struct_refs_to_include_list = structs_referenced_list
                         bx_sim_types_to_include_list = ['Real']
                         general_plot_name_string_tissue_only_real_bxs = general_plot_name_string + '_tissue_only_real_bxs'
+                        custom_str_to_append_to_plot_title = 'Tissue only real biopsies'
+                        num_tissue_sims = master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"]
+                        
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_tissue_only_real_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_tissue_sims,
+                                                            custom_str_to_append_to_plot_title
+                                                            )
 
 
                         bx_sim_types_to_include_list = bx_types_list
                         general_plot_name_string_tissue_all_bxs = general_plot_name_string + '_tissue_all_bxs'
+                        custom_str_to_append_to_plot_title = 'Tissue all biopsies'
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_tissue_all_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_tissue_sims,
+                                                            custom_str_to_append_to_plot_title
+                                                            )
 
                     # Dosimetry 
                     if mc_dose_sim_complete_bool == True:
                         struct_refs_to_include_list = [bx_ref]
                         bx_sim_types_to_include_list = ['Real']
                         general_plot_name_string_dosim_only_real_bxs = general_plot_name_string + '_dosimetry_only_real_bxs'
+                        custom_str_to_append_to_plot_title = 'Dosimetry only real biopsies'
+                        num_dose_sims = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
+
+
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_dosim_only_real_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_dose_sims,
+                                                            custom_str_to_append_to_plot_title)
 
 
                         bx_sim_types_to_include_list = bx_types_list
                         general_plot_name_string_dosim_all_bxs = general_plot_name_string + '_dosimetry_all_bxs'
+                        custom_str_to_append_to_plot_title = 'Dosimetry all biopsies'
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_dosim_all_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_dose_sims,
+                                                            custom_str_to_append_to_plot_title)
 
                     # MR 
                     if mc_mr_sim_complete == True:
                         struct_refs_to_include_list = [bx_ref]
                         bx_sim_types_to_include_list = ['Real']
                         general_plot_name_string_MR_only_real_bxs = general_plot_name_string + '_MR_only_real_bxs'
+                        custom_str_to_append_to_plot_title = 'MR only real biopsies'
+                        num_MR_sims = master_structure_info_dict["Global"]["MC info"]["Num MC MR simulations"]
+
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_MR_only_real_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_MR_sims,
+                                                            custom_str_to_append_to_plot_title)
 
 
                         bx_sim_types_to_include_list = bx_types_list
                         general_plot_name_string_MR_all_bxs = general_plot_name_string + '_MR_all_bxs'
+                        custom_str_to_append_to_plot_title = 'MR all biopsies'
                         production_plots.production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_dir,
                                                             master_cohort_patient_data_and_dataframes,
                                                             svg_image_scale,
                                                             svg_image_width,
                                                             svg_image_height,
-                                                            general_plot_name_string,
+                                                            general_plot_name_string_MR_all_bxs,
                                                             struct_refs_to_include_list,
                                                             bx_ref,
-                                                            bx_sim_types_to_include_list)
+                                                            bx_sim_types_to_include_list,
+                                                            num_MR_sims,
+                                                            custom_str_to_append_to_plot_title)
                     
                     indeterminate_progress_main.update(main_indeterminate_task, visible = False)
                     completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
@@ -7153,8 +7341,7 @@ def main():
 
 
                 # quantile regression of axial dose distribution NEW
-
-                print('Axial dose distribution quantiles regression plot matplotlib')
+                live_display.stop()
                 if production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot name"]
@@ -7187,7 +7374,7 @@ def main():
                     pass
 
                 
-                
+                live_display.start()
 
                 # quantile regression of axial dose distribution
 
@@ -7307,7 +7494,6 @@ def main():
 
 
                     ridge_line_dose_general_plot_name_string = production_plots_input_dictionary["Axial dose voxelized ridgeline plot"]["Plot name"]
-                    #structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Structure miss ROI"]
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
                         if dose_ref in pydicom_item:
@@ -7363,7 +7549,7 @@ def main():
                     pass
                 """
 
-                print('Axial dose and tissue colored voxelized ridgeline plot')
+                live_display.stop()
                 # Dose ridgeline plot with the densities colored according to tissue class
                 if production_plots_input_dictionary["Axial dose and tissue colored voxelized ridgeline plot"]["Plot bool"] == True:
 
@@ -7419,7 +7605,7 @@ def main():
                     pass
 
                 
-                
+                live_display.start()
 
                 # voxelized violin plot axial dose distribution  
 
@@ -7544,7 +7730,6 @@ def main():
                         
                     
                 # Show quantile regression from all trials of differential DVH data
-                print('Differential DVH dose quantiles plot seaborn')
                 if production_plots_input_dictionary["Differential DVH dose quantiles plot seaborn"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Differential DVH dose quantiles plot seaborn"]["Plot name"]
@@ -7581,7 +7766,6 @@ def main():
 
 
                 # quantile regression of cumulative DVH plots NEW
-                print('Cumulative DVH quantile regression seaborn')
                 if production_plots_input_dictionary["Cumulative DVH quantile regression seaborn"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Cumulative DVH quantile regression seaborn"]["Plot name"]
@@ -7750,8 +7934,153 @@ def main():
                     pass
 
 
+                # sum to one nominal charts
+                if production_plots_input_dictionary["Tissue classification sum-to-one nominal plot"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Tissue classification sum-to-one nominal plot"]["Plot name"]
 
 
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating tissue class sum-to-one nominal plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num cases"])
+                    processing_patient_production_plot_description_completed = "Creating tissue class sum-to-one nominal plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
+
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating tissue class sum-to-one nominal plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+                        production_plots.production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_ref,
+                                                all_ref_key,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string
+                                                )
+
+
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)  
+                else:
+                    pass
+
+                if production_plots_input_dictionary["Cohort - Tissue class global score sum-to-one box plots"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue class global scores sum-to-one boxplots...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - tissue class global scores sum-to-one boxplots', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class global score sum-to-one box plots"]["Plot name"]
+
+                    cohort_mc_sum_to_one_global_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: global sum-to-one mc results"]
+
+                    production_plots.cohort_global_scores_boxplot_by_bx_type(cohort_mc_sum_to_one_global_results_dataframe,
+                                 general_plot_name_string,
+                                 cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+                
+                if production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial ridgeline plots"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Tissue class sum-to-one spatial ridgeline plots...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Tissue class sum-to-one spatial ridgeline plots', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial ridgeline plots"]["Plot name"]
+
+                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+
+                    production_plots.production_plot_cohort_sum_to_one_binom_est_ridge_plot_by_voxel(cohort_mc_sum_to_one_pt_wise_results_dataframe,
+                                   svg_image_height/2.25,
+                                   svg_image_height,
+                                   dpi_for_seaborn_plots,
+                                   general_plot_name_string,
+                                   cohort_output_figures_dir)
+
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+                if production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial nominal heatmap"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Tissue class sum-to-one spatial nominal heatmap...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Tissue class sum-to-one spatial nominal heatmap', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial nominal heatmap"]["Plot name"]
+
+                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+
+                    production_plots.production_plot_cohort_sum_to_one_nominal_counts_voxel_vs_tissue_class_heatmap(cohort_mc_sum_to_one_pt_wise_results_dataframe,
+                                   svg_image_width,
+                                   svg_image_height,
+                                   dpi_for_seaborn_plots,
+                                   general_plot_name_string,
+                                   cohort_output_figures_dir)
+
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                if production_plots_input_dictionary["Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class"]["Plot name"]
+
+                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+                    
+                    bx_sample_pts_vol_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
+
+                    production_plots.production_plot_cohort_sum_to_one_all_biopsy_voxels_binom_est_histogram_by_tissue_class(cohort_mc_sum_to_one_pt_wise_results_dataframe,
+                                                                                    svg_image_width,
+                                                                                    svg_image_height,
+                                                                                    dpi_for_seaborn_plots,
+                                                                                    general_plot_name_string,
+                                                                                    cohort_output_figures_dir,
+                                                                                    bx_sample_pts_vol_element,
+                                                                                    bin_width=0.05,
+                                                                                    bandwidth=0.1)
+
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+
+                    
 
 
                 if production_plots_input_dictionary["Tissue classification scatter and regression probabilities all trials plot"]["Plot bool"] == True:
@@ -7846,50 +8175,6 @@ def main():
 
 
 
-                if production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot bool"] == True:
-                    
-                    general_plot_name_string = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot name"]
-                    structure_miss_probability_roi = production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Structure miss ROI"]
-
-
-                    patientUID_default = "Initializing"
-                    processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num cases"])
-                    processing_patient_production_plot_description_completed = "Creating mutual containment probability plots"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-
-                    for patientUID,pydicom_item in master_structure_reference_dict.items():
-                        
-                        processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID)
-                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                        
-                        production_plots.production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
-                                                    patientUID,
-                                                    pydicom_item,
-                                                    bx_ref,
-                                                    regression_type_input,
-                                                    parallel_pool,
-                                                    NPKR_bandwidth,
-                                                    num_bootstraps_for_regression_plots_input,
-                                                    num_z_vals_to_evaluate_for_regression_plots,
-                                                    tissue_class_probability_plot_type_list,
-                                                    svg_image_scale,
-                                                    svg_image_width,
-                                                    svg_image_height,
-                                                    general_plot_name_string,
-                                                    structure_miss_probability_roi
-                                                    )
-                        
-                        patients_progress.update(processing_patients_task, advance = 1)
-                        completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                    patients_progress.update(processing_patients_task, visible = False)
-                    completed_progress.update(processing_patients_completed_task, visible = True)  
-                else:
-                    pass
-
 
 
                 if production_plots_input_dictionary["Axial tissue class voxelized ridgeline plot"]["Plot bool"] == True:
@@ -7899,7 +8184,6 @@ def main():
 
 
                     ridge_line_tissue_class_general_plot_name_string = production_plots_input_dictionary["Axial tissue class voxelized ridgeline plot"]["Plot name"]
-                    #structure_miss_probability_roi = production_plots_input_dictionary["Cohort - Tissue volume by biopsy type"]["Structure miss ROI"]
 
 
                     production_plots.production_plot_binom_est_ridge_plot_by_voxel_v2(master_cohort_patient_data_and_dataframes,
@@ -8167,7 +8451,11 @@ def main():
                         live_display.refresh()
                     else:
                         pass
-                            
+
+
+
+            rich_preambles.section_completed("Production plots", section_start_time, completed_progress, completed_sections_manager)
+
             sys.exit("> Programme complete.")
 
 
@@ -8176,7 +8464,8 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(structure_dcm_dict, 
+def structure_referencer(data_removals_dict,
+                         structure_dcm_dict, 
                          dose_dcm_dict, 
                          plan_dcm_dict,
                          US_dcms_dict,
@@ -8344,6 +8633,16 @@ def structure_referencer(structure_dcm_dict,
                         } for idx, x in enumerate(filtered_urethras)]
             
             filtered_BXs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in Bx_list)]
+
+            ### Remove unwanted data
+            if UID in data_removals_dict.keys():
+                for bx_id_to_remove in data_removals_dict[UID]:
+                    for bpsy in filtered_BXs:
+                        if bpsy.ROIName == bx_id_to_remove:
+                            filtered_BXs.remove(bpsy)
+                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Bx: {bx_id_to_remove})) ", live_display)
+
+
             bpsy_ref = [{"ROI": x.ROIName, 
                          "Ref #": x.ROINumber,
                          "Index number": idx, 
@@ -8427,7 +8726,11 @@ def structure_referencer(structure_dcm_dict,
                          "Output dicts for data frames": {},  
                          "KDtree": None, 
                          "Nearest neighbours objects": []
-                         } for idx, x in enumerate(filtered_BXs)] 
+                         } for idx, x in enumerate(filtered_BXs)]
+
+
+            
+
 
             bpsy_ref_index_start = len(bpsy_ref)
             sim_bpsy_ref_index_start = 0
@@ -8548,24 +8851,24 @@ def structure_referencer(structure_dcm_dict,
             # Note that all of the dataframes in the below "Multi-structure output data frames dict" are output as csvs in the final report
             all_ref = {"Multi-structure information dict (not for csv output)": {"Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe": None, # THIS DATAFRAME WAS DELETED AFTER OPTIMIZATION TO SAVE MEMORY!
                                                                                   },
-                        "Multi-structure pre-processing output dataframes dict": {"Selected structures": pandas.DataFrame(),
-                                                                                  "Biopsy basic spatial features dataframe": pandas.DataFrame(),
+                        "Multi-structure pre-processing output dataframes dict": {"Selected structures": None,
+                                                                                  "Biopsy basic spatial features dataframe": None,
                                                                                   #"Structure information dimension": pandas.DataFrame(),
                                                                                   #"Structure information (Non-BX)": pandas.DataFrame(),
-                                                                                  "Nearest DILs info dataframe": pandas.DataFrame(),
-                                                                                  "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": pandas.DataFrame(),
-                                                                                  "Biopsy optimization - DIL centroids optimal targeting dataframe": pandas.DataFrame(),
-                                                                                  "Biopsy optimization - Optimal DIL targeting dataframe": pandas.DataFrame(),
-                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": pandas.DataFrame()},    
-                        "Multi-structure MC simulation output dataframes dict": {"Tissue class - Global tissue class statistics": pandas.DataFrame(),
-                                                                                 "Tissue class - Global tissue by structure statistics": pandas.DataFrame(),
-                                                                                 "Tissue class - Tissue length above threshold": pandas.DataFrame(),
-                                                                                 "Tissue class - sum-to-one mc results": pandas.DataFrame(),
+                                                                                  "Nearest DILs info dataframe": None,
+                                                                                  "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": None,
+                                                                                  "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
+                                                                                  "Biopsy optimization - Optimal DIL targeting dataframe": None,
+                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None},    
+                        "Multi-structure MC simulation output dataframes dict": {"Tissue class - Global tissue class statistics": None,
+                                                                                 "Tissue class - Global tissue by structure statistics": None,
+                                                                                 "Tissue class - Tissue length above threshold": None,
+                                                                                 "Tissue class - sum-to-one mc results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
-                                                                                 "DVH metrics": pandas.DataFrame(),
-                                                                                 "All MC structure shift vectors": pandas.DataFrame(), 
-                                                                                 "MR - " + str(mr_global_multi_structure_output_dataframe_str): pandas.DataFrame(),
-                                                                                 "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): pandas.DataFrame()},
+                                                                                 "DVH metrics": None,
+                                                                                 "All MC structure shift vectors": None, 
+                                                                                 "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
+                                                                                 "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None},
                         "Multi-structure Fanova output dataframes dict": {}                                             
                         }
             
@@ -8651,7 +8954,7 @@ def structure_referencer(structure_dcm_dict,
                 seriesinstanceUID = mr_adc_item.SeriesInstanceUID
                 mr_adc_ID = UID + mr_adc_item.StudyDate
                 if len(mr_adc_item.RealWorldValueMappingSequence) > 1:
-                    important_info.add_text_line("Multiple real world value mappings detected for ({UID}, {mr_adc_ID})) ", live_display)
+                    important_info.add_text_line(f"Multiple real world value mappings detected for ({UID}, {mr_adc_ID})) ", live_display)
                 if seriesinstanceUID not in mr_adc_ref_dict: 
                     mr_adc_ref_subdict = {"MR ADC ID": mr_adc_ID,
                                     "Series instance UID": seriesinstanceUID, 
@@ -8702,7 +9005,8 @@ def structure_referencer(structure_dcm_dict,
             master_st_ds_ref_dict[UID][pln_ref] = plan_ref_dict
 
     preprocessing_info = {"Interslice interp dist": interp_inter_slice_dist,
-                          "Intraslice interp dist": interp_intra_slice_dist}
+                          "Intraslice interp dist": interp_intra_slice_dist,
+                          "Preprocessing performed": False,}
 
     mc_info = {"Num MC containment simulations": None, 
                "Num MC dose simulations": None,
@@ -8710,11 +9014,20 @@ def structure_referencer(structure_dcm_dict,
                "Num sample pts per BX core": None, 
                "BX sample pt lattice spacing (mm)": None,
                "BX sample pt volume element (mm^3)": None,
-               "Max of num MC simulations": None
+               "Max of num MC simulations": None,
+               'MC sim performed': False,
+               'MC containment sim performed': False,
+               'MC dose sim performed': False,
+               'MC MR sim performed': False,
                }
     
     fanova_info = {"Num fanova containment simulations": None, 
-                   "Num fanova dose simulations": None, 
+                   "Num fanova dose simulations": None,
+                   "FANOVA: num variance vars": None,
+                   "FANOVA: sobol var names by index": fanova_sobol_indices_names_by_index,
+                   'FANOVA sim performed': False,
+                   'FANOVA containment sim performed': False,
+                   'FANOVA dose sim performed': False,  
                     }
 
     # count number of biopsies of each type for the entire cohort
@@ -8732,17 +9045,7 @@ def structure_referencer(structure_dcm_dict,
                                                "Num DILs": global_num_DIL,
                                                "Bx types list": bx_types_list, 
                                                "Preprocessing info": preprocessing_info,
-                                               "MC info": mc_info,
-                                               "FANOVA: num variance vars": None,
-                                               "FANOVA: sobol var names by index": fanova_sobol_indices_names_by_index,
-                                               "Preprocessing performed": False,
-                                               'MC sim performed': False,
-                                               'MC containment sim performed': False,
-                                               'MC dose sim performed': False,
-                                               'MC MR sim performed': False,
-                                               'FANOVA sim performed': False,
-                                               'FANOVA containment sim performed': False,
-                                               'FANOVA dose sim performed': False,  
+                                               "MC info": mc_info, 
                                                "FANOVA info": fanova_info,
                                                'Patient specific output figures directory (pre-processing) dict': None,                        
                                                'Patient specific output figures directory (MC sim) dict': None,

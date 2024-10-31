@@ -28,6 +28,13 @@ def get_completed_progress():
             )
     return completed_progress
 
+def get_completed_sections_progress():
+    completed_progress = Progress(
+                TextColumn(':heavy_check_mark:'),
+                TextColumn("{task.description}")
+            )
+    return completed_progress
+
 def get_patients_progress(spinner_type):
     patients_progress = Progress(
         SpinnerColumn(spinner_type),
@@ -131,15 +138,36 @@ def get_MC_trial_progress(spinner_type):
     )
     return MC_trial_progress
 
-
+"""
 def get_progress_group(completed_progress, 
 patients_progress, indeterminate_progress_main, 
 structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_sub):
     
     progress_group = Panel(
         Group(
-            Panel(Group(completed_progress), title="Completed main tasks", title_align='left'),
-            Panel(Group(patients_progress,indeterminate_progress_main), title="In progress main tasks", title_align='left'),
+            Panel(Group(completed_progress), title="Completed section tasks", title_align='left'),
+            Panel(Group(patients_progress,indeterminate_progress_main), title="In progress section tasks", title_align='left'),
+            Panel(Group(biopsies_progress, structures_progress, MC_trial_progress, indeterminate_progress_sub), title="In progress subtasks", title_align='left')
+        ), 
+        title="Algorithm Progress", title_align='left'
+    )
+    return progress_group
+"""
+
+def get_progress_group(completed_progress, 
+                       completed_sections_progress,  # Add new panel here
+                       patients_progress, 
+                       indeterminate_progress_main, 
+                       structures_progress, 
+                       biopsies_progress, 
+                       MC_trial_progress, 
+                       indeterminate_progress_sub):
+    
+    progress_group = Panel(
+        Group(
+            Panel(Group(completed_sections_progress), title="Completed sections", title_align='left'),  # New section
+            Panel(Group(completed_progress), title="Completed section tasks", title_align='left'),
+            Panel(Group(patients_progress,indeterminate_progress_main), title="In progress section tasks", title_align='left'),
             Panel(Group(biopsies_progress, structures_progress, MC_trial_progress, indeterminate_progress_sub), title="In progress subtasks", title_align='left')
         ), 
         title="Algorithm Progress", title_align='left'
@@ -147,6 +175,7 @@ structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progres
     return progress_group
 
 
+"""
 def get_progress_all(spinner_type):
     completed_progress = get_completed_progress()
     patients_progress = get_patients_progress(spinner_type)
@@ -159,12 +188,35 @@ def get_progress_all(spinner_type):
     MC_trial_progress = get_MC_trial_progress(spinner_type)
 
     progress_group = get_progress_group(
-        completed_progress, patients_progress, indeterminate_progress_main, 
+        completed_progress, completed_sections_progress, patients_progress, indeterminate_progress_main, 
         structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_sub
         )
 
-    return completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group
+    return completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group
+"""
 
+def get_progress_all(spinner_type):
+    completed_progress = get_completed_progress()
+    completed_sections_progress = get_completed_sections_progress()  # For completed sections
+    patients_progress = get_patients_progress(spinner_type)
+    structures_progress = get_structures_progress(spinner_type)
+    completed_biopsies_progress = get_completed_biopsies_progress()
+    biopsies_progress = get_biopsies_progress(spinner_type)
+    indeterminate_progress_main = get_indeterminate_progress_main(spinner_type)
+    completed_indeterminate_progress_main = get_completed_indeterminate_progress_main()
+    indeterminate_progress_sub = get_indeterminate_progress_sub(spinner_type)
+    MC_trial_progress = get_MC_trial_progress(spinner_type)
+
+    # Update the group to include the new completed sections panel
+    progress_group = get_progress_group(
+        completed_progress, completed_sections_progress, patients_progress, 
+        indeterminate_progress_main, structures_progress, 
+        biopsies_progress, MC_trial_progress, indeterminate_progress_sub
+    )
+
+    return (completed_progress, completed_sections_progress,  # Return completed sections too
+            patients_progress, structures_progress, biopsies_progress, 
+            MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group)
 
 
 class Header:
@@ -374,3 +426,39 @@ def make_layout() -> Layout:
     return layout
 
 
+class CompletedSectionsManager:
+    """Manage completed sections and add them to the progress panel."""
+    
+    def __init__(self, progress_bar):
+        self.progress_bar = progress_bar  # Progress bar for completed sections
+        self.completed_sections = []  # Store section names and elapsed times
+
+    def add_completed_section(self, section_name, elapsed_time):
+        """Add a completed section to the progress bar."""
+        self.completed_sections.append((section_name, elapsed_time))
+        # Format elapsed_time to remove decimals
+        rounded_elapsed_time = timedelta(seconds=round(elapsed_time.total_seconds()))  # Round to nearest second
+        formatted_time = str(rounded_elapsed_time)  # Format the timedelta object
+        # Add the section to the progress bar
+        task_id = self.progress_bar.add_task(f"[green]{section_name} (Elapsed time: {formatted_time})", total=1)
+        self.progress_bar.update(task_id, completed=1)
+
+
+
+def clear_completed_main_tasks(completed_progress):
+    """Clear the completed section tasks section."""
+    for task in completed_progress.tasks:
+        completed_progress.remove_task(task.id)
+
+
+
+def section_completed(section_name, start_time, completed_progress, completed_sections_manager):
+    """When a section is completed, clear tasks and add it to completed sections."""
+    end_time = datetime.now()
+    elapsed_time = end_time - start_time
+
+    # Clear the completed section tasks
+    clear_completed_main_tasks(completed_progress)
+
+    # Add the completed section to the completed sections panel
+    completed_sections_manager.add_completed_section(section_name, elapsed_time)

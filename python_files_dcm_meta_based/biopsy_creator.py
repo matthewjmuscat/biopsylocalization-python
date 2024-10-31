@@ -547,7 +547,7 @@ def point_to_line_segment_distance(point, line_start, line_end):
         closest_point = line_start + t * line_vec_normalized
 
     distance = np.linalg.norm(point - closest_point)
-    return distance
+    return distance, closest_point
 
 
 def distance_of_most_distant_points_2d_projection(points_3d, normal_vector):

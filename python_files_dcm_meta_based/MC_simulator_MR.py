@@ -26,7 +26,7 @@ def simulator_parallel(live_display,
                        show_NN_mr_adc_demonstration_plots_all_trials_at_once):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
-    completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+    completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     with live_display:
         live_display.start(refresh = True)
@@ -229,4 +229,4 @@ def simulator_parallel(live_display,
     master_structure_info_dict['Global']["MC info"]['MC MR sim performed'] = perform_mc_mr_sim
 
 
-    return master_structure_reference_dict, live_display
+    return master_structure_reference_dict, master_structure_info_dict, live_display

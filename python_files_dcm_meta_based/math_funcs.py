@@ -4,7 +4,8 @@ from statsmodels.nonparametric import kernel_regression
 import statsmodels.api as sm
 import scipy.stats as stats
 from scipy.stats import gaussian_kde
-
+from joblib import Parallel, delayed
+import pandas
 
 def binomial_likelihood(p, num_trials, num_successes):
     # note that we omit the factor out front as it does not depend on the probability estimator p
@@ -348,6 +349,24 @@ def find_max_kde_dose(dose_series, num_eval_pts = 1000):
     return max_density_dose
 
 
+# Apply this in parallel
+def apply_find_max_kde_dose_parallel(df, groupby_cols, dose_col, new_column_name, num_eval_pts=1000, n_jobs=-2):
+    grouped = df.groupby(groupby_cols)[dose_col]
+    
+    # Run KDE calculation in parallel
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(find_max_kde_dose)(group) for name, group in grouped
+    )
+
+    # Create a DataFrame from the group keys and results, generalizing for any groupby columns
+    result_df = pandas.DataFrame({
+        **{col: [name[i] for name in grouped.groups.keys()] for i, col in enumerate(groupby_cols)},
+        new_column_name: results
+    })
+    
+    return result_df
+
+
 def find_max_density_xval_via_kde(data_series, num_eval_pts = 1000):
     if len(data_series) > 1:  # KDE requires more than one data point
         kde = gaussian_kde(data_series)
@@ -358,3 +377,21 @@ def find_max_density_xval_via_kde(data_series, num_eval_pts = 1000):
         max_density_xval = data_series.at[data_series.index[0]] if not data_series.empty else np.nan  # Handle cases with one or zero points
     
     return max_density_xval
+
+
+# Apply this in parallel
+def apply_find_max_kde_xval_parallel(df, groupby_cols, dose_col, new_column_name, num_eval_pts=1000, n_jobs=-2):
+    grouped = df.groupby(groupby_cols)[dose_col]
+    
+    # Run KDE calculation in parallel
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(find_max_kde_dose)(group) for name, group in grouped
+    )
+
+    # Create a DataFrame from the group keys and results, generalizing for any groupby columns
+    result_df = pandas.DataFrame({
+        **{col: [name[i] for name in grouped.groups.keys()] for i, col in enumerate(groupby_cols)},
+        new_column_name: results
+    })
+    
+    return result_df

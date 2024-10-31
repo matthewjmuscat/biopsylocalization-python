@@ -225,7 +225,9 @@ def production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_
                                               general_plot_name_string,
                                               struct_refs_to_include_list,
                                               bx_ref,
-                                              bx_sim_types_to_include_list):
+                                              bx_sim_types_to_include_list,
+                                              num_simulations,
+                                              custom_str_to_append_to_plot_title = ''):
     
     
     df = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: All MC structure shift vectors"]
@@ -254,6 +256,20 @@ def production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_
             marker_color = color_by_trace_dict[component_to_trace]
         ))
     """
+    # Add a new column that combines that sim type with structure type:
+    #subset_df["struct+sim_type"] = subset_df["Structure type"] + subset_df["Simulated type"]
+    subset_df["struct+sim_type"] = subset_df["Structure type"].astype(str) +' (' + subset_df["Simulated type"].astype(str) + ')' # Note that I have to combine them as strings because you cant combine categorical columns with the + operand
+
+
+    for component_to_trace in shift_components_to_trace_list:
+        fig.add_trace(go.Box(
+            x=subset_df["struct+sim_type"],
+            y=subset_df[component_to_trace],
+            name=component_to_trace,
+            marker_color=color_by_trace_dict[component_to_trace]
+        ))
+    
+    """
     # Separate non-biopsy structures
     for component_to_trace in shift_components_to_trace_list:
         fig.add_trace(go.Box(
@@ -274,14 +290,14 @@ def production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_
                 name=f"{component_to_trace} ({simulated_type})",  # Include Simulated type in the trace name
                 marker_color=color_by_trace_dict[component_to_trace]
             ))
-
+    """
 
 
     fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = False)
     fig.update_layout(
         yaxis_title='Sampled shift (mm)',
         xaxis_title='Structure',
-        title='Sampled translation components (Cohort)',
+        title=f'Sampled translation components (Cohort {custom_str_to_append_to_plot_title}, Num simulations: {num_simulations})',
         hovermode="x unified"
     )
     fig.update_layout(
@@ -314,7 +330,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
                                                                                  patient_sp_output_figures_dir_dict,
                                                                                  general_plot_name_string):
     # plotting function
-    def plot_quantile_regression_and_more_corrected(df):
+    def plot_quantile_regression_and_more_corrected(df, patientUID, bx_id):
         plt.ioff()
         fig = plt.figure(figsize=(12, 8))
 
@@ -370,13 +386,14 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
         # Line plot for each trial
         for trial in range(1,num_mc_trials_plus_nom):
-            df_sp_trial = df[df["MC trial num"] == trial]
-            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+            df_sp_trial = df[df["MC trial num"] == trial].sort_values(by='Z (Bx frame)') # sorting is to make sure that the lines are drawn properly
+            df_z_simple = df_sp_trial.drop_duplicates(subset=['Z (Bx frame)'], keep='first') # remove points that have the same z value so that the line plots look better
+            plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
         
 
         
 
-        plt.title('Quantile Regression with Filled Areas Between Lines')
+        plt.title(f'Quantile Regression with Filled Areas Between Lines - {patientUID} - {bx_id}')
         plt.xlabel('Z (Bx frame)')
         plt.ylabel('Dose (Gy)')
         plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal', 'Max density dose', 'Mean dose'], loc='best', facecolor = 'white')
@@ -393,7 +410,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 
-        fig = plot_quantile_regression_and_more_corrected(dose_output_nominal_and_all_MC_trials_pandas_data_frame)
+        fig = plot_quantile_regression_and_more_corrected(dose_output_nominal_and_all_MC_trials_pandas_data_frame, patientUID, bx_struct_roi)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -1359,10 +1376,10 @@ def production_plot_differential_dvh_quantile_plot_NEW(patient_sp_output_figures
 
         # Line plot for each trial
         for trial in range(1,num_mc_trials_plus_nom):
-            df_sp_trial = df[df["MC trial"] == trial]
+            df_sp_trial = df[df["MC trial"] == trial].sort_values(by=x_col) # sorting is to make sure that the lines are drawn properly
             plt.plot(df_sp_trial[x_col], df_sp_trial[y_col], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
 
-        plt.title('Differential DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
+        plt.title(f'Differential DVH Quantile Regression - {patientUID} - {bx_struct_roi}')
         plt.xlabel(x_col)
         plt.ylabel(y_col)
         plt.grid(True, which='major', linestyle='--', linewidth=0.5)
@@ -1578,11 +1595,11 @@ def production_plot_cumulative_DVH_kernel_quantile_regression_NEW_v2(patient_sp_
 
         # Line plot for each trial
         for trial in range(1,num_mc_trials_plus_nom):
-            df_sp_trial = df[df["MC trial"] == trial]
+            df_sp_trial = df[df["MC trial"] == trial].sort_values(by=x_col) # sorting is to make sure that the lines are drawn properly
             plt.plot(df_sp_trial[x_col], df_sp_trial[y_col], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
 
 
-        plt.title('Cumulative DVH Quantile Regression - '+ patientUID+ ' - '+bx_struct_roi)
+        plt.title(f'Cumulative DVH Quantile Regression - {patientUID} - {bx_struct_roi}')
         plt.xlabel(x_col)
         plt.ylabel(y_col)
         plt.grid(True, which='major', linestyle='--', linewidth=0.5)
@@ -2584,7 +2601,7 @@ def production_plot_sobol_indices_global_containment(patient_sp_output_figures_d
     color_discrete_map_dict = {True: 'rgba(0, 92, 171, 1)', False: 'rgba(227, 27, 35,1)'}
 
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
-    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
     fanova_sobol_indices_names_FO = [x + ' FO' for x in fanova_sobol_indices_names_by_index]
     fanova_sobol_indices_names_TO = [x + ' TO' for x in fanova_sobol_indices_names_by_index]
 
@@ -2806,7 +2823,7 @@ def production_plot_sobol_indices_each_biopsy_containment(patient_sp_output_figu
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
-    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
   
     
 
@@ -2905,7 +2922,7 @@ def production_plot_sobol_indices_global_dosimetry(patient_sp_output_figures_dir
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict["Global"]
-    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
     
     #num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
     dataframes_list = []
@@ -3153,7 +3170,7 @@ def production_plot_sobol_indices_each_biopsy_dosimetry(patient_sp_output_figure
                                                 ):
     
     patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
-    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+    fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
 
     if dosimetry_sobol_per_biopsy_plot_bool_dict["FO"] == True:
 
@@ -6781,6 +6798,113 @@ def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame_v2
 
 
 
+def production_plot_cohort_double_sextant_biopsy_distribution(cohort_biopsy_basic_spatial_features_dataframe,
+                                                              general_plot_name_string,
+                                                              cohort_output_figures_dir
+                                                              ):
+
+    df = cohort_biopsy_basic_spatial_features_dataframe
+    """
+    # Sample DataFrame setup (replace this with your actual DataFrame)
+    data = {
+        'Patient ID': [1, 1, 2, 2, 3],
+        'Bx ID': [101, 102, 103, 104, 105],
+        'Simulated bool': [False, True, False, True, False],
+        'Simulated type': ['Type1', 'Type2', 'Type1', 'Type2', 'Type1'],
+        'Struct type': ['TypeA', 'TypeB', 'TypeA', 'TypeB', 'TypeA'],
+        'Bx refnum': [1, 1, 2, 2, 3],
+        'Bx index': [5, 4, 6, 7, 3],
+        'Bx position in prostate LR': ['Left', 'Right', 'Left', 'Right', 'Left'],
+        'Bx position in prostate AP': ['Anterior', 'Posterior', 'Anterior', 'Posterior', 'Anterior'],
+        'Bx position in prostate SI': ['Base', 'Apex', 'Mid', 'Base', 'Mid']
+    }
+
+    df = pd.DataFrame(data)
+    """
+
+    # Define the double sextant mapping
+    # Create sextant keys based on the LR, AP, and SI positions
+    def create_sextant_key(row):
+        return f"{row['Bx position in prostate LR']}-{row['Bx position in prostate SI']}"
+
+    df['Sextant'] = df.apply(create_sextant_key, axis=1)
+
+    # Count occurrences of biopsies in each sextant for anterior and posterior slices
+    anterior_df = df[df['Bx position in prostate AP'] == 'Anterior']
+    posterior_df = df[df['Bx position in prostate AP'] == 'Posterior']
+
+    anterior_counts = anterior_df['Sextant'].value_counts().to_dict()
+    posterior_counts = posterior_df['Sextant'].value_counts().to_dict()
+
+    # Setup sextant regions and fill in with biopsy counts
+    sextant_regions = ['Left-Base (Superior)', 'Right-Base (Superior)', 
+                   'Left-Mid', 'Right-Mid', 
+                   'Left-Apex (Inferior)', 'Right-Apex (Inferior)']
+
+
+    anterior_data = [anterior_counts.get(sextant, 0) for sextant in sextant_regions]
+    posterior_data = [posterior_counts.get(sextant, 0) for sextant in sextant_regions]
+
+    # Convert the data into a 2x3 grid for each slice (anterior and posterior)
+    # Base is now on the top, and Apex on the bottom
+    anterior_matrix = np.array([
+        [anterior_data[0], anterior_data[1]],  # Base row
+        [anterior_data[2], anterior_data[3]],  # Mid row
+        [anterior_data[4], anterior_data[5]]   # Apex row
+    ])
+
+    posterior_matrix = np.array([
+        [posterior_data[0], posterior_data[1]],  # Base row
+        [posterior_data[2], posterior_data[3]],  # Mid row
+        [posterior_data[4], posterior_data[5]]   # Apex row
+    ])
+
+    # Plot the heatmaps for anterior and posterior slices
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Anterior heatmap
+    sns.heatmap(anterior_matrix, annot=True, cmap="Reds", fmt="d", cbar_kws={'label': 'Number of Biopsies'}, ax=axs[0])
+    axs[0].set_title('Anterior Slice')
+    axs[0].set_xticklabels(['Left', 'Right'])
+    axs[0].set_yticklabels(['Base', 'Mid', 'Apex'])
+
+    # Posterior heatmap
+    sns.heatmap(posterior_matrix, annot=True, cmap="Blues", fmt="d", cbar_kws={'label': 'Number of Biopsies'}, ax=axs[1])
+    axs[1].set_title('Posterior Slice')
+    axs[1].set_xticklabels(['Left', 'Right'])
+    axs[1].set_yticklabels(['Base', 'Mid', 'Apex'])
+
+    plt.tight_layout()
+
+    svg_dose_fig_name = general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6869,7 +6993,10 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
         
         sp_structure_mc_sum_to_one_pt_wise_results_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
 
-        fig = stacked_area_plot_with_confidence_intervals(sp_structure_mc_sum_to_one_pt_wise_results_dataframe, tissue_heirarchy_list)
+        fig = stacked_area_plot_with_confidence_intervals(patientUID,
+                                                    bx_struct_roi,
+                                                    sp_structure_mc_sum_to_one_pt_wise_results_dataframe, 
+                                                    tissue_heirarchy_list)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -6884,6 +7011,554 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
 
 
 
+def production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_figures_dir_dict,
+                                                patientUID,
+                                                pydicom_item,
+                                                bx_ref,
+                                                all_ref_key,
+                                                svg_image_scale,
+                                                svg_image_width,
+                                                svg_image_height,
+                                                general_plot_name_string
+                                                ):
+
+    def tissue_class_sum_to_one_nominal_plot(df, y_axis_order, patientID, bx_struct_roi):
+        df = misc_tools.convert_categorical_columns(df, ['Tissue class', 'Nominal'], [str, int])
+
+        # Generate a list of colors using viridis colormap in Matplotlib
+        stacking_order = y_axis_order
+        colors = plt.cm.viridis(np.linspace(0, 1, len(stacking_order)))  # Same method you used in Matplotlib
+
+        # Convert the colors to a format Plotly understands (hex strings)
+        hex_colors = ['#%02x%02x%02x' % (int(c[0]*255), int(c[1]*255), int(c[2]*255)) for c in colors]
+
+        # Create a color mapping for tissue classes
+        color_mapping = dict(zip(stacking_order, hex_colors))
+
+        # Create the scatter plot and pass the custom color map
+        fig = px.scatter(
+            df, 
+            x='Z (Bx frame)', 
+            y='Tissue class', 
+            size='Nominal',  # Size based on Nominal (0 or 1)
+            size_max=10,  # Set size for the points that appear
+            color='Tissue class',  # Use tissue class for color assignment
+            color_discrete_map=color_mapping,  # Apply the custom color mapping
+            title=f'Sum-to-one Nominal tissue class along biopsy major axis (Pt: {patientID}, Bx: {bx_struct_roi})'
+        )
+
+        # Customize point style
+        fig.update_traces(
+            marker=dict(
+                symbol='x',  # Change to other shapes like 'diamond', 'square', etc.
+                #line=dict(width=2, color='DarkSlateGrey'),  # Add border to points
+                #size=12,  # Set a base size (adjustable)
+                #opacity=1,  # Set point transparency
+                #color = 'black'
+            )
+        )
+
+        # Clear all existing legend entries
+        fig.for_each_trace(lambda trace: trace.update(showlegend=False))
+
+        # Add dummy scatter points for the legend with fixed size
+        for tissue_class in stacking_order:
+            fig.add_scatter(
+                x=[None],  # Dummy invisible point
+                y=[None],
+                mode='markers',
+                marker=dict(size=10, color=color_mapping[tissue_class], symbol='x'),
+                name=tissue_class,  # Ensure tissue class appears in legend
+                showlegend=True
+            )
+
+        # Customize labels and make the plot flatter by tweaking y-axis category settings
+        fig.update_layout(
+            xaxis_title="Biopsy axial dimension (mm)",
+            yaxis_title="Tissue class",
+            yaxis={
+                'categoryorder': 'array',  # Set custom order
+                'categoryarray': y_axis_order,  # Use the provided order for categories
+                'tickvals': y_axis_order,  # Ensure the ticks follow this order
+                'tickmode': 'array',
+                'ticktext': y_axis_order,
+                'scaleanchor': "x",  # Lock the aspect ratio of x and y
+                'dtick': 1,  # Control category spacing
+            },
+            height=400,  # Adjust the overall height of the plot to flatten it
+            legend_title_text='Tissue class'  # Set legend title
+        )
+
+        fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
+
+
+        return fig 
+
+
+    patient_sp_output_figures_dir = patient_sp_output_figures_dir_dict[patientUID]
+
+
+    # Define the specific order for the y-axis categories
+    y_axis_order = ['DIL', 'Urethral', 'Rectal', 'Prostatic', 'Periprostatic']
+
+    multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] 
+
+    
+    # Plotting loop
+    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+        bx_struct_roi = specific_bx_structure["ROI"]
+        
+        mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
+
+        fig = tissue_class_sum_to_one_nominal_plot(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, y_axis_order, patientUID, bx_struct_roi)
+
+        bx_sp_plot_name_string = f"{bx_struct_roi} - " + general_plot_name_string
+
+        svg_dose_fig_name = bx_sp_plot_name_string+'.svg'
+        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height/3) # added /3 here to make the y axis categories closer together, ie to make the plot flatter so that it can fit beneath the sum-to-one spatial regression plots.
+
+        html_dose_fig_name = bx_sp_plot_name_string+'.html'
+        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+        fig.write_html(html_dose_fig_file_path) 
+
+
+
+
+
+def cohort_global_scores_boxplot(cohort_mc_sum_to_one_global_scores_dataframe,
+                                 general_plot_name_string,
+                                 cohort_output_figures_dir):
+
+    df = cohort_mc_sum_to_one_global_scores_dataframe
+
+    # Melt the DataFrame to bring mean, min, and max into a single column for easier plotting
+    df_melted = pandas.melt(df, id_vars=['Tissue class'], value_vars=['Global Mean BE', 'Global Min BE', 'Global Max BE'], 
+                        var_name='Statistic', value_name='Binomial Estimator')
+
+    # Create a grouped boxplot using seaborn
+    fig, ax = plt.subplots(figsize=(10, 6))  # Capture the figure and axis objects
+    sns.boxplot(x='Tissue class', y='Binomial Estimator', hue='Statistic', data=df_melted, palette="Set2", ax=ax)
+
+    # Customize the plot for better aesthetics
+    ax.set_title('Boxplots of Global Mean, Min, and Max (sum-to-one) Values by Tissue Class', fontsize=12)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    # Save the figure
+    svg_dose_fig_name = general_plot_name_string + '.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    plt.savefig(svg_dose_fig_file_path, format='svg')
+
+    # Close the figure to release memory
+    plt.close(fig)  # Ensure the figure is closed properly
+
+
+def cohort_global_scores_boxplot_by_bx_type(cohort_mc_sum_to_one_global_scores_dataframe,
+                                 general_plot_name_string,
+                                 cohort_output_figures_dir):
+
+    df = cohort_mc_sum_to_one_global_scores_dataframe
+
+    # Melt the DataFrame to bring mean, min, and max into a single column for easier plotting
+    df_melted = pandas.melt(df, id_vars=['Tissue class', 'Simulated type'], 
+                            value_vars=['Global Mean BE', 'Global Min BE', 'Global Max BE'], 
+                            var_name='Statistic', value_name='Binomial Estimator')
+
+    # Create a grouped boxplot using seaborn with faceting by 'Simulated type'
+    g = sns.catplot(x='Tissue class', y='Binomial Estimator', hue='Statistic', 
+                    col='Simulated type', data=df_melted, kind='box', 
+                    palette="Set2", height=6, aspect=1.5)
+
+    # Set y-axis limits to be between 0 and 1
+    g.set(ylim=(0, 1))
+
+    # Add horizontal grid lines
+    g.set_axis_labels("Tissue Class", "Binomial Estimator")
+    for ax in g.axes.flat:
+        ax.grid(True, which='both', axis='y')  # Add horizontal grid lines to each subplot
+
+    # Customize the plot for better aesthetics
+    g.set_titles("Simulated Type: {col_name}")
+    g.fig.suptitle('Boxplots of Global Mean, Min, and Max (sum-to-one) Values by Tissue Class', y=1.02, fontsize=12)
+    g.set_xticklabels(rotation=45)
+    plt.tight_layout()
+
+    # Save the figure
+    svg_dose_fig_name = general_plot_name_string + '.svg'
+    svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+    g.savefig(svg_dose_fig_file_path, format='svg')
+
+    # Close the figure to release memory
+    plt.close(g.fig)  # Ensure the figure is closed properly
+
+
+
+
+
+
+
+def production_plot_cohort_sum_to_one_binom_est_ridge_plot_by_voxel(cohort_mc_sum_to_one_pt_wise_results_dataframe,
+                                                     svg_image_width,
+                                                     svg_image_height,
+                                                     dpi,
+                                                     ridge_line_tissue_class_general_plot_name_string,
+                                                     cohort_output_figures_dir):
+
+    plt.ioff()  # Turn off interactive plotting for batch figure generation
+
+    df = copy.deepcopy(cohort_mc_sum_to_one_pt_wise_results_dataframe)
+    df = misc_tools.convert_categorical_columns(df, ["Simulated type","Tissue class", "Binomial estimator", "Voxel index", "Voxel begin (Z)", "Voxel end (Z)"], [str, str, float, int, float, float])
+
+
+    # Create a discrete colormap (similar to the desired color scheme)
+    colors = ["green", "blue", "black"]
+    cmap = LinearSegmentedColormap.from_list("GreenBlueBlack", colors, N=10)  # Discrete colors
+    norm = Normalize(vmin=0, vmax=1)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+
+    # Set the theme for seaborn plots
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+
+    # Main loop for plotting
+    for bx_type, group_bx_type in df.groupby('Simulated type'):
+        for tissue_class, group in group_bx_type.groupby('Tissue class'):
+            
+            unique_voxels = group['Voxel index'].unique()
+            palette_black = {voxel: "black" for voxel in unique_voxels}  # Default color palette
+            
+            def annotate_and_color(x, color, label, **kwargs):
+                specific_group = group[group['Voxel index'] == float(label)]
+                if not specific_group.empty:
+                    mean_prob = np.mean(x)
+                    std_prob = np.std(x)
+
+                    ax = plt.gca()
+
+                    if np.std(x) < 1e-6 or len(np.unique(x)) <= 1:
+                        # No variability, plot as a spike at 0
+                        if np.all(x == 0):
+                            ax.axvline(x=0, color="gray", linestyle='-', lw=2)
+                            max_density_value = 0
+                        else:
+                            max_density_value = mean_prob
+                    else:
+                        try:
+                            kde = gaussian_kde(x)
+                            x_grid = np.linspace(0, 1, 1000)
+                            y_density = kde(x_grid)
+                            max_density_value = x_grid[np.argmax(y_density)]
+                            
+                            # Normalize density and plot
+                            scaled_density = y_density / np.max(y_density)
+                            density_color = cmap(norm(max_density_value))  # Color by max density
+                            ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
+
+                        except np.linalg.LinAlgError:
+                            max_density_value = "Error"
+
+                    # Add vertical lines for mean, max density, and quantiles (Q05, Q25, Q75, Q95)
+                    q05, q25, q75, q95 = np.percentile(x, [5, 25, 75, 95])  # Removed 50th quantile as it is the median
+                    ax.axvline(x=max_density_value, color='magenta', linestyle='-', label='Max Density (Gy)', linewidth=2)
+                    ax.axvline(x=mean_prob, color='orange', linestyle='-', label='Mean (Gy)', linewidth=2)
+                    ax.axvline(x=np.median(x), color='red', linestyle='-', label='Median (Gy)', linewidth=2)  # Median only
+
+                    # Plot quantiles with dashed lines (except 50th, handled as median)
+                    for quantile_value in [q05, q25, q75, q95]:
+                        ax.axvline(x=quantile_value, color='cyan', linestyle='--', linewidth=2)
+
+                    # Annotate statistics
+                    voxel_begin = specific_group['Voxel begin (Z)'].min()
+                    voxel_end = specific_group['Voxel end (Z)'].max()
+
+                    annotation_text = (f'Voxel segment (mm): ({voxel_begin:.1f}, {voxel_end:.1f})\n'
+                                    f'Mean: {mean_prob:.2f}\nSD: {std_prob:.2f}\n'
+                                    f'Max Density: {max_density_value:.2f}')
+                    
+                    # Move the annotation into the white space (outside the plot area)
+                    ax.text(1.05, 0.6, annotation_text, horizontalalignment='left', 
+                            verticalalignment='center', transform=ax.transAxes, 
+                            color=color, fontsize=9)
+
+            # Setup for each tissue class (FacetGrid)
+            g = sns.FacetGrid(group, row="Voxel index", hue="Voxel index", aspect=8, height=1, palette=palette_black)
+            g.map(annotate_and_color, "Binomial estimator")
+
+            # Adjust layout to make space for color bar and legend on the left
+            g.fig.subplots_adjust(left=0.2, right=0.65)  # Shift the plot slightly to the right
+
+            # Move the colorbar closer to the plot, and rotate the label
+            cbar_ax = g.fig.add_axes([0.08, 0.2, 0.03, 0.6])  # Color bar now closer to the plot
+            colorbar = g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+            colorbar.set_label("Max Density Value", rotation=90, labelpad=-60, ha='center')
+
+
+            # Grid lines on the ridgeline plots
+            for ax in g.axes.flat:
+                ax.grid(True, which='both', axis='x', linestyle='-', color='gray', linewidth=0.5)
+                ax.set_axisbelow(True)
+
+            # Final adjustments
+            g.set_titles("")
+            g.set(yticks=[])
+            g.despine(bottom=False, left=True)
+            g.set_axis_labels("Binomial estimator distribution", "")  # Updated x-axis label
+
+            # Position "Density" label between color bar and ridgeline plot
+            g.fig.text(0.16, 0.5, 'Density', va='center', rotation='vertical', fontsize=12)
+
+            # Move the legend further left
+            handles = [
+                Line2D([0], [0], color='magenta', lw=2, label='Max Density'),
+                Line2D([0], [0], color='orange', lw=2, label='Mean'),
+                Line2D([0], [0], color='red', lw=2, label='Median'),
+                Line2D([0], [0], color='cyan', lw=2, linestyle='--', label='Quantiles (05, 25, 75, 95)')
+            ]
+            legend = g.fig.legend(handles=handles, loc='upper left', bbox_to_anchor=(-0.4, 0.95), frameon=True)
+            legend.get_frame().set_facecolor('white')  # Set the legend background to white
+
+            # Title and figure size
+            plt.suptitle(f'Tissue Class: {tissue_class}', fontsize=16, fontweight='bold', y=1.02)  # Adjusted title position
+
+            # Calculate the figure size in inches for the desired dimensions in pixels
+            figure_width_in = svg_image_width / dpi
+            figure_height_in = svg_image_height / dpi
+            g.fig.set_size_inches(figure_width_in, figure_height_in)
+
+            # Save the figure
+            svg_dose_fig_name = ridge_line_tissue_class_general_plot_name_string + f'_{bx_type}_{tissue_class}.svg'
+            svg_dose_fig_file_path = cohort_output_figures_dir.joinpath(svg_dose_fig_name)
+            g.fig.savefig(svg_dose_fig_file_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+            plt.close(g.fig)
+
+
+
+
+
+
+
+def production_plot_cohort_sum_to_one_nominal_counts_voxel_vs_tissue_class_heatmap(dataframe,
+                                       svg_image_width,
+                                       svg_image_height,
+                                       dpi,
+                                       heatmap_plot_name_string,
+                                       output_dir):
+    
+    df = copy.deepcopy(dataframe)
+    df = misc_tools.convert_categorical_columns(df, ["Simulated type", "Tissue class", "Nominal", "Voxel index", "Voxel begin (Z)", "Voxel end (Z)"], [str, str, int, int, float, float])
+
+    # Loop over each unique "Simulated type" to generate separate heatmaps
+    for simulated_type, group_df in df.groupby('Simulated type'):
+        
+        # Group by 'Voxel index' and 'Tissue class' to get the sum of 'Nominal' counts for each pairing
+        heatmap_data = group_df.groupby(['Voxel index', 'Tissue class'])['Nominal'].sum().unstack(fill_value=0)
+        
+        # Compute total counts per voxel across all tissue classes for row normalization
+        voxel_totals = heatmap_data.sum(axis=1)
+        
+        # Normalize each box by the total count of its respective voxel row
+        normalized_heatmap_data = heatmap_data.div(voxel_totals, axis=0).fillna(0)
+        
+        # Prepare annotations with both absolute and normalized counts
+        annotations = np.empty_like(heatmap_data, dtype=object)
+        for i in range(heatmap_data.shape[0]):
+            for j in range(heatmap_data.shape[1]):
+                absolute = heatmap_data.iloc[i, j]
+                normalized = normalized_heatmap_data.iloc[i, j]
+                annotations[i, j] = f"{absolute}, {normalized:.2f}"  # Format as "absolute, normalized"
+        
+        # Retrieve minimum voxel begin and maximum voxel end values for each voxel index
+        voxel_annotations = group_df.groupby('Voxel index').agg({'Voxel begin (Z)': 'min', 'Voxel end (Z)': 'max'})
+        
+        # Create the plot
+        plt.ioff()  # Turn off interactive plotting for batch figure generation
+        fig, ax = plt.subplots(figsize=(svg_image_width / dpi, svg_image_height / dpi), dpi=dpi)
+        
+        sns.heatmap(
+            normalized_heatmap_data,
+            annot=annotations,  # Display absolute and normalized counts
+            fmt='',  # Allows custom annotation format
+            cmap="YlGnBu",
+            cbar_kws={'label': 'Normalized Counts (Proportion)'},
+            linewidths=0.5,
+            linecolor='white',
+            ax=ax,
+            vmin=0,   # Set the minimum value for the color scale
+            vmax=1    # Set the maximum value for the color scale
+        )
+        
+        # Add text annotations for the total counts and voxel begin/end next to each voxel index
+        for y, (voxel_index, total_count) in enumerate(voxel_totals.items()):
+            voxel_begin = voxel_annotations.loc[voxel_index, 'Voxel begin (Z)']
+            voxel_end = voxel_annotations.loc[voxel_index, 'Voxel end (Z)']
+            ax.text(-0.5, y + 0.5, f"Total counts: {int(total_count)}\nVoxel segment (mm): ({voxel_begin:.1f}, {voxel_end:.1f})",
+                    ha='right', va='center', color='black', fontsize=9)
+        
+        # Customize labels and title
+        ax.set_xlabel("Tissue Class", fontsize=12)
+        ax.set_ylabel("Voxel Index", fontsize=12)
+        ax.set_title(f"Normalized Heatmap for '{simulated_type}' - Voxel Index vs Tissue Class vs Nominal counts", fontsize=14)
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=0)
+        
+        # Save the plot
+        output_filename = f"{heatmap_plot_name_string}_{simulated_type}.svg"
+        output_path = output_dir.joinpath(output_filename)
+        fig.savefig(output_path, format='svg', dpi=dpi, bbox_inches='tight')
+        
+        # Close the figure to free memory
+        plt.close(fig)
+
+
+
+
+
+def production_plot_cohort_sum_to_one_all_biopsy_voxels_binom_est_histogram_by_tissue_class(dataframe,
+                                       svg_image_width,
+                                       svg_image_height,
+                                       dpi,
+                                       histogram_plot_name_string,
+                                       output_dir,
+                                       bx_sample_pts_vol_element,
+                                       bin_width=0.05,
+                                       bandwidth=0.1):
+    
+    plt.ioff()  # Turn off interactive plotting for batch figure generation
+    
+    # Deep copy the dataframe to prevent modifications to the original data
+    df = copy.deepcopy(dataframe)
+    
+    # Get the list of unique tissue classes
+    tissue_classes = df['Tissue class'].unique()
+    
+    # Set up the figure and subplots for each tissue class
+    fig, axes = plt.subplots(len(tissue_classes), 1, figsize=(svg_image_width / dpi, svg_image_height / dpi), dpi=dpi, sharex=True)
+    
+    # Increase padding between subplots
+    fig.subplots_adjust(hspace=0.5)  # Adjust hspace to increase vertical padding
+    
+    # Create color mappings for vertical lines
+    line_colors = {
+        'mean': 'orange',
+        'min': 'blue',
+        'max': 'purple',
+        'q05': 'cyan',
+        'q25': 'green',
+        'q75': 'green',
+        'q95': 'cyan',
+        'max density': 'magenta'
+    }
+    
+    for ax, tissue_class in zip(axes, tissue_classes):
+        tissue_data = df[df['Tissue class'] == tissue_class]['Binomial estimator'].dropna()
+        
+        count = len(tissue_data)
+        ax.text(-0.2, 0.85, f'Num voxels: {count}', ha='left', va='top', transform=ax.transAxes, fontsize=10, color='black')
+        ax.text(-0.2, 0.7, f'Kernel BW: {bandwidth}', ha='left', va='top', transform=ax.transAxes, fontsize=10, color='black')
+        ax.text(-0.2, 0.55, f'Bin width: {bin_width}', ha='left', va='top', transform=ax.transAxes, fontsize=10, color='black')
+        ax.text(-0.2, 0.4, f'Bx voxel volume (cmm): {bx_sample_pts_vol_element}', ha='left', va='top', transform=ax.transAxes, fontsize=10, color='black')
+
+
+        bins = np.arange(0, 1.05, bin_width)  # Create bins from 0 to 1 with steps of 0.05
+
+        # Plot normalized histogram with KDE
+        sns.histplot(tissue_data, bins=bins, kde=False, color='skyblue', stat='density', ax=ax)
+
+        # Calculate statistics
+        mean_val = tissue_data.mean()
+        min_val = tissue_data.min()
+        max_val = tissue_data.max()
+        quantiles = np.percentile(tissue_data, [5, 25, 75, 95])
+
+        # KDE fit for the binomial estimator values with specified bandwidth
+        kde = gaussian_kde(tissue_data, bw_method=bandwidth)
+        x_grid = np.linspace(0, 1, 1000)
+        y_density = kde(x_grid)
+        # Normalize the KDE so the area under the curve equals 1
+        y_density /= np.trapz(y_density, x_grid)  # Normalize over the x_grid range
+
+        max_density_value = x_grid[np.argmax(y_density)]
+
+        # Overlay KDE plot
+        ax.plot(x_grid, y_density, color='black', linewidth=1.5, label='KDE')
+
+        # Add vertical lines for mean, min, max, quantiles, and max density
+        line_positions = {
+            'Mean': mean_val,
+            'Min': min_val,
+            'Max': max_val,
+            'Q05': quantiles[0],
+            'Q25': quantiles[1],
+            'Q75': quantiles[2],
+            'Q95': quantiles[3],
+            'Max Density': max_density_value
+        }
+        
+                # Sort line_positions by the x-values (positions of the vertical lines)
+        sorted_line_positions = sorted(line_positions.items(), key=lambda item: item[1])
+
+        # Initialize tracking variables to handle overlapping labels
+        last_x_val = None
+        last_label_y = 1.02  # Initial y position for text labels
+        stack_count = 0  # Track count of stacked labels
+        offset_x = 0  # Horizontal offset for secondary stacks
+
+        # Iterate over the sorted line positions to add vertical lines and labels
+        for label, x_val in sorted_line_positions:
+            color = line_colors.get(label.lower(), 'black')
+            ax.axvline(x_val, color=color, linestyle='--' if 'Q' in label else '-', label=label)
+
+            # Check for potential overlap and adjust y-position if needed
+            if last_x_val is not None and abs(x_val - last_x_val) < 0.1:
+                last_label_y += 0.1
+                stack_count += 1
+            else:
+                # Reset position and stack count if no overlap
+                last_label_y = 1.02
+                stack_count = 0
+                offset_x = 0
+
+            # Shift label to the right if stack count exceeds 3
+            if stack_count > 2:
+                offset_x += 0.02  # Increment horizontal offset
+                last_label_y = 1.02  # Reset y-position for the new stack
+                stack_count = 0  # Reset stack count for the new column
+
+            # Add text above the plot area with adjusted x and y positions
+            ax.text(x_val + offset_x, last_label_y, f'{x_val:.2f}', color=color, ha='center', va='bottom',
+                    fontsize=9, transform=ax.get_xaxis_transform())
+
+            # Update last_x_val to current x_val
+            last_x_val = x_val
+
+
+        # Set x-axis limits to [0, 1] and enable grid lines
+        ax.set_xlim(0, 1)
+        ax.grid(True)
+        ax.set_xticks(np.arange(0, 1.1, 0.1))  # Sets vertical grid lines every 0.1
+        ax.set_xlabel('')
+
+        # Add title and labels with adjusted title position
+        ax.set_title(f'{tissue_class}', fontsize=12, y=1, x = -0.15, ha='left')
+        ax.set_ylabel('Density')
+        
+    # X-axis label and figure title
+    fig.text(0.5, 0.04, 'Binomial Estimator', ha='center', fontsize=12)
+    fig.suptitle('Cohort - Normalized Binomial Estimator Distribution by Tissue Class For All Biopsy Voxels', fontsize=14)
+
+    # Legend positioned outside the plot area with white background
+    handles, labels = ax.get_legend_handles_labels()
+    legend = fig.legend(handles, labels, loc='center left', bbox_to_anchor=(0.95, 0.5), frameon=True)
+    legend.get_frame().set_facecolor('white')
+    legend.get_frame().set_edgecolor('black')
+
+    # Save the figure
+    output_path = output_dir.joinpath(f"{histogram_plot_name_string}.svg")
+    fig.savefig(output_path, format='svg', dpi=dpi, bbox_inches='tight')
+
+    # Close the figure to free memory
+    plt.close(fig)
 
 
 
@@ -6901,7 +7576,7 @@ def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplot
                                                                                  col_name_str_prefix,
                                                                                  output_dataframe_str):
     # plotting function
-    def plot_quantile_regression_and_more_corrected(df, col_name_str):
+    def plot_quantile_regression_and_more_corrected(df, col_name_str, patientUID, bx_id):
         plt.ioff()
         fig = plt.figure(figsize=(12, 8))
 
@@ -6957,13 +7632,14 @@ def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplot
 
         # Line plot for each trial
         for trial in range(1,num_mc_trials_plus_nom):
-            df_sp_trial = df[df["MC trial num"] == trial]
-            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial[col_name_str], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+            df_sp_trial = df[df["MC trial num"] == trial].sort_values(by='Z (Bx frame)') # sorting is to make sure that the lines are drawn properly
+            df_z_simple = df_sp_trial.drop_duplicates(subset=['Z (Bx frame)'], keep='first') # remove points that have the same z value so that the line plots look better
+            plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple[col_name_str], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
         
 
         
 
-        plt.title('Quantile Regression with Filled Areas Between Lines')
+        plt.title(f'Quantile Regression with Filled Areas Between Lines - {patientUID} - {bx_id}')
         plt.xlabel('Z (Bx frame)')
         plt.ylabel(col_name_str)
         plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal', 'Max density', 'Mean'], loc='best', facecolor = 'white')
@@ -6983,7 +7659,7 @@ def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplot
         
         sp_bx_mr_distribution_all_trials_df = specific_bx_structure["Output data frames"][output_dataframe_str]
 
-        fig = plot_quantile_regression_and_more_corrected(sp_bx_mr_distribution_all_trials_df, col_name_str)
+        fig = plot_quantile_regression_and_more_corrected(sp_bx_mr_distribution_all_trials_df, col_name_str, patientUID, bx_struct_roi)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)

@@ -78,7 +78,7 @@ def simulator_parallel(parallel_pool,
                        raw_data_mc_containment_dump_bool
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
-    completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+    completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     with live_display:
         live_display.start(refresh = True)
@@ -356,6 +356,9 @@ def simulator_parallel(parallel_pool,
                 num_sample_pts_in_bx = specific_bx_structure["Num sampled bx pts"]
                 specific_bx_structure_roi = specific_bx_structure["ROI"]
                 specific_bx_structure_refnum = specific_bx_structure["Ref #"]
+                bx_sim_bool = specific_bx_structure['Simulated bool']
+                bx_sim_type = specific_bx_structure['Simulated type']
+
                 bx_specific_biopsy_containment_desc = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi)
                 biopsies_progress.update(testing_biopsy_containment_task, description = bx_specific_biopsy_containment_desc)
 
@@ -500,7 +503,6 @@ def simulator_parallel(parallel_pool,
 
                     ### PLOT ALL RESULTS AGAINST SINGLE STRUCTURE
                     if plot_cupy_containment_distribution_results == True:
-
                         grand_cudf_dataframe = containment_info_grand_pandas_dataframe
 
                         # Extract and rebuild pts color data
@@ -543,10 +545,13 @@ def simulator_parallel(parallel_pool,
                                 non_bx_unique_struct_interpolated_pts_np_arr = non_bx_unique_struct_interslice_interpolation_information.interpolated_pts_np_arr
                                 non_bx_unique_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_unique_struct_interpolated_pts_np_arr, color = np.array([1,0.65,0])) # paint non tested structure in orange
                                 geom_list.append(non_bx_unique_struct_interpolated_pts_pcd)
-
+                        
+                        live_display.stop()
+                        print(f"Patient: {patientUID}, Bx: {specific_bx_structure_roi}, Test struct: {structure_roi}")
                         stopwatch.stop()
                         plotting_funcs.plot_geometries(*geom_list, label='Unknown')
                         stopwatch.start()
+                        live_display.start()
 
 
                     # free up GPU memory
@@ -619,6 +624,8 @@ def simulator_parallel(parallel_pool,
 
 
                 # add back patient, bx id information to dataframe
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Simulated type', bx_sim_type)
+                mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Simulated bool', bx_sim_bool)
                 mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
                 mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
                 mc_compiled_results_for_fixed_bx_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
@@ -679,6 +686,8 @@ def simulator_parallel(parallel_pool,
 
 
                 # add back patient, bx id information to dataframe
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Simulated type', bx_sim_type)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Simulated bool', bx_sim_bool)
                 mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
                 mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
                 mc_compiled_results_sum_to_one_for_fixed_bx_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
@@ -773,7 +782,15 @@ def simulator_parallel(parallel_pool,
                 # Add voxel columns
                 reference_dimension_col_name = "Z (Bx frame)"
                 bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.add_voxel_columns_helper_func(bx_mutual_containment_by_org_pt_all_combos_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
+                
 
+                # add back patient, bx id information to dataframe
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated type', bx_sim_type)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated bool', bx_sim_bool)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Patient ID', patientUID)
                 
                 #bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
 
@@ -2677,7 +2694,7 @@ def simulator_parallel(parallel_pool,
         
         
 
-        return master_structure_reference_dict, live_display
+        return master_structure_reference_dict, master_structure_info_dict, live_display
     
 
 

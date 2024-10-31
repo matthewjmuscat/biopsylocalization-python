@@ -7,8 +7,8 @@ import misc_tools
 from pandas.api.types import union_categoricals
 from scipy.stats import gaussian_kde
 import math_funcs
-
-
+import scipy.stats as stats
+import copy
 
 
 def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
@@ -272,6 +272,72 @@ def cohort_and_multi_biopsy_mc_sum_to_one_pt_wise_results_dataframe_builder(mast
     cohort_mc_sum_to_one_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_sum_to_one_pt_wise_results_dataframe, threshold=0.25)
 
     return cohort_mc_sum_to_one_pt_wise_results_dataframe
+
+
+def cohort_mc_sum_to_one_global_scores_dataframe_builder(cohort_mc_sum_to_one_pt_wise_results_dataframe):
+
+    def calculate_biopsy_statistics(df):
+        # Group by the relevant columns
+        grouped_df = df.groupby(['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Tissue class', 'Simulated bool', 'Simulated type'])
+        
+        # Manually specify column names and aggregation functions
+        stats_df = grouped_df.agg(
+            mean_binom_estimator=('Binomial estimator', 'mean'),
+            min_binom_estimator=('Binomial estimator', 'min'),
+            max_binom_estimator=('Binomial estimator', 'max'),
+            std_binom_estimator=('Binomial estimator', 'std'),
+            sem_binom_estimator=('Binomial estimator', lambda x: np.std(x, ddof=1) / np.sqrt(len(x))),
+            q05_binom_estimator=('Binomial estimator', lambda x: np.quantile(x, 0.05)),
+            q25_binom_estimator=('Binomial estimator', lambda x: np.quantile(x, 0.25)),
+            q50_binom_estimator=('Binomial estimator', lambda x: np.quantile(x, 0.50)),  # Median
+            q75_binom_estimator=('Binomial estimator', lambda x: np.quantile(x, 0.75)),
+            q95_binom_estimator=('Binomial estimator', lambda x: np.quantile(x, 0.95))
+        ).reset_index()
+
+        # Rename the columns for clarity
+        stats_df = stats_df.rename(columns={
+            'mean_binom_estimator': 'Global Mean BE',
+            'min_binom_estimator': 'Global Min BE',
+            'max_binom_estimator': 'Global Max BE',
+            'std_binom_estimator': 'Global STD BE',
+            'sem_binom_estimator': 'Global SEM BE',
+            'q05_binom_estimator': 'Global Q05 BE',
+            'q25_binom_estimator': 'Global Q25 BE',
+            'q50_binom_estimator': 'Global Q50 BE',
+            'q75_binom_estimator': 'Global Q75 BE',
+            'q95_binom_estimator': 'Global Q95 BE'
+        })
+
+        # Calculate CI 95 for Binomial estimator values using the vectorized function
+        stats_df['Global CI 95 BE (lower)'], stats_df['Global CI 95 BE (upper)'] = normal_CI_estimator_vectorized(
+            stats_df['Global Mean BE'], 
+            stats_df['Global SEM BE'],
+            confidence=0.95
+        )
+
+        return stats_df
+
+    # Copy the dataframe to avoid modifying the original
+    df = copy.deepcopy(cohort_mc_sum_to_one_pt_wise_results_dataframe)
+
+    # Convert the specified columns to categorical and ensure correct types
+    df = misc_tools.convert_categorical_columns(df, 
+        ['Patient ID', 'Bx ID', 'Bx refnum', 'Bx index', 'Tissue class', 'Simulated bool', 'Simulated type'], 
+        [str, str, str, int, str, bool, str]
+    )
+
+    # Calculate the statistics
+    cohort_mc_sum_to_one_global_scores_dataframe = calculate_biopsy_statistics(df)
+
+    # Downcast columns to optimize memory usage
+    cohort_mc_sum_to_one_global_scores_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_sum_to_one_global_scores_dataframe, threshold=0.25)
+
+    # Cleanup
+    del df
+
+    return cohort_mc_sum_to_one_global_scores_dataframe
+
+
 
 
 def cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(master_structure_reference_dict,
@@ -1288,11 +1354,11 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                                                     all_ref_key,
                                                     dose_ref):
     
-    cohort_global_dosimetry_dataframe = pandas.DataFrame()
+    cohort_global_dosimetry_dataframe_list = []
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
         if dose_ref in pydicom_item:
-            sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
+            sp_patient_all_biopsies_global_dosimetry_list = []
 
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 
@@ -1359,19 +1425,23 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                 sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
 
 
-                sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
+                sp_patient_all_biopsies_global_dosimetry_list.append(sp_bx_global_dose_stats_dataframe) 
                 
                 sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
 
                 specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
 
-            cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
+
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index = True)
+            
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
             
             sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
 
             pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry statistics"] = sp_patient_all_biopsies_global_dosimetry
 
-    
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index = True)
+
     cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
@@ -1384,11 +1454,11 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
                                                     all_ref_key,
                                                     dose_ref):
     
-    cohort_global_dosimetry_dataframe = pandas.DataFrame()
+    cohort_global_dosimetry_dataframe_list = []
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
         if dose_ref in pydicom_item:
-            sp_patient_all_biopsies_global_dosimetry = pandas.DataFrame()
+            sp_patient_all_biopsies_global_dosimetry_list = []
 
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
                 
@@ -1457,21 +1527,22 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
                 sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple dose (lower)","Global CI 95 tuple dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean dose', 'Global standard error dose'), axis=1).tolist()
                 sp_bx_global_dose_stats_dataframe[["Global CI 95 tuple nominal dose (lower)","Global CI 95 tuple nominal dose (upper)"]] = sp_bx_global_dose_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean dose', 'Global nominal standard error dose'), axis=1).tolist()
 
-
-                sp_patient_all_biopsies_global_dosimetry = pandas.concat([sp_patient_all_biopsies_global_dosimetry,sp_bx_global_dose_stats_dataframe], ignore_index = True)
+                sp_patient_all_biopsies_global_dosimetry_list.append(sp_bx_global_dose_stats_dataframe)
                 
                 sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, threshold=0.25)
 
                 specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number']  = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
 
-            
-            cohort_global_dosimetry_dataframe = pandas.concat([cohort_global_dosimetry_dataframe,sp_patient_all_biopsies_global_dosimetry], ignore_index = True)
-            
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index = True)
+
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
+
             sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_dosimetry, threshold=0.25)
 
             pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry by voxel statistics"] = sp_patient_all_biopsies_global_dosimetry
 
-            
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index = True)
+       
     cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
@@ -1480,6 +1551,174 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
 
 
 
+### I made this function with chatgpt to try to make it faster, it turns out to be very similar in terms of execution time, even when N_dose_simulations is very high like 10000, ACTUALLY it turns out to be very slightly slower
+def global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_reference_dict,
+                                                                 bx_ref,
+                                                                 all_ref_key,
+                                                                 dose_ref):
+    
+    cohort_global_dosimetry_dataframe_list = []
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry_list = []
+
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                
+                bx_struct_roi = specific_bx_structure["ROI"]
+                num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+                simulated_bool = specific_bx_structure["Simulated bool"]
+                bx_type = specific_bx_structure["Simulated type"]
+                bx_refnum = specific_bx_structure["Ref #"]
+
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] 
+
+                # Ensure correct dtype for the relevant columns, keeping grouping columns categorical
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(
+                    sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    ['Dose (Gy)', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], 
+                    [float, int, float, float]
+                )
+
+                
+                sp_bx_point_wise_dose_output_nominal_pandas_data_frame = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame[
+                    sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['MC trial num'] == 0
+                ]
+
+                # Aggregating necessary statistics for MC trial doses, grouping by 'Voxel index' only
+                sp_bx_global_grouped_df = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(
+                    ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+                ).agg(
+                    **{
+                        'Global mean dose': ('Dose (Gy)', 'mean'),
+                        'Global standard deviation dose': ('Dose (Gy)', 'std'),
+                        'Global standard error dose': ('Dose (Gy)', 'sem'),
+                        'Global max dose': ('Dose (Gy)', 'max'),
+                        'Global min dose': ('Dose (Gy)', 'min'),
+                        'Global q05 dose': ('Dose (Gy)', lambda x: x.quantile(0.05)),
+                        'Global q25 dose': ('Dose (Gy)', lambda x: x.quantile(0.25)),
+                        'Global q50 dose': ('Dose (Gy)', lambda x: x.quantile(0.50)),
+                        'Global q75 dose': ('Dose (Gy)', lambda x: x.quantile(0.75)),
+                        'Global q95 dose': ('Dose (Gy)', lambda x: x.quantile(0.95)),
+                    }
+                ).reset_index()
+
+
+                # Similarly, for nominal doses
+                sp_bx_nominal_global_grouped_df = sp_bx_point_wise_dose_output_nominal_pandas_data_frame.groupby(
+                    ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+                ).agg(
+                    **{
+                        'Global nominal mean dose': ('Dose (Gy)', 'mean'),
+                        'Global nominal standard deviation dose': ('Dose (Gy)', 'std'),
+                        'Global nominal standard error dose': ('Dose (Gy)', 'sem'),
+                        'Global nominal max dose': ('Dose (Gy)', 'max'),
+                        'Global nominal min dose': ('Dose (Gy)', 'min')
+                    }
+                ).reset_index()
+
+
+                # Apply the KDE calculation on the grouped doses, grouped by 'Voxel index'
+                """
+                global_by_voxel_max_density_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(
+                    ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+                )['Dose (Gy)'].apply(math_funcs.find_max_kde_dose, num_eval_pts=1000).reset_index(name='Global max density dose')
+                """
+                global_by_voxel_max_density_dose_series = math_funcs.apply_find_max_kde_dose_parallel(
+                    sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame,
+                    ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                    'Dose (Gy)',
+                    'Global max density dose',
+                    num_eval_pts=1000
+                )
+
+
+                # Merge the KDE results with the original aggregated dataframe
+                sp_bx_global_grouped_df = pandas.merge(
+                    sp_bx_global_grouped_df, 
+                    global_by_voxel_max_density_dose_series, 
+                    on=['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+                )
+
+
+                # Build the final DataFrame using the aggregated values
+                sp_bx_global_dose_stats_dataframe = sp_bx_global_grouped_df.assign(
+                    **{
+                        'Patient ID': patientUID,
+                        'Bx ID': bx_struct_roi,
+                        'Bx index': specific_bx_structure_index,
+                        'Bx refnum': bx_refnum,
+                        'Simulated bool': simulated_bool,
+                        'Simulated type': bx_type
+                    }
+                )
+
+                # Add the nominal columns with exact names
+                sp_bx_global_dose_stats_dataframe['Global nominal mean dose'] = sp_bx_nominal_global_grouped_df['Global nominal mean dose']
+                sp_bx_global_dose_stats_dataframe['Global nominal max dose'] = sp_bx_nominal_global_grouped_df['Global nominal max dose']
+                sp_bx_global_dose_stats_dataframe['Global nominal min dose'] = sp_bx_nominal_global_grouped_df['Global nominal min dose']
+                sp_bx_global_dose_stats_dataframe['Global nominal standard deviation dose'] = sp_bx_nominal_global_grouped_df['Global nominal standard deviation dose']
+                sp_bx_global_dose_stats_dataframe['Global nominal standard error dose'] = sp_bx_nominal_global_grouped_df['Global nominal standard error dose']
+
+                # Calculate CI 95 for doses using the vectorized function
+                sp_bx_global_dose_stats_dataframe['Global CI 95 tuple dose (lower)'], sp_bx_global_dose_stats_dataframe['Global CI 95 tuple dose (upper)'] = normal_CI_estimator_vectorized(
+                    sp_bx_global_dose_stats_dataframe['Global mean dose'], 
+                    sp_bx_global_dose_stats_dataframe['Global standard error dose'],
+                    confidence=0.95
+                )
+
+                sp_bx_global_dose_stats_dataframe['Global CI 95 tuple nominal dose (lower)'], sp_bx_global_dose_stats_dataframe['Global CI 95 tuple nominal dose (upper)'] = normal_CI_estimator_vectorized(
+                    sp_bx_global_dose_stats_dataframe['Global nominal mean dose'], 
+                    sp_bx_global_dose_stats_dataframe['Global nominal standard error dose'],
+                    confidence=0.95
+                )
+
+                # Reorder the DataFrame columns
+                new_column_order = ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)', 'Patient ID',
+                    'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type',
+                    'Global max density dose', 'Global mean dose', 'Global max dose',
+                    'Global min dose', 'Global standard deviation dose',
+                    'Global standard error dose', 'Global q05 dose', 'Global q25 dose',
+                    'Global q50 dose', 'Global q75 dose', 'Global q95 dose',
+                    'Global nominal mean dose', 'Global nominal max dose',
+                    'Global nominal min dose', 'Global nominal standard deviation dose',
+                    'Global nominal standard error dose', 'Global CI 95 tuple dose (lower)',
+                    'Global CI 95 tuple dose (upper)',
+                    'Global CI 95 tuple nominal dose (lower)',
+                    'Global CI 95 tuple nominal dose (upper)']
+                sp_bx_global_dose_stats_dataframe = sp_bx_global_dose_stats_dataframe[new_column_order]
+
+                # Append to the list of dataframes
+                sp_patient_all_biopsies_global_dosimetry_list.append(sp_bx_global_dose_stats_dataframe)
+
+                # Downcast dataframe
+                sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(
+                    sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    threshold=0.25
+                )
+
+                # Store the updated dataframe back to the dictionary
+                specific_bx_structure['Output data frames']['Point-wise dose output by MC trial number'] = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame
+
+            # Concatenate all biopsy results for the patient
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index=True)
+
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
+
+            # Downcast dataframe after concatenation
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(
+                sp_patient_all_biopsies_global_dosimetry, 
+                threshold=0.25
+            )
+
+            # Store back to the original dictionary
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry by voxel statistics"] = sp_patient_all_biopsies_global_dosimetry
+
+    # Final concatenation for all patients
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
+
+    return cohort_global_dosimetry_dataframe
 
 
 
@@ -2013,6 +2252,12 @@ def normal_CI_estimator_by_dataframe_row(row, mean_col_name = 'Mean', std_err_co
 
 
 
+def normal_CI_estimator_vectorized(mean_series, std_err_series, confidence = 0.95):
+    """Estimate normal confidence intervals for entire columns."""
+    z_score = stats.norm.ppf((1 + confidence) / 2) # Two-tailed z-score for the confidence level
+    ci_lower = mean_series - z_score * std_err_series  # 95% CI lower bound
+    ci_upper = mean_series + z_score * std_err_series  # 95% CI upper bound
+    return ci_lower, ci_upper
 
 
 
@@ -2157,7 +2402,7 @@ def global_mr_values_dataframe_builder(master_structure_reference_dict,
                                                     output_dataframe_str,
                                                     multi_structure_output_dataframe_str):
     
-    cohort_global_mr_dataframe = pandas.DataFrame()
+    cohort_global_mr_dataframe_list = []
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
         if mr_adc_ref not in pydicom_item:
@@ -2166,7 +2411,7 @@ def global_mr_values_dataframe_builder(master_structure_reference_dict,
         mr_adc_subdict = pydicom_item[mr_adc_ref]
         col_name_str = col_name_str_prefix + " " +str(mr_adc_subdict["Units"])
 
-        sp_patient_all_biopsies_global_mr = pandas.DataFrame()
+        sp_patient_all_biopsies_global_mr_list = []
 
         for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
             
@@ -2234,19 +2479,22 @@ def global_mr_values_dataframe_builder(master_structure_reference_dict,
             sp_bx_global_mr_stats_dataframe[["Global CI 95 (lower)","Global CI 95 (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean', 'Global SEM'), axis=1).tolist()
             sp_bx_global_mr_stats_dataframe[["Global CI 95 nominal (lower)","Global CI 95 nominal (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean', 'Global nominal SEM'), axis=1).tolist()
 
-
-            sp_patient_all_biopsies_global_mr = pandas.concat([sp_patient_all_biopsies_global_mr,sp_bx_global_mr_stats_dataframe], ignore_index = True)
+            sp_patient_all_biopsies_global_mr_list.append(sp_bx_global_mr_stats_dataframe)
             
             sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(sp_bx_mr_distribution_all_trials_df, threshold=0.25)
 
             specific_bx_structure['Output data frames'][output_dataframe_str]  = sp_bx_mr_distribution_all_trials_df
-
-        cohort_global_mr_dataframe = pandas.concat([cohort_global_mr_dataframe,sp_patient_all_biopsies_global_mr], ignore_index = True)
+        
+        sp_patient_all_biopsies_global_mr = pandas.concat(sp_patient_all_biopsies_global_mr_list, ignore_index = True)
+        
+        cohort_global_mr_dataframe_list.append(sp_patient_all_biopsies_global_mr)
         
         sp_patient_all_biopsies_global_mr = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_mr, threshold=0.25)
 
         pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["MR - " + str(multi_structure_output_dataframe_str)] = sp_patient_all_biopsies_global_mr 
     
+    cohort_global_mr_dataframe = pandas.concat(cohort_global_mr_dataframe_list, ignore_index = True)
+
     cohort_global_mr_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_mr_dataframe, threshold=0.25)
 
     return cohort_global_mr_dataframe
@@ -2262,7 +2510,7 @@ def global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
                                                     output_dataframe_str,
                                                     multi_structure_output_dataframe_str):
     
-    cohort_global_by_voxel_mr_dataframe = pandas.DataFrame()
+    cohort_global_by_voxel_mr_dataframe_list = []
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
 
@@ -2272,7 +2520,7 @@ def global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
         mr_adc_subdict = pydicom_item[mr_adc_ref]
         col_name_str = col_name_str_prefix + " " +str(mr_adc_subdict["Units"])
 
-        sp_patient_all_biopsies_global_mr = pandas.DataFrame()
+        sp_patient_all_biopsies_global_mr_list = []
 
         for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
             
@@ -2346,22 +2594,212 @@ def global_mr_by_voxel_values_dataframe_builder(master_structure_reference_dict,
             sp_bx_global_mr_stats_dataframe[["Global CI 95 (lower)","Global CI 95 (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global mean', 'Global SEM'), axis=1).tolist()
             sp_bx_global_mr_stats_dataframe[["Global CI 95 nominal (lower)","Global CI 95 nominal (upper)"]] = sp_bx_global_mr_stats_dataframe.apply(normal_CI_estimator_by_dataframe_row, args=('Global nominal mean', 'Global nominal SEM'), axis=1).tolist()
 
-
-            sp_patient_all_biopsies_global_mr = pandas.concat([sp_patient_all_biopsies_global_mr,sp_bx_global_mr_stats_dataframe], ignore_index = True)
+            sp_patient_all_biopsies_global_mr_list.append(sp_bx_global_mr_stats_dataframe)
             
             sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(sp_bx_mr_distribution_all_trials_df, threshold=0.25)
 
             specific_bx_structure['Output data frames'][output_dataframe_str]  = sp_bx_mr_distribution_all_trials_df
 
-        cohort_global_by_voxel_mr_dataframe = pandas.concat([cohort_global_by_voxel_mr_dataframe,sp_patient_all_biopsies_global_mr], ignore_index = True)
-        
+
+        sp_patient_all_biopsies_global_mr = pandas.concat(sp_patient_all_biopsies_global_mr_list, ignore_index = True)
+
+        cohort_global_by_voxel_mr_dataframe_list.append(sp_patient_all_biopsies_global_mr)
+
         sp_patient_all_biopsies_global_mr = convert_columns_to_categorical_and_downcast(sp_patient_all_biopsies_global_mr, threshold=0.25)
 
         pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["MR - " + str(multi_structure_output_dataframe_str)] = sp_patient_all_biopsies_global_mr
 
+    cohort_global_by_voxel_mr_dataframe = pandas.concat(cohort_global_by_voxel_mr_dataframe_list, ignore_index = True)
+
     cohort_global_by_voxel_mr_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_by_voxel_mr_dataframe, threshold=0.25)
 
     return cohort_global_by_voxel_mr_dataframe
+
+
+
+### I made this function with chatgpt to try to make it faster, it turns out to be very similar in terms of execution time, even when N_dose_simulations is very high like 10000, ACTUALLY it turns out to be very slightly slower
+def global_mr_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_reference_dict,
+                                                          bx_ref,
+                                                          all_ref_key,
+                                                          mr_adc_ref,
+                                                          col_name_str_prefix,
+                                                          output_dataframe_str,
+                                                          multi_structure_output_dataframe_str):
+    
+    cohort_global_by_voxel_mr_dataframe_list = []
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+
+        if mr_adc_ref not in pydicom_item:
+            continue
+
+        mr_adc_subdict = pydicom_item[mr_adc_ref]
+        col_name_str = col_name_str_prefix + " " + str(mr_adc_subdict["Units"])
+
+        sp_patient_all_biopsies_global_mr_list = []
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            
+            bx_struct_roi = specific_bx_structure["ROI"]
+            num_sampled_bx_pts = specific_bx_structure["Num sampled bx pts"]
+            simulated_bool = specific_bx_structure["Simulated bool"]
+            bx_type = specific_bx_structure["Simulated type"]
+            bx_refnum = specific_bx_structure["Ref #"]
+
+            sp_bx_mr_distribution_all_trials_df = specific_bx_structure['Output data frames'][output_dataframe_str]
+
+            # Ensure correct dtype for the relevant columns
+            sp_bx_mr_distribution_all_trials_df = misc_tools.convert_categorical_columns(
+                sp_bx_mr_distribution_all_trials_df, 
+                [col_name_str, 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], 
+                [float, int, float, float]
+            )
+
+            sp_bx_mr_distribution_all_trials_df_nominal = sp_bx_mr_distribution_all_trials_df[
+                sp_bx_mr_distribution_all_trials_df['MC trial num'] == 0
+            ]
+
+            # Aggregating necessary statistics for MR values, grouping by 'Voxel index'
+            # Grouping by all three columns: 'Voxel index', 'Voxel begin (Z)', and 'Voxel end (Z)'
+            sp_bx_global_grouped_df = sp_bx_mr_distribution_all_trials_df.groupby(
+                ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+            ).agg(
+                **{
+                    'Global mean': (col_name_str, 'mean'),
+                    'Global SD': (col_name_str, 'std'),
+                    'Global SEM': (col_name_str, 'sem'),
+                    'Global max': (col_name_str, 'max'),
+                    'Global min': (col_name_str, 'min'),
+                    'Global q05': (col_name_str, lambda x: x.quantile(0.05)),
+                    'Global q25': (col_name_str, lambda x: x.quantile(0.25)),
+                    'Global q50': (col_name_str, lambda x: x.quantile(0.50)),
+                    'Global q75': (col_name_str, lambda x: x.quantile(0.75)),
+                    'Global q95': (col_name_str, lambda x: x.quantile(0.95)),
+                }
+            ).reset_index()
+
+            # Similarly, for nominal MR values, grouping by 'Voxel index'
+            sp_bx_nominal_global_grouped_df = sp_bx_mr_distribution_all_trials_df_nominal.groupby(
+                ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+            ).agg(
+                **{
+                    'Global nominal mean': (col_name_str, 'mean'),
+                    'Global nominal SD': (col_name_str, 'std'),
+                    'Global nominal SEM': (col_name_str, 'sem'),
+                    'Global nominal max': (col_name_str, 'max'),
+                    'Global nominal min': (col_name_str, 'min')
+                }
+            ).reset_index()
+
+
+            # Apply the KDE calculation on the grouped MR values
+            """
+            global_by_voxel_max_density_mr_series = sp_bx_mr_distribution_all_trials_df.groupby(
+                ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+            )[col_name_str].apply(math_funcs.find_max_density_xval_via_kde, num_eval_pts=1000).reset_index(name='Global max density')
+            """
+
+            global_by_voxel_max_density_mr_series = math_funcs.apply_find_max_kde_xval_parallel(
+                    sp_bx_mr_distribution_all_trials_df,
+                    ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                    col_name_str,
+                    'Global max density',
+                    num_eval_pts=1000
+                )
+
+
+            # Merge the KDE results with the original aggregated dataframe
+            sp_bx_global_grouped_df = pandas.merge(
+                sp_bx_global_grouped_df, 
+                global_by_voxel_max_density_mr_series, 
+                on=['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+            )
+
+
+            # Build the final DataFrame using the aggregated values
+            sp_bx_global_mr_stats_dataframe = sp_bx_global_grouped_df.assign(
+                **{
+                    'Patient ID': patientUID,
+                    'Bx ID': bx_struct_roi,
+                    'Bx index': specific_bx_structure_index,
+                    'Bx refnum': bx_refnum,
+                    'Simulated bool': simulated_bool,
+                    'Simulated type': bx_type,
+                    'Units': str(mr_adc_subdict["Units"])
+                }
+            )
+
+            # Add the nominal columns with exact names
+            sp_bx_global_mr_stats_dataframe['Global nominal mean'] = sp_bx_nominal_global_grouped_df['Global nominal mean']
+            sp_bx_global_mr_stats_dataframe['Global nominal max'] = sp_bx_nominal_global_grouped_df['Global nominal max']
+            sp_bx_global_mr_stats_dataframe['Global nominal min'] = sp_bx_nominal_global_grouped_df['Global nominal min']
+            sp_bx_global_mr_stats_dataframe['Global nominal SD'] = sp_bx_nominal_global_grouped_df['Global nominal SD']
+            sp_bx_global_mr_stats_dataframe['Global nominal SEM'] = sp_bx_nominal_global_grouped_df['Global nominal SEM']
+
+            # Calculate CI 95 for MR values using the vectorized function
+            sp_bx_global_mr_stats_dataframe['Global CI 95 (lower)'], sp_bx_global_mr_stats_dataframe['Global CI 95 (upper)'] = normal_CI_estimator_vectorized(
+                sp_bx_global_mr_stats_dataframe['Global mean'], 
+                sp_bx_global_mr_stats_dataframe['Global SEM'],
+                confidence=0.95
+            )
+
+            sp_bx_global_mr_stats_dataframe['Global CI 95 nominal (lower)'], sp_bx_global_mr_stats_dataframe['Global CI 95 nominal (upper)'] = normal_CI_estimator_vectorized(
+                sp_bx_global_mr_stats_dataframe['Global nominal mean'], 
+                sp_bx_global_mr_stats_dataframe['Global nominal SEM'],
+                confidence=0.95
+            )
+
+            # Reorder the DataFrame columns
+            new_column_order = ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)', 'Patient ID',
+                'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type', 'Units',
+                'Global max density', 'Global mean', 'Global max',
+                'Global min', 'Global SD',
+                'Global SEM', 'Global q05', 'Global q25',
+                'Global q50', 'Global q75', 'Global q95',
+                'Global nominal mean', 'Global nominal max',
+                'Global nominal min', 'Global nominal SD',
+                'Global nominal SEM', 'Global CI 95 (lower)',
+                'Global CI 95 (upper)',
+                'Global CI 95 nominal (lower)',
+                'Global CI 95 nominal (upper)']
+            sp_bx_global_mr_stats_dataframe = sp_bx_global_mr_stats_dataframe[new_column_order]
+
+            # Append to the list of dataframes
+            sp_patient_all_biopsies_global_mr_list.append(sp_bx_global_mr_stats_dataframe)
+
+            # Downcast dataframe
+            sp_bx_mr_distribution_all_trials_df = convert_columns_to_categorical_and_downcast(
+                sp_bx_mr_distribution_all_trials_df, 
+                threshold=0.25
+            )
+
+            # Store the updated dataframe back to the dictionary
+            specific_bx_structure['Output data frames'][output_dataframe_str] = sp_bx_mr_distribution_all_trials_df
+
+        # Concatenate all biopsy results for the patient
+        sp_patient_all_biopsies_global_mr = pandas.concat(sp_patient_all_biopsies_global_mr_list, ignore_index=True)
+
+        cohort_global_by_voxel_mr_dataframe_list.append(sp_patient_all_biopsies_global_mr)
+
+        # Downcast dataframe after concatenation
+        sp_patient_all_biopsies_global_mr = convert_columns_to_categorical_and_downcast(
+            sp_patient_all_biopsies_global_mr, 
+            threshold=0.25
+        )
+
+        # Store back to the original dictionary
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["MR - " + str(multi_structure_output_dataframe_str)] = sp_patient_all_biopsies_global_mr
+
+    # Final concatenation for all patients
+    cohort_global_by_voxel_mr_dataframe = pandas.concat(cohort_global_by_voxel_mr_dataframe_list, ignore_index=True)
+    cohort_global_by_voxel_mr_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_by_voxel_mr_dataframe, threshold=0.25)
+
+    return cohort_global_by_voxel_mr_dataframe
+
+
+
+
+
 
 
 

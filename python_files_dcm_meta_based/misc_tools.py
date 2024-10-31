@@ -67,7 +67,7 @@ def structure_volume_calculator(structure_points_array,
                                 ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
-    completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+    completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     #with live_display:
     live_display.start(refresh = True)
@@ -246,7 +246,7 @@ def structure_dimensions_calculator(structure_points_array,
                                 live_display
                                 ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
-    completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+    completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     #with live_display:
     live_display.start(refresh = True)

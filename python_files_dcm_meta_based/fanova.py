@@ -49,7 +49,7 @@ def fanova_analysis(
             ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
-    completed_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
+    completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     with live_display:
         live_display.start(refresh = True)
@@ -168,7 +168,7 @@ def fanova_analysis(
         live_display.refresh()
         
         # Save the number of FANOVA variance vars
-        master_structure_info_dict["Global"]["FANOVA: num variance vars"] = num_variance_vars
+        master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: num variance vars"] = num_variance_vars
 
         default_output = "Initializing"
         processing_patients_task_main_description = "[red]Generating FANOVA arrays [{}]...".format(default_output)
@@ -907,8 +907,8 @@ def fanova_analysis(
             #live_display.stop()
             creating_sobol_containment_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol containment DFs ...", total=num_patients)
             creating_sobol_containment_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol containment DFs", total=num_patients, visible = False)  
-            num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
-            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+            num_variance_vars = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: num variance vars"] 
+            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
             for patientUID,pydicom_item in master_structure_reference_dict.items():  
                 patients_progress.update(creating_sobol_containment_dataframes_patient_task, description = "[red]Creating Sobol containment DFs...".format(patientUID), total=num_patients)
 
@@ -991,8 +991,8 @@ def fanova_analysis(
             #live_display.stop()
             creating_sobol_containment_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol containment (DIL tissue) DFs ...", total=num_patients)
             creating_sobol_containment_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol containment (DIL tissue) DFs", total=num_patients, visible = False)  
-            num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
-            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+            num_variance_vars = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: num variance vars"] 
+            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
             for patientUID,pydicom_item in master_structure_reference_dict.items():  
                 patients_progress.update(creating_sobol_containment_dataframes_patient_task, description = "[red]Creating Sobol containment (DIL tissue) DFs...".format(patientUID), total=num_patients)
 
@@ -1548,8 +1548,8 @@ def fanova_analysis(
 
             creating_sobol_dosimetry_dataframes_patient_task = patients_progress.add_task("[red]Creating Sobol dosimetry DFs ...", total=num_patients)
             creating_sobol_dosimetry_dataframes_patient_task_completed = completed_progress.add_task("[green]Creating Sobol dosimetry DFs", total=num_patients, visible = False)  
-            num_variance_vars = master_structure_info_dict["Global"]["FANOVA: num variance vars"] 
-            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA: sobol var names by index"]
+            num_variance_vars = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: num variance vars"] 
+            fanova_sobol_indices_names_by_index = master_structure_info_dict["Global"]["FANOVA info"]["FANOVA: sobol var names by index"]
             for patientUID,pydicom_item in master_structure_reference_dict.items():  
                 patients_progress.update(creating_sobol_dosimetry_dataframes_patient_task, description = "[red]Creating Sobol dosimetry DFs...".format(patientUID), total=num_patients)
 
@@ -1617,7 +1617,7 @@ def fanova_analysis(
         master_structure_info_dict['Global']["FANOVA info"]["Num fanova dose simulations"] = num_FANOVA_dose_simulations_input
         
         list_of_fanova_sim_types = [perform_dose_fanova,perform_containment_fanova]
-        master_structure_info_dict['Global']['FANOVA sim performed'] = any(list_of_fanova_sim_types)
-        master_structure_info_dict['Global']['FANOVA containment sim performed'] = perform_containment_fanova
-        master_structure_info_dict['Global']['FANOVA dose sim performed'] = perform_dose_fanova
+        master_structure_info_dict['Global']["FANOVA info"]['FANOVA sim performed'] = any(list_of_fanova_sim_types)
+        master_structure_info_dict['Global']["FANOVA info"]['FANOVA containment sim performed'] = perform_containment_fanova
+        master_structure_info_dict['Global']["FANOVA info"]['FANOVA dose sim performed'] = perform_dose_fanova
             
