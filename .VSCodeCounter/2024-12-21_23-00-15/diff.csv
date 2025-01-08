@@ -1,0 +1,11 @@
+"filename", "language", "Python", "JSON", "comment", "blank", "total"
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/MC_simulator_convex.py", "Python", 111, 0, 20, 37, 168
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/biopsy_localization_convex_main.py", "Python", 143, 0, 179, 79, 401
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dataframe_builders.py", "Python", 206, 0, 148, 122, 476
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dose_lattice_helper_funcs.py", "Python", 60, 0, 81, 39, 180
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/dosimetric_localizer.py", "Python", 1, 0, 0, 2, 3
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/math_funcs.py", "Python", 10, 0, 4, 5, 19
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/plotting_funcs.py", "Python", 58, 0, 20, 18, 96
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/production_plots.py", "Python", 298, 0, 92, 95, 485
+"/home/mjm/Documents/UBC/Research/biopsylocalization-new/biopsylocalization-python/python_files_dcm_meta_based/test_code.ipynb", "JSON", 0, 4100, 0, 0, 4100
+"Total", "-", 887, 4100, 544, 397, 5928

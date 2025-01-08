@@ -89,7 +89,7 @@ from collections import defaultdict
 import lattice_reconstruction_tools
 import MC_prepper_funcs 
 import MC_simulator_MR
-
+import dose_lattice_helper_funcs
 
 def main():
     
@@ -196,7 +196,9 @@ def main():
     preprocessed_master_structure_info_dict_for_export_name = 'master_structure_info_dict'
     output_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict_results'
     output_master_structure_info_dict_for_export_name = 'master_structure_info_dict_results'
-    lower_bound_dose_percent = 5
+    lower_bound_dose_value = None # can also set to None and will try to assign by pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
+    #lower_bound_dose_percent = 10
+    lower_bound_dose_gradient_value = 0
     lower_bound_mr_adc_value = 500
     upper_bound_mr_adc_value = 900
     color_flattening_deg = 3
@@ -230,8 +232,8 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10000
-    num_MC_dose_simulations_input = 100
+    num_MC_containment_simulations_input = 10
+    num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -309,9 +311,10 @@ def main():
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
     num_cumulative_dvh_plots_to_show = 25
     num_differential_dvh_plots_to_show = 25
-    volume_DVH_percent_dose = [100,125,150,200,300] # These are V%
+    v_percent_DVH_to_calc_list = [100,125,150,200,300] # These are V%
+    d_x_DVH_to_calc_list = [2,50,98] 
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
-    
+
     #fanova
     num_FANOVA_containment_simulations_input = 0 # must be a power of two for the scipy function to work, 2^10 is good
     num_FANOVA_dose_simulations_input = 0
@@ -423,8 +426,9 @@ def main():
                                              "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": False, #
-                                             "Plot name": " - dose-regression-quantiles_axial_dose_distribution_matplotlib"
+                                            {"Plot bool": True, #
+                                             "Plot name": " - dose-regression-quantiles_axial_dose_distribution_matplotlib",
+                                             "Num rand trials to show": 10
                                              },
                                         "Axial dose distribution quantiles regression plot": \
                                             {"Plot bool": False, #
@@ -436,11 +440,11 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Axial dose voxelized ridgeline plot": \
-                                            {"Plot bool": False, 
+                                            {"Plot bool": True, 
                                              "Plot name": " - dose_voxelized_ridgeline",
                                              },
                                         "Axial dose and tissue colored voxelized ridgeline plot": \
-                                            {"Plot bool": False, 
+                                            {"Plot bool": True, 
                                              "Plot name": " - dose_and_dil_tissue_colored_voxelized_ridgeline",
                                              },
                                         "Axial dose distribution voxelized violin plot": \
@@ -453,17 +457,17 @@ def main():
                                              "Plot name": f' - dose-DVH-differential_dvh_showing_{int(num_differential_dvh_plots_to_show)}_trials'
                                              },
                                         "Differential DVH dose binned all trials box plot": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot',
                                              "Box plot color": 'rgba(0, 92, 171, 1)',
                                              "Nominal point color": 'rgba(227, 27, 35, 1)'
                                              },
                                         "Differential DVH dose quantiles plot seaborn": \
-                                            {"Plot bool": False,  #
+                                            {"Plot bool": True,  #
                                              "Plot name": ' - dose-differential_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH quantile regression seaborn": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - dose-cumulative_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH showing N trials plot": \
@@ -475,8 +479,12 @@ def main():
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_regression_only'
                                              },
                                         "Cumulative DVH quantile regression all trials plot colorwash": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_colorwash'
+                                             },
+                                        "Cohort - Dosimetry boxplots all biopsies": \
+                                            {"Plot bool": True, #
+                                             "Plot name": 'Cohort all biopsies global dosimetry boxplot'
                                              },
                                         "Tissue classification scatter and regression probabilities all trials plot": \
                                             {"Plot bool": False, #
@@ -488,11 +496,11 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Tissue classification sum-to-one plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
                                             },
                                         "Tissue classification sum-to-one nominal plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_sum-to-one_nominal_chart',
                                             },
                                         "Axial tissue class voxelized ridgeline plot": \
@@ -1285,7 +1293,8 @@ def main():
                 #important_info.add_text_line("important info will appear here1", live_display)
                 #rich_layout["main-right"].update(important_info_Text)
             
-                #live_display.stop()
+                live_display.stop()
+                """
                 patientUID_default = "Initializing"
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
                 processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
@@ -1359,7 +1368,7 @@ def main():
                     
                     
                     # plot labelled dose point cloud (note due to the number of labels, this is very buggy and doesnt display properly as of open3d 0.16.1)
-                    """
+                    """ """
                     patients_progress.stop_task(processing_patients_dose_task)
                     completed_progress.stop_task(processing_patients_dose_task_completed)
                     stopwatch.stop()
@@ -1367,7 +1376,7 @@ def main():
                     stopwatch.start()
                     patients_progress.start_task(processing_patients_dose_task)
                     completed_progress.start_task(processing_patients_dose_task_completed)
-                    """
+                    """ """
 
                     # plot dose point cloud cubic lattice (color only)
                     dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
@@ -1402,12 +1411,187 @@ def main():
                     dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
 
 
+                    #gradient_vector_lattice, gradient_norm_lattice = dose_lattice_helper_funcs.calculate_gradient_lattices(dose_pixel_slice_list, pixel_spacing, grid_frame_offset_vec_list)
 
                     patients_progress.update(processing_patients_dose_task, advance=1)
                     completed_progress.update(processing_patients_dose_task_completed, advance=1)
                 
                 patients_progress.update(processing_patients_dose_task, visible=False)
                 completed_progress.update(processing_patients_dose_task_completed, visible=True)
+                """
+
+
+
+                
+
+
+
+                patientUID_default = "Initializing"
+                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
+                processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
+
+                processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
+
+                # Main loop for processing patients
+                for patientUID, pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
+
+                    if dose_ref not in pydicom_item:
+                        patients_progress.update(processing_patients_dose_task, advance=1)
+                        completed_progress.update(processing_patients_dose_task_completed, advance=1)
+                        continue
+
+                    dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
+                    conversion_matrix = np.array([
+                        [dose_ref_dict["Image orientation patient"][0] * dose_ref_dict["Pixel spacing"][1], 
+                        dose_ref_dict["Image orientation patient"][3] * dose_ref_dict["Pixel spacing"][0], 
+                        0, dose_ref_dict["Image position patient"][0]],
+                        [dose_ref_dict["Image orientation patient"][1] * dose_ref_dict["Pixel spacing"][1], 
+                        dose_ref_dict["Image orientation patient"][4] * dose_ref_dict["Pixel spacing"][0], 
+                        0, dose_ref_dict["Image position patient"][1]],
+                        [dose_ref_dict["Image orientation patient"][2] * dose_ref_dict["Pixel spacing"][1], 
+                        dose_ref_dict["Image orientation patient"][5] * dose_ref_dict["Pixel spacing"][0], 
+                        0, dose_ref_dict["Image position patient"][2]],
+                        [0, 0, 0, 1]
+                    ])
+
+                    phys_space_dose_map_3d_arr = dose_lattice_helper_funcs.build_dose_grid(
+                        dose_pixel_slices=dose_ref_dict["Dose pixel arr"],
+                        scaling_factor=dose_ref_dict["Dose grid scaling"],
+                        conversion_matrix=conversion_matrix,
+                        grid_frame_offset_vec_list=dose_ref_dict["Grid frame offset vector"]
+                    )
+
+                    """
+                    # plot dose point cloud cubic lattice (color only)
+                    dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
+
+                    if show_3d_dose_renderings == True:
+
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(dose_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+
+                    thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                    
+                    # plot dose point cloud thresholded cubic lattice (color only)
+                    if show_3d_dose_renderings_thresholded == True:
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(thresholded_dose_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+                    """
+                    
+
+
+                    ### DOSE GRADIENT
+
+
+                    # Scale the dose values before computing gradients
+                    scaled_dose_data = dose_ref_dict["Dose pixel arr"] * dose_ref_dict["Dose grid scaling"]
+
+                    gradient_vector_lattice, gradient_norm_lattice, normalized_gradient_vector_lattice = dose_lattice_helper_funcs.calculate_gradient_lattices(scaled_dose_data, dose_ref_dict["Pixel spacing"], dose_ref_dict["Grid frame offset vector"])
+                    
+                    """
+                    Returns:
+                        phys_space_gradient_map_3d_arr (numpy.ndarray): Updated slice-wise array with gradients and normalized gradients added.
+                            Shape: (num_slices, num_voxels_per_slice, 14).
+                            Columns:
+                                [0]  - Slice index
+                                [1]  - Row index (j)
+                                [2]  - Column index (i)
+                                [3]  - X-coordinate (physical space)
+                                [4]  - Y-coordinate (physical space)
+                                [5]  - Z-coordinate (physical space)
+                                [6]  - Dose value
+                                [7]  - Gradient in X (Gx)
+                                [8]  - Gradient in Y (Gy)
+                                [9]  - Gradient in Z (Gz)
+                                [10] - Gradient norm (|G|)
+                                [11] - Normalized Gradient in X (NGx)
+                                [12] - Normalized Gradient in Y (NGy)
+                                [13] - Normalized Gradient in Z (NGz)
+                    """
+                    phys_space_dose_map_and_gradient_map_3d_arr = dose_lattice_helper_funcs.map_gradient_to_physical_space(
+                        phys_space_dose_map_3d_arr=phys_space_dose_map_3d_arr,
+                        gradient_vector_lattice=gradient_vector_lattice,
+                        gradient_norm_lattice=gradient_norm_lattice,
+                        normalized_gradient_vector_lattice = normalized_gradient_vector_lattice
+                    )
+
+                    
+                    dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
+                                                                                                                        paint_dose_color=True,
+                                                                                                                        arrow_scale=1.0,
+                                                                                                                        truncate_below_dose=None,
+                                                                                                                        truncate_below_gradient_norm=None
+                                                                                                                    )
+                    if show_3d_dose_renderings == True:
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(dose_point_cloud, dose_gradient_arrows_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+
+                    if lower_bound_dose_value == None:
+                        try:
+                            lower_bound_dose_value = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
+                        except Exception as e:
+                            lower_bound_dose_value = 0
+
+                    thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
+                                                                                                                        paint_dose_color=True,
+                                                                                                                        arrow_scale=1.0,
+                                                                                                                        truncate_below_dose=lower_bound_dose_value,
+                                                                                                                        truncate_below_gradient_norm=lower_bound_dose_gradient_value
+                                                                                                                    )
+
+                    # plot dose point cloud thresholded cubic lattice (color only)
+                    if show_3d_dose_renderings_thresholded == True:
+                        patients_progress.stop_task(processing_patients_dose_task)
+                        completed_progress.stop_task(processing_patients_dose_task_completed)
+                        stopwatch.stop()
+                        plotting_funcs.plot_geometries(thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud)
+                        stopwatch.start()
+                        patients_progress.start_task(processing_patients_dose_task)
+                        completed_progress.start_task(processing_patients_dose_task_completed)
+                    
+
+                    dose_ref_dict["Dose and gradient phys space and pixel 3d arr"] = phys_space_dose_map_and_gradient_map_3d_arr
+                    #dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
+                    dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
+                    dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+                    dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
+                    dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
+
+                    # Update progress
+                    patients_progress.update(processing_patients_dose_task, advance=1)
+                    completed_progress.update(processing_patients_dose_task_completed, advance=1)
+
+                # Finalize progress display
+                patients_progress.update(processing_patients_dose_task, visible=False)
+                completed_progress.update(processing_patients_dose_task_completed, visible=True)
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4882,14 +5066,30 @@ def main():
                         continue
 
                     dose_ref_dict = pydicom_item[dose_ref]
-                    phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+                    phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
+                    #phys_space_dose_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr[:, :, :7]
 
                     # create dose point cloud and thresholded dose point cloud
-                    dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
-                    thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
+                    #dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
+                    #thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
                     
+                    dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
+                                                                                                                        paint_dose_color=True,
+                                                                                                                        arrow_scale=1.0,
+                                                                                                                        truncate_below_dose=None,
+                                                                                                                        truncate_below_gradient_norm=None
+                                                                                                                    )
+                    thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
+                                                                                                                        paint_dose_color=True,
+                                                                                                                        arrow_scale=1.0,
+                                                                                                                        truncate_below_dose=lower_bound_dose_value,
+                                                                                                                        truncate_below_gradient_norm=lower_bound_dose_gradient_value
+                                                                                                                    )
+
                     dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
                     dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
+                    dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
+                    dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
 
                     master_structure_reference_dict[patientUID][dose_ref] = dose_ref_dict
 
@@ -5148,6 +5348,7 @@ def main():
                     if dose_ref in pydicom_item:
                         dose_ref_dict = pydicom_item[dose_ref]
                         dose_grid_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
+                        dose_grid_gradient_pcd = dose_ref_dict["Dose grid gradient point cloud thresholded"]
 
                     # Include MR pcd if present
                     if mr_adc_ref in pydicom_item:
@@ -5168,7 +5369,7 @@ def main():
 
                     # Include the dosimetry
                     if dose_ref in pydicom_item:
-                        pcd_list_dose = pcd_list + [dose_grid_pcd]
+                        pcd_list_dose = pcd_list + [dose_grid_pcd, dose_grid_gradient_pcd]
                         plotting_funcs.plot_geometries(*pcd_list_dose)
                         
                         del pcd_list_dose
@@ -5186,7 +5387,7 @@ def main():
                     if (mr_adc_ref in pydicom_item) and (dose_ref in pydicom_item):
 
                         # Include the MR ADC data and dose
-                        pcd_list_MR_ADC_and_dose = pcd_list + [thresholded_mr_adc_point_cloud] + [dose_grid_pcd]
+                        pcd_list_MR_ADC_and_dose = pcd_list + [thresholded_mr_adc_point_cloud, dose_grid_pcd, dose_grid_gradient_pcd]
                         plotting_funcs.plot_geometries(*pcd_list_MR_ADC_and_dose)
 
                         del pcd_list_MR_ADC_and_dose
@@ -5709,7 +5910,7 @@ def main():
                                                                                             plot_uniform_shifts_to_check_plotly,
                                                                                             differential_dvh_resolution,
                                                                                             cumulative_dvh_resolution,
-                                                                                            volume_DVH_percent_dose,
+                                                                                            v_percent_DVH_to_calc_list,
                                                                                             volume_DVH_quantiles_to_calculate,
                                                                                             plot_translation_vectors_pointclouds,
                                                                                             plot_cupy_containment_distribution_results,
@@ -5866,6 +6067,8 @@ def main():
                     if dose_ref in pydicom_item:
                         del pydicom_item[dose_ref]['Dose grid point cloud']
                         del pydicom_item[dose_ref]['Dose grid point cloud thresholded']
+                        del pydicom_item[dose_ref]["Dose grid gradient point cloud"]
+                        del pydicom_item[dose_ref]["Dose grid gradient point cloud thresholded"]
                         del pydicom_item[dose_ref]['KDtree']
                     if mr_adc_ref in pydicom_item:
                         del pydicom_item[mr_adc_ref]["MR ADC grid point cloud"]
@@ -6173,14 +6376,23 @@ def main():
                                                                   )
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"] = cohort_all_dose_data_by_trial_and_pt                
                 """
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None) 
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
+                live_display.stop()
+
+                st = time.time()
                 dataframe_builders.all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_reference_dict,
                                                                   bx_ref,
                                                                   biopsy_z_voxel_length,
                                                                   dose_ref
                                                                   )
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF1: {duration}")
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 
+
+
+
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None) 
                 """
                 cohort_global_dosimetry_by_voxel_dataframe = dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder(master_structure_reference_dict,
@@ -6190,7 +6402,7 @@ def main():
                 """
                 
                 # for some reason it seems like the livedisplay can cause these functions to hang?
-                live_display.stop()
+                """
                 st = time.time()
                 # I made the below to try to make the execution quicker, however it turned out to not take almost exactly the same amount of time
                 cohort_global_dosimetry_by_voxel_dataframe = dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_reference_dict,
@@ -6202,6 +6414,25 @@ def main():
                 print(f"Dose DF2: {duration}")
                 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry by voxel"] = cohort_global_dosimetry_by_voxel_dataframe
+                """
+
+                """
+                The below function replaced the above to account for gradients, and actually is generalizable to more information. 
+                The list of dose_value_columns can be generalized! Also the output is now a multiindex dataframe.
+                """
+                st = time.time()
+                dose_value_columns = ['Dose (Gy)', 'Dose grad (Gy/mm)']
+                cohort_global_dosimetry_by_voxel_dataframe = dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder_v3_generalized(master_structure_reference_dict, 
+                                                                            bx_ref, 
+                                                                            all_ref_key, 
+                                                                            dose_ref, 
+                                                                            dose_value_columns)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry by voxel"] = cohort_global_dosimetry_by_voxel_dataframe
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF2: {duration}")
+
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 
                 st = time.time()
@@ -6216,23 +6447,33 @@ def main():
                 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"] = cohort_global_dosimetry_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                live_display.start()
-
+                
+                
+                st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 dataframe_builders.differential_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure_reference_dict,
                                                                                             master_structure_info_dict,
                                                                                             bx_ref,
                                                                                             dose_ref)
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF4: {duration}")
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
+                st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 5", total = None)
                 dataframe_builders.cumulative_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure_reference_dict,
                                                             master_structure_info_dict,
                                                             bx_ref,
                                                             dose_ref)
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF5: {duration}")
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
 
+
+                st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 6", total = None)
                 cohort_all_bx_dvh_metric_dataframe = dataframe_builders.dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
                                                                             bx_ref,
@@ -6240,7 +6481,29 @@ def main():
                                                                             dose_ref)
 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Bx DVH metrics"] = cohort_all_bx_dvh_metric_dataframe
+
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF6: {duration}")
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+
+                
+                # DVH metrics new and improved!
+                st = time.time()
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 7", total = None)
+                dataframe_builders.dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,
+                                            bx_ref,
+                                            all_ref_key,
+                                            dose_ref,
+                                            d_x_DVH_to_calc_list,
+                                            v_percent_DVH_to_calc_list)
+
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF7: {duration}")
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
 
                 ### THIS NEEDS WORK, THIS MAY BE A BAD IDEA, TOO MANY COLUMNS THAT MIGHT MATCH
                 ### This has to be the last one because it depends on the creation of previous dataframes
@@ -6256,6 +6519,8 @@ def main():
                 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
+
+                live_display.start()
                 live_display.refresh()
 
 
@@ -6366,10 +6631,23 @@ def main():
 
                 # create patient specific output directories for csv files
                 patient_sp_output_csv_dir_dict = {}
+                patient_sp_bx_sp_output_csv_dir_dict = {}
                 for patientUID in master_structure_reference_dict.keys():
                     patient_sp_output_csv_dir = mc_csv_output_dir.joinpath(patientUID)
                     patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
                     patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
+                    bx_sp_output_csv_dir_dict = {}
+                    for sp_bx in master_structure_reference_dict[patientUID][bx_ref]:
+                        sp_bx_name = sp_bx["ROI"]
+                        bx_index_num = sp_bx["Index number"]
+                        sp_bx_dir_str = str(bx_index_num) +"-"+ sp_bx_name
+                        
+                        bx_sp_output_csv_dir = patient_sp_output_csv_dir.joinpath(sp_bx_dir_str)
+                        bx_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
+
+                        bx_sp_output_csv_dir_dict[bx_index_num] = bx_sp_output_csv_dir
+                    patient_sp_bx_sp_output_csv_dir_dict[patientUID] = bx_sp_output_csv_dir_dict
+
                 global_mc_output_csv_dir = mc_csv_output_dir.joinpath('Global')
                 global_mc_output_csv_dir.mkdir(parents=True, exist_ok=True)
                 patient_sp_output_csv_dir_dict["Global"] = global_mc_output_csv_dir
@@ -6461,7 +6739,7 @@ def main():
                         patient_sp_output_csv_dir_dict,
                         bx_ref,
                         display_dvh_as,
-                        volume_DVH_percent_dose
+                        v_percent_DVH_to_calc_list
                         )
                 """
                 live_display.start(refresh=True)
@@ -6501,6 +6779,17 @@ def main():
                             dataframe_file_name = str(patientUID) +'-'+ str(dataframe_name)+ '.csv'
                             dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
                             dataframe.to_csv(dataframe_file_path)
+
+                    for sp_bx in pydicom_item[bx_ref]:
+                        bx_name = sp_bx["ROI"]
+                        bx_type = sp_bx["Simulated type"]
+                        bx_index_number = sp_bx["Index number"] 
+                        bx_sp_csv_dir = patient_sp_bx_sp_output_csv_dir_dict[patientUID][bx_index_number]
+                        for dataframe_name, dataframe in sp_bx['Output data frames'].items():
+                            if isinstance(dataframe, pandas.DataFrame): 
+                                dataframe_file_name = str(bx_type) +'-'+ str(bx_name)+'-'+ str(dataframe_name)+ '.csv'
+                                dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
+                                dataframe.to_csv(dataframe_file_path)
 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
@@ -7376,6 +7665,7 @@ def main():
                 if production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot bool"] == True:
                     
                     general_plot_name_string = production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Plot name"]
+                    num_rand_trials_to_show = production_plots_input_dictionary["Axial dose distribution quantiles regression plot matplotlib"]["Num rand trials to show"]
                     
                     patientUID_default = "Initializing"
                     processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID_default)
@@ -7393,8 +7683,10 @@ def main():
                             production_plots.production_plot_axial_dose_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
                                                                                     patientUID,
                                                                                     bx_ref,
+                                                                                    all_ref_key,
                                                                                     patient_sp_output_figures_dir_dict,
-                                                                                    general_plot_name_string)
+                                                                                    general_plot_name_string,
+                                                                                    num_rand_trials_to_show)
                         
                         patients_progress.update(processing_patients_task, advance = 1)
                         completed_progress.update(processing_patients_completed_task, advance = 1)
@@ -7405,7 +7697,7 @@ def main():
                     pass
 
                 
-                live_display.start()
+                #live_display.start()
 
                 # quantile regression of axial dose distribution
 
@@ -7636,7 +7928,7 @@ def main():
                     pass
 
                 
-                live_display.start()
+                #live_display.start()
 
                 # voxelized violin plot axial dose distribution  
 
@@ -7922,6 +8214,48 @@ def main():
                 else:
                     pass
                         
+                
+
+
+                if production_plots_input_dictionary["Cohort - Dosimetry boxplots all biopsies"]["Plot bool"] == True:
+
+                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Dosimetry boxplots all biopsies...', total=None)
+                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Dosimetry boxplots all biopsies', total=1, visible = False)
+
+                    cohort_output_figures_dir = master_structure_info_dict["Global"]['Cohort figures dir']
+
+                    general_plot_name_string = production_plots_input_dictionary["Cohort - Dosimetry boxplots all biopsies"]["Plot name"]
+
+                    cohort_global_dosimetry_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"]
+
+                    production_plots.cohort_all_biopsies_dosimtery_boxplot_grouped_by_patient(cohort_global_dosimetry_dataframe,
+                                   general_plot_name_string,
+                                   cohort_output_figures_dir)
+                    
+                    indeterminate_progress_main.update(main_indeterminate_task, visible = False)
+                    completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
+                    live_display.refresh()    
+
+                else: 
+                    pass
+
+                    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
                 # perform containment probabilities plots and regressions
@@ -8487,6 +8821,7 @@ def main():
 
             rich_preambles.section_completed("Production plots", section_start_time, completed_progress, completed_sections_manager)
 
+            live_display.stop()
             sys.exit("> Programme complete.")
 
 
@@ -8732,9 +9067,10 @@ def structure_referencer(data_removals_dict,
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
                          #"MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
-                         "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None, 
+                         "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
                          #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
                          #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
+                         "MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)": None,
                          "MC data: Differential DVH dict": None,
                          "MC data: Cumulative DVH dict": None,
                          "MC data: dose volume metrics dict": None, 
@@ -8749,6 +9085,7 @@ def structure_referencer(data_removals_dict,
                          "Output data frames": {"Dose output Z and radius": None,
                                                 "Dose output voxelized": None,
                                                 "Point-wise dose output by MC trial number": None,
+                                                "Voxel-wise dose output by MC trial number": None,
                                                 "Mutual containment output by bx point": None,
                                                 "Tissue volume above threshold": None,
                                                 "DVH metrics": None,
@@ -8836,6 +9173,7 @@ def structure_referencer(data_removals_dict,
                                 "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
                                 #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
                                 #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
+                                "MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)": None,
                                 "MC data: Differential DVH dict": None,
                                 "MC data: Cumulative DVH dict": None,
                                 "MC data: dose volume metrics dict": None,
@@ -8850,6 +9188,7 @@ def structure_referencer(data_removals_dict,
                                 "Output data frames": {"Dose output Z and radius": None,
                                                        "Dose output voxelized": None,
                                                        "Point-wise dose output by MC trial number": None,
+                                                       "Voxel-wise dose output by MC trial number": None,
                                                        "Mutual containment output by bx point": None,
                                                        "Tissue volume above threshold": None,
                                                        "DVH metrics": None,
@@ -8897,6 +9236,10 @@ def structure_referencer(data_removals_dict,
                                                                                  "Tissue class - sum-to-one mc results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
                                                                                  "DVH metrics": None,
+                                                                                 "DVH metrics (Dx) all trials": None,
+                                                                                 "DVH metrics (Vx) all trials": None,
+                                                                                 "DVH metrics (Dx) statistics": None,
+                                                                                 "DVH metrics (Vx) statistics": None,
                                                                                  "All MC structure shift vectors": None, 
                                                                                  "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
                                                                                  "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None},
@@ -8969,10 +9312,14 @@ def structure_referencer(data_removals_dict,
                              "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], 
                              "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], 
                              "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], 
-                             "Dose phys space and pixel 3d arr": None, 
+                             #"Dose phys space and pixel 3d arr": None,
+                             "Dose and gradient phys space and pixel 3d arr": None, 
                              "Dose grid point cloud": None, 
-                             "Dose grid point cloud thresholded": None, 
-                             "KDtree": None
+                             "Dose grid point cloud thresholded": None,
+                             "Dose grid gradient point cloud": None,
+                             "Dose grid gradient point cloud thresholded": None,
+                             "KDtree": None,
+                             "KDtree gradient": None
                              }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
     

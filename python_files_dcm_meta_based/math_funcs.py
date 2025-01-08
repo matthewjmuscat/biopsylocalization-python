@@ -355,7 +355,7 @@ def apply_find_max_kde_dose_parallel(df, groupby_cols, dose_col, new_column_name
     
     # Run KDE calculation in parallel
     results = Parallel(n_jobs=n_jobs)(
-        delayed(find_max_kde_dose)(group) for name, group in grouped
+        delayed(find_max_kde_dose)(group, num_eval_pts) for name, group in grouped
     )
 
     # Create a DataFrame from the group keys and results, generalizing for any groupby columns
@@ -364,6 +364,25 @@ def apply_find_max_kde_dose_parallel(df, groupby_cols, dose_col, new_column_name
         new_column_name: results
     })
     
+    return result_df
+
+# This was created to account for the multi_index structure of the updated dataframes
+def apply_find_max_kde_dose_parallel_multi_index_df(df, groupby_cols, dose_col, new_column_name, num_eval_pts=1000, n_jobs=-2):
+    grouped = df.groupby(groupby_cols)[dose_col]
+    
+    # Run KDE calculation in parallel
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(find_max_kde_dose)(group, num_eval_pts) for name, group in grouped
+    )
+
+    # Create a DataFrame from the group keys and results, generalizing for any groupby columns
+    result_df = pandas.DataFrame(list(grouped.groups.keys()), columns=groupby_cols)
+    result_df[new_column_name] = results
+
+    # Set up MultiIndex for columns, ensuring it matches the main DataFrame
+    result_df.set_index(groupby_cols, inplace=True)
+    result_df.columns = pandas.MultiIndex.from_tuples([(dose_col, new_column_name)])
+
     return result_df
 
 

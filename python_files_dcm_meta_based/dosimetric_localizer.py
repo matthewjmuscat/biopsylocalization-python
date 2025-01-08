@@ -9,7 +9,8 @@ def dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
                                               num_dose_calc_NN,
                                               num_MC_dose_sims,
                                               num_bx_points,
-                                              idw_power):
+                                              idw_power,
+                                              result_col_name = "Dose val (interpolated)"):
     
     """
     Note that this function uses an inverse distance weighting to interpolate between dose points on the dose lattice!
@@ -54,7 +55,7 @@ def dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
                                                         "Original pt index": np.tile(np.arange(0,num_bx_points), num_MC_dose_sims+1),
                                                         "Struct test pt vec": bx_only_shifted_stacked_2darr.tolist(),
                                                         "Trial num": np.repeat(np.arange(0,num_MC_dose_sims+1),num_bx_points),
-                                                        "Dose val (interpolated)": nearest_doses_weighted_mean_arr,
+                                                        result_col_name: nearest_doses_weighted_mean_arr,
                                                         "Nearest phys space points": nearest_points_on_comparison_struct_list,
                                                         "Nearest distances": NN_distances_2d_list,
                                                         "Averaging weights": comparison_structure_NN_distances_reciprocal_fixed_2d_list,
@@ -64,5 +65,7 @@ def dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
     dose_nearest_neighbour_results_dataframe = pandas.DataFrame(dose_nearest_neighbour_results_dict_for_dataframe )
 
     return dose_nearest_neighbour_results_dataframe
+
+
 
 

@@ -57,7 +57,7 @@ def simulator_parallel(parallel_pool,
                        plot_uniform_shifts_to_check_plotly,
                        differential_dvh_resolution,
                        cumulative_dvh_resolution,
-                       volume_DVH_percent_dose,
+                       v_percent_DVH_to_calc_list,
                        volume_DVH_quantiles_to_calculate,
                        plot_translation_vectors_pointclouds,
                        plot_cupy_containment_distribution_results,
@@ -1511,7 +1511,8 @@ def simulator_parallel(parallel_pool,
                 continue
 
             dose_ref_dict = pydicom_item[dose_ref]
-            phys_space_dose_map_3d_arr = dose_ref_dict["Dose phys space and pixel 3d arr"]
+            phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
+            phys_space_dose_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr[:, :, :7]
             phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
             phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
             phys_space_dose_map_dose_1d_arr = phys_space_dose_map_3d_arr_flattened[:,6] 
@@ -1666,7 +1667,174 @@ def simulator_parallel(parallel_pool,
 
 
 
+        ### NEW DOSIMETRIC LOCALIZATION (GRADIENT)!
+        calc_dose_NN_biopsy_containment_task = patients_progress.add_task("[red]Calculating NN dose gradient localization (NEW) [{}]...".format("initializing"), total=num_patients)
+        calc_dose_NN_biopsy_containment_task_complete = completed_progress.add_task("[green]Calculating NN dose gradient localization (NEW)", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, description = "[red]Calculating NN dose gradient localization (NEW) [{}]...".format(patientUID))
+            # create KDtree for dose data
+            if dose_ref not in pydicom_item:
+                patients_progress.update(calc_dose_NN_biopsy_containment_task, advance = 1)
+                completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, advance = 1)
+                continue
 
+            dose_ref_dict = pydicom_item[dose_ref]
+            phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
+            phys_space_dose_gradient_map_3d_arr = np.delete(phys_space_dose_map_and_gradient_map_3d_arr, np.r_[6:10,11:14], axis=2)
+            # note I am not going to rename all the variables to accomodate 'gradient' I have just done so for the first oen above, the rest is implied.
+            phys_space_dose_map_3d_arr_flattened = np.reshape(phys_space_dose_gradient_map_3d_arr, (-1,7) , order = 'C') # turn the data into a 2d array
+            phys_space_dose_map_phys_coords_2d_arr = phys_space_dose_map_3d_arr_flattened[:,3:6] 
+            phys_space_dose_map_dose_1d_arr = phys_space_dose_map_3d_arr_flattened[:,6] 
+            dose_data_KDtree = scipy.spatial.KDTree(phys_space_dose_map_phys_coords_2d_arr)
+            dose_ref_dict["KDtree gradient"] = dose_data_KDtree
+            
+
+            # code for the plotting of the below NN search of sampled bx pts
+            lattice_dose_pcd = dose_ref_dict["Dose grid gradient point cloud"]
+            thresholded_lattice_dose_pcd = dose_ref_dict["Dose grid gradient point cloud thresholded"]
+
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+            dosimetric_calc_biopsy_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)           
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                num_sample_pts_per_bx = specific_bx_structure["Num sampled bx pts"]
+                specific_bx_structure_roi = specific_bx_structure["ROI"]
+                biopsies_progress.update(dosimetric_calc_biopsy_task, description = "[cyan]~For each biopsy [{}]...".format(specific_bx_structure_roi))
+                
+
+
+                bx_structure_info_dict = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure)
+                
+                bx_only_shifted_3darr = cp.asnumpy(specific_bx_structure["MC data: bx only shifted 3darr"]) # note that the 3rd dimension slices are each MC trial
+                bx_only_shifted_3darr_cutoff = bx_only_shifted_3darr[0:num_MC_dose_simulations]
+                unshifted_bx_sampled_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]
+                unshifted_bx_sampled_pts_arr_3darr = np.expand_dims(unshifted_bx_sampled_pts_arr, axis=0)
+                nominal_and_bx_only_shifted_3darr = np.concatenate((unshifted_bx_sampled_pts_arr_3darr,bx_only_shifted_3darr_cutoff))
+                bx_only_shifted_stacked_2darr = np.reshape(nominal_and_bx_only_shifted_3darr, (-1,3) , order = 'C')
+
+                
+                dosimetric_calc_task = indeterminate_progress_sub.add_task("[cyan]~~Conducting NN search [{}]...".format(specific_bx_structure_roi), total = None)
+
+                ### THIS DATAFRAME CONSUMES TOO MUCH MEMORY TO CARRY IT THROUGHOUT THE PROGRAMME, NEED TO PARSE IMMEDIATELY,
+                ### CAN CONSIDER SAVING TO DISK... ONE STRATEGY COULD BE TO CONTINUALLY APPEND TO A CSV ON DISK!
+                dose_grad_val_col_str = "Dose grad val (interpolated)"
+                dose_nearest_neighbour_results_dataframe = dosimetric_localizer.dosimetric_localization_dataframe_version(bx_only_shifted_stacked_2darr,
+                                                    patientUID, 
+                                                    bx_structure_info_dict, 
+                                                    dose_data_KDtree, 
+                                                    phys_space_dose_map_dose_1d_arr, 
+                                                    num_dose_calc_NN,
+                                                    num_MC_dose_simulations,
+                                                    num_sample_pts_per_bx,
+                                                    idw_power,
+                                                    result_col_name = "Dose grad val (interpolated)")
+                
+                # TAKE A DUMP?
+                if raw_data_mc_dosimetry_dump_bool == True:
+                    raw_mc_output_dir = master_structure_info_dict["Global"]["Raw MC output dir"]
+                    dose_raw_results_csv_name = 'mc_raw_results_dosimetry_gradient.csv'
+                    dose_raw_results_csv = raw_mc_output_dir.joinpath(dose_raw_results_csv_name)
+                    with open(dose_raw_results_csv, 'a') as temp_file_obj:
+                        dose_nearest_neighbour_results_dataframe.to_csv(temp_file_obj, mode='a', index=False, header=temp_file_obj.tell()==0)
+
+                indeterminate_progress_sub.remove_task(dosimetric_calc_task)
+
+                # plot everything to make sure its working properly!
+                if show_NN_dose_demonstration_plots == True:
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+                    for trial_num in np.arange(0,num_MC_dose_simulations+1):
+                        NN_pts_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Nearest phys space points"].to_numpy())
+                        NN_doses_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Nearest doses"].to_numpy())
+                        queried_bx_pts_arr_concatenated = np.stack(dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num]["Struct test pt vec"].to_numpy())
+                        queried_bx_pts_assigned_doses_arr_concatenated = dose_nearest_neighbour_results_dataframe[dose_nearest_neighbour_results_dataframe["Trial num"] == trial_num][dose_grad_val_col_str].to_numpy()
+                        
+                        patients_progress.stop_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.stop_task(calc_dose_NN_biopsy_containment_task_complete)
+                        stopwatch.stop()
+                        #plotting_funcs.dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_full_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        geometry_list_thresholded_dose_lattice = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_pts_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, num_dose_calc_NN, draw_lines = True)
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[0], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[1])
+                        plotting_funcs.plot_two_views_side_by_side(geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[2], geometry_list_thresholded_dose_lattice, dose_views_jsons_paths_list[3])
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = False, axes_visible=True)
+                        plotting_funcs.dose_point_cloud_with_dose_labels_for_animation_plotly(NN_pts_on_comparison_struct_for_all_points_concatenated, NN_doses_on_comparison_struct_for_all_points_concatenated, queried_bx_pts_arr_concatenated, queried_bx_pts_assigned_doses_arr_concatenated, num_dose_calc_NN, aspect_mode_input = 'data', draw_lines = True, axes_visible=True)
+                        stopwatch.start()
+                        patients_progress.start_task(calc_dose_NN_biopsy_containment_task)
+                        completed_progress.start_task(calc_dose_NN_biopsy_containment_task_complete)
+                else:
+                    pass
+
+                if show_NN_dose_demonstration_plots_all_trials_at_once == True:
+                    unshifted_bx_sampled_pts_copy_pcd = copy.copy(specific_bx_structure['Random uniformly sampled volume pts pcd'])
+                    unshifted_bx_sampled_pts_copy_pcd.paint_uniform_color(np.array([1,0,1]))
+
+                    NN_pts_on_comparison_struct_for_all_points_concatenated = np.concatenate(dose_nearest_neighbour_results_dataframe["Nearest phys space points"].to_numpy())
+                    queried_bx_pts_arr_concatenated = np.stack(dose_nearest_neighbour_results_dataframe["Struct test pt vec"].to_numpy())
+                    
+                    NN_doses_locations_pointcloud = point_containment_tools.create_point_cloud(NN_pts_on_comparison_struct_for_all_points_concatenated)
+                    queried_bx_pts_locations_pointcloud = point_containment_tools.create_point_cloud(queried_bx_pts_arr_concatenated, color = np.array([0,1,0]))
+
+                    pcd_list = [unshifted_bx_sampled_pts_copy_pcd, thresholded_lattice_dose_pcd, NN_doses_locations_pointcloud, queried_bx_pts_locations_pointcloud]
+                    
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(*pcd_list)
+                    stopwatch.start()
+
+                    # Now include background anatomy
+                    for other_struct_type in structs_referenced_list:
+                        if other_struct_type == bx_ref:
+                                continue
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[other_struct_type]):
+                            structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
+                            pcd_list.append(structure_pcd)
+                    
+                    stopwatch.stop()
+                    plotting_funcs.plot_geometries(*pcd_list)
+                    stopwatch.start()
+
+
+                    del geometry_list_thresholded_dose_lattice
+                else:
+                    pass
+
+
+                # Cant save these dataframes, they take up too much memory! Need to parse data right away
+                #specific_bx_structure['MC data: bx to dose NN search results dataframe'] = dose_nearest_neighbour_results_dataframe # Note that trial 0 is the nominal position
+
+
+
+
+
+                ### COMPILE DATA STRAIGHT AWAY!
+                dose_nearest_neighbour_results_dataframe_pivoted = dose_nearest_neighbour_results_dataframe.pivot(index = "Original pt index", columns="Trial num", values = dose_grad_val_col_str)
+                del dose_nearest_neighbour_results_dataframe
+                
+                # It seems pivoting already sorts the indices and columns, but just to be sure I do it manually anyways
+                dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted = dose_nearest_neighbour_results_dataframe_pivoted.sort_index(axis = 0).sort_index(axis = 1)
+                del dose_nearest_neighbour_results_dataframe_pivoted
+                
+                # Note that each row is a specific biopsy point, while the column is a particular MC trial
+                dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted.to_numpy()
+                del dose_nearest_neighbour_results_dataframe_pivoted_ensured_sorted
+
+
+                # Update master dictionary
+                # MC trials only
+                #specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,1:]
+                # Nominal and MC trials
+                #specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr[:,0]
+                specific_bx_structure["MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)"] = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr
+                
+                del dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr
+
+
+                biopsies_progress.update(dosimetric_calc_biopsy_task, advance=1)
+            biopsies_progress.remove_task(dosimetric_calc_biopsy_task)
+            patients_progress.update(calc_dose_NN_biopsy_containment_task, advance = 1)
+            completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, advance = 1)
+        patients_progress.update(calc_dose_NN_biopsy_containment_task, visible = False)
+        completed_progress.update(calc_dose_NN_biopsy_containment_task_complete, visible = True)
+        live_display.refresh()    
 
 
 
@@ -1918,7 +2086,7 @@ def simulator_parallel(parallel_pool,
                 
                 # Create the template dictionary
                 dvh_metric_vol_dose_percent_dict = {}
-                for vol_dose_percent in volume_DVH_percent_dose:
+                for vol_dose_percent in v_percent_DVH_to_calc_list:
                     dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = {"Nominal": None, 
                                                                                "All MC trials list": [], 
                                                                                "Mean": None, 
@@ -1928,7 +2096,7 @@ def simulator_parallel(parallel_pool,
                 
                 
                 # find specific DVH (V%) metrics for this particular trial
-                for vol_dose_percent in volume_DVH_percent_dose:
+                for vol_dose_percent in v_percent_DVH_to_calc_list:
                     dose_threshold = (vol_dose_percent/100)*ctv_dose
                     truth_matrix_for_vol_dose_percent = dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr > dose_threshold
                     counts_for_vol_dose_percent = np.sum(truth_matrix_for_vol_dose_percent, axis = 0)
@@ -1949,7 +2117,7 @@ def simulator_parallel(parallel_pool,
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Stats of sp dose-vol metrics", total = None)
                 ###
 
-                for vol_dose_percent in volume_DVH_percent_dose:
+                for vol_dose_percent in v_percent_DVH_to_calc_list:
                     dvh_metric_vol_dose_percent_MC_trials_only_list = dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All MC trials list"]
                     dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_MC_trials_only_list) 
                     mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)
@@ -1972,7 +2140,7 @@ def simulator_parallel(parallel_pool,
                 bx_structure_info_dict = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure)
 
                 dvh_metric_dataframe_per_biopsy = pandas.DataFrame()
-                for index, vol_dose_percent in enumerate(volume_DVH_percent_dose):
+                for index, vol_dose_percent in enumerate(v_percent_DVH_to_calc_list):
                     dvh_metric_dict_for_dataframe_temp = {"Patient ID": patientUID,
                                                  "Bx ID": bx_structure_info_dict["Structure ID"],
                                                  "Struct type": bx_structure_info_dict["Struct ref type"],
@@ -2110,7 +2278,7 @@ def simulator_parallel(parallel_pool,
                 differential_dvh_histogram_edges_by_MC_trial_arr = np.empty([num_nominal_and_all_dose_trials, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the bin edge 
                 #cumulative_dvh_counts_by_MC_trial_arr = np.empty([num_MC_dose_simulations, differential_dvh_resolution+1]) # each row is a specific MC simulation, each column corresponds to the number of counts that satisfy the bound provided by the dose value bin edge of the same index of the differential_dvh_histogram_edges_by_MC_trial_arr
                 dvh_metric_vol_dose_percent_dict = {}
-                for vol_dose_percent in volume_DVH_percent_dose:
+                for vol_dose_percent in v_percent_DVH_to_calc_list:
                     dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)] = {"Nominal": None, 
                                                                                "All MC trials list": [], 
                                                                                "Mean": None, 
@@ -2136,7 +2304,7 @@ def simulator_parallel(parallel_pool,
                     
                 
                     # find specific DVH metrics for nominal and all MC trials
-                    for vol_dose_percent in volume_DVH_percent_dose:
+                    for vol_dose_percent in v_percent_DVH_to_calc_list:
                         dose_threshold = (vol_dose_percent/100)*ctv_dose
                         counts_for_vol_dose_percent = dosimetric_localization_dose_vals_all_pts_specific_MC_trial[dosimetric_localization_dose_vals_all_pts_specific_MC_trial > dose_threshold].shape[0]
                         percent_for_vol_dose_percent = (counts_for_vol_dose_percent/num_sampled_bx_pts)*100
@@ -2156,7 +2324,7 @@ def simulator_parallel(parallel_pool,
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Stats of sp dose-vol metrics", total = None)
                 ###
 
-                for vol_dose_percent in volume_DVH_percent_dose:
+                for vol_dose_percent in v_percent_DVH_to_calc_list:
                     dvh_metric_vol_dose_percent_MC_trials_only_list = dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["All MC trials list"]
                     dvh_metric_all_trials_arr = np.array(dvh_metric_vol_dose_percent_MC_trials_only_list) 
                     mean_of_dvh_metric = np.mean(dvh_metric_all_trials_arr)

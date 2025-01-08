@@ -9,6 +9,7 @@ from scipy.stats import gaussian_kde
 import math_funcs
 import scipy.stats as stats
 import copy
+from scipy.interpolate import interp1d
 
 
 def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
@@ -1131,11 +1132,14 @@ def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_NEW(maste
             
             # Note that each row is a specific biopsy point, while the column is a particular MC trial
             dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"] 
+            dosimetric_localization_dose_gradient_vals_by_bx_point_nominal_and_all_trials_arr = specific_bx_structure["MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)"]
             
-            sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr)
+            # Replaced to allow for dose gradient support 
+            #sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr)
+            sp_bx_dose_grad_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_generalized_v2(dosimetric_localization_dose_vals_by_bx_point_nominal_and_all_trials_arr, dosimetric_localization_dose_gradient_vals_by_bx_point_nominal_and_all_trials_arr)
 
             bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-            sp_bx_dose_distribution_all_trials_df = misc_tools.include_vector_columns_in_dataframe(sp_bx_dose_distribution_all_trials_df, 
+            sp_bx_dose_distribution_all_trials_df = misc_tools.include_vector_columns_in_dataframe(sp_bx_dose_grad_distribution_all_trials_df, 
                                                                                            bx_points_bx_coords_sys_arr, 
                                                                                            reference_column_name = 'Original pt index', 
                                                                                            new_column_name_x = "X (Bx frame)", 
@@ -1235,6 +1239,9 @@ def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_NEW_no_co
 
 
 def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_ref_dict, bx_ref, biopsy_z_voxel_length, dose_ref):
+    """
+    Note that the values within a voxel here (of the Voxel-wise dose output by MC trial number, dataframe) have been averaged over the values in the voxel.
+    """
     for patientUID, pydicom_item in master_structure_ref_dict.items():
         if dose_ref in pydicom_item:
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
@@ -1244,9 +1251,12 @@ def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master
                 bx_structure_sim_bool = specific_bx_structure["Simulated bool"]
                 bx_structure_sim_type = specific_bx_structure["Simulated type"]
                 dose_vals_arr = specific_bx_structure["MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)"]
+                dose_grad_vals_arr = specific_bx_structure["MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)"]
+
 
                 # Convert the dose values array into a DataFrame
-                sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dose_vals_arr)
+                #sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_v2(dose_vals_arr)
+                sp_bx_dose_distribution_all_trials_df = dose_NxD_array_to_dataframe_helper_function_generalized_v2(dose_vals_arr, dose_grad_vals_arr)
                 
                 # Include coordinate columns using a helper function
                 bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
@@ -1286,8 +1296,40 @@ def all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master
                     threshold=0.25
                 )
 
+
+                ### Now for "Voxel-wise dose output by MC trial number", average over values within a voxel
+
+                # Aggregate and fully voxelize data
+                df = copy.deepcopy(sp_bx_dose_distribution_all_trials_df)
+
+                # Define the columns to aggregate
+                numeric_columns = ['Dose (Gy)', 'Dose grad (Gy/mm)', 'X (Bx frame)', 'Y (Bx frame)', 'Z (Bx frame)', 'R (Bx frame)']
+
+                # Define the columns to keep as they are (non-numeric columns)
+                non_numeric_columns = ['Simulated bool', 'Simulated type', 'Bx refnum', 'Bx index', 'Bx ID', 'Patient ID', 'Voxel begin (Z)', 'Voxel end (Z)']
+
+                # Perform the aggregation: mean for numeric columns and first for non-numeric columns
+                agg_funcs = {col: 'mean' for col in numeric_columns}
+                agg_funcs.update({col: 'first' for col in non_numeric_columns})  # Keep first for non-numeric columns
+
+                # Group by both 'Voxel index' and 'MC trial num' and perform the aggregation
+                sp_bx_dose_distribution_all_trials_only_voxelized_df = df.groupby(['Voxel index', 'MC trial num']).agg(agg_funcs).reset_index()
+
+                sp_bx_dose_distribution_all_trials_only_voxelized_df.description = ("Note that technically the following column values here are averaged per voxel, per MC trial:"
+                                                                                    "'Dose (Gy)', 'Dose grad (Gy/mm)', 'X (Bx frame)', 'Y (Bx frame)', 'Z (Bx frame)', 'R (Bx frame)'"
+                )
+
+                sp_bx_dose_distribution_all_trials_only_voxelized_df = convert_columns_to_categorical_and_downcast(
+                    sp_bx_dose_distribution_all_trials_only_voxelized_df, 
+                    threshold=0.25
+                )
+
                 # Store the updated DataFrame in the structure dictionary
                 specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"] = sp_bx_dose_distribution_all_trials_df
+
+                # Store the updated DataFrame in the mean voxelized structure dictionary
+                specific_bx_structure["Output data frames"]["Voxel-wise dose output by MC trial number"] = sp_bx_dose_distribution_all_trials_only_voxelized_df
+
 
 
 
@@ -1326,6 +1368,24 @@ def dose_NxD_array_to_dataframe_helper_function_v2(arr):
     df = pandas.DataFrame({
         "Original pt index": original_pt_index,
         "Dose (Gy)": dose_gy,
+        "MC trial num": mc_trial_num
+    })
+    
+    return df
+
+### THIS ONE IS WAY FASTER!
+def dose_NxD_array_to_dataframe_helper_function_generalized_v2(dose_arr,dose_grad_arr):
+    n_rows, n_cols = dose_arr.shape
+    original_pt_index = np.repeat(np.arange(n_rows), n_cols)
+    dose_gy = dose_arr.ravel()  # Flatten the array to a 1D array directly
+    dose_grad_gypmm = dose_grad_arr.ravel() 
+    mc_trial_num = np.tile(np.arange(n_cols), n_rows)
+
+    # Create DataFrame directly with preallocated arrays
+    df = pandas.DataFrame({
+        "Original pt index": original_pt_index,
+        "Dose (Gy)": dose_gy,
+        "Dose grad (Gy/mm)": dose_grad_gypmm,
         "MC trial num": mc_trial_num
     })
     
@@ -1383,6 +1443,8 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                 global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
                 global_min_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].min()
                 global_quantiles_dose_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
+                global_skewness_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].skew()
+                global_kurtosis_series = sp_bx_point_wise_dose_output_by_mc_trial_pandas_data_frame['Dose (Gy)'].kurtosis()
                 
                 global_nominal_mean_dose_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].mean()
                 global_nominal_dose_std_dev_series = sp_bx_point_wise_dose_output_nominal_pandas_data_frame['Dose (Gy)'].std()
@@ -1404,6 +1466,8 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
                                                 'Global mean dose': global_mean_dose_series, 
                                                 'Global max dose': global_max_dose_series, 
                                                 'Global min dose': global_min_dose_series, 
+                                                'Global skewness dose': global_skewness_series,
+                                                'Global kurtosis dose': global_kurtosis_series,
                                                 'Global standard deviation dose': global_dose_std_dev_series,
                                                 'Global standard error dose': global_dose_std_err_in_mean_series,
                                                 'Global q05 dose': global_quantiles_dose_series[0.05],
@@ -1487,6 +1551,9 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
                 global_by_voxel_min_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].min()
                 global_by_voxel_quantiles_dose_series = sp_bx_global_grouped_df['Dose (Gy)'].quantile([0.05,0.25,0.5,0.75,0.95])
                 global_by_voxel_quantiles_dose_series_unstacked = global_by_voxel_quantiles_dose_series.unstack()
+                global_by_voxel_skewness_series = sp_bx_global_grouped_df['Dose (Gy)'].skew()
+                global_by_voxel_kurtosis_series = sp_bx_global_grouped_df['Dose (Gy)'].kurtosis()
+
 
                 
                 global_by_voxel_nominal_mean_dose_series = sp_bx_nominal_global_grouped_df['Dose (Gy)'].mean()
@@ -1507,6 +1574,8 @@ def global_dosimetry_by_voxel_values_dataframe_builder(master_structure_referenc
                                                 'Global mean dose': global_by_voxel_mean_dose_series, 
                                                 'Global max dose': global_by_voxel_max_dose_series, 
                                                 'Global min dose': global_by_voxel_min_dose_series, 
+                                                'Global skewness dose': global_by_voxel_skewness_series,
+                                                'Global kurtosis dose': global_by_voxel_kurtosis_series,
                                                 'Global standard deviation dose': global_by_voxel_dose_std_dev_series,
                                                 'Global standard error dose': global_by_voxel_dose_std_err_in_mean_series,
                                                 'Global q05 dose': global_by_voxel_quantiles_dose_series_unstacked[0.05],
@@ -1595,6 +1664,8 @@ def global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structur
                         'Global standard error dose': ('Dose (Gy)', 'sem'),
                         'Global max dose': ('Dose (Gy)', 'max'),
                         'Global min dose': ('Dose (Gy)', 'min'),
+                        'Global skewness dose': ('Dose (Gy)', lambda x: x.skew()),
+                        'Global kurtosis dose': ('Dose (Gy)', lambda x: x.kurtosis()),
                         'Global q05 dose': ('Dose (Gy)', lambda x: x.quantile(0.05)),
                         'Global q25 dose': ('Dose (Gy)', lambda x: x.quantile(0.25)),
                         'Global q50 dose': ('Dose (Gy)', lambda x: x.quantile(0.50)),
@@ -1677,7 +1748,8 @@ def global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structur
                 new_column_order = ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)', 'Patient ID',
                     'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type',
                     'Global max density dose', 'Global mean dose', 'Global max dose',
-                    'Global min dose', 'Global standard deviation dose',
+                    'Global min dose', 'Global skewness dose', 'Global kurtosis dose',
+                    'Global standard deviation dose',
                     'Global standard error dose', 'Global q05 dose', 'Global q25 dose',
                     'Global q50 dose', 'Global q75 dose', 'Global q95 dose',
                     'Global nominal mean dose', 'Global nominal max dose',
@@ -1719,6 +1791,411 @@ def global_dosimetry_by_voxel_values_dataframe_builder_ALTERNATE(master_structur
     cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
+
+
+
+
+
+
+
+
+
+
+def get_aggregations():
+    # Define lambda functions and set their __name__ attributes
+    skew = lambda x: x.skew()
+    skew.__name__ = 'skewness'
+    
+    kurtosis = lambda x: x.kurtosis()
+    kurtosis.__name__ = 'kurtosis'
+    
+    q05 = lambda x: x.quantile(0.05)
+    q05.__name__ = 'quantile_05'
+    
+    q25 = lambda x: x.quantile(0.25)
+    q25.__name__ = 'quantile_25'
+    
+    q50 = lambda x: x.quantile(0.50)
+    q50.__name__ = 'quantile_50'
+    
+    q75 = lambda x: x.quantile(0.75)
+    q75.__name__ = 'quantile_75'
+    
+    q95 = lambda x: x.quantile(0.95)
+    q95.__name__ = 'quantile_95'
+
+    return {
+        'mean': 'mean',
+        'std': 'std',
+        'sem': 'sem',
+        'max': 'max',
+        'min': 'min',
+        'skewness': skew,
+        'kurtosis': kurtosis,
+        'quantile_05': q05,
+        'quantile_25': q25,
+        'quantile_50': q50,
+        'quantile_75': q75,
+        'quantile_95': q95
+    }
+
+def apply_aggregations(df, value_columns, filter_cond=None):
+    if filter_cond is not None:
+        df = df.query(filter_cond)
+    
+    agg_funcs = get_aggregations()
+    agg_dict = {col: [func for _, func in agg_funcs.items()] for col in value_columns}
+    result_df = df.groupby(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']).agg(agg_dict)
+
+    # Uncomment the following line to flatten MultiIndex columns into a single level
+    # result_df.columns = ['_'.join(col).strip() for col in result_df.columns.values]
+
+    return result_df.reset_index()
+
+
+
+
+def reorder_columns(df, fixed_columns, prefix_order):
+    """
+    Reorder DataFrame columns by fixed columns followed by dynamic grouping of other columns based on prefixes.
+
+    Parameters:
+    df (DataFrame): The DataFrame to reorder.
+    fixed_columns (list): List of columns that have fixed positions.
+    prefix_order (list): Order of prefixes for dynamically grouped columns.
+
+    Returns:
+    DataFrame: A DataFrame with reordered columns.
+    """
+    # Filter out the fixed columns that are actually present in the DataFrame
+    fixed_cols = [col for col in fixed_columns if col in df.columns]
+
+    # Dynamic columns are those not in the fixed columns list
+    dynamic_cols = [col for col in df.columns if col not in fixed_cols]
+
+    # Group dynamic columns by their prefixes based on prefix_order
+    grouped_cols = {prefix: [] for prefix in prefix_order}
+    for col in dynamic_cols:
+        for prefix in prefix_order:
+            if col.startswith(prefix):
+                grouped_cols[prefix].append(col)
+                break
+
+    # Flatten the grouped columns maintaining the order specified in prefix_order
+    ordered_dynamic_cols = [col for prefix in prefix_order for col in sorted(grouped_cols[prefix])]
+
+    # Combine fixed and dynamic columns
+    new_order = fixed_cols + ordered_dynamic_cols
+    return df[new_order]
+
+
+def reorder_multiindex_columns(df, fixed_columns, prefix_order):
+    """
+    Reorder MultiIndex DataFrame columns by fixed columns followed by dynamic grouping based on prefixes.
+    
+    Parameters:
+    df (DataFrame): The DataFrame to reorder.
+    fixed_columns (list): List of first-level column names that have fixed positions.
+    prefix_order (list): Order of prefixes for the second level of columns.
+
+    Returns:
+    DataFrame: A DataFrame with reordered columns.
+    """
+    # Extract current MultiIndex columns
+    cols = df.columns.tolist()
+
+    # Filter fixed columns; these should match the first level of the MultiIndex
+    fixed_cols = [(first, second) for first, second in cols if first in fixed_columns]
+
+    # Dynamic columns are those not in the fixed columns list
+    dynamic_cols = [(first, second) for first, second in cols if first not in fixed_columns]
+
+    # Group dynamic columns by the prefixes defined in prefix_order
+    grouped_cols = {prefix: [] for prefix in prefix_order}
+    for col in dynamic_cols:
+        first, second = col
+        for prefix in prefix_order:
+            if second.startswith(prefix):
+                grouped_cols[prefix].append(col)
+                break
+
+    # Flatten the grouped columns maintaining the order specified in prefix_order
+    ordered_dynamic_cols = [col for prefix in prefix_order for col in sorted(grouped_cols[prefix])]
+
+    # Combine fixed and dynamic columns
+    new_order = fixed_cols + ordered_dynamic_cols
+
+    # Assign the new column order to the DataFrame
+    df = df[new_order]
+
+    return df
+
+
+def reorder_columns_to_front(df, priority_columns):
+    """
+    Reorder DataFrame columns to move specified columns to the front.
+
+    Parameters:
+    df (DataFrame): The DataFrame whose columns are to be reordered.
+    priority_columns (list): A list of column names to move to the front.
+
+    Returns:
+    DataFrame: A DataFrame with the specified columns moved to the front.
+    """
+    # Create a set for fast lookup
+    priority_set = set(priority_columns)
+    # Filter out columns that are in the priority list
+    other_columns = [col for col in df.columns if col not in priority_set]
+    # Combine lists to create new column order
+    new_column_order = priority_columns + other_columns
+    # Reassign the column order
+    df = df[new_column_order]
+    return df
+
+
+def reorder_multiindex_columns_to_front(df, priority_columns):
+    """
+    Reorder MultiIndex DataFrame columns to move specified columns to the front.
+    Assumes the priority columns are at the first level of the MultiIndex.
+
+    Parameters:
+    df (DataFrame): The DataFrame whose columns are to be reordered.
+    priority_columns (list): A list of first-level column names to move to the front.
+
+    Returns:
+    DataFrame: A DataFrame with the specified columns moved to the front.
+    """
+    # Create two lists: one for priority columns and one for the rest
+    # We only adjust the first level of the index, assuming the priority columns affect the first level
+    priority_cols = [(col1, col2) for col1, col2 in df.columns if col1 in priority_columns]
+    other_cols = [(col1, col2) for col1, col2 in df.columns if col1 not in priority_columns]
+
+    # Ensure all priority columns are in the DataFrame's columns
+    priority_cols = [col for col in priority_cols if col in df.columns]
+
+    # Combine the columns into the new order
+    new_order = priority_cols + other_cols
+
+    # Reassign the new order to the DataFrame
+    return df[new_order]
+
+
+def extract_nominal_values(df, value_columns, condition):
+    """
+    Extract nominal values based on a specified condition and rename them for clarity.
+    """
+    nominal_df = df.query(condition)
+    nominal_df = nominal_df[['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'] + value_columns]
+    # Rename nominal columns to distinguish them
+    nominal_df = nominal_df.rename(columns={col: f'Nominal {col}' for col in value_columns})
+    return nominal_df
+
+def extract_nominal_values_multi_index(df, value_columns, condition):
+    """
+    Extract nominal values based on a specified condition and rename them for clarity,
+    ensuring that the columns are structured for a MultiIndex DataFrame.
+    """
+    # Query the DataFrame based on the specified condition
+    nominal_df = df.query(condition)
+    
+    # Select necessary columns
+    nominal_df = nominal_df[['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'] + value_columns]
+    
+    # Rename columns to distinguish nominal values and set up for MultiIndex
+    nominal_df.columns = ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'] + [f'Nominal {col}' for col in value_columns]
+    
+    # Convert DataFrame to use MultiIndex columns
+    multi_index_tuples = [('Voxel index', ''), ('Voxel begin (Z)', ''), ('Voxel end (Z)', '')] + \
+                         [(col, 'nominal') for col in value_columns]
+    nominal_df.columns = pandas.MultiIndex.from_tuples(multi_index_tuples)
+    
+    # Set the voxel columns as the index to facilitate easy merging
+    nominal_df.set_index(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], inplace=True)
+
+    return nominal_df
+
+
+def adjust_columns_for_multiindex_merge(df):
+    # Adding a second level to the column index, which matches the structure of the aggregated DataFrame
+    df.columns = pandas.MultiIndex.from_tuples([(col, '') for col in df.columns])
+    return df
+
+
+def reorder_multiindex_columns_custom(df, metadata_columns, value_columns):
+    """
+    Reorder DataFrame columns to ensure metadata columns come first followed by each measurement's statistics.
+
+    Parameters:
+    df (DataFrame): The DataFrame whose columns are to be reordered.
+    metadata_columns (list): List of metadata column names to be prioritized.
+    value_columns (list): List of value column names which have sub-statistics.
+
+    Returns:
+    DataFrame: A DataFrame with reordered columns.
+    """
+    # Extract MultiIndex columns that match the metadata
+    meta_cols = [(col, '') for col in df.columns.levels[0] if col in metadata_columns]
+
+    # Extract and sort measurement columns
+    measurement_cols = [(measure, stat) for measure in value_columns for stat in df.columns.levels[1] if (measure, stat) in df.columns]
+
+    # Combine the metadata columns and measurement columns
+    new_order = meta_cols + measurement_cols
+
+    # Reorder the DataFrame according to the new column order
+    df = df.loc[:, new_order]
+    return df
+
+
+
+def global_dosimetry_by_voxel_values_dataframe_builder_v3_generalized(master_structure_reference_dict,
+                                                                 bx_ref,
+                                                                 all_ref_key,
+                                                                 dose_ref,
+                                                                 value_columns):
+    cohort_global_dosimetry_dataframe_list = []
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry_list = []
+
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number']
+
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    value_columns + ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], 
+                    [float]*len(value_columns) + [int, float, float]
+                )
+                
+                # Dynamic aggregation for MC trial doses
+                sp_bx_global_grouped_df = apply_aggregations(sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, value_columns)
+                
+                for value_col in value_columns:
+                    # Then, apply KDE to find max density doses
+                    kde_results_df = math_funcs.apply_find_max_kde_dose_parallel_multi_index_df(sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame,
+                        ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                        value_col,
+                        'argmax_density',
+                        num_eval_pts=1000,
+                        n_jobs=-2)
+                    
+                    # Set up MultiIndex for kde_results_df columns
+                    kde_results_df.reset_index(inplace=True)
+                    """
+                    # Create a MultiIndex for the columns similar to 'sp_bx_global_grouped_df'
+                    kde_results_df.columns = pandas.MultiIndex.from_tuples([
+                        (value_col, 'argmax_density')
+                    ])
+                    # Set the index again if needed
+                    kde_results_df.set_index(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], inplace=True)
+                    
+                    
+                    # Merge using the index if both DataFrames have the same index set
+                    sp_bx_global_grouped_df = sp_bx_global_grouped_df.merge(
+                        kde_results_df,
+                        left_index=True,
+                        right_index=True,
+                        how='left'
+                    )
+                    """
+                    sp_bx_global_grouped_df = sp_bx_global_grouped_df.merge(
+                    kde_results_df,  # Reset index if kde_results_df_copy uses them as an index
+                    on=['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                    how='left'
+                )
+
+
+
+                # Nominal dose processing: assuming 'MC trial num' == 0 indicates nominal
+                sp_bx_nominal_global_grouped_df = extract_nominal_values_multi_index(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    value_columns, 
+                    "`MC trial num` == 0"
+                )
+
+                sp_bx_global_grouped_df = sp_bx_global_grouped_df.merge(
+                    sp_bx_nominal_global_grouped_df,
+                    on=['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                    how='left'
+                )
+
+                # Adding metadata and merging nominal data
+                #sp_bx_global_grouped_df = sp_bx_global_grouped_df.merge(sp_bx_nominal_global_grouped_df, on=['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], suffixes=('', ' nominal'))
+
+                sp_bx_global_grouped_df = sp_bx_global_grouped_df.assign(
+                    **{
+                        'Patient ID': patientUID,
+                        'Bx ID': specific_bx_structure['ROI'],
+                        'Bx index': specific_bx_structure_index,
+                        'Bx refnum': specific_bx_structure['Ref #'],
+                        'Simulated bool': specific_bx_structure['Simulated bool'],
+                        'Simulated type': specific_bx_structure['Simulated type']
+                    }
+                )
+                
+
+                # Reorder columns if needed
+                #new_column_order = sorted(sp_bx_global_grouped_df.columns)
+                #sp_bx_global_grouped_df = sp_bx_global_grouped_df[new_column_order]
+
+                # Example Usage
+                #fixed_columns = ['Patient ID', 'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type']
+                
+
+                # Assuming sp_bx_global_grouped_df is your DataFrame
+                #sp_bx_global_grouped_df = reorder_multiindex_columns_to_front(sp_bx_global_grouped_df, fixed_columns)
+
+                # Example of setting the priority and prefix order
+                metadata_columns = ['Patient ID', 'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)']
+
+
+                # Assuming sp_bx_global_grouped_df is your DataFrame after merging
+                sp_bx_global_grouped_df = reorder_multiindex_columns_custom(sp_bx_global_grouped_df, metadata_columns, value_columns)
+
+
+
+                sp_patient_all_biopsies_global_dosimetry_list.append(sp_bx_global_grouped_df)
+
+
+                # Downcast dataframe
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    threshold=0.25
+                )
+
+                # Store the updated dataframe back to the dictionary
+                specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number'] = sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame
+
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index=True)
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
+
+            # Downcast dataframe after concatenation
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(
+                sp_patient_all_biopsies_global_dosimetry, 
+                threshold=0.25
+            )
+
+            # Store back to the original dictionary
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry by voxel statistics"] = sp_patient_all_biopsies_global_dosimetry
+
+
+    # Final concatenation for all patients
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
+
+    return cohort_global_dosimetry_dataframe
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2244,6 +2721,294 @@ def dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
     cohort_all_bx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(cohort_all_bx_dvh_metric_dataframe, threshold=0.25)
 
     return cohort_all_bx_dvh_metric_dataframe
+
+
+
+def dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,
+                                            bx_ref,
+                                            all_ref_key,
+                                            dose_ref,
+                                            d_x_DVH_to_calc_list,
+                                            v_percent_DVH_to_calc_list
+                                            ):
+
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_dx_dvh_metric_dataframe = pandas.DataFrame()
+            sp_patient_vx_dvh_metric_dataframe = pandas.DataFrame()
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                bx_id = specific_bx_structure['ROI']
+                bx_type = specific_bx_structure["Simulated type"]
+                bx_sim_bool = specific_bx_structure["Simulated bool"]
+                bx_refnum = specific_bx_structure["Ref #"]
+
+                sp_bx_dose_distribution_all_trials_only_voxelized_df = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
+
+
+                #num_dose_trials = sp_bx_dose_distribution_all_trials_only_voxelized_df['MC trial num'].nunique()
+                #num_dose_dvh_metrics = len(d_x_DVH_to_calc_list)
+                #num_volume_dvh_metrics = len(v_percent_DVH_to_calc_list)
+            
+                sp_biopsy_dx_dvh_metric_dataframe_list = []
+                sp_biopsy_vx_dvh_metric_dataframe_list = []
+
+
+                
+                for mc_trial_num, group in sp_bx_dose_distribution_all_trials_only_voxelized_df.groupby('MC trial num'): 
+                    for x in d_x_DVH_to_calc_list:
+                        dx_val = calculate_Dx_interpolated(group, x, voxel_volume=1)
+                        
+                        dx_bx_dvh_metrics_dataframe_dict = {'Patient ID': patientUID,
+                                                            'Bx ID': bx_id,
+                                                            'Struct type': bx_ref,
+                                                            'Dicom ref num': bx_refnum,
+                                                            'Simulated bool': bx_sim_bool,
+                                                            'Simulated type': bx_type,
+                                                            'Struct index': specific_bx_structure_index,
+                                                            'DVH Metric': f'D_{x}',
+                                                            'MC trial num': mc_trial_num,
+                                                            'Value': dx_val,
+                                                            'Unit': 'Gy'
+                                                            }
+                    
+                        dx_bx_dvh_metrics_dataframe = pandas.DataFrame(dx_bx_dvh_metrics_dataframe_dict, index=[0])
+
+                        #sp_biopsy_dx_dvh_metric_dataframe = pandas.concat([sp_biopsy_dx_dvh_metric_dataframe, dx_bx_dvh_metrics_dataframe], ignore_index = True)
+
+                        sp_biopsy_dx_dvh_metric_dataframe_list.append(dx_bx_dvh_metrics_dataframe)
+
+                    for x in v_percent_DVH_to_calc_list:
+                        vx_val = calculate_Vx_interpolated(group, x, voxel_volume=1)
+
+                        vx_bx_dvh_metrics_dataframe_dict = {'Patient ID': patientUID,
+                                                            'Bx ID': bx_id,
+                                                            'Struct type': bx_ref,
+                                                            'Dicom ref num': bx_refnum,
+                                                            'Simulated bool': bx_sim_bool,
+                                                            'Simulated type': bx_type,
+                                                            'Struct index': specific_bx_structure_index,
+                                                            'DVH Metric': f'V_{x}',
+                                                            'MC trial num': mc_trial_num,
+                                                            'Value': vx_val,
+                                                            'Unit': '% vol'
+                                                            }
+                    
+                        vx_bx_dvh_metrics_dataframe = pandas.DataFrame(vx_bx_dvh_metrics_dataframe_dict, index=[0])
+
+                        #sp_biopsy_vx_dvh_metric_dataframe = pandas.concat([sp_biopsy_vx_dvh_metric_dataframe, vx_bx_dvh_metrics_dataframe], ignore_index = True)
+
+                        sp_biopsy_vx_dvh_metric_dataframe_list.append(vx_bx_dvh_metrics_dataframe)
+
+
+                        
+                sp_biopsy_dx_dvh_metric_dataframe = pandas.concat(sp_biopsy_dx_dvh_metric_dataframe_list, ignore_index = True)
+                sp_biopsy_vx_dvh_metric_dataframe = pandas.concat(sp_biopsy_vx_dvh_metric_dataframe_list, ignore_index = True)
+
+                sp_patient_dx_dvh_metric_dataframe = pandas.concat([sp_patient_dx_dvh_metric_dataframe, sp_biopsy_dx_dvh_metric_dataframe], ignore_index = True)
+                sp_patient_vx_dvh_metric_dataframe = pandas.concat([sp_patient_vx_dvh_metric_dataframe, sp_biopsy_vx_dvh_metric_dataframe], ignore_index = True)
+
+            sp_patient_dx_dvh_metric_statitics_dataframe = dvh_metrics_statistics(sp_patient_dx_dvh_metric_dataframe)
+            sp_patient_vx_dvh_metric_statitics_dataframe = dvh_metrics_statistics(sp_patient_vx_dvh_metric_dataframe)
+
+            sp_patient_dx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_dx_dvh_metric_dataframe, threshold=0.25)
+            sp_patient_vx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_vx_dvh_metric_dataframe, threshold=0.25)
+            sp_patient_dx_dvh_metric_statitics_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_dx_dvh_metric_statitics_dataframe, threshold=0.25)
+            sp_patient_vx_dvh_metric_statitics_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_vx_dvh_metric_statitics_dataframe, threshold=0.25)
+
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx) all trials"] = sp_patient_dx_dvh_metric_dataframe
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Vx) all trials"] = sp_patient_vx_dvh_metric_dataframe
+
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx) statistics"] = sp_patient_dx_dvh_metric_statitics_dataframe
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Vx) statistics"] = sp_patient_vx_dvh_metric_statitics_dataframe
+
+
+
+
+def dvh_metrics_statistics(dvh_metrics_df):
+    # Filter out the nominal values for separate analysis
+    nominal_df = dvh_metrics_df[dvh_metrics_df['MC trial num'] == 0]
+    analysis_df = dvh_metrics_df[dvh_metrics_df['MC trial num'] != 0]
+
+    # Group by the required fields and calculate statistics
+    grouped = analysis_df.groupby(['Patient ID', 'Bx ID', 'Struct type', 'Dicom ref num', 'Simulated bool', 'Simulated type', 'DVH Metric'])
+
+    # Calculate statistical measures
+    stats_df = grouped['Value'].agg([
+        np.mean,
+        np.std,
+        np.median,
+        lambda x: np.percentile(x, 5),  # 5th percentile
+        lambda x: np.percentile(x, 25),   # 25th percentile
+        lambda x: np.percentile(x, 50),   # 50th percentile
+        lambda x: np.percentile(x, 75),  # 75th percentile
+        lambda x: np.percentile(x, 95),   # 95th percentile
+    ]).rename(columns={
+        'mean': 'Mean',
+        'std': 'Standard Deviation',
+        'median': 'Median',
+        '<lambda_0>': '5th Percentile',
+        '<lambda_1>': '25th Percentile',
+        '<lambda_2>': '50th Percentile',
+        '<lambda_3>': '75th Percentile',
+        '<lambda_4>': '95th Percentile',
+    })
+
+    # Get nominal values for comparison
+    nominal_stats_df = nominal_df.set_index(['Patient ID', 'Bx ID', 'Struct type', 'Dicom ref num', 'Simulated bool', 'Simulated type', 'DVH Metric'])[['Value']]
+    nominal_stats_df.rename(columns={'Value': 'Nominal'}, inplace=True)
+
+    # Join the nominal values back with the statistical dataframe
+    final_stats_df = stats_df.join(nominal_stats_df, on=['Patient ID', 'Bx ID', 'Struct type', 'Dicom ref num', 'Simulated bool', 'Simulated type', 'DVH Metric'])
+
+    return final_stats_df
+
+def calculate_Dx(df, x, voxel_volume=1):
+    """
+    Calculate Dx, the minimum dose received by x% of the volume.
+    
+    Parameters:
+    df (pd.DataFrame): Dataframe containing dose information per voxel.
+    x (float): The percentage of volume (0-100).
+    voxel_volume (float): The volume of each voxel (default assumes uniform size).
+    
+    Returns:
+    float: The Dx value.
+    """
+    # Calculate the total volume
+    total_volume = df.shape[0] * voxel_volume
+    
+    # Calculate the volume that x% of the structure would comprise
+    required_volume = total_volume * (x / 100)
+    
+    # Sort the dataframe by dose in descending order
+    df_sorted = df.sort_values(by='Dose (Gy)', ascending=False)
+    
+    # Calculate cumulative volume
+    df_sorted['cumulative_volume'] = np.cumsum([voxel_volume] * df_sorted.shape[0])
+    
+    # Find the minimum dose where the cumulative volume exceeds the required volume
+    dose_at_x = df_sorted[df_sorted['cumulative_volume'] >= required_volume]['Dose (Gy)'].iloc[0]
+    
+    return dose_at_x
+
+def calculate_Vx(df, x, voxel_volume=1):
+    """
+    Calculate Vx, the volume percentage receiving at least x dose.
+    
+    Parameters:
+    df (pd.DataFrame): Dataframe containing dose information per voxel.
+    x (float): The dose threshold.
+    voxel_volume (float): The volume of each voxel (default assumes uniform size).
+    
+    Returns:
+    float: The Vx value as a percentage.
+    """
+    # Calculate total volume
+    total_volume = df.shape[0] * voxel_volume
+    
+    # Find the volume receiving at least x dose
+    volume_at_least_x = df[df['Dose (Gy)'] >= x].shape[0] * voxel_volume
+    
+    # Calculate the percentage of the total volume
+    vx_percentage = (volume_at_least_x / total_volume) * 100
+    
+    return vx_percentage
+
+
+
+
+def calculate_Dx_interpolated(df, x, voxel_volume=1):
+    """
+    Calculate Dx with linear interpolation, the minimum dose received by x% of the volume.
+    
+    Parameters:
+    df (pd.DataFrame): Dataframe containing dose information per voxel.
+    x (float): The percentage of volume (0-100).
+    voxel_volume (float): The volume of each voxel (default assumes uniform size).
+    
+    Returns:
+    float: The interpolated Dx value.
+    """
+    # Calculate the total volume
+    total_volume = df.shape[0] * voxel_volume
+    
+    # Calculate the volume that x% of the structure would comprise
+    required_volume = total_volume * (x / 100)
+    
+    # Sort the dataframe by dose in descending order
+    df_sorted = df.sort_values(by='Dose (Gy)', ascending=False)
+    
+    # Calculate cumulative volume
+    df_sorted['cumulative_volume'] = np.cumsum([voxel_volume] * df_sorted.shape[0])
+    
+    # Check if exact match is found first
+    if required_volume in df_sorted['cumulative_volume'].values:
+        return df_sorted[df_sorted['cumulative_volume'] == required_volume]['Dose (Gy)'].iloc[0]
+    
+    # Create an interpolation function
+    interp_func = interp1d(df_sorted['cumulative_volume'], df_sorted['Dose (Gy)'],
+                           kind='linear', fill_value="extrapolate")
+    
+    # Calculate interpolated dose
+    interpolated_dose = interp_func(required_volume).item()
+    
+    return interpolated_dose
+
+
+def calculate_Vx_interpolated(df, x, voxel_volume=1):
+    """
+    Calculate Vx with linear interpolation, the volume percentage receiving at least x dose.
+    
+    Parameters:
+    df (pd.DataFrame): Dataframe containing dose information per voxel.
+    x (float): The dose threshold.
+    voxel_volume (float): The volume of each voxel (default assumes uniform size).
+    
+    Returns:
+    float: The interpolated Vx value as a percentage.
+    """
+    # Calculate total volume
+    total_volume = df.shape[0] * voxel_volume
+    
+    # Calculate cumulative volume for doses at least x
+    df_sorted = df.sort_values(by='Dose (Gy)', ascending=False)
+    df_sorted['cumulative_volume'] = np.cumsum([voxel_volume] * df_sorted.shape[0])
+    
+    # Create an interpolation function
+    interp_func = interp1d(df_sorted['Dose (Gy)'], df_sorted['cumulative_volume'],
+                           kind='linear', bounds_error=False, fill_value=(0, df_sorted['cumulative_volume'].iloc[-1]))
+    
+    # Use interpolation to find the cumulative volume at dose x
+    volume_at_least_x = interp_func(x).item()
+    
+    # Calculate the percentage of the total volume
+    vx_percentage = (volume_at_least_x / total_volume) * 100
+    
+    return vx_percentage
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def normal_CI_estimator_by_dataframe_row(row, mean_col_name = 'Mean', std_err_col_name = 'Std err'):
     row_ci= mf.normal_CI_estimator(row[mean_col_name], row[std_err_col_name])

@@ -327,10 +327,12 @@ def production_plot_sampled_shift_vector_box_plots_cohort(cohort_output_figures_
 def production_plot_axial_dose_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
                                                                                  patientUID,
                                                                                  bx_ref,
+                                                                                 all_ref,
                                                                                  patient_sp_output_figures_dir_dict,
-                                                                                 general_plot_name_string):
+                                                                                 general_plot_name_string,
+                                                                                 num_rand_trials_to_show):
     # plotting function
-    def plot_quantile_regression_and_more_corrected(df, patientUID, bx_id):
+    def plot_quantile_regression_and_more_corrected(df, df_voxelized, sp_patient_all_structure_shifts_pandas_data_frame, patientUID, bx_id, bx_struct_ind, bx_ref):
         plt.ioff()
         fig = plt.figure(figsize=(12, 8))
 
@@ -341,10 +343,46 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         y_regressions = {}
 
         # Function to perform and plot kernel regression
-        def perform_and_plot_kernel_regression(x, y, x_range, label, color):
+        def perform_and_plot_kernel_regression(x, y, x_range, label, color, annotation_text = None, target_offset=0):
             kr = KernelReg(endog=y, exog=x, var_type='c', bw = [1])
             y_kr, _ = kr.fit(x_range)
             plt.plot(x_range, y_kr, label=label, color=color, linewidth=2)
+            
+            """
+            if annotation_text != None:
+                plt.annotate(annotation_text, xy=(x_range[0], y_kr[0]), xytext=(x_range[0], y_kr[0]))
+            """
+            # Add annotation if provided
+            if annotation_text is not None:
+                # Determine the total number of points
+                total_points = len(x_range)
+                
+                # Calculate the target index based on the offset, with wrapping
+                target_index = (total_points // 5 * target_offset) % total_points
+                
+                # Target point coordinates
+                target_x = x_range[target_index]
+                target_y = y_kr[target_index]
+                
+                # Add annotation with an arrow
+                plt.annotate(
+                    annotation_text, 
+                    xy=(target_x, target_y),  # Point to annotate
+                    xytext=(target_x + 1, target_y + 1),  # Offset for text
+                    arrowprops=dict(
+                        arrowstyle="->",  # Arrow style
+                        color=color,      # Arrow color
+                        lw=1.5            # Line width
+                    ),
+                    fontsize=10,        # Font size of annotation
+                    color=color,        # Color of annotation text
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",  # Text box style
+                        edgecolor=color,          # Edge color of box
+                        facecolor="white",        # Background color of box
+                        alpha=0.8                 # Transparency of box
+                    )
+                )
 
         # Perform kernel regression for each quantile and store the y-values
         for quantile in [0.05, 0.25, 0.75, 0.95]:
@@ -382,16 +420,60 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         perform_and_plot_kernel_regression(z_vals, kde_max_doses, x_range, 'KDE Max Density Dose', 'magenta')
         perform_and_plot_kernel_regression(z_vals, mean_doses, x_range, 'Mean Dose', 'orange')
 
-        num_mc_trials_plus_nom = df['MC trial num'].nunique()
+        
 
         # Line plot for each trial
+        """
+        num_mc_trials_plus_nom = df_voxelized['MC trial num'].nunique()
         for trial in range(1,num_mc_trials_plus_nom):
             df_sp_trial = df[df["MC trial num"] == trial].sort_values(by='Z (Bx frame)') # sorting is to make sure that the lines are drawn properly
             df_z_simple = df_sp_trial.drop_duplicates(subset=['Z (Bx frame)'], keep='first') # remove points that have the same z value so that the line plots look better
-            plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
-        
+            #plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+            plt.scatter(
+                df_z_simple['Z (Bx frame)'], 
+                df_z_simple['Dose (Gy)'], 
+                color='grey', 
+                alpha=0.1, 
+                s=10,  # Size of dots, adjust as needed
+                zorder=0.9
+            )
+        """
 
-        
+        ## Instead want to show regressions of random trials so that we can appreciate structure
+        annotation_offset_index = 0
+        for trial in range(1,num_rand_trials_to_show):
+            mc_trial_shift_vec_df = sp_patient_all_structure_shifts_pandas_data_frame[(sp_patient_all_structure_shifts_pandas_data_frame["Trial"] == trial) &
+                                                                                   (sp_patient_all_structure_shifts_pandas_data_frame["Structure type"] == bx_ref) & 
+                                                                                   (sp_patient_all_structure_shifts_pandas_data_frame["Structure index"] == bx_struct_ind)].reset_index(drop=True)
+            mc_trial = df[df['MC trial num'] == trial]
+            mc_trial_voxelized = df_voxelized[df_voxelized['MC trial num'] == trial]
+
+            
+
+            x_dist = mc_trial_shift_vec_df.at[0,'Shift X']
+            y_dist = mc_trial_shift_vec_df.at[0,'Shift Y']
+            z_dist = mc_trial_shift_vec_df.at[0,'Shift Z']
+            d_tot = mc_trial_shift_vec_df.at[0,'Shift magnitude']
+
+            annotation_text_for_trial = f"({x_dist:.1f},{y_dist:.1f},{z_dist:.1f}), d = {d_tot:.1f}"
+            
+            perform_and_plot_kernel_regression(mc_trial['Z (Bx frame)'], mc_trial['Dose (Gy)'], x_range, f"Trial: {trial}", 'gray', annotation_text = annotation_text_for_trial, target_offset=annotation_offset_index)
+            
+            plt.scatter(
+                mc_trial_voxelized['Z (Bx frame)'], 
+                mc_trial_voxelized['Dose (Gy)'], 
+                color='grey', 
+                alpha=0.1, 
+                s=10,  # Size of dots, adjust as needed
+                zorder=1.1
+            )
+            annotation_offset_index += 1
+        """
+        for trial in range(1,num_rand_trials_to_show):
+            df_sp_trial = df_voxelized[df_voxelized["MC trial num"] == trial]
+            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 1.1)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+        """
+
 
         plt.title(f'Quantile Regression with Filled Areas Between Lines - {patientUID} - {bx_id}')
         plt.xlabel('Z (Bx frame)')
@@ -407,10 +489,22 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
         bx_struct_roi = specific_bx_structure["ROI"]
+        bx_struct_ind = specific_bx_structure["Index number"]
+
+        sp_patient_all_structure_shifts_pandas_data_frame = pydicom_item[all_ref]["Multi-structure MC simulation output dataframes dict"]["All MC structure shift vectors"]
+
         
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 
-        fig = plot_quantile_regression_and_more_corrected(dose_output_nominal_and_all_MC_trials_pandas_data_frame, patientUID, bx_struct_roi)
+        dose_output_nominal_and_all_MC_trials_fully_voxelized_pandas_data_frame = specific_bx_structure["Output data frames"]["Voxel-wise dose output by MC trial number"]
+
+        fig = plot_quantile_regression_and_more_corrected(dose_output_nominal_and_all_MC_trials_pandas_data_frame,
+                                                          dose_output_nominal_and_all_MC_trials_fully_voxelized_pandas_data_frame,
+                                                          sp_patient_all_structure_shifts_pandas_data_frame,
+                                                          patientUID, 
+                                                          bx_struct_roi,
+                                                          bx_struct_ind,
+                                                          bx_ref)
 
         svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
         svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
@@ -5333,7 +5427,10 @@ def production_plot_dose_ridge_plot_by_voxel_v3(multi_or_sp_patient_dose_df,
         # Adjust layout to make room for the colorbar
         g.fig.subplots_adjust(right=0.85, left= 0.07)
         cbar_ax = g.fig.add_axes([0.9, 0.1, 0.05, 0.7])
-        g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+        cbar = g.fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+        # Add a label to the colorbar
+        cbar.set_label('Dose (Gy)', fontsize=12, labelpad=10, rotation=270, color='black')
+
 
         # Final adjustments
         g.set_titles("")
@@ -5663,18 +5760,18 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
                            (df_dose_stats_by_voxel['Patient ID'] == patient_id) & 
                            (df_dose_stats_by_voxel['Bx index'] == bx_index)].iloc[0]
 
-        nominal_dose = voxel_row['Global nominal mean dose']
-        mean = voxel_row['Global mean dose']
-        std = voxel_row['Global standard deviation dose']
-        max_density_dose = voxel_row['Global max density dose']
-        voxel_begin = voxel_row['Voxel begin (Z)']
-        voxel_end = voxel_row['Voxel end (Z)']
+        nominal_dose = voxel_row[('Dose (Gy)','nominal')]
+        mean = voxel_row[('Dose (Gy)','mean')]
+        std = voxel_row[('Dose (Gy)','std')]
+        max_density_dose = voxel_row[('Dose (Gy)','argmax_density')]
+        voxel_begin = voxel_row[('Voxel begin (Z)', '')]
+        voxel_end = voxel_row[('Voxel end (Z)', '')]
 
-        q05_dose = voxel_row['Global q05 dose']
-        q25_dose = voxel_row['Global q25 dose']
-        q50_dose = voxel_row['Global q50 dose']
-        q75_dose = voxel_row['Global q75 dose']
-        q95_dose = voxel_row['Global q95 dose']
+        q05_dose = voxel_row[('Dose (Gy)','quantile_05')]
+        q25_dose = voxel_row[('Dose (Gy)','quantile_25')]
+        q50_dose = voxel_row[('Dose (Gy)','quantile_50')]
+        q75_dose = voxel_row[('Dose (Gy)','quantile_75')]
+        q95_dose = voxel_row[('Dose (Gy)','quantile_95')]
 
         tissue_voxel = df_tissue[(df_tissue['Voxel index'] == label_float) & 
                                  (df_tissue['Patient ID'] == patient_id) & 
@@ -5705,8 +5802,8 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
 
         ax.fill_between(x_grid, scaled_density, alpha=0.5, color=density_color)
 
-    max_95th_quantile = df_dose_stats_by_voxel['Global q95 dose'].max()
-    min_5th_quantile = df_dose_stats_by_voxel['Global q05 dose'].min()
+    max_95th_quantile = df_dose_stats_by_voxel[('Dose (Gy)','quantile_95')].max()
+    min_5th_quantile = df_dose_stats_by_voxel[('Dose (Gy)','quantile_05')].min()
 
     # Define legend handles
     legend_handles = [
@@ -5772,6 +5869,97 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
 
 
 
+
+
+
+
+def cohort_all_biopsies_dosimtery_boxplot_grouped_by_patient(cohort_global_dosimetry_dataframe,
+                                          general_plot_name_string,
+                                          cohort_output_figures_dir,
+                                          spacing_factor = 0.12):
+    import matplotlib.pyplot as plt
+
+    df = cohort_global_dosimetry_dataframe.copy()
+
+    # Set up the figure
+    fig, ax = plt.subplots(figsize=(16, 8))
+
+    tick_positions = []
+    legend_added = False  # Flag to ensure legend is added only once
+
+    for i, row in df.iterrows():
+        # Extract values for the current biopsy
+        biopsy_values = [
+            row["Global q25 dose"],  # Box lower bound
+            row["Global q50 dose"],  # Median
+            row["Global q75 dose"],  # Box upper bound
+            row["Global min dose"],  # Min (point)
+            row["Global max dose"],  # Max (point)
+            row["Global q05 dose"],  # 5th percentile
+            row["Global q95 dose"],  # 95th percentile
+            row["Global max density dose"],  # Max density
+            row["Global mean dose"],   # Mean
+            row["Global nominal mean dose"]  # Global nominal mean
+        ]
+
+        # Calculate fences
+        iqr = row["Global q75 dose"] - row["Global q25 dose"]
+        lower_fence = row["Global q25 dose"] - 1.5 * iqr
+        upper_fence = row["Global q75 dose"] + 1.5 * iqr
+
+        # Set x-position
+        x_pos = (i + 1) * spacing_factor
+        tick_positions.append(x_pos)
+
+        # Plot box-like structure
+        ax.hlines(y=biopsy_values[0], xmin=x_pos - 0.05, xmax=x_pos + 0.05, color='blue', lw=2)
+        ax.hlines(y=biopsy_values[2], xmin=x_pos - 0.05, xmax=x_pos + 0.05, color='blue', lw=2)
+        ax.vlines(x=x_pos, ymin=biopsy_values[0], ymax=biopsy_values[2], color='blue', lw=2)
+        ax.plot([x_pos], [biopsy_values[1]], 'ro', label="Median" if not legend_added else "")
+
+        # Add whiskers and fences
+        ax.plot([x_pos, x_pos], [lower_fence, biopsy_values[0]], color='black', linestyle='-')  # Lower whisker
+        ax.plot([x_pos, x_pos], [biopsy_values[2], upper_fence], color='black', linestyle='-')  # Upper whisker
+        ax.plot([x_pos], [lower_fence], 'k_', label="Lower Fence" if not legend_added else "")  # Lower fence
+        ax.plot([x_pos], [upper_fence], 'k_', label="Upper Fence" if not legend_added else "")  # Upper fence
+
+        # Add points for other statistics
+        ax.scatter([x_pos], [biopsy_values[3]], color='black', label="Min" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[4]], color='black', label="Max" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[5]], color='green', label="5th Percentile" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[6]], color='green', label="95th Percentile" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[7]], color='magenta', label="Max Density" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[8]], color='orange', label="Mean" if not legend_added else "")
+        ax.scatter([x_pos], [biopsy_values[9]], color='red', label="Nominal mean" if not legend_added else "")
+
+        legend_added = True  # Ensure the legend is added only once
+
+    # Customize the plot
+    ax.set_title("Box-plot distribution for All Biopsies", fontsize=16)
+    ax.set_ylabel("Dose Values", fontsize=12)
+    ax.set_xlabel("Biopsy Index", fontsize=12)
+    ax.set_xticks(tick_positions)
+
+    # Add horizontal grid lines
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # Create combined labels with Patient ID and Bx ID
+    x_labels = df["Patient ID"].astype(str) + " - " + df["Bx ID"].astype(str)
+    ax.set_xticklabels(x_labels, rotation=45, fontsize=10)
+
+    # Add legend with white background
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, labels, loc="upper right", facecolor="white", framealpha=1)
+
+    plt.tight_layout()
+
+    # Save the figure
+    svg_boxplot_fig_name = general_plot_name_string + '.svg'
+    svg_boxplot_fig_file_path = cohort_output_figures_dir.joinpath(svg_boxplot_fig_name)
+    plt.savefig(svg_boxplot_fig_file_path, format='svg', bbox_inches="tight")
+
+    # Close the plot
+    plt.close()
 
 
 
@@ -7535,17 +7723,34 @@ def production_plot_cohort_sum_to_one_all_biopsy_voxels_binom_est_histogram_by_t
         max_val = tissue_data.max()
         quantiles = np.percentile(tissue_data, [5, 25, 75, 95])
 
-        # KDE fit for the binomial estimator values with specified bandwidth
-        kde = gaussian_kde(tissue_data, bw_method=bandwidth)
-        x_grid = np.linspace(0, 1, 1000)
-        y_density = kde(x_grid)
-        # Normalize the KDE so the area under the curve equals 1
-        y_density /= np.trapz(y_density, x_grid)  # Normalize over the x_grid range
+        
+        try:
+            # KDE fit for the binomial estimator values with specified bandwidth
+            kde = gaussian_kde(tissue_data, bw_method=bandwidth)
+            x_grid = np.linspace(0, 1, 1000)
+            y_density = kde(x_grid)
+            # Normalize the KDE so the area under the curve equals 1
+            y_density /= np.trapz(y_density, x_grid)  # Normalize over the x_grid range
 
-        max_density_value = x_grid[np.argmax(y_density)]
+            max_density_value = x_grid[np.argmax(y_density)]
 
-        # Overlay KDE plot
-        ax.plot(x_grid, y_density, color='black', linewidth=1.5, label='KDE')
+            # Overlay KDE plot
+            ax.plot(x_grid, y_density, color='black', linewidth=1.5, label='KDE')
+
+        except np.linalg.LinAlgError:
+            # If there's a LinAlgError, it likely means all values are identical
+            print(f"Cohort sum-to-one histogram plot | Tissue class: {tissue_class} | LinAlgError: {e}")
+            constant_value = tissue_data.iloc[0] if len(tissue_data) > 0 else 0
+            ax.axvline(constant_value, color='black', linestyle='-', linewidth=1.5, label='All values are identical')
+            max_density_value = constant_value  # Set max density to the constant value for further annotations
+
+        except Exception as e:
+            # Handle any other unexpected errors and print/log the error message
+            print(f"Cohort sum-to-one histogram plot | Tissue class: {tissue_class} | An unexpected error occurred: {e}")
+            # Set a fallback for max density value or other defaults
+            constant_value = tissue_data.mean() if len(tissue_data) > 0 else 0
+            ax.axvline(constant_value, color='red', linestyle='-', linewidth=1.5, label='Fallback line due to error')
+            max_density_value = constant_value
 
         # Add vertical lines for mean, min, max, quantiles, and max density
         line_positions = {

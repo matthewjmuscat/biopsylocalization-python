@@ -456,6 +456,102 @@ def create_dose_point_cloud(data_3d_arr, color_flattening_degree, paint_dose_col
 
     return point_cloud
 
+def create_dose_point_cloud_with_gradients(
+    data_with_gradients_3d_arr,
+    paint_dose_color=True,
+    arrow_scale=1.0,
+    truncate_below_dose=None,
+    truncate_below_gradient_norm=None
+):
+    """
+    Create a dose point cloud and gradient arrows using normalized gradient vectors and gradient norms.
+
+    Parameters:
+        data_with_gradients_3d_arr (numpy.ndarray): Array containing dose and gradient data (normalized gradients included).
+        paint_dose_color (bool): Whether to paint the dose values as colors.
+        arrow_scale (float): Scaling factor for gradient arrows.
+        truncate_below_dose (float): Truncate points with dose values below this threshold.
+        truncate_below_gradient_norm (float): Truncate gradient arrows with gradient norms below this threshold.
+
+    Returns:
+        tuple: Point cloud and arrow set for visualization.
+    """
+
+
+    # Extract data from input array
+    point_cloud = o3d.geometry.PointCloud()
+    data_all_slices_2d_arr = np.reshape(data_with_gradients_3d_arr, (-1, 14))
+    
+    position_data = data_all_slices_2d_arr[:, 3:6]  # x, y, z
+    dose_data = data_all_slices_2d_arr[:, 6]       # dose
+    gradient_norms = data_all_slices_2d_arr[:, 10]  # Gradient norm (|G|)
+    gradient_vectors = data_all_slices_2d_arr[:, 11:14]  # Normalized Gx, Gy, Gz
+
+    # Truncate based on dose values
+    if truncate_below_dose is not None:
+        dose_mask = dose_data >= truncate_below_dose
+        position_data = position_data[dose_mask]
+        dose_data = dose_data[dose_mask]
+        gradient_norms = gradient_norms[dose_mask]
+        gradient_vectors = gradient_vectors[dose_mask]
+
+    # Truncate based on gradient norms
+    if truncate_below_gradient_norm is not None:
+        gradient_mask = gradient_norms >= truncate_below_gradient_norm
+        position_data = position_data[gradient_mask]
+        dose_data = dose_data[gradient_mask]
+        gradient_norms = gradient_norms[gradient_mask]
+        gradient_vectors = gradient_vectors[gradient_mask]
+
+    # Apply arrow scaling factor
+    gradient_vectors_scaled = gradient_vectors * arrow_scale
+
+    # Create point cloud
+    point_cloud.points = o3d.utility.Vector3dVector(position_data)
+    if paint_dose_color:
+        dose_data_log = np.log(dose_data + 1e-9)  # Avoid log(0)
+        dose_data_log_normalized = (dose_data_log - np.min(dose_data_log)) / (
+            np.max(dose_data_log) - np.min(dose_data_log) + 1e-9
+        )
+        pcd_color_arr = np.zeros((position_data.shape[0], 3))
+        pcd_color_arr[:, 0] = dose_data_log_normalized  # Red for high log-dose
+        pcd_color_arr[:, 2] = 1 - dose_data_log_normalized  # Blue for low log-dose
+        point_cloud.colors = o3d.utility.Vector3dVector(pcd_color_arr)
+    else:
+        point_cloud.paint_uniform_color([0, 0, 0])  # Paint everything black
+
+    # Create gradient arrows
+    lines = []
+    arrow_points = []
+    arrow_colors = []
+    
+    gradient_norms_log = np.log(gradient_norms + 1e-9)  # Avoid log(0)
+    gradient_norms_log_normalized = (gradient_norms_log - np.min(gradient_norms_log)) / (
+        np.max(gradient_norms_log) - np.min(gradient_norms_log) + 1e-9
+    )
+    
+    for i, point in enumerate(position_data):
+        arrow_start = point
+        arrow_end = point + gradient_vectors_scaled[i]
+        arrow_points.append(arrow_start)
+        arrow_points.append(arrow_end)
+        lines.append([2 * i, 2 * i + 1])  # Each arrow is a pair of start and end points
+        
+        # Gradient norm-based coloring (e.g., red for high norm, blue for low)
+        norm_color = [gradient_norms_log_normalized[i], 0, 1 - gradient_norms_log_normalized[i]]
+        arrow_colors.append(norm_color)  # One color per line
+
+    arrow_set = o3d.geometry.LineSet()
+    arrow_set.points = o3d.utility.Vector3dVector(np.array(arrow_points))
+    arrow_set.lines = o3d.utility.Vector2iVector(np.array(lines))
+    arrow_set.colors = o3d.utility.Vector3dVector(np.array(arrow_colors))
+    
+    return point_cloud, arrow_set
+
+
+
+
+
 
 
 def create_thresholded_dose_point_cloud(data_3d_arr, color_flattening_degree, paint_dose_color = True, lower_bound_percent = 10):

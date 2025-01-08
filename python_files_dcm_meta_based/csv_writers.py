@@ -335,7 +335,7 @@ def csv_writer_dosimetry(live_display,
                            patient_sp_output_csv_dir_dict,
                            bx_ref,
                            display_dvh_as,
-                           volume_DVH_percent_dose
+                           v_percent_DVH_to_calc_list
                            ):
 
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -520,7 +520,7 @@ def csv_writer_dosimetry(live_display,
                     write.writerow(['___'])
                     write.writerow(['DVH metrics, percentages are relative to CTV target dose'])
                     write.writerow(['Each row is a fixed DVH metric, each column is a fixed MC trial'])
-                    for vol_DVH_percent in volume_DVH_percent_dose:
+                    for vol_DVH_percent in v_percent_DVH_to_calc_list:
                         dvh_metric_all_MC_trials = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["All MC trials list"]
                         dvh_metric_nominal = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Nominal"]
                         dvh_metric_mean = dvh_metric_vol_dose_percent_dict[str(vol_DVH_percent)]["Mean"]
