@@ -232,7 +232,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10
+    num_MC_containment_simulations_input = 100
     num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
@@ -311,8 +311,8 @@ def main():
     display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
     num_cumulative_dvh_plots_to_show = 25
     num_differential_dvh_plots_to_show = 25
-    v_percent_DVH_to_calc_list = [100,125,150,200,300] # These are V%
-    d_x_DVH_to_calc_list = [2,50,98] 
+    v_percent_DVH_to_calc_list = [100,125,150,200,300] # These are V_x, note that these values should be given as percentages relative to CTV, this is pulled automatically from plan ref, the output is a percent volume 
+    d_x_DVH_to_calc_list = [2,50,98] # These are D_x, x values should be given as percentages of the total volume (ie. between 0,100). the output is a dose value
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
 
     #fanova
@@ -782,6 +782,7 @@ def main():
                                                                 "Cohort: DIL global tissue scores and DIL features": None,
                                                                 "Cohort: Entire point-wise dose distribution": None,
                                                                 "Cohort: Bx DVH metrics": None,
+                                                                "Cohort: Bx DVH metrics (generalized)": None,
                                                                 "Cohort: Bx global info dataframe": None,
                                                                 "Cohort: "+ mr_global_multi_structure_output_dataframe_str: None,
                                                                 "Cohort: "+ mr_global_by_voxel_multi_structure_output_dataframe_str: None
@@ -6492,12 +6493,16 @@ def main():
                 # DVH metrics new and improved!
                 st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 7", total = None)
-                dataframe_builders.dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,
+                cohort_all_bx_dvh_metric_generalized_dataframe = dataframe_builders.dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,
                                             bx_ref,
                                             all_ref_key,
                                             dose_ref,
+                                            plan_ref,
                                             d_x_DVH_to_calc_list,
-                                            v_percent_DVH_to_calc_list)
+                                            v_percent_DVH_to_calc_list,
+                                            default_ctv_dose = 13.5)
+
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Bx DVH metrics (generalized)"] = cohort_all_bx_dvh_metric_generalized_dataframe
 
                 et = time.time()
                 duration = et-st
@@ -9236,11 +9241,7 @@ def structure_referencer(data_removals_dict,
                                                                                  "Tissue class - sum-to-one mc results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
                                                                                  "DVH metrics": None,
-                                                                                 "DVH metrics (Dx) all trials": None,
-                                                                                 "DVH metrics (Vx) all trials": None,
-                                                                                 "DVH metrics (Dx) statistics": None,
-                                                                                 "DVH metrics (Vx) statistics": None,
-                                                                                 "All MC structure shift vectors": None, 
+                                                                                 "DVH metrics (Dx, Vx) statistics": None,
                                                                                  "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
                                                                                  "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None},
                         "Multi-structure Fanova output dataframes dict": {}                                             

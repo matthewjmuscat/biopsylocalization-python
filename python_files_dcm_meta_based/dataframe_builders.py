@@ -10,6 +10,8 @@ import math_funcs
 import scipy.stats as stats
 import copy
 from scipy.interpolate import interp1d
+from scipy.stats import skew, kurtosis
+import cupy as cp
 
 
 def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
@@ -2724,103 +2726,76 @@ def dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
 
 
 
-def dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,
-                                            bx_ref,
-                                            all_ref_key,
-                                            dose_ref,
-                                            d_x_DVH_to_calc_list,
-                                            v_percent_DVH_to_calc_list
-                                            ):
+def dvh_metrics_calculator_and_dataframe_builder_cohort_old(master_structure_reference_dict,
+                                                        bx_ref,
+                                                        all_ref_key,
+                                                        dose_ref,
+                                                        d_x_DVH_to_calc_list,
+                                                        v_percent_DVH_to_calc_list):
 
+    
 
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        results = []
         if dose_ref in pydicom_item:
-            sp_patient_dx_dvh_metric_dataframe = pandas.DataFrame()
-            sp_patient_vx_dvh_metric_dataframe = pandas.DataFrame()
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                bx_id = specific_bx_structure['ROI']
-                bx_type = specific_bx_structure["Simulated type"]
-                bx_sim_bool = specific_bx_structure["Simulated bool"]
-                bx_refnum = specific_bx_structure["Ref #"]
-
-                sp_bx_dose_distribution_all_trials_only_voxelized_df = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
-
-
-                #num_dose_trials = sp_bx_dose_distribution_all_trials_only_voxelized_df['MC trial num'].nunique()
-                #num_dose_dvh_metrics = len(d_x_DVH_to_calc_list)
-                #num_volume_dvh_metrics = len(v_percent_DVH_to_calc_list)
-            
-                sp_biopsy_dx_dvh_metric_dataframe_list = []
-                sp_biopsy_vx_dvh_metric_dataframe_list = []
-
-
+                sp_bx_dose_distribution_df = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
                 
-                for mc_trial_num, group in sp_bx_dose_distribution_all_trials_only_voxelized_df.groupby('MC trial num'): 
+                # Calculate the number of Monte Carlo trials excluding the nominal (trial_num = 0)
+                num_mc_trials = sp_bx_dose_distribution_df['MC trial num'].nunique() - 1  # Exclude nominal trial
+
+                # Initialize storage for metrics and nominal values
+                metrics = {f'D_{x}': np.empty(num_mc_trials) for x in d_x_DVH_to_calc_list}
+                metrics.update({f'V_{x}': np.empty(num_mc_trials) for x in v_percent_DVH_to_calc_list})
+                nominal_values = {}
+
+                for mc_trial_num, group in sp_bx_dose_distribution_df.groupby('MC trial num'):
                     for x in d_x_DVH_to_calc_list:
-                        dx_val = calculate_Dx_interpolated(group, x, voxel_volume=1)
-                        
-                        dx_bx_dvh_metrics_dataframe_dict = {'Patient ID': patientUID,
-                                                            'Bx ID': bx_id,
-                                                            'Struct type': bx_ref,
-                                                            'Dicom ref num': bx_refnum,
-                                                            'Simulated bool': bx_sim_bool,
-                                                            'Simulated type': bx_type,
-                                                            'Struct index': specific_bx_structure_index,
-                                                            'DVH Metric': f'D_{x}',
-                                                            'MC trial num': mc_trial_num,
-                                                            'Value': dx_val,
-                                                            'Unit': 'Gy'
-                                                            }
-                    
-                        dx_bx_dvh_metrics_dataframe = pandas.DataFrame(dx_bx_dvh_metrics_dataframe_dict, index=[0])
-
-                        #sp_biopsy_dx_dvh_metric_dataframe = pandas.concat([sp_biopsy_dx_dvh_metric_dataframe, dx_bx_dvh_metrics_dataframe], ignore_index = True)
-
-                        sp_biopsy_dx_dvh_metric_dataframe_list.append(dx_bx_dvh_metrics_dataframe)
+                        dx_val = calculate_Dx_interpolated(group, x)
+                        if mc_trial_num == 0:
+                            nominal_values[f'D_{x}'] = dx_val
+                        else:
+                            metrics[f'D_{x}'][mc_trial_num - 1] = dx_val
 
                     for x in v_percent_DVH_to_calc_list:
-                        vx_val = calculate_Vx_interpolated(group, x, voxel_volume=1)
+                        vx_val = calculate_Vx_interpolated(group, x)
+                        if mc_trial_num == 0:
+                            nominal_values[f'V_{x}'] = vx_val
+                        else:
+                            metrics[f'V_{x}'][mc_trial_num - 1] = vx_val
 
-                        vx_bx_dvh_metrics_dataframe_dict = {'Patient ID': patientUID,
-                                                            'Bx ID': bx_id,
-                                                            'Struct type': bx_ref,
-                                                            'Dicom ref num': bx_refnum,
-                                                            'Simulated bool': bx_sim_bool,
-                                                            'Simulated type': bx_type,
-                                                            'Struct index': specific_bx_structure_index,
-                                                            'DVH Metric': f'V_{x}',
-                                                            'MC trial num': mc_trial_num,
-                                                            'Value': vx_val,
-                                                            'Unit': '% vol'
-                                                            }
-                    
-                        vx_bx_dvh_metrics_dataframe = pandas.DataFrame(vx_bx_dvh_metrics_dataframe_dict, index=[0])
+                # Collect results including nominal values
+                for metric, values_array in metrics.items():
+                    results.append({
+                        'Patient ID': patientUID,
+                        'Metric': metric,
+                        'Bx ID': specific_bx_structure['ROI'],
+                        'Struct type': bx_ref,
+                        'Dicom ref num': specific_bx_structure['Ref #'],
+                        'Simulated bool': specific_bx_structure['Simulated bool'],
+                        'Simulated type': specific_bx_structure['Simulated type'],
+                        'Struct index': specific_bx_structure_index,
+                        'Nominal': nominal_values.get(metric),
+                        'Mean': np.mean(values_array),
+                        'STD': np.std(values_array),
+                        'SEM': np.std(values_array) / np.sqrt(len(values_array)),
+                        'Max': np.max(values_array),
+                        'Min': np.min(values_array),
+                        'Skewness': skew(values_array),
+                        'Kurtosis': kurtosis(values_array),
+                        'Q05': np.percentile(values_array, 5),
+                        'Q25': np.percentile(values_array, 25),
+                        'Q50': np.percentile(values_array, 50),
+                        'Q75': np.percentile(values_array, 75),
+                        'Q95': np.percentile(values_array, 95)
+                    })
 
-                        #sp_biopsy_vx_dvh_metric_dataframe = pandas.concat([sp_biopsy_vx_dvh_metric_dataframe, vx_bx_dvh_metrics_dataframe], ignore_index = True)
+            # Create DataFrame from results
+            final_stats_df = pandas.DataFrame(results)
+            final_stats_df = convert_columns_to_categorical_and_downcast(final_stats_df, threshold=0.25)
+            # Save processed data frames back into the master dictionary for each patient
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx, Vx) statistics"] = final_stats_df
 
-                        sp_biopsy_vx_dvh_metric_dataframe_list.append(vx_bx_dvh_metrics_dataframe)
-
-
-                        
-                sp_biopsy_dx_dvh_metric_dataframe = pandas.concat(sp_biopsy_dx_dvh_metric_dataframe_list, ignore_index = True)
-                sp_biopsy_vx_dvh_metric_dataframe = pandas.concat(sp_biopsy_vx_dvh_metric_dataframe_list, ignore_index = True)
-
-                sp_patient_dx_dvh_metric_dataframe = pandas.concat([sp_patient_dx_dvh_metric_dataframe, sp_biopsy_dx_dvh_metric_dataframe], ignore_index = True)
-                sp_patient_vx_dvh_metric_dataframe = pandas.concat([sp_patient_vx_dvh_metric_dataframe, sp_biopsy_vx_dvh_metric_dataframe], ignore_index = True)
-
-            sp_patient_dx_dvh_metric_statitics_dataframe = dvh_metrics_statistics(sp_patient_dx_dvh_metric_dataframe)
-            sp_patient_vx_dvh_metric_statitics_dataframe = dvh_metrics_statistics(sp_patient_vx_dvh_metric_dataframe)
-
-            sp_patient_dx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_dx_dvh_metric_dataframe, threshold=0.25)
-            sp_patient_vx_dvh_metric_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_vx_dvh_metric_dataframe, threshold=0.25)
-            sp_patient_dx_dvh_metric_statitics_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_dx_dvh_metric_statitics_dataframe, threshold=0.25)
-            sp_patient_vx_dvh_metric_statitics_dataframe = convert_columns_to_categorical_and_downcast(sp_patient_vx_dvh_metric_statitics_dataframe, threshold=0.25)
-
-            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx) all trials"] = sp_patient_dx_dvh_metric_dataframe
-            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Vx) all trials"] = sp_patient_vx_dvh_metric_dataframe
-
-            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx) statistics"] = sp_patient_dx_dvh_metric_statitics_dataframe
-            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Vx) statistics"] = sp_patient_vx_dvh_metric_statitics_dataframe
 
 
 
@@ -2918,7 +2893,7 @@ def calculate_Vx(df, x, voxel_volume=1):
 
 
 
-def calculate_Dx_interpolated(df, x, voxel_volume=1):
+def calculate_Dx_interpolated_old(df, x, voxel_volume=1):
     """
     Calculate Dx with linear interpolation, the minimum dose received by x% of the volume.
     
@@ -2956,7 +2931,7 @@ def calculate_Dx_interpolated(df, x, voxel_volume=1):
     return interpolated_dose
 
 
-def calculate_Vx_interpolated(df, x, voxel_volume=1):
+def calculate_Vx_interpolated_old(df, x, voxel_volume=1):
     """
     Calculate Vx with linear interpolation, the volume percentage receiving at least x dose.
     
@@ -2992,7 +2967,207 @@ def calculate_Vx_interpolated(df, x, voxel_volume=1):
 
 
 
+###################
 
+
+
+
+
+def prepare_data(dose_df):
+    """Convert DataFrame to CuPy array for GPU processing."""
+    # Fill missing values if necessary, e.g., fill with zero
+    pivoted = dose_df.pivot(index='MC trial num', columns='Original pt index', values='Dose (Gy)')
+    return cp.asarray(pivoted.fillna(0).values)
+
+def calculate_Dx_interpolated(doses, x_percent):
+    """
+    Calculate Dx using GPU acceleration for a batch of MC trials with linear interpolation.
+    Assumes all voxels are of equal size.
+    """
+    num_trials, num_doses = doses.shape
+
+    # 1. Sort the doses from highest to lowest
+    sorted_doses = cp.sort(doses, axis=1)[:, ::-1]
+
+    # 2. Calculate the index for x%
+    index_at_x_percent = num_doses * (x_percent / 100.0)
+
+    # Prepare to handle both integer and fractional index cases
+    lower_index = cp.floor(index_at_x_percent).astype(cp.int32)
+    upper_index = cp.ceil(index_at_x_percent).astype(cp.int32)
+
+    # Ensure indices are within array bounds
+    lower_index = cp.clip(lower_index, 0, num_doses - 1)
+    upper_index = cp.clip(upper_index, 0, num_doses - 1)
+
+    # Ensure indices are properly shaped for batch indexing
+    lower_index = cp.full(num_trials,lower_index)[:, cp.newaxis]  # Make it 2D for broadcasting
+    upper_index = cp.full(num_trials,upper_index)[:, cp.newaxis]
+
+    # Get doses at those indices
+    lower_dose = cp.take_along_axis(sorted_doses, upper_index, axis=1).squeeze()
+    upper_dose = cp.take_along_axis(sorted_doses, lower_index, axis=1).squeeze()
+
+    # Fractional part to use for interpolation
+    fractional_part = index_at_x_percent - lower_index.squeeze()
+
+    # Linear interpolation
+    interpolated_dose = lower_dose + (upper_dose - lower_dose) * fractional_part
+
+    return interpolated_dose
+
+def calculate_Vx_interpolated(doses, dose_threshold):
+    """
+    Calculate Vx using GPU acceleration for a batch of MC trials with linear interpolation.
+    This function estimates the volume percentage receiving at least the specified dose threshold.
+    """
+    num_trials, num_doses = doses.shape
+    voxel_volume = 1  # Assuming each voxel has unit volume for simplicity
+
+    # Sort doses along each trial
+    sorted_doses = cp.sort(doses, axis=1)
+
+    # Calculate the total volume
+    total_volume = num_doses * voxel_volume
+
+    # Expanded threshold for broadcasting across trials
+    expanded_threshold = cp.full((num_trials, 1), dose_threshold)
+
+    # Finding the first occurrence where the dose exceeds the threshold
+    indices = cp.argmax(sorted_doses >= expanded_threshold, axis=1)
+
+    # Interpolate the volume at threshold
+    # Make sure indices are within bounds
+    indices = cp.clip(indices, 1, num_doses - 1)[:, cp.newaxis]
+
+    # Get dose values just below and above the threshold
+    lower_dose = cp.take_along_axis(sorted_doses, indices - 1, axis=1).squeeze()
+    upper_dose = cp.take_along_axis(sorted_doses, indices, axis=1).squeeze()
+
+    # Calculate volumes corresponding to these doses
+    lower_volume = (indices.flatten() - 1) * voxel_volume
+    upper_volume = indices.flatten() * voxel_volume
+
+    # Handle edge cases:
+    # If dose_threshold is lower than the smallest dose or higher than the highest dose:
+    is_below = dose_threshold < sorted_doses[:, 0]
+    is_above = dose_threshold > sorted_doses[:, -1]
+
+    # Linear interpolation of the exact volume where the dose exceeds the threshold
+    interpolated_volume = cp.where(
+        is_below, 
+        total_volume,  # If the threshold is below the minimum dose, volume is 0
+        cp.where(
+            is_above, 
+            0,  # If the threshold is above the maximum dose, volume is total_volume
+            lower_volume + (dose_threshold - lower_dose) / (upper_dose - lower_dose) * (upper_volume - lower_volume)
+        )
+    )
+
+
+    # Calculate the volume percentage exceeding the threshold
+    Vx_percentage = (interpolated_volume / total_volume) * 100
+
+    return Vx_percentage
+
+def batch_process_metrics(dose_data, d_x_list, v_percent_list, ctv_dose):
+    """Process all metrics in batch mode on GPU."""
+    results = {}
+    x_percents = cp.array(d_x_list)  
+    dose_thresholds = cp.array((np.array(v_percent_list)*ctv_dose/100.0).tolist())  # This converts percentage of CTV dose to actual dose value 
+    
+    results.update({f'D_{x}': calculate_Dx_interpolated(dose_data, x_percent) for x, x_percent in zip(d_x_list, x_percents)})
+    results.update({f'V_{x}': calculate_Vx_interpolated(dose_data, dose_threshold) for x, dose_threshold in zip(v_percent_list, dose_thresholds)})
+    
+    return results
+
+def dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict, 
+                                                        bx_ref, 
+                                                        all_ref_key, 
+                                                        dose_ref, 
+                                                        plan_ref,
+                                                        d_x_DVH_to_calc_list, 
+                                                        v_percent_DVH_to_calc_list,
+                                                        default_ctv_dose = 13.5):
+    
+    cohort_dataframe_list = []
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        ctv_dose = pydicom_item[plan_ref]["Prescription doses dict"].get('TARGET', default_ctv_dose)
+        if dose_ref in pydicom_item:
+            results = []
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                sp_bx_dose_distribution_df = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
+                dose_data = prepare_data(sp_bx_dose_distribution_df)
+                
+                metrics = batch_process_metrics(dose_data, d_x_DVH_to_calc_list, v_percent_DVH_to_calc_list, ctv_dose)
+                
+                # Convert results from CuPy array to NumPy for DataFrame conversion
+                for key, value in metrics.items():
+                    metrics[key] = cp.asnumpy(value)
+
+                # Collect results including nominal values
+                for metric, values_array in metrics.items():
+                    try:
+                        computed_skewness = skew(values_array)
+                    except Exception:
+                        computed_skewness = np.nan  # Or np.nan, depending on how you want to handle errors
+
+                    try:
+                        computed_kurtosis = kurtosis(values_array)
+                    except Exception:
+                        computed_kurtosis = np.nan  # Or np.nan
+
+                        
+                    results.append({
+                        'Patient ID': patientUID,
+                        'Metric': metric,
+                        'Bx ID': specific_bx_structure['ROI'],
+                        'Struct type': bx_ref,
+                        'Dicom ref num': specific_bx_structure['Ref #'],
+                        'Simulated bool': specific_bx_structure['Simulated bool'],
+                        'Simulated type': specific_bx_structure['Simulated type'],
+                        'Struct index': specific_bx_structure_index,
+                        'Mean': np.mean(values_array),
+                        'STD': np.std(values_array),
+                        'SEM': np.std(values_array) / np.sqrt(len(values_array)),
+                        'Max': np.max(values_array),
+                        'Min': np.min(values_array),
+                        'Skewness': computed_skewness,
+                        'Kurtosis': computed_kurtosis,
+                        'Q05': np.percentile(values_array, 5),
+                        'Q25': np.percentile(values_array, 25),
+                        'Q50': np.percentile(values_array, 50),
+                        'Q75': np.percentile(values_array, 75),
+                        'Q95': np.percentile(values_array, 95)
+                    })
+
+            # Create DataFrame from results
+            final_stats_df = pandas.DataFrame(results)
+            cohort_dataframe_list.append(final_stats_df)
+            final_stats_df = convert_columns_to_categorical_and_downcast(final_stats_df, threshold=0.25)
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx, Vx) statistics"] = final_stats_df
+
+    cohort_dataframe = pandas.concat(cohort_dataframe_list, ignore_index = True)
+    cohort_dataframe = convert_columns_to_categorical_and_downcast(cohort_dataframe, threshold=0.25)
+
+    return cohort_dataframe
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#################
 
 
 
