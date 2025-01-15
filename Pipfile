@@ -50,6 +50,7 @@ ortools = "*"
 fuzzywuzzy = "*"
 python-levenshtein = "*"
 gputil = "*"
+simpleitk = "*"
 
 [dev-packages]
 ipykernel = "*"

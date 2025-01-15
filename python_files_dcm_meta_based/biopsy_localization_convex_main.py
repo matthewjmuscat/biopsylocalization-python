@@ -232,7 +232,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 100
+    num_MC_containment_simulations_input = 10000
     num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
@@ -288,12 +288,12 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to": 'DIL',
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to": 'DIL',
                               "Identifier string": 'sim_optimal_dil'}
                             }
@@ -430,6 +430,11 @@ def main():
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution_matplotlib",
                                              "Num rand trials to show": 10
                                              },
+                                        "Axial dose GRADIENT distribution quantiles regression plot matplotlib": \
+                                            {"Plot bool": True, #
+                                             "Plot name": " - dose-regression-quantiles_axial_dose_gradient_distribution_matplotlib",
+                                             "Num rand trials to show": 10
+                                             },
                                         "Axial dose distribution quantiles regression plot": \
                                             {"Plot bool": False, #
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution"
@@ -457,7 +462,7 @@ def main():
                                              "Plot name": f' - dose-DVH-differential_dvh_showing_{int(num_differential_dvh_plots_to_show)}_trials'
                                              },
                                         "Differential DVH dose binned all trials box plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-DVH-differential_DVH_binned_box_plot',
                                              "Box plot color": 'rgba(0, 92, 171, 1)',
                                              "Nominal point color": 'rgba(227, 27, 35, 1)'
@@ -509,7 +514,7 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Axial MR distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": False, # 
+                                            {"Plot bool": True, # 
                                              "Plot name": " - mr-regression-quantiles_axial_distribution_matplotlib"
                                              },
                                         "Cohort - Sampled translation vector magnitudes box plots": \
@@ -6449,6 +6454,22 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"] = cohort_global_dosimetry_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 
+
+                st = time.time()
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.1", total = None) 
+                cohort_global_dosimetry_dataframe = dataframe_builders.global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df(master_structure_reference_dict,
+                                                    bx_ref,
+                                                    all_ref_key,
+                                                    dose_ref,
+                                                    dose_value_columns)
+                et = time.time()
+                duration = et-st
+                print(f"Dose DF3: {duration}")
+                
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry (NEW)"] = cohort_global_dosimetry_dataframe
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+                
                 
                 st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
@@ -6525,7 +6546,6 @@ def main():
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
 
-                live_display.start()
                 live_display.refresh()
 
 
@@ -6550,7 +6570,6 @@ def main():
                                                                             output_mr_adc_dataframe_str)
                     indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                    live_display.stop()
                     st = time.time()
                     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None)
                     cohort_global_mr_dataframe = dataframe_builders.global_mr_values_dataframe_builder(master_structure_reference_dict,
@@ -6589,7 +6608,6 @@ def main():
                     et = time.time()
                     duration = et-st
                     print(f"MR DF3: {duration}")
-                    live_display.start()
                     master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: " + mr_global_by_voxel_multi_structure_output_dataframe_str] = cohort_global_by_voxel_mr_dataframe
                     indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
@@ -6597,6 +6615,10 @@ def main():
                     indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                     completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
+
+                live_display.start()
+                live_display.refresh()
+
 
                 
 
@@ -7678,6 +7700,8 @@ def main():
                     processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile regression plots"
                     processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
 
+                    # select dose column
+                    value_col_key = 'Dose (Gy)'
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
                         
@@ -7689,6 +7713,46 @@ def main():
                                                                                     patientUID,
                                                                                     bx_ref,
                                                                                     all_ref_key,
+                                                                                    value_col_key,
+                                                                                    patient_sp_output_figures_dir_dict,
+                                                                                    general_plot_name_string,
+                                                                                    num_rand_trials_to_show)
+                        
+                        patients_progress.update(processing_patients_task, advance = 1)
+                        completed_progress.update(processing_patients_completed_task, advance = 1)
+
+                    patients_progress.update(processing_patients_task, visible = False)
+                    completed_progress.update(processing_patients_completed_task, visible = True)   
+                else:
+                    pass
+
+                if production_plots_input_dictionary["Axial dose GRADIENT distribution quantiles regression plot matplotlib"]["Plot bool"] == True:
+                    
+                    general_plot_name_string = production_plots_input_dictionary["Axial dose GRADIENT distribution quantiles regression plot matplotlib"]["Plot name"]
+                    num_rand_trials_to_show = production_plots_input_dictionary["Axial dose GRADIENT distribution quantiles regression plot matplotlib"]["Num rand trials to show"]
+                    
+                    patientUID_default = "Initializing"
+                    processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID_default)
+                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num cases"])
+                    processing_patient_production_plot_description_completed = "Creating axial dose distribution quantile regression plots"
+                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
+
+                    # select dose gradient column
+                    value_col_key = 'Dose grad (Gy/mm)'
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        
+                        processing_patient_production_plot_description = "Creating axial dose distribution quantile regression plots [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
+
+
+
+                        if dose_ref in pydicom_item:
+                            production_plots.production_plot_axial_dose_distribution_quantile_regression_by_patient_matplotlib(pydicom_item,
+                                                                                    patientUID,
+                                                                                    bx_ref,
+                                                                                    all_ref_key,
+                                                                                    value_col_key,
                                                                                     patient_sp_output_figures_dir_dict,
                                                                                     general_plot_name_string,
                                                                                     num_rand_trials_to_show)
@@ -8827,7 +8891,7 @@ def main():
             rich_preambles.section_completed("Production plots", section_start_time, completed_progress, completed_sections_manager)
 
             live_display.stop()
-            sys.exit("> Programme complete.")
+    sys.exit("> Programme complete.")
 
 
 def UID_generator(pydicom_obj):

@@ -328,6 +328,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
                                                                                  patientUID,
                                                                                  bx_ref,
                                                                                  all_ref,
+                                                                                 value_col_key,
                                                                                  patient_sp_output_figures_dir_dict,
                                                                                  general_plot_name_string,
                                                                                  num_rand_trials_to_show):
@@ -386,8 +387,8 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
         # Perform kernel regression for each quantile and store the y-values
         for quantile in [0.05, 0.25, 0.75, 0.95]:
-            q_df = df.groupby('Z (Bx frame)')['Dose (Gy)'].quantile(quantile).reset_index()
-            kr = KernelReg(endog=q_df['Dose (Gy)'], exog=q_df['Z (Bx frame)'], var_type='c', bw = [1])
+            q_df = df.groupby('Z (Bx frame)')[value_col_key].quantile(quantile).reset_index()
+            kr = KernelReg(endog=q_df[value_col_key], exog=q_df['Z (Bx frame)'], var_type='c', bw = [1])
             y_kr, _ = kr.fit(x_range)
             y_regressions[quantile] = y_kr
 
@@ -401,7 +402,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         # Kernel regression for MC trial num = 0 subset
         
         mc_trial_0 = df[df['MC trial num'] == 0]
-        perform_and_plot_kernel_regression(mc_trial_0['Z (Bx frame)'], mc_trial_0['Dose (Gy)'], x_range, 'Nominal', 'red')
+        perform_and_plot_kernel_regression(mc_trial_0['Z (Bx frame)'], mc_trial_0[value_col_key], x_range, 'Nominal', 'red')
         
 
         # KDE and mean dose per Original pt index
@@ -410,11 +411,11 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         z_vals = []
         for z_val in df['Z (Bx frame)'].unique():
             pt_data = df[df['Z (Bx frame)'] == z_val]
-            kde = gaussian_kde(pt_data['Dose (Gy)'])
-            kde_doses = np.linspace(pt_data['Dose (Gy)'].min(), pt_data['Dose (Gy)'].max(), 500)
+            kde = gaussian_kde(pt_data[value_col_key])
+            kde_doses = np.linspace(pt_data[value_col_key].min(), pt_data[value_col_key].max(), 500)
             max_density_dose = kde_doses[np.argmax(kde(kde_doses))]
             kde_max_doses.append(max_density_dose)
-            mean_doses.append(pt_data['Dose (Gy)'].mean())
+            mean_doses.append(pt_data[value_col_key].mean())
             z_vals.append(z_val)
         
         perform_and_plot_kernel_regression(z_vals, kde_max_doses, x_range, 'KDE Max Density Dose', 'magenta')
@@ -428,10 +429,10 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         for trial in range(1,num_mc_trials_plus_nom):
             df_sp_trial = df[df["MC trial num"] == trial].sort_values(by='Z (Bx frame)') # sorting is to make sure that the lines are drawn properly
             df_z_simple = df_sp_trial.drop_duplicates(subset=['Z (Bx frame)'], keep='first') # remove points that have the same z value so that the line plots look better
-            #plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+            #plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple[value_col_key], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
             plt.scatter(
                 df_z_simple['Z (Bx frame)'], 
-                df_z_simple['Dose (Gy)'], 
+                df_z_simple[value_col_key], 
                 color='grey', 
                 alpha=0.1, 
                 s=10,  # Size of dots, adjust as needed
@@ -441,7 +442,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
         ## Instead want to show regressions of random trials so that we can appreciate structure
         annotation_offset_index = 0
-        for trial in range(1,num_rand_trials_to_show):
+        for trial in range(1,num_rand_trials_to_show + 1): # +1 because we start at 1 in range()
             mc_trial_shift_vec_df = sp_patient_all_structure_shifts_pandas_data_frame[(sp_patient_all_structure_shifts_pandas_data_frame["Trial"] == trial) &
                                                                                    (sp_patient_all_structure_shifts_pandas_data_frame["Structure type"] == bx_ref) & 
                                                                                    (sp_patient_all_structure_shifts_pandas_data_frame["Structure index"] == bx_struct_ind)].reset_index(drop=True)
@@ -457,11 +458,11 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
             annotation_text_for_trial = f"({x_dist:.1f},{y_dist:.1f},{z_dist:.1f}), d = {d_tot:.1f}"
             
-            perform_and_plot_kernel_regression(mc_trial['Z (Bx frame)'], mc_trial['Dose (Gy)'], x_range, f"Trial: {trial}", 'gray', annotation_text = annotation_text_for_trial, target_offset=annotation_offset_index)
+            perform_and_plot_kernel_regression(mc_trial['Z (Bx frame)'], mc_trial[value_col_key], x_range, f"Trial: {trial}", 'gray', annotation_text = annotation_text_for_trial, target_offset=annotation_offset_index)
             
             plt.scatter(
                 mc_trial_voxelized['Z (Bx frame)'], 
-                mc_trial_voxelized['Dose (Gy)'], 
+                mc_trial_voxelized[value_col_key], 
                 color='grey', 
                 alpha=0.1, 
                 s=10,  # Size of dots, adjust as needed
@@ -471,13 +472,13 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         """
         for trial in range(1,num_rand_trials_to_show):
             df_sp_trial = df_voxelized[df_voxelized["MC trial num"] == trial]
-            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial['Dose (Gy)'], color='grey', alpha=0.1, linewidth=1, zorder = 1.1)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
+            plt.plot(df_sp_trial['Z (Bx frame)'], df_sp_trial[value_col_key], color='grey', alpha=0.1, linewidth=1, zorder = 1.1)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!
         """
 
 
         plt.title(f'Quantile Regression with Filled Areas Between Lines - {patientUID} - {bx_id}')
         plt.xlabel('Z (Bx frame)')
-        plt.ylabel('Dose (Gy)')
+        plt.ylabel(value_col_key)
         plt.legend(['5th-25th Percentile', '25th-75th Percentile', '75th-95th Percentile', 'Nominal', 'Max density dose', 'Mean dose'], loc='best', facecolor = 'white')
         plt.grid(True, which='major', linestyle='--', linewidth=0.5)
         plt.tight_layout()
@@ -7737,7 +7738,7 @@ def production_plot_cohort_sum_to_one_all_biopsy_voxels_binom_est_histogram_by_t
             # Overlay KDE plot
             ax.plot(x_grid, y_density, color='black', linewidth=1.5, label='KDE')
 
-        except np.linalg.LinAlgError:
+        except np.linalg.LinAlgError as e:
             # If there's a LinAlgError, it likely means all values are identical
             print(f"Cohort sum-to-one histogram plot | Tissue class: {tissue_class} | LinAlgError: {e}")
             constant_value = tissue_data.iloc[0] if len(tissue_data) > 0 else 0

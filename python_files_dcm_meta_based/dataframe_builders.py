@@ -1857,6 +1857,8 @@ def apply_aggregations(df, value_columns, filter_cond=None):
 
 
 
+
+
 def reorder_columns(df, fixed_columns, prefix_order):
     """
     Reorder DataFrame columns by fixed columns followed by dynamic grouping of other columns based on prefixes.
@@ -2015,6 +2017,25 @@ def extract_nominal_values_multi_index(df, value_columns, condition):
     nominal_df.set_index(['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'], inplace=True)
 
     return nominal_df
+
+
+def extract_nominal_values_biopsy_wide(df, value_columns):
+    """
+    Extract nominal values based on 'MC trial num' == 0 and compute the mean across all voxels for the entire biopsy.
+    """
+    # Filter for nominal MC trial data
+    nominal_df = df[df['MC trial num'] == 0]
+
+    # Calculate mean for each value column across all voxels
+    nominal_means = nominal_df[value_columns].mean().reset_index()
+    nominal_means.columns = ['Measure', 'Value']
+
+    # Convert to a row with MultiIndex columns for merging
+    nominal_means.set_index('Measure', inplace=True)
+    nominal_means = nominal_means.T
+    nominal_means.columns = pandas.MultiIndex.from_tuples([(col, 'nominal') for col in nominal_means.columns])
+
+    return nominal_means
 
 
 def adjust_columns_for_multiindex_merge(df):
@@ -2197,9 +2218,175 @@ def global_dosimetry_by_voxel_values_dataframe_builder_v3_generalized(master_str
 
 
 
+def global_biopsy_dosimetry_generalized_dataframe_builder(master_structure_reference_dict, bx_ref, all_ref_key, dose_ref, value_columns):
+    cohort_global_dosimetry_dataframe_list = []
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry_list = []
+
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                # Retrieve the DataFrame for this biopsy
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number']
+
+                # Convert columns to appropriate types
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = misc_tools.convert_categorical_columns(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame,
+                    value_columns + ['Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'],
+                    [float] * len(value_columns) + [int, float, float]
+                )
+
+                # Aggregate across all MC trials and voxels
+                sp_bx_aggregated_df = sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame.groupby(value_columns).agg(
+                    Mean=('Mean', 'mean'),
+                    STD=('Mean', 'std'),
+                    SEM=('Mean', 'sem'),
+                    Max=('Mean', 'max'),
+                    Min=('Mean', 'min'),
+                    Skewness=('Mean', 'skew'),
+                    Kurtosis=('Mean', 'kurt')
+                ).reset_index()
+
+                # Combine with the existing metadata from the individual biopsies
+                sp_bx_aggregated_df['Patient ID'] = patientUID
+                sp_bx_aggregated_df['Bx ID'] = specific_bx_structure['ROI']
+                sp_bx_aggregated_df['Bx index'] = specific_bx_structure_index
+                sp_bx_aggregated_df['Bx refnum'] = specific_bx_structure['Ref #']
+                sp_bx_aggregated_df['Simulated bool'] = specific_bx_structure['Simulated bool']
+                sp_bx_aggregated_df['Simulated type'] = specific_bx_structure['Simulated type']
+
+                sp_patient_all_biopsies_global_dosimetry_list.append(sp_bx_aggregated_df)
+
+                # Downcast dataframe
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    threshold=0.25
+                )
+
+                # Store the updated dataframe back to the dictionary
+                specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number'] = sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame
+
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index=True)
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
+
+            # Downcast dataframe after concatenation
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(
+                sp_patient_all_biopsies_global_dosimetry, 
+                threshold=0.25
+            )
+
+            # Store back to the original dictionary
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry (NEW)"] = sp_patient_all_biopsies_global_dosimetry
 
 
 
+    # Concatenate all patients' data
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
+
+    return cohort_global_dosimetry_dataframe
+
+
+
+
+
+
+
+
+
+def apply_aggregations_biopsy_wide(df, value_columns, filter_cond=None):
+    if filter_cond is not None:
+        df = df.query(filter_cond)
+    
+    agg_funcs = get_aggregations()
+    agg_dict = {col: [func for _, func in agg_funcs.items()] for col in value_columns}
+    result_df = df.groupby(['Bx ID']).agg(agg_dict)
+
+    # Uncomment the following line to flatten MultiIndex columns into a single level
+    # result_df.columns = ['_'.join(col).strip() for col in result_df.columns.values]
+
+    return result_df.reset_index()
+
+# Function to Extract Nominal Mean Values Across the Biopsy
+def extract_nominal_values_biopsy_wide(df, value_columns):
+    nominal_df = df[df['MC trial num'] == 0][value_columns].mean()
+    nominal_df.index = pandas.MultiIndex.from_product([value_columns, ['nominal (spatial average)']])
+    return nominal_df
+
+# Main Function to Process Global Dosimetry by Biopsy
+
+def global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df(master_structure_reference_dict, bx_ref, all_ref_key, dose_ref, value_columns):
+    cohort_global_dosimetry_dataframe_list = []
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        if dose_ref in pydicom_item:
+            sp_patient_all_biopsies_global_dosimetry_list = []
+
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number']
+                df = sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame
+                df = misc_tools.convert_categorical_columns(df, value_columns, [float]*len(value_columns))
+
+                # Aggregate across all data points in biopsy
+                aggregated_df = apply_aggregations_biopsy_wide(df, value_columns)
+                
+                # Compute KDE and merge results
+                for value_col in value_columns:
+                    kde_result = math_funcs.find_max_kde_dose(df[value_col], num_eval_pts = 1000)
+                    aggregated_df[(value_col, 'argmax_density')] = kde_result
+
+                # Compute and add nominal mean values
+                nominal_means = extract_nominal_values_biopsy_wide(df, value_columns)
+                aggregated_df = pandas.concat([aggregated_df, nominal_means.to_frame().T], axis=1)  # Ensure nominal_means are transposed to a DataFrame
+                
+                # Add metadata
+                metadata = {
+                    'Patient ID': patientUID,
+                    'Bx ID': specific_bx_structure['ROI'],
+                    'Bx index': specific_bx_structure_index,
+                    'Bx refnum': specific_bx_structure['Ref #'],
+                    'Simulated bool': specific_bx_structure['Simulated bool'],
+                    'Simulated type': specific_bx_structure['Simulated type']
+                }
+                for key, value in metadata.items():
+                    aggregated_df[key] = value
+
+                # Example of setting the priority and prefix order
+                metadata_columns = ['Patient ID', 'Bx ID', 'Bx index', 'Bx refnum', 'Simulated bool', 'Simulated type']
+
+                # Assuming sp_bx_global_grouped_df is your DataFrame after merging
+                aggregated_df = reorder_multiindex_columns_custom(aggregated_df, metadata_columns, value_columns)
+
+                sp_patient_all_biopsies_global_dosimetry_list.append(aggregated_df)
+
+                # Downcast dataframe
+                sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame = convert_columns_to_categorical_and_downcast(
+                    sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame, 
+                    threshold=0.25
+                )
+
+                # Store the updated dataframe back to the dictionary
+                specific_bx_structure['Output data frames']['Voxel-wise dose output by MC trial number'] = sp_bx_voxel_wise_dose_output_by_mc_trial_pandas_data_frame
+
+            sp_patient_all_biopsies_global_dosimetry = pandas.concat(sp_patient_all_biopsies_global_dosimetry_list, ignore_index=True)
+            cohort_global_dosimetry_dataframe_list.append(sp_patient_all_biopsies_global_dosimetry)
+
+            # Downcast dataframe after concatenation
+            sp_patient_all_biopsies_global_dosimetry = convert_columns_to_categorical_and_downcast(
+                sp_patient_all_biopsies_global_dosimetry, 
+                threshold=0.25
+            )
+
+            # Store back to the original dictionary
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry (NEW)"] = sp_patient_all_biopsies_global_dosimetry
+
+    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+    # Downcast dataframe after concatenation
+    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(
+        cohort_global_dosimetry_dataframe, 
+        threshold=0.25
+    )
+    return cohort_global_dosimetry_dataframe
 
 
 
