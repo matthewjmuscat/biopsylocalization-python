@@ -52,6 +52,8 @@ def simulator_parallel(parallel_pool,
                        show_NN_dose_demonstration_plots,
                        show_NN_dose_demonstration_plots_all_trials_at_once,
                        show_containment_demonstration_plots,
+                       plot_nearest_neighbour_surface_boundary_demonstration,
+                       plot_relative_structure_centroid_demonstration,
                        biopsy_needle_compartment_length,
                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                        plot_uniform_shifts_to_check_plotly,
@@ -339,7 +341,7 @@ def simulator_parallel(parallel_pool,
                                     }
 
 
-        #live_display.stop()
+        live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -385,6 +387,11 @@ def simulator_parallel(parallel_pool,
                     shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_cp)
                     structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{}]...".format(structure_roi))
 
+
+                    #### IMPORTANT NOTICE FOR ADDING GENERALIZED TRANSFORMATIONS IN THE FUTURE!
+                    ### PERFORM ALL TRANSFORMATIONS ON THE BIOPSY STRUCTURE! NOT THE RELATIVE STRUCTURES!
+
+
                     # Extract and calcualte relative structure info
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
@@ -410,7 +417,45 @@ def simulator_parallel(parallel_pool,
                     combined_nominal_and_shifted_bx_pts_2d_arr_XY = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,0:2]
                     combined_nominal_and_shifted_bx_pts_2d_arr_Z = combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[:,2]
                     del shifted_bx_data_stacked_2darr_from_all_trials_3darray
+
+
+
+                    ### BEGIN DISTANCE CALCULATION SECTION TO RELATIVE STRUCTURE CENTROID!
+
+                    # Calculate distances between sampled bx and every structure
+                    ### IMPORTANT NOTICE WHEN GENERALIZING THIS IN THE FUTURE!
+                    ### If you add any generalized transformations make sure that you are passing the completely transformed biopsy structure to the below distance calculation so that it accurately captures all transfoormations!
+                    non_bx_structure_global_centroid = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Structure global centroid"].copy()
+                    non_bx_structure_global_centroid_reshaped_for_broadcast = np.reshape(non_bx_structure_global_centroid,(1,1,3))
+                    combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff = np.concatenate([unshifted_bx_sampled_pts_arr[np.newaxis, :, :],shifted_bx_data_3darr_num_MC_containment_sims_cutoff], axis=0)
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff - non_bx_structure_global_centroid_reshaped_for_broadcast
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances = np.linalg.norm(non_bx_structure_centroid_to_bx_points_vectors_all_trials, axis=2)
+
+                    # Flatten the distances
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened = non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances.flatten()
+
+                    # Extract X, Y, Z coordinates and flatten them
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_X = non_bx_structure_centroid_to_bx_points_vectors_all_trials[:, :, 0].flatten()
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Y = non_bx_structure_centroid_to_bx_points_vectors_all_trials[:, :, 1].flatten()
+                    non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Z = non_bx_structure_centroid_to_bx_points_vectors_all_trials[:, :, 2].flatten()
                     
+                    structure_centroid_distances_df = pandas.DataFrame({"Trial num": np.repeat(np.arange(num_MC_containment_simulations+1), num_sample_pts_in_bx),
+                                      "Original pt index": np.tile(np.arange(num_sample_pts_in_bx), num_MC_containment_simulations+1),
+                                      'Dist. from struct. centroid': non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened,
+                                      'Dist. from struct. centroid X': non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_X,
+                                      'Dist. from struct. centroid Y': non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Y,
+                                      'Dist. from struct. centroid Z': non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Z})
+                    
+                    # Demonstrate to ensure its working?
+                    if plot_relative_structure_centroid_demonstration == True:
+                        for trial in np.arange(0,num_MC_containment_simulations+1):
+                            _ = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, np.tile(non_bx_structure_global_centroid,(num_sample_pts_in_bx,1)), combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)], 1, draw_lines = True)
+                    
+                    ### END DISTANCE CALC SECTION
+
+
+
+
                     # THIS LINE IS VERY SLOW
                     #combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,combined_nominal_and_shifted_bx_pts_2d_arr_Z)
 
@@ -429,6 +474,34 @@ def simulator_parallel(parallel_pool,
                                                                                                                                                             structures_progress
                                                                                                                                                             )
                     
+
+
+                    ### BEGIN NEAREST NEIGHBOUR BOUNDARY SEARCH SECTION
+
+                    # We only need to test points on the nearest slice! Then we need to check against the z extent projection at each end and take the smallest value of the three
+                    non_bx_struct_whole_structure_KDtree = scipy.spatial.KDTree(non_bx_struct_interpolated_pts_np_arr)
+                    nearest_distance_to_structure_boundary, nearest_point_index_to_structure_boundary = non_bx_struct_whole_structure_KDtree.query(combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, k=1)
+
+
+                    nearest_neighbour_boundary_distances_df = pandas.DataFrame({"Trial num": np.repeat(np.arange(num_MC_containment_simulations+1), num_sample_pts_in_bx),
+                                      "Original pt index": np.tile(np.arange(num_sample_pts_in_bx), num_MC_containment_simulations+1),
+                                      "Struct. boundary NN dist.": nearest_distance_to_structure_boundary})
+                    
+                   
+
+                    # Demonstrate to ensure its working?
+                    if plot_nearest_neighbour_surface_boundary_demonstration == True:
+                        for trial in np.arange(0,num_MC_containment_simulations+1):
+                            NN_pts_on_comparison_struct = non_bx_struct_interpolated_pts_np_arr[nearest_point_index_to_structure_boundary[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)]]
+                            _ = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, NN_pts_on_comparison_struct, combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)], 1, draw_lines = True)
+
+                    #### END Nearest neighbour boundary search section
+
+
+
+
+
+
                     combined_nominal_and_shifted_bx_data_XY_interleaved_1darr = combined_nominal_and_shifted_bx_pts_2d_arr_XY.flatten()
                     combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(combined_nominal_and_shifted_bx_data_XY_interleaved_1darr)
                     del combined_nominal_and_shifted_bx_data_XY_interleaved_1darr
@@ -466,6 +539,28 @@ def simulator_parallel(parallel_pool,
                                                                             upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
                     )
                     del combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points
+
+
+                    ### ADD NEAREST NEIGHBOUR BOUNDARY DISTANCE TO DATAFRAME
+
+                    containment_info_grand_pandas_dataframe = pandas.merge(containment_info_grand_pandas_dataframe, nearest_neighbour_boundary_distances_df, on=["Trial num", "Original pt index"], how='left')
+
+                    # Now apply the sign of the value "Struct. boundary NN dist." based on "Pt contained bool"
+                    containment_info_grand_pandas_dataframe['Struct. boundary NN dist.'] = np.where(
+                        containment_info_grand_pandas_dataframe['Pt contained bool'],  # Condition
+                        -abs(containment_info_grand_pandas_dataframe['Struct. boundary NN dist.']),  # If True (inside), make negative
+                        abs(containment_info_grand_pandas_dataframe['Struct. boundary NN dist.'])   # If False (outside), make positive
+                    )
+                        
+                    ### ADD DISTANCE INFORMATION TO DATAFRAME
+                    
+                    containment_info_grand_pandas_dataframe = pandas.merge(containment_info_grand_pandas_dataframe, structure_centroid_distances_df, on=["Trial num", "Original pt index"], how='left')
+
+                    
+
+
+
+
 
                     # TAKE A DUMP?
                     if raw_data_mc_containment_dump_bool == True:

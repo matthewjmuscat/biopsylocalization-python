@@ -348,7 +348,9 @@ def main():
     # Tissue class
     show_containment_demonstration_plots = False # this shows one trial at a time!!!
     plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
-    
+    plot_nearest_neighbour_surface_boundary_demonstration = False # you see one trial at a time
+    plot_relative_structure_centroid_demonstration = False # you see one trial at a time
+
     # MRs
     show_3d_mr_adc_renderings = False
     show_3d_mr_adc_renderings_thresholded = False
@@ -5911,6 +5913,8 @@ def main():
                                                                                             show_NN_dose_demonstration_plots,
                                                                                             show_NN_dose_demonstration_plots_all_trials_at_once,
                                                                                             show_containment_demonstration_plots,
+                                                                                            plot_nearest_neighbour_surface_boundary_demonstration,
+                                                                                            plot_relative_structure_centroid_demonstration,
                                                                                             biopsy_needle_compartment_length,
                                                                                             simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                                                             plot_uniform_shifts_to_check_plotly,
