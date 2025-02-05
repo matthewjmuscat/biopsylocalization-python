@@ -232,8 +232,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10000
-    num_MC_dose_simulations_input = 10000
+    num_MC_containment_simulations_input = 1000
+    keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
+    num_MC_dose_simulations_input = 1000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -345,7 +346,7 @@ def main():
     show_3d_dose_renderings_thresholded = False
     show_NN_dose_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
 
-    # Tissue class
+    # Tissue class and structure distances
     show_containment_demonstration_plots = False # this shows one trial at a time!!!
     plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
     plot_nearest_neighbour_surface_boundary_demonstration = False # you see one trial at a time
@@ -5938,7 +5939,8 @@ def main():
                                                                                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                                                                             idw_power,
                                                                                             raw_data_mc_dosimetry_dump_bool, 
-                                                                                            raw_data_mc_containment_dump_bool
+                                                                                            raw_data_mc_containment_dump_bool,
+                                                                                            keep_light_containment_and_distances_to_relative_structures_dataframe_bool
                                                                                             )
 
                     if no_cohort_mr_adc_flag == False:
@@ -6798,6 +6800,7 @@ def main():
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
             """
+            live_display.stop()
             if mc_csv_output_dir.is_dir():
                 important_info.add_text_line("Writing MC sim stored dataframes to file.", live_display)
                 csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Writing MC sim stored dataframes to file...', total=None)
@@ -9124,10 +9127,14 @@ def structure_referencer(data_removals_dict,
                          "MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr": None, 
                          "MC data: Generated normal dist random samples arr": None,
                          "MC data: Total rigid shift vectors arr": None, 
-                         "MC data: bx only shifted 3darr": None, 
+                         "MC data: bx only shifted 3darr": None,
                          "MC data: bx and structure shifted dict": None, 
                          "MC data: MC sim translation results dict": None,
-                         "MC data: MC sim containment raw results dataframe": None, 
+                         "MC data: MC sim containment raw results dataframe": None,
+                         "MC data: MC sim compiled distances global dataframe": None,
+                         "MC data: MC sim compiled distances point-wise dataframe": None,
+                         "MC data: MC sim compiled distances voxel-wise dataframe": None,
+                         "MC data: MC sim containment and distance all trials dataframe (light)": None,
                          "MC data: compiled sim results dataframe": None,
                          "MC data: compiled sim sum-to-one results dataframe": None,
                          "MC data: mutual compiled sim results dataframe": None,
@@ -9231,6 +9238,10 @@ def structure_referencer(data_removals_dict,
                                 "MC data: bx and structure shifted dict": None, 
                                 "MC data: MC sim translation results dict": None,
                                 "MC data: MC sim containment raw results dataframe": None,
+                                "MC data: MC sim compiled distances global dataframe": None,
+                                "MC data: MC sim compiled distances point-wise dataframe": None,
+                                "MC data: MC sim compiled distances voxel-wise dataframe": None,
+                                "MC data: MC sim containment and distance all trials dataframe (light)": None,
                                 "MC data: compiled sim results dataframe": None,
                                 "MC data: compiled sim sum-to-one results dataframe": None,
                                 "MC data: mutual compiled sim results dataframe": None,

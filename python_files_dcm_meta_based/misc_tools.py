@@ -19,6 +19,7 @@ from sklearn.decomposition import PCA
 import pandas
 from fuzzywuzzy import process, fuzz
 import re 
+import copy
 
 def checkdirs(live_display, important_info, *paths):
     created_a_dir = False
@@ -945,35 +946,44 @@ def include_vector_columns_in_dataframe(df,
                                         reference_column_name, 
                                         new_column_name_x, 
                                         new_column_name_y, 
-                                        new_column_name_z):
+                                        new_column_name_z,
+                                        in_place=False):
     """
     Adds 3 new columns to a DataFrame based on an Nx3 array of vectors.
-    The mapping is based on the 'Original pt index' column in the DataFrame.
+    The mapping is based on the specified 'reference_column_name' in the DataFrame.
     
     Parameters:
-    - df: pandas.DataFrame with a column 'Original pt index'.
+    - df: pandas.DataFrame with a column named as specified in 'reference_column_name'.
     - vectors: Nx3 numpy.array where N is the number of vectors and each vector has 3 elements.
+    - reference_column_name: Name of the column in df to use as a reference for mapping vectors.
+    - new_column_name_x, new_column_name_y, new_column_name_z: Names for the new columns to be added.
+    - in_place: Boolean, if False, the function will not modify the original DataFrame but return a modified copy.
     
     Returns:
-    - Modified DataFrame with 3 new columns ('Vector_X', 'Vector_Y', 'Vector_Z') added.
+    - DataFrame with 3 new columns added containing vector components.
     """
     
-    # Check if 'Original pt index' is in the DataFrame
-    if 'Original pt index' not in df.columns:
-        raise ValueError("DataFrame must contain a column named "+reference_column_name)
+    if not in_place:
+        df = copy.deepcopy(df)  # Make a copy of the DataFrame if not modifying in place
+
+    # Check if the reference column is in the DataFrame
+    if reference_column_name not in df.columns:
+        raise ValueError(f"DataFrame must contain a column named {reference_column_name}")
     
     # Check if vectors is an Nx3 array
     if vectors.shape[1] != 3:
         raise ValueError("vectors must be an Nx3 array")
+    
+    # Check if the reference column values are valid indices in the vectors array
+    if np.any(df[reference_column_name].values >= vectors.shape[0]):
+        raise IndexError("reference_column_name contains indices that are out of bounds for the vectors array")
     
     # Mapping vectors to new columns based on reference_column_name
     df[new_column_name_x] = vectors[df[reference_column_name].values, 0]
     df[new_column_name_y] = vectors[df[reference_column_name].values, 1]
     df[new_column_name_z] = vectors[df[reference_column_name].values, 2]
 
-
     return df
-
 
 
 

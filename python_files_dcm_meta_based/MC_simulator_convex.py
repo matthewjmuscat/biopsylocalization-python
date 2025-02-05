@@ -77,7 +77,8 @@ def simulator_parallel(parallel_pool,
                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
                        idw_power,
                        raw_data_mc_dosimetry_dump_bool, 
-                       raw_data_mc_containment_dump_bool
+                       raw_data_mc_containment_dump_bool,
+                       keep_light_containment_and_distances_to_relative_structures_dataframe_bool
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -341,7 +342,7 @@ def simulator_parallel(parallel_pool,
                                     }
 
 
-        live_display.stop()
+        #live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -394,7 +395,9 @@ def simulator_parallel(parallel_pool,
 
                     # Extract and calcualte relative structure info
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                    non_bx_struct_intraslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Intra-slice interpolation information"] # This is used for NN surface distance calculation!
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                    non_bx_struct_interpolated_pts_with_endcaps_np_arr = non_bx_struct_intraslice_interpolation_information.interpolated_pts_with_end_caps_np_arr # This is used for NN surface distance calculation!
                     interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
                     non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
                     non_bx_struct_max_zval = max(interpolated_zvlas_list)
@@ -403,10 +406,12 @@ def simulator_parallel(parallel_pool,
                     non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
 
                     # Point clouds
-                    non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1]))
-                    prostate_interslice_interpolation_information = master_structure_reference_dict[patientUID]['OAR ref'][0]["Inter-slice interpolation information"]
-                    prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
-                    prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
+                    non_bx_struct_interpolated_pts_pcd = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]['Interpolated structure point cloud dict']['Interslice']
+                    #non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1])) # quicker to access from memory
+                    
+                    #prostate_interslice_interpolation_information = master_structure_reference_dict[patientUID]['OAR ref'][0]["Inter-slice interpolation information"]
+                    #prostate_interpolated_pts_np_arr = prostate_interslice_interpolation_information.interpolated_pts_np_arr
+                    #prostate_interpolated_pts_pcd = point_containment_tools.create_point_cloud(prostate_interpolated_pts_np_arr, color = np.array([0,1,1]))
 
                     # Shifted
                     shifted_bx_data_3darr_num_MC_containment_sims_cutoff = shifted_bx_data_3darr[0:num_MC_containment_simulations]
@@ -479,7 +484,7 @@ def simulator_parallel(parallel_pool,
                     ### BEGIN NEAREST NEIGHBOUR BOUNDARY SEARCH SECTION
 
                     # We only need to test points on the nearest slice! Then we need to check against the z extent projection at each end and take the smallest value of the three
-                    non_bx_struct_whole_structure_KDtree = scipy.spatial.KDTree(non_bx_struct_interpolated_pts_np_arr)
+                    non_bx_struct_whole_structure_KDtree = scipy.spatial.KDTree(non_bx_struct_interpolated_pts_with_endcaps_np_arr)
                     nearest_distance_to_structure_boundary, nearest_point_index_to_structure_boundary = non_bx_struct_whole_structure_KDtree.query(combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, k=1)
 
 
@@ -492,8 +497,10 @@ def simulator_parallel(parallel_pool,
                     # Demonstrate to ensure its working?
                     if plot_nearest_neighbour_surface_boundary_demonstration == True:
                         for trial in np.arange(0,num_MC_containment_simulations+1):
-                            NN_pts_on_comparison_struct = non_bx_struct_interpolated_pts_np_arr[nearest_point_index_to_structure_boundary[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)]]
-                            _ = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, NN_pts_on_comparison_struct, combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)], 1, draw_lines = True)
+                            non_bx_struct_fully_interpolated_with_end_caps_pts_pcd = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]['Interpolated structure point cloud dict']['Full with end caps']
+                            #non_bx_struct_fully_interpolated_with_end_caps_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_with_endcaps_np_arr, color = np.array([0,0,1])) # quicker to access from memory
+                            NN_pts_on_comparison_struct = non_bx_struct_interpolated_pts_with_endcaps_np_arr[nearest_point_index_to_structure_boundary[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)]]
+                            _ = plotting_funcs.dose_point_cloud_with_lines_only_for_animation(unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_fully_interpolated_with_end_caps_pts_pcd, NN_pts_on_comparison_struct, combined_nominal_and_shifted_bx_pts_2d_arr_XYZ[num_sample_pts_in_bx*trial:num_sample_pts_in_bx*(trial+1)], 1, draw_lines = True)
 
                     #### END Nearest neighbour boundary search section
 
@@ -829,7 +836,9 @@ def simulator_parallel(parallel_pool,
                 MC_compiled_results_for_fixed_bx_dict = structure_organized_for_bx_data_blank_dict.copy()
                 non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
                 structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
-                containment_info_grand_all_structures_pandas_dataframe["(ID,type,index)"] = tuple(zip(containment_info_grand_all_structures_pandas_dataframe["Relative structure ROI"], containment_info_grand_all_structures_pandas_dataframe["Relative structure type"], containment_info_grand_all_structures_pandas_dataframe["Relative structure index"]))
+                
+                containment_info_grand_all_structures_pandas_dataframe_copy = copy.deepcopy(containment_info_grand_all_structures_pandas_dataframe)
+                containment_info_grand_all_structures_pandas_dataframe_copy["(ID,type,index)"] = tuple(zip(containment_info_grand_all_structures_pandas_dataframe_copy["Relative structure ROI"], containment_info_grand_all_structures_pandas_dataframe_copy["Relative structure type"], containment_info_grand_all_structures_pandas_dataframe_copy["Relative structure index"]))
                 bx_mutual_containment_by_org_pt_all_combos_dataframe = pandas.DataFrame()
                 for structure_info_combination_tuple in structure_info_combinations_list:
 
@@ -842,8 +851,8 @@ def simulator_parallel(parallel_pool,
 
 
                     # Note needed to convert cudf dataframe to pandas dataframe since cudf dataframe groupby object has no method "all()"
-                    bx_mutual_containment_sp_combo_by_org_pt_dataframe = containment_info_grand_all_structures_pandas_dataframe[(containment_info_grand_all_structures_pandas_dataframe["(ID,type,index)"].isin(combo_list_for_dataframe_checker))
-                                                                        & (containment_info_grand_all_structures_pandas_dataframe["Trial num"] != 0)].reset_index()[
+                    bx_mutual_containment_sp_combo_by_org_pt_dataframe = containment_info_grand_all_structures_pandas_dataframe_copy[(containment_info_grand_all_structures_pandas_dataframe_copy["(ID,type,index)"].isin(combo_list_for_dataframe_checker))
+                                                                        & (containment_info_grand_all_structures_pandas_dataframe_copy["Trial num"] != 0)].reset_index()[
                                                                             ["Pt contained bool","Original pt index","Trial num"]
                                                                             ].groupby(["Original pt index","Trial num"]).all().groupby(["Original pt index"]).sum().reset_index().rename(columns={"Pt contained bool": "Total successes"})
                     bx_mutual_containment_sp_combo_by_org_pt_dataframe["Binomial estimator"] = bx_mutual_containment_sp_combo_by_org_pt_dataframe["Total successes"]/num_MC_containment_simulations
@@ -861,7 +870,79 @@ def simulator_parallel(parallel_pool,
                     
                     
                     del bx_mutual_containment_sp_combo_by_org_pt_dataframe
+                del containment_info_grand_all_structures_pandas_dataframe_copy
+                
 
+                ### DISTANCES TO BOUNDARY AND CENTROIDS COMPILE
+
+                ### Compile distances to NN boundary and centroid dataframe
+
+                # Global   
+                global_distances_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe.groupby(['Patient ID', 'Bx ID', 'Biopsy refnum', 'Bx index', 'Relative structure ROI', 'Relative structure type', 'Relative structure index'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
+                
+                global_distances_grand_all_structures_pandas_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                global_distances_grand_all_structures_pandas_dataframe, 
+                threshold=0.25
+                )
+                
+                global_distances_grand_all_structures_pandas_dataframe.reset_index(inplace=True)
+                
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim compiled distances global dataframe"] = global_distances_grand_all_structures_pandas_dataframe
+                
+
+                ### Point-wise and voxel-wise
+                containment_info_grand_all_structures_pandas_dataframe_with_vector_cols = misc_tools.include_vector_columns_in_dataframe(containment_info_grand_all_structures_pandas_dataframe, 
+                                                                                           bx_points_bx_coords_sys_arr, 
+                                                                                           reference_column_name = 'Original pt index', 
+                                                                                           new_column_name_x = "X (Bx frame)", 
+                                                                                           new_column_name_y = "Y (Bx frame)", 
+                                                                                           new_column_name_z = "Z (Bx frame)",
+                                                                                           in_place = False)
+                # Add voxel columns
+                reference_dimension_col_name = "Z (Bx frame)"
+                containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols = dataframe_builders.add_voxel_columns_helper_func(containment_info_grand_all_structures_pandas_dataframe_with_vector_cols, 
+                                                                                                                              biopsy_z_voxel_length, 
+                                                                                                                              reference_dimension_col_name, 
+                                                                                                                              in_place = False)
+                
+                del containment_info_grand_all_structures_pandas_dataframe_with_vector_cols
+
+
+                # Point wise
+                distances_point_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Biopsy refnum', 'Bx index', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Original pt index',"X (Bx frame)","Y (Bx frame)","Z (Bx frame)", 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
+                distances_point_wise_grand_all_structures_pandas_dataframe.reset_index(inplace=True)
+
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim compiled distances point-wise dataframe"] = distances_point_wise_grand_all_structures_pandas_dataframe
+                
+                # Voxel wise
+                distances_voxel_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Biopsy refnum', 'Bx index', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
+                distances_voxel_wise_grand_all_structures_pandas_dataframe.reset_index(inplace=True)
+
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim compiled distances voxel-wise dataframe"] = distances_voxel_wise_grand_all_structures_pandas_dataframe
+                ### End point-wise and voxel-wise
+
+
+                # Free up memory
+                del containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols
+
+
+
+
+                ### KEEP ENTIRE DATAFRAME? NOTE IF THERE ARE MEMRORY ISSUES CONSIDER REMOVING THIS DATAFRAME FROM STORAGE
+                
+                ### Keep lighter version of entire dataframe in case we want the distance to containment relationship for every trial
+                if keep_light_containment_and_distances_to_relative_structures_dataframe_bool == True:
+                    containment_info_grand_all_structures_pandas_dataframe_light = containment_info_grand_all_structures_pandas_dataframe.drop(columns=['Nearest zslice zval',  'Nearest zslice index',  'Pt clr R',  'Pt clr G',  'Pt clr B',  'Test pt X',  'Test pt Y',  'Test pt Z'])
+                    containment_info_grand_all_structures_pandas_dataframe_light = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                    containment_info_grand_all_structures_pandas_dataframe_light, 
+                    threshold=0.25
+                    )
+                
+                
+                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim containment and distance all trials dataframe (light)"] = containment_info_grand_all_structures_pandas_dataframe_light
+                
+            
+                # Free up memory
                 del containment_info_grand_all_structures_pandas_dataframe
 
                 # Add x,y,z point coordinates

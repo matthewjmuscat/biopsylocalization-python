@@ -1394,8 +1394,28 @@ def dose_NxD_array_to_dataframe_helper_function_generalized_v2(dose_arr,dose_gra
     return df
 
 ### THIS FUNCTION HELPS THE ABOVE DOSE DSITRIBUTION CREATOR DF BY ADDING VOXEL COLUMNS TO THE DATAFRAME!
-def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension_col_name):
-    # Assuming 'reference_dimension_col_name' column exists in the DataFrame and biopsy_z_voxel_length is a positive float
+def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension_col_name, in_place=False):
+    """
+    Adds voxel-related columns to a DataFrame based on a reference dimension column.
+    
+    Parameters:
+    - df: pandas.DataFrame, the DataFrame to modify.
+    - biopsy_z_voxel_length: float, the length of each voxel along the Z dimension.
+    - reference_dimension_col_name: str, the name of the column in df to use for voxel calculations.
+    - in_place: bool, if False, the function will not modify the original DataFrame but return a modified copy.
+    
+    Returns:
+    - pandas.DataFrame: The modified DataFrame with new voxel columns added.
+    """
+    
+    if in_place == False:
+        df = copy.deepcopy(df)  # Use deepcopy to ensure a complete copy of the DataFrame
+    
+    # Check if the reference dimension column exists
+    if reference_dimension_col_name not in df.columns:
+        raise ValueError(f"Column {reference_dimension_col_name} does not exist in the DataFrame.")
+
+    # Calculate the voxel index and range
     df['Voxel index'] = (df[reference_dimension_col_name] // biopsy_z_voxel_length) + 1
     df['Voxel index'] = df['Voxel index'].astype(int)
     df['Voxel begin (Z)'] = (df['Voxel index'] - 1) * biopsy_z_voxel_length
@@ -1406,9 +1426,6 @@ def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension
     df.loc[df['Voxel end (Z)'] > max_z, 'Voxel end (Z)'] = max_z
 
     return df
-
-
-
 
 
 def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
