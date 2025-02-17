@@ -189,7 +189,6 @@ def uncertainty_file_preper_by_struct_type_dataframe(master_structure_reference_
                     sigma_y = float(structs_referenced_dict[structure_type]["Default sigma Y"])
                     sigma_z = float(structs_referenced_dict[structure_type]["Default sigma Z"])
                 
-                
                 dict_for_dataframe = {"Patient UID": [patientUID],
                                       "Structure ID": [structure_info["Structure ID"]], 
                                       "Structure type": [structure_info["Struct ref type"]],
@@ -201,7 +200,7 @@ def uncertainty_file_preper_by_struct_type_dataframe(master_structure_reference_
                                       "mu (Z)": [0], 
                                       "sigma (X)": [sigma_x], 
                                       "sigma (Y)": [sigma_y], 
-                                      "sigma (Z)": [sigma_z] 
+                                      "sigma (Z)": [sigma_z]
                                       }
 
 
@@ -234,6 +233,16 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                     #sub_header_row = headerunc_bx
                 else:
                     frame_of_reference = headerLab
+                
+                ### TRANSLATIONS ###
+                    
+                mu_x_arr = np.array(structs_referenced_dict[structure_type]["Default mu X"])
+                mu_y_arr = np.array(structs_referenced_dict[structure_type]["Default mu Y"])
+                mu_z_arr = np.array(structs_referenced_dict[structure_type]["Default mu Z"])
+
+                mu_x = math_funcs.add_in_quadrature(mu_x_arr)
+                mu_y = math_funcs.add_in_quadrature(mu_y_arr)
+                mu_z = math_funcs.add_in_quadrature(mu_z_arr)
 
                 ### Biopsy handling
                 if structure_type == structs_referenced_list[0]:
@@ -290,18 +299,105 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                     sigma_z = math_funcs.add_in_quadrature(errs_Z_arr)/2
                 
 
+                ### TRANSLATIONS END ###
+
+
+
+
+                ### DILATIONS ###
+                # biopsy handling
+                if structure_type == structs_referenced_list[0]:
+                    dilations_mu_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu (uniform)"])
+                    dilations_sigma_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma (uniform)"])
+
+                    dilations_mu = math_funcs.add_in_quadrature(dilations_mu_arr)
+
+                    if use_added_in_quad_errors_as == 'sigma':
+                        dilations_sigma = math_funcs.add_in_quadrature(dilations_sigma_x_arr)
+
+                    elif use_added_in_quad_errors_as == 'two sigma':
+                        dilations_sigma = math_funcs.add_in_quadrature(dilations_sigma_x_arr)/2
+
+                dilations_mu_x_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu X"])
+                dilations_mu_y_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu Y"])
+                dilations_mu_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu Z"])
+
+                dilations_sigma_x_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma X"])
+                dilations_sigma_y_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma Y"])
+                dilations_sigma_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma Z"])
+
+                # Compute params (dilations)
+                dilations_mu_x = math_funcs.add_in_quadrature(dilations_mu_x_arr)
+                dilations_mu_y = math_funcs.add_in_quadrature(dilations_mu_y_arr)
+                dilations_mu_z = math_funcs.add_in_quadrature(dilations_mu_z_arr)
+                if use_added_in_quad_errors_as == 'sigma':
+                    dilations_sigma_x = math_funcs.add_in_quadrature(dilations_sigma_x_arr)
+                    dilations_sigma_y = math_funcs.add_in_quadrature(dilations_sigma_y_arr)
+                    dilations_sigma_z = math_funcs.add_in_quadrature(dilations_sigma_z_arr)
+
+                elif use_added_in_quad_errors_as == 'two sigma':
+                    dilations_sigma_x = math_funcs.add_in_quadrature(dilations_sigma_x_arr)/2
+                    dilations_sigma_y = math_funcs.add_in_quadrature(dilations_sigma_y_arr)/2
+                    dilations_sigma_z = math_funcs.add_in_quadrature(dilations_sigma_z_arr)/2
+                ### DILATIONS END ###
+
+
+
+
+
+
+                ### ROTATIONS ###
+                rotations_mu_x_arr = np.array(structs_referenced_dict[structure_type]["Rotations mu X"])
+                rotations_mu_y_arr = np.array(structs_referenced_dict[structure_type]["Rotations mu Y"])
+                rotations_mu_z_arr = np.array(structs_referenced_dict[structure_type]["Rotations mu Z"])
+
+                rotations_sigma_x_arr = np.array(structs_referenced_dict[structure_type]["Rotations sigma X"])
+                rotations_sigma_y_arr = np.array(structs_referenced_dict[structure_type]["Rotations sigma Y"])
+                rotations_sigma_z_arr = np.array(structs_referenced_dict[structure_type]["Rotations sigma Z"])
+
+                # Compute params (rotations)
+                rotations_mu_x = math_funcs.add_in_quadrature(rotations_mu_x_arr)
+                rotations_mu_y = math_funcs.add_in_quadrature(rotations_mu_y_arr)
+                rotations_mu_z = math_funcs.add_in_quadrature(rotations_mu_z_arr)
+                if use_added_in_quad_errors_as == 'sigma':
+                    rotations_sigma_x = math_funcs.add_in_quadrature(rotations_sigma_x_arr)
+                    rotations_sigma_y = math_funcs.add_in_quadrature(rotations_sigma_y_arr)
+                    rotations_sigma_z = math_funcs.add_in_quadrature(rotations_sigma_z_arr)
+                elif use_added_in_quad_errors_as == 'two sigma':
+                    rotations_sigma_x = math_funcs.add_in_quadrature(rotations_sigma_x_arr)/2
+                    rotations_sigma_y = math_funcs.add_in_quadrature(rotations_sigma_y_arr)/2
+                    rotations_sigma_z = math_funcs.add_in_quadrature(rotations_sigma_z_arr)/2
+                ### ROTATIONS END ###
+
+
+
+
+
+                # Define dictonary for dataframe
                 dict_for_dataframe = {"Patient UID": [patientUID],
                                       "Structure ID": [structure_info["Structure ID"]], 
                                       "Structure type": [structure_info["Struct ref type"]],
                                       "Structure dicom ref num": [structure_info["Dicom ref num"]], 
                                       "Structure index": [structure_info["Index number"]],
                                       "Frame of reference": [frame_of_reference],
-                                      "mu (X)": [0], 
-                                      "mu (Y)": [0], 
-                                      "mu (Z)": [0], 
+                                      "mu (X)": [mu_x], 
+                                      "mu (Y)": [mu_y], 
+                                      "mu (Z)": [mu_z], 
                                       "sigma (X)": [sigma_x], 
                                       "sigma (Y)": [sigma_y], 
-                                      "sigma (Z)": [sigma_z] 
+                                      "sigma (Z)": [sigma_z],
+                                      "Dilations mu (X)": [dilations_mu_x], 
+                                      "Dilations mu (Y)": [dilations_mu_y], 
+                                      "Dilations mu (Z)": [dilations_mu_z], 
+                                      "Dilations sigma (X)": [dilations_sigma_x], 
+                                      "Dilations sigma (Y)": [dilations_sigma_y], 
+                                      "Dilations sigma (Z)": [dilations_sigma_z],
+                                      "Rotations mu (X)": [rotations_mu_x], 
+                                      "Rotations mu (Y)": [rotations_mu_y], 
+                                      "Rotations mu (Z)": [rotations_mu_z], 
+                                      "Rotations sigma (X)": [rotations_sigma_x], 
+                                      "Rotations sigma (Y)": [rotations_sigma_y], 
+                                      "Rotations sigma (Z)": [rotations_sigma_z], 
                                       }
 
 

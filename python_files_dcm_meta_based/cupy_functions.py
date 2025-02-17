@@ -1,6 +1,53 @@
 import cupy as cp
 import plotting_funcs
 
+
+def MC_simulator_non_bx_structs_dilations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
+    
+    sp_structure_normal_dist_shift_samples_and_structure_reference_list = []
+    for structure_type in structs_referenced_list:
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[structure_type]):
+            uncertainty_data_obj = specific_structure["Uncertainty data"]
+            sp_struct_uncertainty_data_dilations_mean_arr = uncertainty_data_obj.uncertainty_data_dilations_mean_arr
+            sp_struct_uncertainty_data_dilations_sigma_arr = uncertainty_data_obj.uncertainty_data_dilations_sigma_arr
+
+            structure_normal_dist_dilations_factors_samples_arr = cp.array([ 
+            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[0], scale=sp_struct_uncertainty_data_dilations_sigma_arr[0], size=max_simulations),  
+            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[1], scale=sp_struct_uncertainty_data_dilations_sigma_arr[1], size=max_simulations),  
+            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[2], scale=sp_struct_uncertainty_data_dilations_sigma_arr[2], size=max_simulations)],   
+            dtype = float).T
+            
+            generated_shifts_info_list = [structure_type, specific_structure_index, structure_normal_dist_dilations_factors_samples_arr]
+            
+            sp_structure_normal_dist_shift_samples_and_structure_reference_list.append(generated_shifts_info_list)
+    
+
+    return sp_structure_normal_dist_shift_samples_and_structure_reference_list
+
+def MC_simulator_non_bx_structs_rotations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
+    
+    sp_structure_normal_dist_shift_samples_and_structure_reference_list = []
+    for structure_type in structs_referenced_list:
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[structure_type]):
+            uncertainty_data_obj = specific_structure["Uncertainty data"]
+            sp_struct_uncertainty_data_rotations_mean_arr = uncertainty_data_obj.uncertainty_data_rotations_mean_arr
+            sp_struct_uncertainty_data_rotations_sigma_arr = uncertainty_data_obj.uncertainty_data_rotations_sigma_arr
+
+            structure_normal_dist_rotations_factors_samples_arr = cp.array([ 
+            cp.random.normal(loc=sp_struct_uncertainty_data_rotations_mean_arr[0], scale=sp_struct_uncertainty_data_rotations_sigma_arr[0], size=max_simulations),  
+            cp.random.normal(loc=sp_struct_uncertainty_data_rotations_mean_arr[1], scale=sp_struct_uncertainty_data_rotations_sigma_arr[1], size=max_simulations),  
+            cp.random.normal(loc=sp_struct_uncertainty_data_rotations_mean_arr[2], scale=sp_struct_uncertainty_data_rotations_sigma_arr[2], size=max_simulations)],   
+            dtype = float).T
+            
+            generated_shifts_info_list = [structure_type, specific_structure_index, structure_normal_dist_rotations_factors_samples_arr]
+            
+            sp_structure_normal_dist_shift_samples_and_structure_reference_list.append(generated_shifts_info_list)
+    
+
+    return sp_structure_normal_dist_shift_samples_and_structure_reference_list
+
+
+
 def MC_simulator_shift_biopsy_structures_uniform_generator_cupy(patient_dict, bx_ref, biopsy_needle_compartment_length, num_simulations):
     # build args list for parallel computing
     sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list = []

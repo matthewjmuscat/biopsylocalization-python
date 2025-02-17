@@ -148,34 +148,140 @@ def main():
     fraction_prefixes = ['f', 'fraction', '']
 
 
+
+
+
+
+
+
          
 
-    ### DEFAULT SIGMAS
+    ### DEFAULT MUs and SIGMAs ###
+
+    # Prostate
     # FROM LITERATURE OF INTEROBSERVER VARIABILITY IN PROSTATE
     # "Comparison of prostate volume, shape, and contouring variability determined from preimplant magnetic resonance and transrectal ultrasound images" - Liu et al.
     # Took half of the length width height values from FIG 3.
-    oar_default_sigma_X = 1 # default sigma in mm
-    oar_default_sigma_Y = 1 # default sigma in mm
-    oar_default_sigma_Z = 2 # default sigma in mm
+    # Translations
     oar_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
     oar_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
     oar_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    oar_default_mu_X_list = [0]
+    oar_default_mu_Y_list = [0]
+    oar_default_mu_Z_list = [0]
+    # dilations
+    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
+    oar_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    oar_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    oar_dilations_default_sigma_Z_list = [1]
+    oar_dilations_default_mu_X_list = [0]
+    oar_dilations_default_mu_Y_list = [0]
+    oar_dilations_default_mu_Z_list = [0]
+    # rotations
+    oar_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
+    oar_rotations_default_sigma_Y_list = [np.pi/36]
+    oar_rotations_default_sigma_Z_list = [np.pi/36]
+    oar_rotations_default_mu_X_list = [0]
+    oar_rotations_default_mu_Y_list = [0]
+    oar_rotations_default_mu_Z_list = [0]
 
+    # Biopsy
     # THIS SHOULD COME FROM MEAN MDA IN US TO US, THE OTHER COMPONENT COMES FROM MEAN VARIATION IN BIOPSY CENTROIDS AND IS CALCULATED IN PREPROCESSING
-    biopsy_default_sigma_X = 1.5 # default sigma in mm
-    biopsy_default_sigma_Y = 1.5 # default sigma in mm
-    biopsy_default_sigma_Z = 1.5 # default sigma in mm
+    # Translations
     biopsy_default_sigma_X_list = [2.5] # default sigma in mm  2.5 for MDA registration uncertainty, also consistent with literature
     biopsy_default_sigma_Y_list = [2.5] # default sigma in mm
     biopsy_default_sigma_Z_list = [2.5] # default sigma in mm
+    biopsy_default_mu_X_list = [0]
+    biopsy_default_mu_Y_list = [0]
+    biopsy_default_mu_Z_list = [0]
+    # dilations (UNIFORM)
+    biopsy_dilations_default_sigma_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid
+    biopsy_dilations_default_mu_list = [0]
+    # rotations
+    biopsy_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
+    biopsy_rotations_default_sigma_Y_list = [np.pi/36]
+    biopsy_rotations_default_sigma_Z_list = [np.pi/36]
+    biopsy_rotations_default_mu_X_list = [0]
+    biopsy_rotations_default_mu_Y_list = [0]
+    biopsy_rotations_default_mu_Z_list = [0]
 
+
+    # DILs
     # CALCULATE FROM MEAN MDA BETWEEN MRI/US
-    dil_default_sigma_X = 2.5 # default sigma in mm
-    dil_default_sigma_Y = 2.5 # default sigma in mm
-    dil_default_sigma_Z = 2.5 # default sigma in mm
+    # Translations
     dil_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
     dil_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
     dil_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    dil_default_mu_X_list = [0]
+    dil_default_mu_Y_list = [0]
+    dil_default_mu_Z_list = [0]
+    # dilations
+    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
+    dil_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    dil_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the dil centroid
+    dil_dilations_default_sigma_Z_list = [1]
+    dil_dilations_default_mu_X_list = [0]
+    dil_dilations_default_mu_Y_list = [0]
+    dil_dilations_default_mu_Z_list = [0]
+    # rotations
+    dil_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
+    dil_rotations_default_sigma_Y_list = [np.pi/36]
+    dil_rotations_default_sigma_Z_list = [np.pi/36]
+    dil_rotations_default_mu_X_list = [0]
+    dil_rotations_default_mu_Y_list = [0]
+    dil_rotations_default_mu_Z_list = [0]
+
+
+    # Urethras
+    # Translations
+    urethra_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    urethra_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
+    urethra_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    urethra_default_mu_X_list = [0]
+    urethra_default_mu_Y_list = [0]
+    urethra_default_mu_Z_list = [0]
+    # dilations
+    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
+    urethra_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    urethra_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the urethra centroid
+    urethra_dilations_default_sigma_Z_list = [1]
+    urethra_dilations_default_mu_X_list = [0]
+    urethra_dilations_default_mu_Y_list = [0]
+    urethra_dilations_default_mu_Z_list = [0]
+    # rotations
+    urethra_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
+    urethra_rotations_default_sigma_Y_list = [np.pi/36]
+    urethra_rotations_default_sigma_Z_list = [np.pi/36]
+    urethra_rotations_default_mu_X_list = [0]
+    urethra_rotations_default_mu_Y_list = [0]
+    urethra_rotations_default_mu_Z_list = [0]
+
+
+
+    # Rectums
+    # Translations
+    rectum_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    rectum_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
+    rectum_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    rectum_default_mu_X_list = [0]
+    rectum_default_mu_Y_list = [0]
+    rectum_default_mu_Z_list = [0]
+    # dilations
+    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
+    rectum_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    rectum_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the rectum centroid
+    rectum_dilations_default_sigma_Z_list = [1]
+    rectum_dilations_default_mu_X_list = [0]
+    rectum_dilations_default_mu_Y_list = [0]
+    rectum_dilations_default_mu_Z_list = [0]
+    # rotations
+    rectum_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
+    rectum_rotations_default_sigma_Y_list = [np.pi/36]
+    rectum_rotations_default_sigma_Z_list = [np.pi/36]
+    rectum_rotations_default_mu_X_list = [0]
+    rectum_rotations_default_mu_Y_list = [0]
+    rectum_rotations_default_mu_Z_list = [0]
+
     
     use_added_in_quad_errors_as = 'two sigma' # can be 'sigma' or 'two sigma', 'two sigma' will provide tighter uncertainty clouds 
     biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean", "Global mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
@@ -189,6 +295,19 @@ def main():
     uncertainty_folder_name = 'Uncertainty data'
     uncertainty_file_name = "uncertainties_file_auto_generated"
     uncertainty_file_extension = ".csv"
+
+
+
+
+
+
+
+
+
+
+
+
+
     spinner_type = 'moon' # other decent ones are 'point' and 'line' or 'line2'
     output_folder_name = 'Output data'
     preprocessed_data_folder_name = 'Preprocessed data'
@@ -668,46 +787,111 @@ def main():
     rectum_ref_key = "Rectum ref"
     urethra_ref_key = "Urethra ref"
     # DO NOT CHANGE THE ORDER OF THE KEYS IN THE BELOW DICTIONARY!!!! 
-    structs_referenced_dict = { bx_ref: {"Contour names": biopsy_contour_names, 
+    structs_referenced_dict = { bx_ref: {"Contour names": biopsy_contour_names,
+                                        "Default mu X": biopsy_default_mu_X_list,
+                                        "Default mu Y": biopsy_default_mu_Y_list,
+                                        "Default mu Z": biopsy_default_mu_Z_list,  
                                         "Default sigma X": biopsy_default_sigma_X_list,
                                         "Default sigma Y": biopsy_default_sigma_Y_list,
                                         "Default sigma Z": biopsy_default_sigma_Z_list,
+                                        "Dilations mu (xy)": biopsy_dilations_default_mu_list,
+                                        "Dilations mu (z)": biopsy_dilations_default_mu_list,
+                                        "Dilations sigma (xy)": biopsy_dilations_default_sigma_list,
+                                        "Dilations sigma (z)": biopsy_dilations_default_sigma_list,
+                                        "Rotations mu X": biopsy_rotations_default_mu_X_list,
+                                        "Rotations mu Y": biopsy_rotations_default_mu_Y_list,
+                                        "Rotations mu Z": biopsy_rotations_default_mu_Z_list,
+                                        "Rotations sigma X": biopsy_rotations_default_sigma_X_list,
+                                        "Rotations sigma Y": biopsy_rotations_default_sigma_Y_list,
+                                        "Rotations sigma Z": biopsy_rotations_default_sigma_Z_list,
                                         'Test tissue class': None, # should always be None
                                         'Tissue heirarchy': None, # should always be None
                                         'Tissue class name': None, # Not used for anything as of yet..
                                         'PCD color dict': biopsy_pcd_colors_dict
                                         }, 
                                 oar_ref: {"Contour names": oaroi_contour_names,
+                                          "Default mu X": oar_default_mu_X_list,
+                                          "Default mu Y": oar_default_mu_Y_list,
+                                          "Default mu Z": oar_default_mu_Z_list, 
                                           "Default sigma X": oar_default_sigma_X_list,
                                           "Default sigma Y": oar_default_sigma_Y_list,
                                           "Default sigma Z": oar_default_sigma_Z_list,
+                                          "Dilations mu (xy)": oar_dilations_default_mu_X_list,
+                                          "Dilations mu (z)": oar_dilations_default_mu_Z_list,
+                                          "Dilations sigma (xy)": oar_dilations_default_sigma_X_list,
+                                          "Dilations sigma (z)": oar_dilations_default_sigma_Z_list,
+                                          "Rotations mu X": oar_rotations_default_mu_X_list,
+                                          "Rotations mu Y": oar_rotations_default_mu_Y_list,
+                                          "Rotations mu Z": oar_rotations_default_mu_Z_list,
+                                          "Rotations sigma X": oar_rotations_default_sigma_X_list,
+                                          "Rotations sigma Y": oar_rotations_default_sigma_Y_list,
+                                          "Rotations sigma Z": oar_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 3,
                                           'Tissue class name': 'Prostatic', 
                                           'PCD color': np.array([0.86, 0.08, 0.24]) # crimson
                                           }, 
                                 dil_ref: {"Contour names": dil_contour_names,
+                                          "Default mu X": dil_default_mu_X_list,
+                                          "Default mu Y": dil_default_mu_Y_list,
+                                          "Default mu Z": dil_default_mu_Z_list, 
                                           "Default sigma X": dil_default_sigma_X_list,
                                           "Default sigma Y": dil_default_sigma_Y_list,
                                           "Default sigma Z": dil_default_sigma_Z_list,
+                                          "Dilations mu (xy)": dil_dilations_default_mu_X_list,
+                                          "Dilations mu (z)": dil_dilations_default_mu_Z_list,
+                                          "Dilations sigma (xy)": dil_dilations_default_sigma_X_list,
+                                          "Dilations sigma (z)": dil_dilations_default_sigma_Z_list,
+                                          "Rotations mu X": dil_rotations_default_mu_X_list,
+                                          "Rotations mu Y": dil_rotations_default_mu_Y_list,
+                                          "Rotations mu Z": dil_rotations_default_mu_Z_list,
+                                          "Rotations sigma X": dil_rotations_default_sigma_X_list,
+                                          "Rotations sigma Y": dil_rotations_default_sigma_Y_list,
+                                          "Rotations sigma Z": dil_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 0,
                                           'Tissue class name': cancer_tissue_label,
                                           'PCD color': np.array([0.13, 0.55, 0.13]) # forest green
                                           },
                                 rectum_ref_key: {"Contour names": rectum_contour_names,
-                                          "Default sigma X": oar_default_sigma_X_list,
-                                          "Default sigma Y": oar_default_sigma_Y_list,
-                                          "Default sigma Z": oar_default_sigma_Z_list,
+                                          "Default mu X": rectum_default_mu_X_list,
+                                          "Default mu Y": rectum_default_mu_Y_list,
+                                          "Default mu Z": rectum_default_mu_Z_list, 
+                                          "Default sigma X": rectum_default_sigma_X_list,
+                                          "Default sigma Y": rectum_default_sigma_Y_list,
+                                          "Default sigma Z": rectum_default_sigma_Z_list,
+                                          "Dilations mu (xy)": rectum_dilations_default_mu_X_list,
+                                          "Dilations mu (z)": rectum_dilations_default_mu_Z_list,
+                                          "Dilations sigma (xy)": rectum_dilations_default_sigma_X_list,
+                                          "Dilations sigma (z)": rectum_dilations_default_sigma_Z_list,
+                                          "Rotations mu X": rectum_rotations_default_mu_X_list,
+                                          "Rotations mu Y": rectum_rotations_default_mu_Y_list,
+                                          "Rotations mu Z": rectum_rotations_default_mu_Z_list,
+                                          "Rotations sigma X": rectum_rotations_default_sigma_X_list,
+                                          "Rotations sigma Y": rectum_rotations_default_sigma_Y_list,
+                                          "Rotations sigma Z": rectum_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 2,
                                           'Tissue class name': 'Rectal',
                                           'PCD color': np.array([1.0, 0.84, 0.0]) # gold
                                           },
                                 urethra_ref_key: {"Contour names": urethra_contour_names,
-                                          "Default sigma X": oar_default_sigma_X_list,
-                                          "Default sigma Y": oar_default_sigma_Y_list,
-                                          "Default sigma Z": oar_default_sigma_Z_list,
+                                          "Default mu X": urethra_default_mu_X_list,
+                                          "Default mu Y": urethra_default_mu_Y_list,
+                                          "Default mu Z": urethra_default_mu_Z_list, 
+                                          "Default sigma X": urethra_default_sigma_X_list,
+                                          "Default sigma Y": urethra_default_sigma_Y_list,
+                                          "Default sigma Z": urethra_default_sigma_Z_list,
+                                          "Dilations mu (xy)": urethra_dilations_default_mu_X_list,
+                                          "Dilations mu (z)": urethra_dilations_default_mu_Z_list,
+                                          "Dilations sigma (xy)": urethra_dilations_default_sigma_X_list,
+                                          "Dilations sigma (z)": urethra_dilations_default_sigma_Z_list,
+                                          "Rotations mu X": urethra_rotations_default_mu_X_list,
+                                          "Rotations mu Y": urethra_rotations_default_mu_Y_list,
+                                          "Rotations mu Z": urethra_rotations_default_mu_Z_list,
+                                          "Rotations sigma X": urethra_rotations_default_sigma_X_list,
+                                          "Rotations sigma Y": urethra_rotations_default_sigma_Y_list,
+                                          "Rotations sigma Z": urethra_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 1,
                                           'Tissue class name': 'Urethral',
@@ -5708,7 +5892,6 @@ def main():
                                                                                 master_structure_info_dict
                                                                                 )
             """
-
             uncertainties_dataframe = uncertainty_file_writer.uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_reference_dict, 
                                                  structs_referenced_list, 
                                                  structs_referenced_dict,
@@ -5771,12 +5954,27 @@ def main():
                 structure_ref_num = row["Structure dicom ref num"]
                 master_ref_dict_specific_structure_index = row["Structure index"]
                 frame_of_reference = row["Frame of reference"]
+                # Translations
                 means_arr = np.array([row["mu (X)"],
                                       row["mu (Y)"],
                                       row["mu (Z)"]], dtype=float)
                 sigmas_arr = np.array([row["sigma (X)"],
                                        row["sigma (Y)"],
                                        row["sigma (Z)"]], dtype=float)
+                # Dilations
+                means_arr_dilations = np.array([row["Dilations mu (X)"],
+                                                row["Dilations mu (Y)"],
+                                                row["Dilations mu (Z)"]], dtype=float)
+                sigmas_arr_dilations = np.array([row["Dilations sigma (X)"],
+                                                 row["Dilations sigma (Y)"],
+                                                 row["Dilations sigma (Z)"]], dtype=float)
+                # Rotations
+                means_arr_rotations = np.array([row["Rotations mu (X)"],
+                                                row["Rotations mu (Y)"],
+                                                row["Rotations mu (Z)"]], dtype=float)
+                sigmas_arr_rotations = np.array([row["Rotations sigma (X)"],
+                                                 row["Rotations sigma (Y)"],
+                                                 row["Rotations sigma (Z)"]], dtype=float)
 
 
                 uncertainty_data_obj = uncertainty_data(patientUID, 
@@ -5787,7 +5985,7 @@ def main():
                                                         frame_of_reference
                                                         )
                 
-                uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
+                uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr, means_arr_dilations, sigmas_arr_dilations, means_arr_rotations, sigmas_arr_rotations)
                 
                 master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
@@ -5859,16 +6057,20 @@ def main():
                 ### Shift all structures and biopsies the same way for all simulations 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting biopsies & structs ", total = None)
 
-                #live_display.stop()
-                # Generate shifts
-                MC_prepper_funcs.generate_shifts(master_structure_reference_dict,
+                live_display.stop()
+                # Generate transformations
+                MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
                                                 simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                 bx_ref,
                                                 biopsy_needle_compartment_length,
                                                 max_simulations,
                                                 structs_referenced_list)
                 
-                
+                # Perform all bx only transformations
+                MC_prepper_funcs.biopsy_only_transformer(master_structure_reference_dict,
+                                                        bx_ref,
+                                                        max_simulations,
+                                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment)
                 
                 # Shift anatomy
                 MC_prepper_funcs.biopsy_and_structure_shifter(master_structure_reference_dict,
@@ -9526,9 +9728,14 @@ class uncertainty_data:
         self.uncertainty_data_mean_arr = None
         self.uncertainty_data_sigma_arr = None
         self.uncertainty_data_info_dict = {"Frame of reference": frame_of_reference, "Distribution": 'Normal'} 
-    def fill_means_and_sigmas(self, means_arr, sigmas_arr):
+    def fill_means_and_sigmas(self, means_arr, sigmas_arr, means_arr_dilations, sigmas_arr_dilations, means_arr_rotations, sigmas_arr_rotations):
         self.uncertainty_data_mean_arr = means_arr
         self.uncertainty_data_sigma_arr = sigmas_arr
+        self.uncertainty_data_dilations_mean_arr = means_arr_dilations
+        self.uncertainty_data_dilations_sigma_arr = sigmas_arr_dilations
+        self.uncertainty_data_rotations_mean_arr = means_arr_rotations
+        self.uncertainty_data_rotations_sigma_arr = sigmas_arr_rotations
+
 
 
 """
