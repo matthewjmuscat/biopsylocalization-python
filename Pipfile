@@ -13,32 +13,25 @@ numpy = "*"
 pydicom = "*"
 termcolor = "*"
 matplotlib = "*"
- # anytree = "*"
 shapely = "*"
 open3d = "*"
- # vtk = "*"
 pyqt5 = "*"
- # alphashape = "*"
 prettytable = "*"
 scikit-learn = "*"
- # pymeshfix = "*"
- # pyvista = "*"
 multiprocess = "*"
 dill = "*"
- # pathos = "*"
 rich = "*"
 "stopwatch.py" = "*"
 textual = "*"
 plotly = "*"
- # kaleido = "*"
 statsmodels = "*"
- # addict = "*"
 cubinlinker-cu11 = { index = "pypinvidia"}
 ptxcompiler-cu11 = { index = "pypinvidia"}
-rmm-cu11 = { index = "pypinvidia"}
-cudf-cu11 = { index = "pypinvidia"}
-cuspatial-cu11 = { index = "pypinvidia"} 
-cupy-cuda11x = "*"
+cuda-python = ">=12.0"
+rmm-cu12 = { index = "pypinvidia"}
+cudf-cu12 = { index = "pypinvidia"}
+cuspatial-cu12 = { index = "pypinvidia"} 
+cupy-cuda12x = "*"
 pysimplegui = "*"
 seaborn = "*"
 astropy = "*"
@@ -50,13 +43,16 @@ ortools = "*"
 fuzzywuzzy = "*"
 python-levenshtein = "*"
 gputil = "*"
+psutil = "*"
 simpleitk = "*"
+alphashape = "*"
+pymeshfix = "*"
 
 [dev-packages]
 ipykernel = "*"
 
 [requires]
-python_version = "3.9"
+python_version = "3.11"
 
 [pipenv]
 allow_prereleases = true
