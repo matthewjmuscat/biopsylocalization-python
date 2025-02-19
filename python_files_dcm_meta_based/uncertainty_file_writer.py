@@ -305,40 +305,24 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
 
 
                 ### DILATIONS ###
-                # biopsy handling
-                if structure_type == structs_referenced_list[0]:
-                    dilations_mu_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu (uniform)"])
-                    dilations_sigma_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma (uniform)"])
+                dilations_mu_xy_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu (xy)"])
+                dilations_mu_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu (z)"])
 
-                    dilations_mu = math_funcs.add_in_quadrature(dilations_mu_arr)
-
-                    if use_added_in_quad_errors_as == 'sigma':
-                        dilations_sigma = math_funcs.add_in_quadrature(dilations_sigma_x_arr)
-
-                    elif use_added_in_quad_errors_as == 'two sigma':
-                        dilations_sigma = math_funcs.add_in_quadrature(dilations_sigma_x_arr)/2
-
-                dilations_mu_x_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu X"])
-                dilations_mu_y_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu Y"])
-                dilations_mu_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations mu Z"])
-
-                dilations_sigma_x_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma X"])
-                dilations_sigma_y_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma Y"])
-                dilations_sigma_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma Z"])
+                dilations_sigma_xy_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma (xy)"])
+                dilations_sigma_z_arr = np.array(structs_referenced_dict[structure_type]["Dilations sigma (z)"])
 
                 # Compute params (dilations)
-                dilations_mu_x = math_funcs.add_in_quadrature(dilations_mu_x_arr)
-                dilations_mu_y = math_funcs.add_in_quadrature(dilations_mu_y_arr)
+                dilations_mu_xy = math_funcs.add_in_quadrature(dilations_mu_xy_arr)
                 dilations_mu_z = math_funcs.add_in_quadrature(dilations_mu_z_arr)
+
                 if use_added_in_quad_errors_as == 'sigma':
-                    dilations_sigma_x = math_funcs.add_in_quadrature(dilations_sigma_x_arr)
-                    dilations_sigma_y = math_funcs.add_in_quadrature(dilations_sigma_y_arr)
+                    dilations_sigma_xy = math_funcs.add_in_quadrature(dilations_sigma_xy_arr)
                     dilations_sigma_z = math_funcs.add_in_quadrature(dilations_sigma_z_arr)
 
                 elif use_added_in_quad_errors_as == 'two sigma':
-                    dilations_sigma_x = math_funcs.add_in_quadrature(dilations_sigma_x_arr)/2
-                    dilations_sigma_y = math_funcs.add_in_quadrature(dilations_sigma_y_arr)/2
+                    dilations_sigma_xy = math_funcs.add_in_quadrature(dilations_sigma_xy_arr)/2
                     dilations_sigma_z = math_funcs.add_in_quadrature(dilations_sigma_z_arr)/2
+
                 ### DILATIONS END ###
 
 
@@ -386,11 +370,9 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                                       "sigma (X)": [sigma_x], 
                                       "sigma (Y)": [sigma_y], 
                                       "sigma (Z)": [sigma_z],
-                                      "Dilations mu (X)": [dilations_mu_x], 
-                                      "Dilations mu (Y)": [dilations_mu_y], 
+                                      "Dilations mu (XY)": [dilations_mu_xy], 
                                       "Dilations mu (Z)": [dilations_mu_z], 
-                                      "Dilations sigma (X)": [dilations_sigma_x], 
-                                      "Dilations sigma (Y)": [dilations_sigma_y], 
+                                      "Dilations sigma (XY)": [dilations_sigma_xy], 
                                       "Dilations sigma (Z)": [dilations_sigma_z],
                                       "Rotations mu (X)": [rotations_mu_x], 
                                       "Rotations mu (Y)": [rotations_mu_y], 

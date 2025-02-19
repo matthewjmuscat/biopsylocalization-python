@@ -1,7 +1,10 @@
 from sklearn.decomposition import PCA
 import numpy as np
+import cupy as cp
 
 def linear_fitter(data):
+    if isinstance(data, cp.ndarray):
+        data = cp.asnumpy(data)
     data = np.array(data).T
     pca = PCA(n_components=1)
     pca.fit(data)

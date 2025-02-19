@@ -283,10 +283,38 @@ def plot_point_clouds(*points_arr, label='Unknown'):
         geometry_list.append(point_cloud)
     o3d.visualization.draw_geometries(geometry_list)
 
-def plot_geometries(*geometries, label='Unknown', lookat_inp=None, up_inp=None, front_inp=None, zoom_inp=None):
+def plot_geometries(*geometries, label='Unknown', lookat_inp=None, up_inp=None, front_inp=None, zoom_inp=None, show_axes=False, axes_length=1.0, axes_origin=[0, 0, 0]):
     geom_list = []
     for geom_item in geometries:
         geom_list.append(geom_item)
+    
+    if show_axes:
+        # Create axes lines
+        axes = o3d.geometry.LineSet()
+        origin = np.array(axes_origin)
+        points = np.array([
+            origin, origin + np.array([axes_length, 0, 0]),  # X-axis
+            origin, origin + np.array([0, axes_length, 0]),  # Y-axis
+            origin, origin + np.array([0, 0, axes_length])   # Z-axis
+        ])
+        lines = [
+            [0, 1],  # X-axis
+            [2, 3],  # Y-axis
+            [4, 5]   # Z-axis
+        ]
+        colors = [
+            [1, 0, 0],  # Red for X-axis
+            [0, 1, 0],  # Green for Y-axis
+            [0, 0, 1]   # Blue for Z-axis
+        ]
+        axes.points = o3d.utility.Vector3dVector(points.reshape(6,3))
+        axes.lines = o3d.utility.Vector2iVector(lines)
+        axes.colors = o3d.utility.Vector3dVector(colors)
+        
+        # Add axes to the list of geometries
+        geom_list.append(axes)
+    
+    # Plot the geometries
     o3d.visualization.draw_geometries(geom_list)
 
 def plot_geometries_with_axes(*geometries, label='Unknown'):

@@ -2,7 +2,7 @@ import cupy as cp
 import plotting_funcs
 
 
-def MC_simulator_non_bx_structs_dilations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
+def MC_simulator_all_structs_dilations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
     
     sp_structure_normal_dist_shift_samples_and_structure_reference_list = []
     for structure_type in structs_referenced_list:
@@ -11,20 +11,19 @@ def MC_simulator_non_bx_structs_dilations_generator_cupy(pydicom_item, structs_r
             sp_struct_uncertainty_data_dilations_mean_arr = uncertainty_data_obj.uncertainty_data_dilations_mean_arr
             sp_struct_uncertainty_data_dilations_sigma_arr = uncertainty_data_obj.uncertainty_data_dilations_sigma_arr
 
-            structure_normal_dist_dilations_factors_samples_arr = cp.array([ 
-            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[0], scale=sp_struct_uncertainty_data_dilations_sigma_arr[0], size=max_simulations),  
-            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[1], scale=sp_struct_uncertainty_data_dilations_sigma_arr[1], size=max_simulations),  
-            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[2], scale=sp_struct_uncertainty_data_dilations_sigma_arr[2], size=max_simulations)],   
+            structure_normal_dist_dilations_distances_samples_arr = cp.array([ 
+            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[0], scale=sp_struct_uncertainty_data_dilations_sigma_arr[0], size=max_simulations),    
+            cp.random.normal(loc=sp_struct_uncertainty_data_dilations_mean_arr[1], scale=sp_struct_uncertainty_data_dilations_sigma_arr[1], size=max_simulations)],   
             dtype = float).T
             
-            generated_shifts_info_list = [structure_type, specific_structure_index, structure_normal_dist_dilations_factors_samples_arr]
+            generated_shifts_info_list = [structure_type, specific_structure_index, structure_normal_dist_dilations_distances_samples_arr]
             
             sp_structure_normal_dist_shift_samples_and_structure_reference_list.append(generated_shifts_info_list)
     
 
     return sp_structure_normal_dist_shift_samples_and_structure_reference_list
 
-def MC_simulator_non_bx_structs_rotations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
+def MC_simulator_all_structs_rotations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations):
     
     sp_structure_normal_dist_shift_samples_and_structure_reference_list = []
     for structure_type in structs_referenced_list:

@@ -171,11 +171,9 @@ def main():
     oar_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    oar_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    oar_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
-    oar_dilations_default_sigma_Z_list = [1]
-    oar_dilations_default_mu_X_list = [0]
-    oar_dilations_default_mu_Y_list = [0]
+    oar_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    oar_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    oar_dilations_default_mu_XY_list = [0]
     oar_dilations_default_mu_Z_list = [0]
     # rotations
     oar_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
@@ -194,9 +192,11 @@ def main():
     biopsy_default_mu_X_list = [0]
     biopsy_default_mu_Y_list = [0]
     biopsy_default_mu_Z_list = [0]
-    # dilations (UNIFORM)
-    biopsy_dilations_default_sigma_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid
-    biopsy_dilations_default_mu_list = [0]
+    # dilations (UNIFORM) # note that these are distances (d) so 0 will impose a shift of 0 from its original position
+    biopsy_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid line in the perpendicular radial direction
+    biopsy_dilations_default_sigma_Z_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid line in the parallel axial direction
+    biopsy_dilations_default_mu_XY_list = [0]
+    biopsy_dilations_default_mu_Z_list = [0]
     # rotations
     biopsy_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
     biopsy_rotations_default_sigma_Y_list = [np.pi/36]
@@ -217,11 +217,9 @@ def main():
     dil_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    dil_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    dil_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the dil centroid
-    dil_dilations_default_sigma_Z_list = [1]
-    dil_dilations_default_mu_X_list = [0]
-    dil_dilations_default_mu_Y_list = [0]
+    dil_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    dil_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    dil_dilations_default_mu_XY_list = [0]
     dil_dilations_default_mu_Z_list = [0]
     # rotations
     dil_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
@@ -242,11 +240,9 @@ def main():
     urethra_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    urethra_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    urethra_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the urethra centroid
-    urethra_dilations_default_sigma_Z_list = [1]
-    urethra_dilations_default_mu_X_list = [0]
-    urethra_dilations_default_mu_Y_list = [0]
+    urethra_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    urethra_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    urethra_dilations_default_mu_XY_list = [0]
     urethra_dilations_default_mu_Z_list = [0]
     # rotations
     urethra_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
@@ -268,11 +264,9 @@ def main():
     rectum_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    rectum_dilations_default_sigma_X_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    rectum_dilations_default_sigma_Y_list = [1] # these are distances in mm that the points will shift towards and away from the rectum centroid
-    rectum_dilations_default_sigma_Z_list = [1]
-    rectum_dilations_default_mu_X_list = [0]
-    rectum_dilations_default_mu_Y_list = [0]
+    rectum_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    rectum_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    rectum_dilations_default_mu_XY_list = [0]
     rectum_dilations_default_mu_Z_list = [0]
     # rotations
     rectum_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
@@ -351,7 +345,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 1000
+    num_MC_containment_simulations_input = 5
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
     num_MC_dose_simulations_input = 1000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
@@ -458,7 +452,13 @@ def main():
     
     
     ### PLOTS TO SHOW:
-    
+
+    # Transformations
+    inspect_self_biopsy_dilate_bool = False # per trial basis
+    inspect_self_biopsy_dilate_and_rotate_bool = False # per trial basis
+    inspect_self_biopsy_dilate_and_rotate_and_translate_bool = False # per trial basis
+    inspect_relative_structure_rotate_and_shift_number = 0 # per trial basis, if 0 will not show any plots, make sure this number is less than the num_containment_sims value !
+
     # Dosimetry
     show_NN_dose_demonstration_plots = False # this shows one trial at a time!!!
     show_3d_dose_renderings = False
@@ -794,10 +794,10 @@ def main():
                                         "Default sigma X": biopsy_default_sigma_X_list,
                                         "Default sigma Y": biopsy_default_sigma_Y_list,
                                         "Default sigma Z": biopsy_default_sigma_Z_list,
-                                        "Dilations mu (xy)": biopsy_dilations_default_mu_list,
-                                        "Dilations mu (z)": biopsy_dilations_default_mu_list,
-                                        "Dilations sigma (xy)": biopsy_dilations_default_sigma_list,
-                                        "Dilations sigma (z)": biopsy_dilations_default_sigma_list,
+                                        "Dilations mu (xy)": biopsy_dilations_default_mu_XY_list,
+                                        "Dilations mu (z)": biopsy_dilations_default_mu_Z_list,
+                                        "Dilations sigma (xy)": biopsy_dilations_default_sigma_XY_list,
+                                        "Dilations sigma (z)": biopsy_dilations_default_sigma_Z_list,
                                         "Rotations mu X": biopsy_rotations_default_mu_X_list,
                                         "Rotations mu Y": biopsy_rotations_default_mu_Y_list,
                                         "Rotations mu Z": biopsy_rotations_default_mu_Z_list,
@@ -816,9 +816,9 @@ def main():
                                           "Default sigma X": oar_default_sigma_X_list,
                                           "Default sigma Y": oar_default_sigma_Y_list,
                                           "Default sigma Z": oar_default_sigma_Z_list,
-                                          "Dilations mu (xy)": oar_dilations_default_mu_X_list,
+                                          "Dilations mu (xy)": oar_dilations_default_mu_XY_list,
                                           "Dilations mu (z)": oar_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": oar_dilations_default_sigma_X_list,
+                                          "Dilations sigma (xy)": oar_dilations_default_sigma_XY_list,
                                           "Dilations sigma (z)": oar_dilations_default_sigma_Z_list,
                                           "Rotations mu X": oar_rotations_default_mu_X_list,
                                           "Rotations mu Y": oar_rotations_default_mu_Y_list,
@@ -838,9 +838,9 @@ def main():
                                           "Default sigma X": dil_default_sigma_X_list,
                                           "Default sigma Y": dil_default_sigma_Y_list,
                                           "Default sigma Z": dil_default_sigma_Z_list,
-                                          "Dilations mu (xy)": dil_dilations_default_mu_X_list,
+                                          "Dilations mu (xy)": dil_dilations_default_mu_XY_list,
                                           "Dilations mu (z)": dil_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": dil_dilations_default_sigma_X_list,
+                                          "Dilations sigma (xy)": dil_dilations_default_sigma_XY_list,
                                           "Dilations sigma (z)": dil_dilations_default_sigma_Z_list,
                                           "Rotations mu X": dil_rotations_default_mu_X_list,
                                           "Rotations mu Y": dil_rotations_default_mu_Y_list,
@@ -860,9 +860,9 @@ def main():
                                           "Default sigma X": rectum_default_sigma_X_list,
                                           "Default sigma Y": rectum_default_sigma_Y_list,
                                           "Default sigma Z": rectum_default_sigma_Z_list,
-                                          "Dilations mu (xy)": rectum_dilations_default_mu_X_list,
+                                          "Dilations mu (xy)": rectum_dilations_default_mu_XY_list,
                                           "Dilations mu (z)": rectum_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": rectum_dilations_default_sigma_X_list,
+                                          "Dilations sigma (xy)": rectum_dilations_default_sigma_XY_list,
                                           "Dilations sigma (z)": rectum_dilations_default_sigma_Z_list,
                                           "Rotations mu X": rectum_rotations_default_mu_X_list,
                                           "Rotations mu Y": rectum_rotations_default_mu_Y_list,
@@ -882,9 +882,9 @@ def main():
                                           "Default sigma X": urethra_default_sigma_X_list,
                                           "Default sigma Y": urethra_default_sigma_Y_list,
                                           "Default sigma Z": urethra_default_sigma_Z_list,
-                                          "Dilations mu (xy)": urethra_dilations_default_mu_X_list,
+                                          "Dilations mu (xy)": urethra_dilations_default_mu_XY_list,
                                           "Dilations mu (z)": urethra_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": urethra_dilations_default_sigma_X_list,
+                                          "Dilations sigma (xy)": urethra_dilations_default_sigma_XY_list,
                                           "Dilations sigma (z)": urethra_dilations_default_sigma_Z_list,
                                           "Rotations mu X": urethra_rotations_default_mu_X_list,
                                           "Rotations mu Y": urethra_rotations_default_mu_Y_list,
@@ -5860,7 +5860,7 @@ def main():
 
 
 
-            #live_display.stop()
+            live_display.stop()
             #live_display.console.print("[bold red]User input required:")
             ## begin simulation section
             
@@ -5962,11 +5962,9 @@ def main():
                                        row["sigma (Y)"],
                                        row["sigma (Z)"]], dtype=float)
                 # Dilations
-                means_arr_dilations = np.array([row["Dilations mu (X)"],
-                                                row["Dilations mu (Y)"],
+                means_arr_dilations = np.array([row["Dilations mu (XY)"],
                                                 row["Dilations mu (Z)"]], dtype=float)
-                sigmas_arr_dilations = np.array([row["Dilations sigma (X)"],
-                                                 row["Dilations sigma (Y)"],
+                sigmas_arr_dilations = np.array([row["Dilations sigma (XY)"],
                                                  row["Dilations sigma (Z)"]], dtype=float)
                 # Rotations
                 means_arr_rotations = np.array([row["Rotations mu (X)"],
@@ -6070,9 +6068,13 @@ def main():
                 MC_prepper_funcs.biopsy_only_transformer(master_structure_reference_dict,
                                                         bx_ref,
                                                         max_simulations,
-                                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment)
+                                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                                        inspect_self_biopsy_dilate_bool,
+                                                        inspect_self_biopsy_dilate_and_rotate_bool,
+                                                        inspect_self_biopsy_dilate_and_rotate_and_translate_bool)
                 
-                # Shift anatomy
+                # Shift anatomy OLD
+                """
                 MC_prepper_funcs.biopsy_and_structure_shifter(master_structure_reference_dict,
                                  bx_ref,
                                  structs_referenced_list,
@@ -6081,6 +6083,14 @@ def main():
                                  plot_uniform_shifts_to_check_plotly,
                                  plot_shifted_biopsies = plot_shifted_biopsies,
                                  plot_translation_vectors_pointclouds = plot_translation_vectors_pointclouds
+                                 )
+                """
+                # Transform biopsy based on relative structures NEW
+                MC_prepper_funcs.biopsy_transformer_to_relative_structures(master_structure_reference_dict,
+                                 structs_referenced_list,
+                                 bx_ref,
+                                 num_MC_containment_simulations_input,
+                                 inspect_relative_structure_rotate_and_shift_number
                                  )
 
 
