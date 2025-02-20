@@ -118,9 +118,79 @@ def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dic
 
 
 
+def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_dict,
+                                                    structs_referenced_list,
+                                                    bx_ref,
+                                                    all_ref_key):
+    
+    cohort_all_structure_shifts_pandas_data_frame = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        sp_patient_all_structure_shifts_pandas_data_frame = pandas.DataFrame()
+
+        for structs in structs_referenced_list:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                structureID = specific_structure["ROI"]
+                structure_reference_number = specific_structure["Ref #"]
+                if structs == bx_ref:
+                    bx_simulated_bool = specific_structure['Simulated bool']
+                    bx_sim_type = specific_structure["Simulated type"]
+
+                    specific_structure_normal_dist_dilations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples dilations arr"])
+                    specific_structure_structure_uniform_dist_shift_samples_arr = cp.asnumpy(specific_structure["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"])
+                    
+                else:
+                    bx_simulated_bool = None
+                    bx_sim_type = None
+
+                    # dilations not included for non-bx structures
+                    specific_structure_normal_dist_dilations_samples_arr = np.full((num_simulations, 2), np.nan)
+                    # no z needle for non-bx structures
+                    specific_structure_structure_uniform_dist_shift_samples_arr = np.full(num_simulations, np.nan)
+                    
+                
+                # rotations
+                specific_structure_normal_dist_rotations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples rotations arr"])
+                # translations
+                specific_structure_structure_normal_dist_shift_samples_arr = specific_structure["MC data: Generated normal dist random samples arr"]
 
 
+                num_simulations = specific_structure_structure_normal_dist_shift_samples_arr.shape[0]
 
+                sp_structure_shifts_dict_for_pandas_data_frame = {
+                    "Patient ID": [patientUID]*num_simulations,
+                    "Structure ID": [structureID]*num_simulations,
+                    "Simulated bool": [bx_simulated_bool]*num_simulations,
+                    "Simulated type": [bx_sim_type]*num_simulations,
+                    "Structure type": [structs]*num_simulations,
+                    "Structure ref num": [structure_reference_number]*num_simulations,
+                    "Structure index": [specific_structure_index]*num_simulations,
+                    'Dilation (XY)': specific_structure_normal_dist_dilations_samples_arr[:,0],
+                    'Dilation (Z)': specific_structure_normal_dist_dilations_samples_arr[:,1],
+                    'Rotation (X)': specific_structure_normal_dist_rotations_samples_arr[:,0],
+                    'Rotation (Y)': specific_structure_normal_dist_rotations_samples_arr[:,1],
+                    'Rotation (Z)': specific_structure_normal_dist_rotations_samples_arr[:,2],
+                    'Shift (X)': specific_structure_structure_normal_dist_shift_samples_arr[:,0],
+                    'Shift (Y)': specific_structure_structure_normal_dist_shift_samples_arr[:,1],
+                    'Shift (Z)': specific_structure_structure_normal_dist_shift_samples_arr[:,2],
+                    'Shift (z_needle)': specific_structure_structure_uniform_dist_shift_samples_arr,
+                    'Trial': np.arange(1, num_simulations + 1)
+                }
+
+                sp_structure_shifts_pandas_data_frame = pandas.DataFrame(data=sp_structure_shifts_dict_for_pandas_data_frame)
+
+                sp_patient_all_structure_shifts_pandas_data_frame = pandas.concat([sp_patient_all_structure_shifts_pandas_data_frame,sp_structure_shifts_pandas_data_frame], ignore_index = True)
+
+        sp_patient_all_structure_shifts_pandas_data_frame = convert_columns_to_categorical_and_downcast(sp_patient_all_structure_shifts_pandas_data_frame, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["All MC structure transformation values"] = sp_patient_all_structure_shifts_pandas_data_frame
+
+        cohort_all_structure_shifts_pandas_data_frame = pandas.concat([cohort_all_structure_shifts_pandas_data_frame,sp_patient_all_structure_shifts_pandas_data_frame], ignore_index = True)
+
+    cohort_all_structure_shifts_pandas_data_frame = convert_columns_to_categorical_and_downcast(cohort_all_structure_shifts_pandas_data_frame, threshold=0.25)
+
+
+    return cohort_all_structure_shifts_pandas_data_frame
 
 
 def tissue_probability_dataframe_builder_by_bx_pt(patientUID,
@@ -758,6 +828,116 @@ def cumulative_histogram_for_tissue_length_dataframe_builder(patient_cohort_data
     
     return cdf_dict
     
+
+
+
+
+
+
+
+def cohort_relative_structure_distances_dataframe_builder(master_structure_reference_dict,
+                                                          bx_ref,
+                                                          all_ref_key):
+    
+    cohort_mc_distances_global_results_dataframe = pandas.DataFrame()
+    cohort_mc_distances_pt_wise_results_dataframe = pandas.DataFrame()
+    cohort_mc_distances_voxel_wise_results_dataframe = pandas.DataFrame()
+
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        multi_structure_mc_distances_global_results_dataframe = pandas.DataFrame()
+        multi_structure_mc_distances_pt_wise_results_dataframe = pandas.DataFrame()
+        multi_structure_mc_distances_voxel_wise_results_dataframe = pandas.DataFrame()
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+            
+            sp_bx_global_distances_grand_all_structures_pandas_dataframe = specific_bx_structure["MC data: MC sim compiled distances global dataframe"]
+            sp_bx_pt_wise_distances_grand_all_structures_pandas_dataframe = specific_bx_structure['MC data: MC sim compiled distances point-wise dataframe']
+            sp_bx_voxel_wise_distances_grand_all_structures_pandas_dataframe = specific_bx_structure['MC data: MC sim compiled distances voxel-wise dataframe']
+
+            multi_structure_mc_distances_global_results_dataframe = pandas.concat([multi_structure_mc_distances_global_results_dataframe,sp_bx_global_distances_grand_all_structures_pandas_dataframe]).reset_index(drop = True)
+            multi_structure_mc_distances_pt_wise_results_dataframe = pandas.concat([multi_structure_mc_distances_pt_wise_results_dataframe,sp_bx_pt_wise_distances_grand_all_structures_pandas_dataframe]).reset_index(drop = True)
+            multi_structure_mc_distances_voxel_wise_results_dataframe = pandas.concat([multi_structure_mc_distances_voxel_wise_results_dataframe,sp_bx_voxel_wise_distances_grand_all_structures_pandas_dataframe]).reset_index(drop = True)
+
+
+        multi_structure_mc_distances_global_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_distances_global_results_dataframe, threshold=0.25)
+        multi_structure_mc_distances_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_distances_pt_wise_results_dataframe, threshold=0.25)
+        multi_structure_mc_distances_voxel_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_distances_voxel_wise_results_dataframe, threshold=0.25)
+
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - distances global results"] = multi_structure_mc_distances_global_results_dataframe
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - distances pt-wise results"] = multi_structure_mc_distances_pt_wise_results_dataframe
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - distances voxel-wise results"] = multi_structure_mc_distances_voxel_wise_results_dataframe
+        
+
+        cohort_mc_distances_global_results_dataframe = pandas.concat([cohort_mc_distances_global_results_dataframe,multi_structure_mc_distances_global_results_dataframe]).reset_index(drop = True)
+        cohort_mc_distances_pt_wise_results_dataframe = pandas.concat([cohort_mc_distances_pt_wise_results_dataframe,multi_structure_mc_distances_pt_wise_results_dataframe]).reset_index(drop = True)
+        cohort_mc_distances_voxel_wise_results_dataframe = pandas.concat([cohort_mc_distances_voxel_wise_results_dataframe,multi_structure_mc_distances_voxel_wise_results_dataframe]).reset_index(drop = True)
+
+    cohort_mc_distances_global_results_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_distances_global_results_dataframe, threshold=0.25)
+    cohort_mc_distances_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_distances_pt_wise_results_dataframe, threshold=0.25)
+    cohort_mc_distances_voxel_wise_results_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_distances_voxel_wise_results_dataframe, threshold=0.25)
+
+    return cohort_mc_distances_global_results_dataframe, cohort_mc_distances_pt_wise_results_dataframe, cohort_mc_distances_voxel_wise_results_dataframe
+
+
+
+
+def cohort_containment_results_and_distances_dataframe_builder_light(master_structure_reference_dict,
+                                                                     bx_ref,
+                                                                     all_ref_key):
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        multi_structure_mc_containment_and_distances_light_results_dataframe = pandas.DataFrame()
+
+        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+
+            containment_info_grand_all_structures_pandas_dataframe_light = specific_bx_structure["MC data: MC sim containment and distance all trials dataframe (light)"]
+
+            multi_structure_mc_containment_and_distances_light_results_dataframe = pandas.concat([multi_structure_mc_containment_and_distances_light_results_dataframe,containment_info_grand_all_structures_pandas_dataframe_light]).reset_index(drop = True)
+
+            multi_structure_mc_containment_and_distances_light_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_containment_and_distances_light_results_dataframe, threshold=0.25)
+
+            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - containment and distances (light) results"] = multi_structure_mc_containment_and_distances_light_results_dataframe
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

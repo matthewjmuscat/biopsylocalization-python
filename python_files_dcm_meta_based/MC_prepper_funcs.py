@@ -287,7 +287,7 @@ def biopsy_dilator_step_1(randomly_sampled_bx_pts_cp_arr, dilation_factors, cent
 
     # Normalize the perpendicular vectors to unit vectors
     perpendicular_norms = cp.linalg.norm(perpendicular_vectors, axis=1, keepdims=True)
-    perpendicular_unit_vectors = perpendicular_vectors / perpendicular_norms
+    perpendicular_unit_vectors = cp.where(perpendicular_norms == 0, 0, perpendicular_vectors / perpendicular_norms)
 
     # Calculate the axial direction vector (unit vector along the centroid line)
     line_vec = line_end - line_start
@@ -299,7 +299,7 @@ def biopsy_dilator_step_1(randomly_sampled_bx_pts_cp_arr, dilation_factors, cent
 
     # Normalize the axial vectors to unit vectors
     axial_norms = cp.linalg.norm(axial_vectors, axis=1, keepdims=True)
-    axial_unit_vectors = axial_vectors / axial_norms
+    axial_unit_vectors = cp.where(axial_norms == 0, 0, axial_vectors / axial_norms)
 
     # Tile vectors for each simulation
     tiled_perpendicular_unit_vectors = cp.tile(perpendicular_unit_vectors, (num_simulations, 1, 1))  # (num_simulations, N, 3)

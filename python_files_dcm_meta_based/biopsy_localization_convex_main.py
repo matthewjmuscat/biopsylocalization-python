@@ -640,7 +640,7 @@ def main():
                                              "Plot name": " - mr-regression-quantiles_axial_distribution_matplotlib"
                                              },
                                         "Cohort - Sampled translation vector magnitudes box plots": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, # Keep this off, since the vector magnitudes dataframe production is deprecated
                                              "Plot name": " - Cohort - sampled_translations_vecs_and_mags_boxplot"
                                              },
                                         "Cohort - Prostate biopsies heatmap": \
@@ -963,6 +963,7 @@ def main():
                                                                 "Cohort: Biopsy basic spatial features dataframe": None,
                                                                 "Cohort: 3D radiomic features all OAR and DIL structures": None,
                                                                 "Cohort: All MC structure shift vectors": None,
+                                                                "Cohort: All MC structure transformation values": None,
                                                                 "Cohort: structure specific mc results": None,
                                                                 "Cohort: sum-to-one mc results": None,
                                                                 "Cohort: global sum-to-one mc results": None,
@@ -973,6 +974,9 @@ def main():
                                                                 "Cohort: Entire point-wise binom est distribution": None,
                                                                 "Cohort: DIL global tissue scores and DIL features": None,
                                                                 "Cohort: Entire point-wise dose distribution": None,
+                                                                "Cohort: Tissue class - distances global results": None,
+                                                                "Cohort: Tissue class - distances pt-wise results": None,
+                                                                "Cohort: Tissue class - distances voxel-wise results": None,
                                                                 "Cohort: Bx DVH metrics": None,
                                                                 "Cohort: Bx DVH metrics (generalized)": None,
                                                                 "Cohort: Bx global info dataframe": None,
@@ -6055,7 +6059,7 @@ def main():
                 ### Shift all structures and biopsies the same way for all simulations 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting biopsies & structs ", total = None)
 
-                live_display.stop()
+                #live_display.stop()
                 # Generate transformations
                 MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
                                                 simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
@@ -6457,7 +6461,8 @@ def main():
                 ### MC General
                 general_mc_sims_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, general)...', total=None)
                 general_mc_sims_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, general)', total=1, visible = False)
-       
+
+                """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
                 cohort_all_structure_shifts_pandas_data_frame = dataframe_builders.all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
                                   structs_referenced_list, 
@@ -6468,6 +6473,15 @@ def main():
                                   live_display)
 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: All MC structure shift vectors"] = cohort_all_structure_shifts_pandas_data_frame
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                """
+
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
+                cohort_all_structure_transformations_pandas_data_frame = dataframe_builders.all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_dict,
+                                                    structs_referenced_list,
+                                                    bx_ref,
+                                                    all_ref_key)
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: All MC structure transformation values"] = cohort_all_structure_transformations_pandas_data_frame
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 indeterminate_progress_main.update(general_mc_sims_dataframe_building_indeterminate, visible = False)
@@ -6547,6 +6561,21 @@ def main():
                                                                          master_structure_reference_dict,
                                                                          bx_ref)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: DIL global tissue scores and DIL features"] = cohort_global_tissue_scores_with_target_dil_radiomic_features_df
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 9", total = None) 
+                cohort_mc_distances_global_results_dataframe, cohort_mc_distances_pt_wise_results_dataframe, cohort_mc_distances_voxel_wise_results_dataframe = dataframe_builders.cohort_relative_structure_distances_dataframe_builder(master_structure_reference_dict,
+                                                          bx_ref,
+                                                          all_ref_key)
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Tissue class - distances global results"] = cohort_mc_distances_global_results_dataframe
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Tissue class - distances pt-wise results"] = cohort_mc_distances_pt_wise_results_dataframe
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Tissue class - distances voxel-wise results"] = cohort_mc_distances_voxel_wise_results_dataframe
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 10", total = None) 
+                dataframe_builders.cohort_containment_results_and_distances_dataframe_builder_light(master_structure_reference_dict,
+                                                                     bx_ref,
+                                                                     all_ref_key)                                          
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
@@ -9526,10 +9555,15 @@ def structure_referencer(data_removals_dict,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None},    
-                        "Multi-structure MC simulation output dataframes dict": {"Tissue class - Global tissue class statistics": None,
+                        "Multi-structure MC simulation output dataframes dict": {"All MC structure transformation values": None,
+                                                                                 "Tissue class - Global tissue class statistics": None,
                                                                                  "Tissue class - Global tissue by structure statistics": None,
                                                                                  "Tissue class - Tissue length above threshold": None,
                                                                                  "Tissue class - sum-to-one mc results": None,
+                                                                                 "Tissue class - distances global results": None,
+                                                                                 "Tissue class - distances pt-wise results": None,
+                                                                                 "Tissue class - distances voxel-wise results": None,
+                                                                                 "Tissue class - containment and distances (light) results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
                                                                                  "DVH metrics": None,
                                                                                  "DVH metrics (Dx, Vx) statistics": None,

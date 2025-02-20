@@ -342,7 +342,7 @@ def simulator_parallel(parallel_pool,
                                     }
 
 
-        live_display.stop()
+        #live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
