@@ -114,6 +114,20 @@ def main():
     # prevents matplotlib plots from opening unless explicitely asked to with plt.show()
     plt.ioff()
 
+
+    ### Non-user changeable keys 
+    all_ref_key = "All ref"
+    bx_ref = "Bx ref"
+    oar_ref = "OAR ref"
+    dil_ref = "DIL ref"
+    rectum_ref_key = "Rectum ref"
+    urethra_ref_key = "Urethra ref"
+    ###
+
+
+
+
+
     # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
     # specify the patient IDs and the list of biopsy names to remove from the dataset
     data_removals_dict = {"189 (F2)": ["Bx_Tr LM1 blood"],
@@ -345,7 +359,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 5
+    num_MC_containment_simulations_input = 1000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
     num_MC_dose_simulations_input = 1000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
@@ -458,6 +472,8 @@ def main():
     inspect_self_biopsy_dilate_and_rotate_bool = False # per trial basis
     inspect_self_biopsy_dilate_and_rotate_and_translate_bool = False # per trial basis
     inspect_relative_structure_rotate_and_shift_number = 0 # per trial basis, if 0 will not show any plots, make sure this number is less than the num_containment_sims value !
+    show_non_bx_relative_structure_z_dilation_bool = False # per trial basis
+    show_non_bx_relative_structure_xy_dilation_bool = False # per trial basis
 
     # Dosimetry
     show_NN_dose_demonstration_plots = False # this shows one trial at a time!!!
@@ -466,8 +482,9 @@ def main():
     show_NN_dose_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
 
     # Tissue class and structure distances
-    show_containment_demonstration_plots = False # this shows one trial at a time!!!
-    plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
+    show_num_containment_demonstration_plots = 10 # this shows one trial at a time!!!
+    containment_results_structure_types_to_show_per_trial = [oar_ref, dil_ref] # can be any combination of the structure references
+    plot_cupy_containment_distribution_results = True # nice because it shows all trials at once
     plot_nearest_neighbour_surface_boundary_demonstration = False # you see one trial at a time
     plot_relative_structure_centroid_demonstration = False # you see one trial at a time
 
@@ -780,12 +797,7 @@ def main():
     default_exterior_tissue = 'Periprostatic' # For tissue class stuff! Basically dictates what to call tissue that doesnt lie in any defined structure!
 
     # non-user changeable variables, but need to be initiatied:
-    all_ref_key = "All ref"
-    bx_ref = "Bx ref"
-    oar_ref = "OAR ref"
-    dil_ref = "DIL ref"
-    rectum_ref_key = "Rectum ref"
-    urethra_ref_key = "Urethra ref"
+    
     # DO NOT CHANGE THE ORDER OF THE KEYS IN THE BELOW DICTIONARY!!!! 
     structs_referenced_dict = { bx_ref: {"Contour names": biopsy_contour_names,
                                         "Default mu X": biopsy_default_mu_X_list,
@@ -5864,7 +5876,7 @@ def main():
 
 
 
-            live_display.stop()
+            #live_display.stop()
             #live_display.console.print("[bold red]User input required:")
             ## begin simulation section
             
@@ -6057,7 +6069,9 @@ def main():
 
                 
                 ### Shift all structures and biopsies the same way for all simulations 
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting biopsies & structs ", total = None)
+                indeterminate_task_generating_transforms = indeterminate_progress_main.add_task("[red]Generating transforms", total=None)
+                indeterminate_task_generating_transforms_completed = completed_progress.add_task("[green]Generating transforms", visible = False, total = 1)
+                #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Generating transforms", total = None)
 
                 #live_display.stop()
                 # Generate transformations
@@ -6066,9 +6080,21 @@ def main():
                                                 bx_ref,
                                                 biopsy_needle_compartment_length,
                                                 max_simulations,
+                                                num_MC_containment_simulations_input,
                                                 structs_referenced_list)
                 
+                #indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                indeterminate_progress_main.update(indeterminate_task_generating_transforms, visible = False, refresh = True)
+                completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
+                live_display.refresh()
+                
+                
                 # Perform all bx only transformations
+
+                indeterminate_task_bx_only_transforms = indeterminate_progress_main.add_task("[red]Shifting BXs (bx only transforms)", total=None)
+                indeterminate_task_bx_only_transforms_completed = completed_progress.add_task("[green]Shifting BXs (bx only transforms)", visible = False, total = 1)
+                #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting BXs (bx only transforms)", total = None)
+
                 MC_prepper_funcs.biopsy_only_transformer(master_structure_reference_dict,
                                                         bx_ref,
                                                         max_simulations,
@@ -6077,6 +6103,10 @@ def main():
                                                         inspect_self_biopsy_dilate_and_rotate_bool,
                                                         inspect_self_biopsy_dilate_and_rotate_and_translate_bool)
                 
+                #indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                indeterminate_progress_main.update(indeterminate_task_bx_only_transforms, visible = False, refresh = True)
+                completed_progress.update(indeterminate_task_bx_only_transforms_completed, advance = 1, visible = True, refresh = True)
+
                 # Shift anatomy OLD
                 """
                 MC_prepper_funcs.biopsy_and_structure_shifter(master_structure_reference_dict,
@@ -6089,7 +6119,14 @@ def main():
                                  plot_translation_vectors_pointclouds = plot_translation_vectors_pointclouds
                                  )
                 """
+                
+
                 # Transform biopsy based on relative structures NEW
+
+                indeterminate_task_bx_rel_transforms = indeterminate_progress_main.add_task("[red]Shifting BXs (rel structs transforms)", total=None)
+                indeterminate_task_bx_rel_transforms_completed = completed_progress.add_task("[green]Shifting BXs (rel structs transforms)", visible = False, total = 1)
+                #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting BXs (rel structs transforms)", total = None)
+
                 MC_prepper_funcs.biopsy_transformer_to_relative_structures(master_structure_reference_dict,
                                  structs_referenced_list,
                                  bx_ref,
@@ -6098,9 +6135,9 @@ def main():
                                  )
 
 
-                #live_display.start()          
-
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                indeterminate_progress_main.update(indeterminate_task_bx_rel_transforms, visible = False, refresh = True)
+                completed_progress.update(indeterminate_task_bx_rel_transforms_completed, advance = 1, visible = True, refresh = True)
+                #indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 ### End shifting anatomy
 
 
@@ -6117,7 +6154,9 @@ def main():
                                                                                             structs_referenced_dict,
                                                                                             bx_ref,
                                                                                             oar_ref,
-                                                                                            dil_ref, 
+                                                                                            dil_ref,
+                                                                                            rectum_ref_key,
+                                                                                            urethra_ref_key, 
                                                                                             dose_ref,
                                                                                             plan_ref,
                                                                                             all_ref_key, 
@@ -6129,7 +6168,8 @@ def main():
                                                                                             containment_views_jsons_paths_list,
                                                                                             show_NN_dose_demonstration_plots,
                                                                                             show_NN_dose_demonstration_plots_all_trials_at_once,
-                                                                                            show_containment_demonstration_plots,
+                                                                                            show_num_containment_demonstration_plots,
+                                                                                            containment_results_structure_types_to_show_per_trial,
                                                                                             plot_nearest_neighbour_surface_boundary_demonstration,
                                                                                             plot_relative_structure_centroid_demonstration,
                                                                                             biopsy_needle_compartment_length,
@@ -6156,7 +6196,9 @@ def main():
                                                                                             idw_power,
                                                                                             raw_data_mc_dosimetry_dump_bool, 
                                                                                             raw_data_mc_containment_dump_bool,
-                                                                                            keep_light_containment_and_distances_to_relative_structures_dataframe_bool
+                                                                                            keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
+                                                                                            show_non_bx_relative_structure_z_dilation_bool,
+                                                                                            show_non_bx_relative_structure_xy_dilation_bool
                                                                                             )
 
                     if no_cohort_mr_adc_flag == False:

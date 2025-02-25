@@ -25,9 +25,13 @@ import pandas
 import misc_tools
 import dosimetric_localizer
 import dataframe_builders
-
-
-
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+import polygon_dilation_helpers
+import polygon_dilation_helpers_numpy
+import polygon_dilation_helpers_cupy
+import cProfile
+import pstats
+import io
 
 
 def simulator_parallel(parallel_pool, 
@@ -39,7 +43,9 @@ def simulator_parallel(parallel_pool,
                        structs_referenced_dict,
                        bx_ref,
                        oar_ref,
-                       dil_ref, 
+                       dil_ref,
+                       rectum_ref,
+                       urethra_ref, 
                        dose_ref,
                        plan_ref, 
                        all_ref_key,
@@ -51,7 +57,8 @@ def simulator_parallel(parallel_pool,
                        containment_views_jsons_paths_list,
                        show_NN_dose_demonstration_plots,
                        show_NN_dose_demonstration_plots_all_trials_at_once,
-                       show_containment_demonstration_plots,
+                       show_num_containment_demonstration_plots,
+                       containment_results_structure_types_to_show_per_trial,
                        plot_nearest_neighbour_surface_boundary_demonstration,
                        plot_relative_structure_centroid_demonstration,
                        biopsy_needle_compartment_length,
@@ -78,7 +85,9 @@ def simulator_parallel(parallel_pool,
                        idw_power,
                        raw_data_mc_dosimetry_dump_bool, 
                        raw_data_mc_containment_dump_bool,
-                       keep_light_containment_and_distances_to_relative_structures_dataframe_bool
+                       keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
+                       show_non_bx_relative_structure_z_dilation_bool,
+                        show_non_bx_relative_structure_xy_dilation_bool
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -342,7 +351,7 @@ def simulator_parallel(parallel_pool,
                                     }
 
 
-        #live_display.stop()
+        live_display.stop()
         testing_biopsy_containment_patient_task = patients_progress.add_task("[red]Testing biopsy containment (cuspatial)...", total=num_patients)
         testing_biopsy_containment_patient_task_completed = completed_progress.add_task("[green]Testing biopsy containment (cuspatial)", total=num_patients, visible = False)
         for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -390,7 +399,8 @@ def simulator_parallel(parallel_pool,
 
 
                     #### IMPORTANT NOTICE FOR ADDING GENERALIZED TRANSFORMATIONS IN THE FUTURE!
-                    ### PERFORM ALL TRANSFORMATIONS ON THE BIOPSY STRUCTURE! NOT THE RELATIVE STRUCTURES!
+                    ### PERFORM ALL TRANSFORMATIONS ON THE BIOPSY STRUCTURE IF POSSIBLE! 
+                    ### NOTE: I HAVE INCLUDED Z AND RADIAL (XY) DILATIONS TO THE RELATIVE STRUCTURE ITSELF
 
 
                     # Extract and calcualte relative structure info
@@ -398,12 +408,136 @@ def simulator_parallel(parallel_pool,
                     non_bx_struct_intraslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Intra-slice interpolation information"] # This is used for NN surface distance calculation!
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
                     non_bx_struct_interpolated_pts_with_endcaps_np_arr = non_bx_struct_intraslice_interpolation_information.interpolated_pts_with_end_caps_np_arr # This is used for NN surface distance calculation!
-                    interpolated_zvlas_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
-                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
-                    non_bx_struct_max_zval = max(interpolated_zvlas_list)
-                    non_bx_struct_min_zval = min(interpolated_zvlas_list)
-                    non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
-                    non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+                    
+                    # Don't use inter slice interpolated structures for prostate, it will be too slow
+                    if (non_bx_structure_type == oar_ref) or (non_bx_structure_type == rectum_ref) or (non_bx_structure_type == urethra_ref):
+                        non_bx_struct_zslices_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Equal num zslice contour pts"]
+                        #non_bx_struct_org_config_zvals_list = polygon_dilation_helpers_numpy.extract_constant_z_values_single_configuration(non_bx_struct_zslices_list)
+                    else: # If non prostate, urethra or rectum use the interpolated structures
+                        non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
+                        #non_bx_struct_org_config_zvals_list = non_bx_struct_interslice_interpolation_information.zslice_vals_after_interpolation_list
+                    
+
+                    # find max and min z values of relative structure
+                    #non_bx_struct_max_zval = max(non_bx_struct_org_config_zvals_list)
+                    #non_bx_struct_min_zval = min(non_bx_struct_org_config_zvals_list)
+
+
+                    #non_bx_struct_zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in non_bx_struct_zslices_list]
+                    #non_bx_struct_zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(non_bx_struct_zslices_polygons_list))
+
+
+
+
+                    ### DILATION OF RELATIVE STRUCTURE (START)
+                    # Dilate the structure for every trial
+                    non_bx_structure_normal_dist_dilations_samples_arr = cp.asnumpy(pydicom_item[non_bx_structure_type][structure_index]["MC data: Generated normal dist random samples dilations arr"])
+
+                    # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start and end index +1 of that slice
+                    non_bx_struct_org_config_2d_arr, non_bx_struct_org_config_indices_slices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(non_bx_struct_zslices_list)
+
+                    # Generate all trials dilated structures
+                    #st = time.time()
+                    dilated_structures_list, dilated_structures_slices_indices_list = polygon_dilation_helpers_numpy.generate_dilated_structures_parallelized(non_bx_struct_org_config_2d_arr, 
+                                                                                                                                                              non_bx_struct_org_config_indices_slices_arr, 
+                                                                                                                                                              non_bx_structure_normal_dist_dilations_samples_arr, 
+                                                                                                                                                              show_non_bx_relative_structure_z_dilation_bool, 
+                                                                                                                                                              show_non_bx_relative_structure_xy_dilation_bool, 
+                                                                                                                                                              parallel_pool)
+                    #et = time.time()
+                    #print("Time to generate dilated structures: ", et-st)
+
+                    # For each non dilated (original structure) z slices list, the polygons are NOT closed, ie. the last point is not the same as the first point. This needs to be corrected for the CONTAINMENT algorithm
+                    # NOTE: This does not matter for the above generate_dilated_structures_parallelized function, because the generate_dilated_structures_parallelized function automatically returns closed polygons through shapely_polygon_anstance.exterior.coords method (see the polygon_dilation_helpers_numpy.dilate_polygons_xy_plane function)
+                    non_bx_struct_zslices_list_closed_polygons = copy.deepcopy(non_bx_struct_zslices_list)
+                    for i, zslice_arr in enumerate(non_bx_struct_zslices_list):
+                        # append the first point to the end of the array
+                        non_bx_struct_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+
+                    # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start and end index +1 of that slice
+                    non_bx_struct_org_config_2d_arr_closed_polygons, non_bx_struct_org_config_indices_slices_arr_closed_polygons = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(non_bx_struct_zslices_list_closed_polygons)
+
+                    # Prepend the nominal relative structure (closed polygons version)
+                    nominal_and_dilated_structures_list_of_2d_arr = [non_bx_struct_org_config_2d_arr_closed_polygons] + dilated_structures_list
+                    nominal_and_dilated_structures_slices_indices_list = [non_bx_struct_org_config_indices_slices_arr_closed_polygons] + dilated_structures_slices_indices_list
+
+                    del dilated_structures_list # free up memory
+                    del dilated_structures_slices_indices_list # free up memory
+
+                    # Get the z values of nominal and all dilated slices for every trial
+                    non_bx_struct_nominal_and_all_dilations_zvals_list = polygon_dilation_helpers_numpy.extract_constant_z_values(nominal_and_dilated_structures_list_of_2d_arr, nominal_and_dilated_structures_slices_indices_list)
+
+                    # Extract all trials of the biopsy points
+                    shifted_bx_data_3darr_num_MC_containment_sims_cutoff = shifted_bx_data_3darr[0:num_MC_containment_simulations]
+                    
+                    # Prepend the nominal biopsy position
+                    combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff = np.concatenate([unshifted_bx_sampled_pts_arr[np.newaxis, :, :],shifted_bx_data_3darr_num_MC_containment_sims_cutoff], axis=0)
+
+
+                    # Find the nearest z slices (this function is the best, it is very fast and checked that it produces the correct results)
+                    # The output is a 3d array with the first dimension being the trial number, ie references the relative dilated structure, the second dimension being the biopsy point, ie every row is a biopsy point, and the third dimension having three values, the trial number, the relative dilated structure index, the closest z slice index, and the z value of the closest z slice 
+                    #st = time.time()
+                    ####
+                    grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_trials(non_bx_struct_nominal_and_all_dilations_zvals_list, 
+                                                                                                                                                                              combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff)
+                    ####
+                    #et = time.time()
+                    #print("Time to find nearest z slices (numpy): ", et-st)
+                    
+
+
+                    # Cupy function is slower!
+                    """
+                    st = time.time()
+                    grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array_cupy = polygon_dilation_helpers_cupy.nearest_zslice_vals_and_indices_all_trials_cupy(non_bx_struct_nominal_and_all_dilations_zvals_list, combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff)
+                    et = time.time()
+                    print("Time to find nearest z slices (cupy): ", et-st)
+
+                    # Test whether each arrays are equal
+                    print("Are the nearest interpolated zslice index arrays equal? ", np.array_equal(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, cp.asnumpy(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array_cupy)))                    
+                    """
+
+
+
+                    # NOTE: For testing purposes only, the arrays should be equal, I am quite confident this old function worked so just wanted to check for consistency before switching to the new function polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_trials
+                    # Tested! They are equal!
+                    """
+                    st = time.time()
+                    nominal_and_shifted_bx_data_3darr = np.concatenate([unshifted_bx_sampled_pts_arr[np.newaxis,:,:],shifted_bx_data_3darr],axis = 0)
+                    
+                    grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_array = np.empty((nominal_and_shifted_bx_data_3darr.shape[0], nominal_and_shifted_bx_data_3darr.shape[1])) # length is number of sampled points * number of trials + 1 (for nominal)
+                    grand_all_dilation_sp_trial_nearest_interpolated_zslice_vals_array = np.empty((nominal_and_shifted_bx_data_3darr.shape[0], nominal_and_shifted_bx_data_3darr.shape[1]))
+                    
+                    for trial_index, sp_trial_dilated_structure_zvals_list in enumerate(non_bx_struct_nominal_and_all_dilations_zvals_list):
+                        sp_trial_shifted_bx_data_2darr = nominal_and_shifted_bx_data_3darr[trial_index]
+                        sp_trial_shifted_bx_data_2darr_Z = sp_trial_shifted_bx_data_2darr[:,2]
+
+                        sp_trial_nearest_interpolated_zslice_index_array, sp_trial_nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(sp_trial_dilated_structure_zvals_list, 
+                                                                                                                                                            sp_trial_shifted_bx_data_2darr_Z,
+                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                            structures_progress
+                                                                                                                                                            )
+
+
+
+                        grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_array[trial_index,:] = sp_trial_nearest_interpolated_zslice_index_array
+                        grand_all_dilation_sp_trial_nearest_interpolated_zslice_vals_array[trial_index,:] = sp_trial_nearest_interpolated_zslice_vals_array
+
+
+                    et = time.time()
+                    print("Time to find nearest z-slices for all points and trials: ", et-st)
+
+
+                    print("Are the nearest interpolated zslice index arrays equal? ", np.array_equal(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array[:,:,1], grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_array))
+                    print("Are the nearest interpolated zslice locations arrays equal? ", np.array_equal(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array[:,:,2], grand_all_dilation_sp_trial_nearest_interpolated_zslice_vals_array))
+                    """
+
+
+                    ### DILATION OF RELATIVE STRUCTURE (END)
+
+
+
+
 
                     # Point clouds
                     non_bx_struct_interpolated_pts_pcd = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]['Interpolated structure point cloud dict']['Interslice']
@@ -432,7 +566,7 @@ def simulator_parallel(parallel_pool,
                     ### If you add any generalized transformations make sure that you are passing the completely transformed biopsy structure to the below distance calculation so that it accurately captures all transfoormations!
                     non_bx_structure_global_centroid = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Structure global centroid"].copy()
                     non_bx_structure_global_centroid_reshaped_for_broadcast = np.reshape(non_bx_structure_global_centroid,(1,1,3))
-                    combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff = np.concatenate([unshifted_bx_sampled_pts_arr[np.newaxis, :, :],shifted_bx_data_3darr_num_MC_containment_sims_cutoff], axis=0)
+                    #combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff = np.concatenate([unshifted_bx_sampled_pts_arr[np.newaxis, :, :],shifted_bx_data_3darr_num_MC_containment_sims_cutoff], axis=0)
                     non_bx_structure_centroid_to_bx_points_vectors_all_trials = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff - non_bx_structure_global_centroid_reshaped_for_broadcast
                     non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances = np.linalg.norm(non_bx_structure_centroid_to_bx_points_vectors_all_trials, axis=2)
 
@@ -472,13 +606,20 @@ def simulator_parallel(parallel_pool,
                                                                                                                                                             structures_progress
                                                                                                                                                             )
                     """
-                    # THIS IS QUICKER!
+                    # THIS IS QUICKER! 
+                    # Dont need this anymore!
+                    """
                     combined_nominal_and_shifted_nearest_interpolated_zslice_index_array, combined_nominal_and_shifted_nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
                                                                                                                                                             combined_nominal_and_shifted_bx_pts_2d_arr_Z,
                                                                                                                                                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                                                                                                                                             structures_progress
                                                                                                                                                             )
+                    """
+
                     
+
+
+
 
 
                     ### BEGIN NEAREST NEIGHBOUR BOUNDARY SEARCH SECTION
@@ -527,6 +668,7 @@ def simulator_parallel(parallel_pool,
                                structure_info
                                )
                     """
+                    """
                     containment_info_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_mc_sim_cupy_pandas(non_bx_struct_zslices_polygons_cuspatial_geoseries,
                                                                             combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points, 
                                                                             combined_nominal_and_shifted_bx_pts_2d_arr_XYZ, 
@@ -545,6 +687,63 @@ def simulator_parallel(parallel_pool,
                                                                             indeterminate_progress_sub,
                                                                             upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
                     )
+                    """
+
+
+                    # This function works one-to-one, that is every point should have a matching polygon to test against
+                    """
+                    pr = cProfile.Profile()
+                    pr.enable()
+                    containment_result_cp_arr_geoseries_version = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_geoseries_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                                                                                                        combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
+                                                                                                        nominal_and_dilated_structures_list_of_2d_arr, 
+                                                                                                        nominal_and_dilated_structures_slices_indices_list)
+                    pr.disable()
+
+                    # Print profiling results
+                    s = io.StringIO()
+                    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                    ps.print_stats()
+                    print(s.getvalue())
+                    """
+
+                    pr = cProfile.Profile()
+                    pr.enable()
+                    custom_cuda_log_file_name = patientUID + "_" + specific_bx_structure_roi + "_" + non_bx_structure_type + "_N-" + str(num_MC_containment_simulations) + "_containment_log.txt"
+                    log_sub_dirs_list = [patientUID, specific_bx_structure_roi, non_bx_structure_type]
+                    containment_result_cp_arr_cupy_arr_version = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                                                                                                        combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
+                                                                                                        nominal_and_dilated_structures_list_of_2d_arr, 
+                                                                                                        nominal_and_dilated_structures_slices_indices_list,
+                                                                                                        log_sub_dirs_list = log_sub_dirs_list, 
+                                                                                                        log_file_name = custom_cuda_log_file_name)
+                    pr.disable()
+
+                    # Print profiling results
+                    s = io.StringIO()
+                    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                    ps.print_stats()
+                    print(s.getvalue())
+
+                    # Check if the two arrays are exactly equal
+                    #are_equal = cp.array_equal(containment_result_cp_arr_geoseries_version, containment_result_cp_arr_cupy_arr_version)
+                    #print(are_equal)  # Output: True
+
+
+                    # Build the dataframe from the containment results
+                    biopsy_structure_info = {
+                        "Structure ID": specific_bx_structure_roi,
+                        "Dicom ref num": specific_bx_structure_refnum,
+                        "Index number": specific_bx_structure_index
+                    }
+
+                    containment_info_grand_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe(patientUID, 
+                                                                                                                                                      biopsy_structure_info, 
+                                                                                                                                                      structure_info, 
+                                                                                                                                                      grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                                                                                                                                                      combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
+                                                                                                                                                      containment_result_cp_arr_cupy_arr_version)
+
                     del combined_nominal_and_shifted_bx_data_XY_cuspatial_geoseries_points
 
 
@@ -587,23 +786,30 @@ def simulator_parallel(parallel_pool,
 
 
                     ### PLOT RESULTS PER TRIAL AGAINST A SINGLE STRUCTURE
-                    if (show_containment_demonstration_plots == True) & (non_bx_structure_type == 'DIL ref'):
-                        for trial_num, single_trial_shifted_bx_data_arr in enumerate(shifted_bx_data_3darr_num_MC_containment_sims_cutoff):
-                            bx_test_pts_color_R = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr R"].to_numpy()
-                            bx_test_pts_color_G = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr G"].to_numpy()
-                            bx_test_pts_color_B = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num+1]["Pt clr B"].to_numpy()
+                    if (show_num_containment_demonstration_plots > 0) & (non_bx_structure_type in containment_results_structure_types_to_show_per_trial):
+                        for trial_num in np.arange(0,show_num_containment_demonstration_plots):
+                            single_trial_shifted_bx_data_arr = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff[trial_num]
+                            bx_test_pts_color_R = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num]["Pt clr R"].to_numpy()
+                            bx_test_pts_color_G = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num]["Pt clr G"].to_numpy()
+                            bx_test_pts_color_B = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Trial num"] == trial_num]["Pt clr B"].to_numpy()
                             bx_test_pts_color_arr = np.empty([num_sample_pts_in_bx,3])
                             bx_test_pts_color_arr[:,0] = bx_test_pts_color_R
                             bx_test_pts_color_arr[:,1] = bx_test_pts_color_G
                             bx_test_pts_color_arr[:,2] = bx_test_pts_color_B
                             structure_and_bx_shifted_bx_pcd = point_containment_tools.create_point_cloud_with_colors_array(single_trial_shifted_bx_data_arr, bx_test_pts_color_arr)
-                            plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, label='Unknown')
+                            
+                            non_bx_struct_org_config_interpolated_pts_pcd = point_containment_tools.create_point_cloud(nominal_and_dilated_structures_list_of_2d_arr[0], color = np.array([1,0.65,0])) # paint original non bx structure in orange
+
+                            non_bx_struct_dilated_interpolated_pts_pcd = point_containment_tools.create_point_cloud(nominal_and_dilated_structures_list_of_2d_arr[trial_num], color = np.array([0,0,1])) # paint dilated structure in blue
+
+                            plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_dilated_interpolated_pts_pcd, non_bx_struct_org_config_interpolated_pts_pcd, label='Unknown')
+                            
                             #plotting_funcs.plot_geometries(structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd, label='Unknown')
                             #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[0], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd], containment_views_jsons_paths_list[1])
                             #plotting_funcs.plot_two_views_side_by_side([structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[2], [structure_and_bx_shifted_bx_pcd, unshifted_bx_sampled_pts_copy_pcd, non_bx_struct_interpolated_pts_pcd, prostate_interpolated_pts_pcd], containment_views_jsons_paths_list[3])
                     
 
-                    ### PLOT ALL RESULTS AGAINST SINGLE STRUCTURE
+                    ### PLOT ALL RESULTS AGAINST SINGLE STRUCTURE, NOTE: THIS ONLY SHOWS THE NON DILATED STRUCTURE VERSION!
                     if plot_cupy_containment_distribution_results == True:
                         grand_cudf_dataframe = containment_info_grand_pandas_dataframe
 
@@ -628,7 +834,7 @@ def simulator_parallel(parallel_pool,
                         # Create point cloud
                         colored_bx_test_pts_pcd = point_containment_tools.create_point_cloud_with_colors_array(bx_test_pts_arr, bx_test_pts_color_arr)
 
-                        # Extract relative structure point cloud
+                        # Extract relative structure point cloud, note that it will NOT show the variations of the dilated structure!
                         non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                         non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
                         non_bx_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_struct_interpolated_pts_np_arr, color = np.array([0,0,1])) # paint tested structure in blue
@@ -648,12 +854,12 @@ def simulator_parallel(parallel_pool,
                                 non_bx_unique_struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(non_bx_unique_struct_interpolated_pts_np_arr, color = np.array([1,0.65,0])) # paint non tested structure in orange
                                 geom_list.append(non_bx_unique_struct_interpolated_pts_pcd)
                         
-                        live_display.stop()
+                        #live_display.stop()
                         print(f"Patient: {patientUID}, Bx: {specific_bx_structure_roi}, Test struct: {structure_roi}")
                         stopwatch.stop()
                         plotting_funcs.plot_geometries(*geom_list, label='Unknown')
                         stopwatch.start()
-                        live_display.start()
+                        #live_display.start()
 
 
                     # free up GPU memory
