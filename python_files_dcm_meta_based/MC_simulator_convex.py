@@ -716,7 +716,8 @@ def simulator_parallel(parallel_pool,
                                                                                                         nominal_and_dilated_structures_list_of_2d_arr, 
                                                                                                         nominal_and_dilated_structures_slices_indices_list,
                                                                                                         log_sub_dirs_list = log_sub_dirs_list, 
-                                                                                                        log_file_name = custom_cuda_log_file_name)
+                                                                                                        log_file_name = custom_cuda_log_file_name,
+                                                                                                        include_edges_in_log = False)
                     pr.disable()
 
                     # Print profiling results

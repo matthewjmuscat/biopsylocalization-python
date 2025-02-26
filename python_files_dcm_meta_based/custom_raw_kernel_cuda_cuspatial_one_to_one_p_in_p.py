@@ -293,7 +293,7 @@ void one_to_one_pip(const double* px, const double* py,
 
 
 
-def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, block_size=256, log_sub_dirs_list = [], log_file_name="cuda_log.txt"):
+def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, block_size=256, log_sub_dirs_list = [], log_file_name="cuda_log.txt", include_edges_in_log = False):
     """
     Test each point against the corresponding polygon using CuPy arrays directly, note that this mapping is one-to-one.
     
@@ -303,6 +303,7 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
     - poly_indices: CuPy array of shape (num_points, 2) containing the start and end indices of the polygon in poly_points. Important! The indices must be such that the end index is exclusive!
     - block_size: Block size for the CUDA kernel.
     - log_file_name: Name of the log file to write the debug information. If None, no log file is written to file. Important, the log file writing is quite slow, so turning off logging should be considered for performance.
+    - include_edges_in_log: If True, the log file will include the edges checked for each point. This can be useful for debugging, but it can also significantly increase the log file size and more importantly vastly increase the computation time.
     """
 
     num_points = cp.int32(points.shape[0])
@@ -381,38 +382,45 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
                 log_position_debug = log[13]
 
                 # ✅ Extract checked edges using `edge_offsets[i]`
-                edge_log_start = static_meta_end
-                edge_log_end = edge_log_start + num_edges_per_polygon[i].item() * 7
-                checked_edges = logs_host[edge_log_start:edge_log_end].reshape(-1, 7)
-                
-                """
-                checked_edges[:, 3:7] = checked_edges[:, 3:7].view(np.float64)
-                # Optionally round:
-                checked_edges[:, 3:7] = np.around(checked_edges[:, 3:7], decimals=2)
+                if include_edges_in_log == True:
+                    edge_log_start = static_meta_end
+                    edge_log_end = edge_log_start + num_edges_per_polygon[i].item() * 7
+                    checked_edges = logs_host[edge_log_start:edge_log_end].reshape(-1, 7)
+                    
+                    """
+                    checked_edges[:, 3:7] = checked_edges[:, 3:7].view(np.float64)
+                    # Optionally round:
+                    checked_edges[:, 3:7] = np.around(checked_edges[:, 3:7], decimals=2)
 
-                checked_edges_str = np.array2string(checked_edges, separator=', ')
+                    checked_edges_str = np.array2string(checked_edges, separator=', ')
 
-                # Replace newlines (which separate rows) with " | "
-                checked_edges_str = checked_edges_str.replace('\n', ' | ')
-                """
-                
-                """
-                checked_edges_list = checked_edges.tolist()
-                checked_edges_list_converted_long_to_double = [
-                        [round(struct.unpack('d', struct.pack('q', element))[0],2) if i in (3, 4, 5, 6) else element 
-                        for i, element in enumerate(inner_list)]
-                        for inner_list in checked_edges_list
-                    ]
-                """
+                    # Replace newlines (which separate rows) with " | "
+                    checked_edges_str = checked_edges_str.replace('\n', ' | ')
+                    """
+                    
+                    """
+                    checked_edges_list = checked_edges.tolist()
+                    checked_edges_list_converted_long_to_double = [
+                            [round(struct.unpack('d', struct.pack('q', element))[0],2) if i in (3, 4, 5, 6) else element 
+                            for i, element in enumerate(inner_list)]
+                            for inner_list in checked_edges_list
+                        ]
+                    """
 
-                checked_edges_list_converted_long_to_double = format_edges_for_point(checked_edges)
+                    checked_edges_list_converted_long_to_double = format_edges_for_point(checked_edges)
 
-                # ✅ Write correct logs to the file
-                f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.4f}, {y_coord:.4f}) -> "
-                        f"ring_start={ring_start}, ring_end={ring_end}, num_edges={num_edges}, Inside={inside_flag}, "
-                        f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
-                        f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}, "
-                        f"Checked Edges={checked_edges_list_converted_long_to_double}\n")
+                    # ✅ Write correct logs to the file
+                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.4f}, {y_coord:.4f}) -> "
+                            f"ring_start={ring_start}, ring_end={ring_end}, num_edges={num_edges}, Inside={inside_flag}, "
+                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
+                            f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}, "
+                            f"Checked Edges={checked_edges_list_converted_long_to_double}\n")
+                else:
+
+                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.4f}, {y_coord:.4f}) -> "
+                            f"ring_start={ring_start}, ring_end={ring_end}, num_edges={num_edges}, Inside={inside_flag}, "
+                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
+                            f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
 
     return results.get()
 
@@ -452,7 +460,8 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
                                  nominal_and_dilated_structures_list_of_2d_arr, 
                                  nominal_and_dilated_structures_slices_indices_list,
                                  log_sub_dirs_list = [],
-                                 log_file_name="cuda_log.txt"):
+                                 log_file_name="cuda_log.txt",
+                                 include_edges_in_log = False):
     """
     Test points against polygons using CuPy arrays directly.
     
@@ -503,7 +512,7 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     poly_indices = cp.array(poly_indices)
     
     # Test each point against the corresponding polygon
-    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = [], log_file_name=log_file_name)
+    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log)
     
     # Map the valid results back to the original result array
     result_cp_arr_flat = result_cp_arr.flatten()
