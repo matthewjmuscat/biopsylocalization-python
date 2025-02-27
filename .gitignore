@@ -3,3 +3,4 @@
 figures
 .python-version
 .bashrc.swp
+**/cuda_containment_logs/
