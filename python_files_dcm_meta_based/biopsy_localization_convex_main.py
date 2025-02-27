@@ -359,7 +359,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 1000
+    num_MC_containment_simulations_input = 10000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
     num_MC_dose_simulations_input = 1000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
@@ -372,6 +372,8 @@ def main():
     raw_data_mc_dosimetry_dump_bool = False # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for dose tests! 
     raw_data_mc_containment_dump_bool = False  # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for containment tests!
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
+    generate_cuda_log_files = True
+    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced" # The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
 
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
@@ -6198,7 +6200,9 @@ def main():
                                                                                             raw_data_mc_containment_dump_bool,
                                                                                             keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
                                                                                             show_non_bx_relative_structure_z_dilation_bool,
-                                                                                            show_non_bx_relative_structure_xy_dilation_bool
+                                                                                            show_non_bx_relative_structure_xy_dilation_bool,
+                                                                                            generate_cuda_log_files,
+                                                                                            custom_cuda_kernel_type
                                                                                             )
 
                     if no_cohort_mr_adc_flag == False:

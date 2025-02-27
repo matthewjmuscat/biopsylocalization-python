@@ -12,11 +12,13 @@ import io
 import matplotlib.pyplot as plt
 import struct
 import pathlib
+from line_profiler import LineProfiler
 
 
 
 ### IMPORTANT NOTE: NOTE THAT WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
 ### IMPORTANT NOTE: THE POLYGONS THAT ARE PASSED TO THIS KERNEL IS ASSUMED TO BE BUILT SUCH THAT THE FIRST AND LAST POINTS ARE THE SAME!
+### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
 one_to_one_pip_kernel_advanced = cp.RawKernel(r'''
 extern "C" __global__
 void one_to_one_pip(const double* px, const double* py,
@@ -107,12 +109,13 @@ void one_to_one_pip(const double* px, const double* py,
     //
     
 
-    double angle = 0.0;
+    double angle_perturbation = M_PI / 30; // this is to avoid perfectly vertical and perfectly horiztontal rays
+    double angle = 0 + angle_perturbation;
     double dx = cos(angle);
     double dy = sin(angle);
 
-    int max_attempts = 10;
     int attempt = 0;
+    int max_attempts = 10;
 
     
 
@@ -121,14 +124,14 @@ void one_to_one_pip(const double* px, const double* py,
         intersection_count = 0;
         bool valid_ray = true;
         long long int log_position_temp = log_position;  // Initialize the temporary log position
-
+        int intersection_type = 0;
         
         // Check if the point being tested lies on the boundary of the polygon, only need to check first attempt since the point never moves, additional attempts only relevant to rays
         if (attempt == 0) {
             bool point_on_boundary = false;
 
             for (long long j = ring_start; j < ring_end - 1; j++) {
-                int intersection_type = 0;
+                intersection_type = 0;
 
                 long long k = j + 1;
 
@@ -190,7 +193,7 @@ void one_to_one_pip(const double* px, const double* py,
         if (too_close_to_vertex) {
             printf("Ray too close to a vertex, regenerating (Thread: %lld)\n", i);
             attempt++;
-            angle = fmod(angle + (2*M_PI / max_attempts), M_PI);
+            angle = fmod(angle + (2*M_PI / max_attempts), 2*M_PI);
             dx = cos(angle);
             dy = sin(angle);
             continue;  // Retry with a new ray
@@ -208,7 +211,23 @@ void one_to_one_pip(const double* px, const double* py,
 
             double xj = poly_x[j], yj = poly_y[j];
             double xk = poly_x[k], yk = poly_y[k];
+
+            intersection_type = 0;
                                               
+            // Compute the edge vector and its length
+            double edge_dx = xk - xj;
+            double edge_dy = yk - yj;
+            double edge_length = sqrt(edge_dx * edge_dx + edge_dy * edge_dy);
+
+            // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
+            if (edge_length < EPSILON) {
+                intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                log_position_temp += 7;  // ✅ Move to the next available slot for edges
+
+                continue;
+            }
+                                           
             // Defines the scale of the edge for tolerance of denom
             double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
             double tol_edge = EPSILON * edge_scale;
@@ -220,7 +239,7 @@ void one_to_one_pip(const double* px, const double* py,
             //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
 
                                               
-            int intersection_type = 0;
+            
 
             if (fabs(denom) > tol_edge) {  
                 double t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
@@ -261,7 +280,395 @@ void one_to_one_pip(const double* px, const double* py,
         if (valid_ray) break;
 
         attempt++;
-        angle = fmod(angle + (2*M_PI / max_attempts), M_PI);
+        angle = fmod(angle + (2*M_PI / max_attempts), 2*M_PI);
+        dx = cos(angle);
+        dy = sin(angle);
+    }
+
+    log_buffer[log_position + 0] = i;
+    log_buffer[log_position + 1] = ring_start;
+    log_buffer[log_position + 2] = ring_end;
+    log_buffer[log_position + 3] = __double_as_longlong(x);
+    log_buffer[log_position + 4] = __double_as_longlong(y);
+    log_buffer[log_position + 5] = inside;
+    log_buffer[log_position + 6] = intersection_count;
+    log_buffer[log_position + 7] = attempt;
+    log_buffer[log_position + 8] = __double_as_longlong(angle);
+    log_buffer[log_position + 9] = __double_as_longlong(dx);
+    log_buffer[log_position + 10] = __double_as_longlong(dy);
+    log_buffer[log_position + 11] = num_edges;
+    log_buffer[log_position + 12] = edge_log_offset;  // ✅ Debugging: Log the offset
+    log_buffer[log_position + 13] = log_position;  
+                                              
+    results[i] = inside ? 1 : 0;
+}
+
+
+''', 'one_to_one_pip')
+
+
+
+
+### IMPORTANT NOTE: NOTE THAT WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
+### IMPORTANT NOTE: THE POLYGONS THAT ARE PASSED TO THIS KERNEL IS ASSUMED TO BE BUILT SUCH THAT THE FIRST AND LAST POINTS ARE THE SAME!
+### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
+### IMPORTANT NOTE: "one_to_one_pip_kernel_advanced_reparameterized_version" is a version of the kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays
+one_to_one_pip_kernel_advanced_reparameterized_version = cp.RawKernel(r'''
+extern "C" __global__
+void one_to_one_pip(const double* px, const double* py,
+                    const double* poly_x, const double* poly_y,
+                    const long long int* poly_part_offsets,
+                    const long long int* edge_offsets,  // ✅ Now explicitly long long int
+                    int* results, int num_points, int poly_offsets_size,
+                    long long int* log_buffer) {  // ✅ Now explicitly long long int
+    
+    const int LOG_ENTRY_SIZE = 14;  // ✅ Increased to store debug info
+
+    long long int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= num_points) return;
+
+    long long int edge_log_offset = edge_offsets[i];  // ✅ Now correctly stores large offsets
+    long long int log_position = i * LOG_ENTRY_SIZE + edge_log_offset * 7;
+    //printf("Thread %lld: | Log Position: %lld | edge_log_offset: %lld\n", i, log_position, edge_log_offset);
+                                                                             
+    
+                                              
+
+    if (i + 1 >= poly_offsets_size) {  
+        log_buffer[log_position + 0] = i;
+        log_buffer[log_position + 1] = -1;
+        results[i] = 0;
+        return;
+    }
+
+    double x = px[i];
+    double y = py[i];
+
+    long long ring_start = poly_part_offsets[i];
+    long long ring_end = poly_part_offsets[i + 1];
+    int num_edges = (ring_end - ring_start) - 1;
+
+    /*                                            
+    printf("Thread: %lld | Num Edges: %d\n", i, num_edges);
+    printf("Thread: %lld | ring_start: %lld\n", i, ring_start);                                                                                    
+    printf("Thread: %lld | ring_end: %lld\n", i, ring_end);
+    */                                        
+
+    if (num_edges <= 0 || ring_start < 0) {
+        log_buffer[log_position + 0] = i;
+        log_buffer[log_position + 1] = -2;
+        results[i] = 0;
+        return;
+    }
+
+    double min_x = poly_x[ring_start], max_x = poly_x[ring_start];
+    double min_y = poly_y[ring_start], max_y = poly_y[ring_start];
+
+    // Find the bounding box of the polygon, used for determining the ray length
+    // Note that we dont need to check the last point because the data that is passed in here is assumed that the first and last point of the polygon are the exact same!
+    for (long long j = ring_start + 1; j < ring_end; j++) {
+        if (poly_x[j] < min_x) min_x = poly_x[j];
+        if (poly_x[j] > max_x) max_x = poly_x[j];
+        if (poly_y[j] < min_y) min_y = poly_y[j];
+        if (poly_y[j] > max_y) max_y = poly_y[j];
+    }
+
+    /*                                        
+    printf("Thread: %lld | Min X: %f, Max X: %f, Min Y: %f, Max Y: %f\n", i, min_x, max_x, min_y, max_y);
+    // Now print all the points of the polygon as well to compare
+    for (long long j = ring_start; j <= ring_end; j++) {
+        printf("Thread: %lld | Polygon Point %lld: (%f, %f)\n", i, j, poly_x[j], poly_y[j]);
+    } 
+
+    for (long long j = ring_start; j <= ring_end; j++) {
+        printf("X: %f \n",poly_x[j]);
+        printf("Y: %f \n",poly_y[j]);
+    }          
+    */                                                                  
+                                              
+    double ray_length = fmax(max_x - min_x, max_y - min_y) * 2.5;
+                                              
+    //printf("Thread: %lld | Ray Length: %f\n", i, ray_length);                                          
+
+    bool inside = false;
+    int intersection_count = 0;
+
+                                              
+    // Defines the tolerances for safe division and checking if a point is on the boundary and if a ray is too close to a vertex
+    #define EPSILON 1e-7 
+    #define M_PI 3.14159265358979323846
+    #define EPSILON_VERTEX 1e-8 
+    #define EPSILON_BOUNDARY 1e-7 
+    #define EPSILON_REPARAM 1e-7    // Relative tolerance for deciding if dx and dy are "close"
+    //
+    
+
+    double angle_perturbation = M_PI / 30; // this is to avoid perfectly vertical and perfectly horiztontal rays
+    double angle = 0 + angle_perturbation;
+    double dx = cos(angle);
+    double dy = sin(angle);
+
+    int max_attempts = 10;
+    int attempt = 0;
+
+    
+
+    while (attempt < max_attempts) {
+        inside = false;
+        intersection_count = 0;
+        bool valid_ray = true;
+        long long int log_position_temp = log_position;  // Initialize the temporary log position
+        int intersection_type = 0;
+        
+        // Check if the point being tested lies on the boundary of the polygon, only need to check first attempt since the point never moves, additional attempts only relevant to rays
+        if (attempt == 0) {
+            bool point_on_boundary = false;
+
+            for (long long j = ring_start; j < ring_end - 1; j++) {
+                intersection_type = 0;
+
+                long long k = j + 1;
+
+                double xj = poly_x[j], yj = poly_y[j];
+                double xk = poly_x[k], yk = poly_y[k];         
+
+                double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
+                                                
+                if (fabs(cross) < EPSILON_BOUNDARY) {
+                    printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
+                    
+                    double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
+                    double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
+
+                    // Check if the point is on the line segment
+                    if (dot1 >= 0 && dot2 >= 0) {
+                        intersection_type = 2;
+                        point_on_boundary = true;
+                        inside = true;
+                        printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
+                    }
+                    else {
+                        printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                    }
+                }
+                                                
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
+                log_position_temp += 7;  // ✅ Move to the next available slot for edges
+            }
+            // If on boundary, no need to check further                                      
+            if (point_on_boundary) break;
+        }
+                                              
+
+
+                                              
+        // Check if the ray is too close to any vertex
+        bool too_close_to_vertex = false;
+        double denom_norm = sqrt(dx * dx + dy * dy);  // Normalize denominator for distance calc
+
+        for (long long j = ring_start; j < ring_end; j++) {
+            double x_v = poly_x[j], y_v = poly_y[j];
+
+            double d = fabs(dx * (y_v - y) - dy * (x_v - x)) / denom_norm;
+
+            if (d < EPSILON_VERTEX) {
+                too_close_to_vertex = true;
+                printf("Ray too close to a vertex, setting bool (Thread: %lld)\n", i);
+                break;
+            }
+        }
+
+        if (too_close_to_vertex) {
+            printf("Ray too close to a vertex, regenerating (Thread: %lld)\n", i);
+            attempt++;
+            angle = fmod(angle + (2*M_PI / max_attempts), 2*M_PI);
+            dx = cos(angle);
+            dy = sin(angle);
+            continue;  // Retry with a new ray
+        }
+
+                                              
+
+
+        // Check if the point is inside the polygon
+        log_position_temp = log_position;  // Reset the temporary log position
+                                              
+        for (long long j = ring_start; j < ring_end - 1; j++) {
+                                  
+            long long k = j + 1;
+
+            double xj = poly_x[j], yj = poly_y[j];
+            double xk = poly_x[k], yk = poly_y[k];
+                                                                      
+            intersection_type = 0;
+
+
+                                              
+            // Compute the edge vector and its length
+            double edge_dx = xk - xj;
+            double edge_dy = yk - yj;
+            double edge_length = sqrt(edge_dx * edge_dx + edge_dy * edge_dy);
+
+            // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
+            if (edge_length < EPSILON) {
+                intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                log_position_temp += 7;  // ✅ Move to the next available slot for edges
+
+                continue;
+            }
+
+
+
+
+
+                                              
+            // Defines the scale of the edge for tolerance of denom
+            double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
+            double tol_edge = EPSILON * edge_scale;
+            
+                                                                      
+                                                              
+            double t_edge, s_ray;
+            double denom = (xj - xk) * dy - (yj - yk) * dx;                                                          
+            
+                                                                      
+            // Decide whether to use cross product method or reparameterization.
+            // If denom is larger than tol_edge, use the cross product method.
+            // If dx and dy differ by more than EPSILON_REPARAM (relative to the larger of the two),
+            // then use the dominant coordinate; otherwise, regenerate the ray.
+
+            if (fabs(denom) > tol_edge) {
+                
+                //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);  
+                t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
+                s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;                                   
+            } else if (fabs(dx - dy) / fmax(fabs(dx), fabs(dy)) > EPSILON_REPARAM) {
+                if (fabs(dx) > fabs(dy)) {
+                    // Use x-coordinate reparameterization
+                    if (fabs(edge_dx) > EPSILON && fabs(dy) > EPSILON) {
+                        t_edge = (x - xj) / edge_dx;
+                        // Compute the intersection's y-coordinate using t_edge, then derive s_ray from y
+                        s_ray = ( (yj + t_edge * edge_dy) - y ) / dy;
+                    }
+                } else {
+                    // Use y-coordinate reparameterization
+                    if (fabs(edge_dy) > EPSILON && fabs(dy) > EPSILON) {
+                        t_edge = (y - yj) / edge_dy;
+                        // Compute the intersection's x-coordinate using t_edge, then derive s_ray from x
+                        s_ray = ( (xj + t_edge * edge_dx) - x ) / dx;
+                    }
+                }
+            } else {
+                printf("Denom is zero, and reparameterization methods invalid on attempt: %d, (Thread: %lld)\n", attempt, i);
+                valid_ray = false;
+                break;
+            }
+
+            /*                                                       
+            // If reparameterization wasn’t performed (either because dx and dy are too close
+            // or because the chosen edge component was too small), fall back to the original method.
+            if (!computed) {
+                double denom = (xj - xk) * dy - (yj - yk) * dx;
+                //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
+                if (fabs(denom) > tol_edge) {
+                    t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
+                    s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
+                } else {
+                    printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                    valid_ray = false;
+                    break;
+                }
+            }
+            */
+
+            // Now, if t_edge and s_ray fall within acceptable ranges, count this as an intersection.
+            if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
+                //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                inside = !inside;
+                intersection_count++;
+                intersection_type = 1;
+            }
+            else {
+                //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
+            }
+
+            // Log the intersection type (and other data if needed)
+                                                                      
+            // Commenting out most of these except the intersection type, because added boundary check which writes all of these already
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
+            log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
+            log_position_temp += 7;  // ✅ Move to the next available slot for edges
+
+
+                                              
+            
+
+            /*
+                                                                                                        
+            int intersection_type = 0;
+
+            if (fabs(denom) > tol_edge) {  
+                double t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
+                double s_ray = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
+
+                if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
+                    //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                    //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                    inside = !inside;
+                    intersection_count++;
+                    intersection_type = 1;
+                }
+                else {
+                    //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                    //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                }
+            }
+            else {
+                printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                valid_ray = false;
+                break;                                
+            }                                  
+            
+            // Commenting out most of these except the intersection type, because added boundary check which writes all of these already
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
+            log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
+            log_position_temp += 7;  // ✅ Move to the next available slot for edges
+            
+            */
+
+                                                                      
+        }
+
+        if (valid_ray) break;
+
+        attempt++;
+        angle = fmod(angle + (2*M_PI / max_attempts), 2*M_PI);
         dx = cos(angle);
         dy = sin(angle);
     }
@@ -291,9 +698,7 @@ void one_to_one_pip(const double* px, const double* py,
 
 
 
-
-
-def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, block_size=256, log_sub_dirs_list = [], log_file_name="cuda_log.txt", include_edges_in_log = False):
+def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, block_size=256, log_sub_dirs_list = [], log_file_name="cuda_log.txt", include_edges_in_log = False, kernel_type = "one_to_one_pip_kernel_advanced", return_array_as = "cupy"):
     """
     Test each point against the corresponding polygon using CuPy arrays directly, note that this mapping is one-to-one.
     
@@ -304,6 +709,8 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
     - block_size: Block size for the CUDA kernel.
     - log_file_name: Name of the log file to write the debug information. If None, no log file is written to file. Important, the log file writing is quite slow, so turning off logging should be considered for performance.
     - include_edges_in_log: If True, the log file will include the edges checked for each point. This can be useful for debugging, but it can also significantly increase the log file size and more importantly vastly increase the computation time.
+    - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
+    - return_array_as: The type of array to return the results as. The default is "cupy" which returns the results as a CuPy array. The other option is anything (but should type "numpy" for clarity) which returns the results as a NumPy array. Cupy is slightly faster because there is no conversion step before return, but then the array remains on gpu memory.
     """
 
     num_points = cp.int32(points.shape[0])
@@ -330,11 +737,15 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
     log_entry_size = 14  # ✅ Matches CUDA kernel
 
     num_edges_per_polygon = (poly_indices[:, 1] - poly_indices[:, 0]) - 1  
-    edge_offsets = cp.zeros(num_points.item() + 1, dtype=cp.int64)  
+    edge_offsets = cp.zeros(num_points.item() + 1, dtype=cp.int64) ## which is faster?
+    edge_offsets = cp.zeros(num_points + 1, dtype=cp.int64)  ## which is faster?  
+
     edge_offsets[1:] = cp.cumsum(num_edges_per_polygon).astype(cp.int64)
     edge_offsets = cp.ascontiguousarray(edge_offsets, dtype=cp.int64)  
 
-    total_edge_entries = edge_offsets[-1].item() * 7
+    total_edge_entries = edge_offsets[-1].item() * 7 ## which is faster?
+    total_edge_entries = int(edge_offsets[-1].get()) * 7 ## which is faster?
+
     log_buffer = cp.zeros(num_points.item() * log_entry_size + total_edge_entries, dtype=cp.int64)
     log_buffer = cp.ascontiguousarray(log_buffer, dtype=cp.int64)
 
@@ -342,10 +753,17 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
 
     ### IMPORTANT NOTE: WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
     ### IMPORTANT NOTE: THE POLYGONS THAT ARE PASSED TO THIS KERNEL IS ASSUMED TO BE BUILT SUCH THAT THE FIRST AND LAST POINTS ARE THE SAME!
-    one_to_one_pip_kernel_advanced(
-        (grid_size,), (block_size,),
-        (points_x, points_y, poly_x, poly_y, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
-    )
+    ### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
+    if kernel_type == "one_to_one_pip_kernel_advanced":
+        one_to_one_pip_kernel_advanced(
+            (grid_size,), (block_size,),
+            (points_x, points_y, poly_x, poly_y, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
+        )
+    elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version":
+        one_to_one_pip_kernel_advanced_reparameterized_version(
+            (grid_size,), (block_size,),
+            (points_x, points_y, poly_x, poly_y, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
+        )
 
     if log_file_name is not None:
         logs_host = log_buffer.get()
@@ -353,13 +771,18 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
         log_dir = pathlib.Path(__file__).parents[0].joinpath("cuda_containment_logs")
         for log_sub_dir in log_sub_dirs_list:
             log_dir = log_dir.joinpath(log_sub_dir)
-        log_dir.mkdir(exist_ok=True)
+        log_dir.mkdir(exist_ok=True, parents=True)
         log_file = log_dir.joinpath(log_file_name)
 
         with open(log_file, "w") as f:
+            # Move the entire edge_offsets array to CPU **once** before the loop
+            edge_offsets_host = edge_offsets.get()
+
             for i in range(num_points.item()):
                 # ✅ Compute `log_position` exactly as in the CUDA kernel
-                edge_log_offset = edge_offsets[i].item() * 7
+                #edge_log_offset = edge_offsets[i].item() * 7 ## which is faster?
+                edge_log_offset = edge_offsets_host[i] * 7 ## which is faster? ... This one is slightly faster
+
                 log_position = i * log_entry_size + edge_log_offset  # ✅ Now perfectly aligned with kernel
 
                 meta_start = log_position
@@ -422,7 +845,10 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
                             f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
                             f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
 
-    return results.get()
+    if return_array_as == "cupy":
+        return results
+    else:
+        return results.get()
 
 
 
@@ -461,7 +887,8 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
                                  nominal_and_dilated_structures_slices_indices_list,
                                  log_sub_dirs_list = [],
                                  log_file_name="cuda_log.txt",
-                                 include_edges_in_log = False):
+                                 include_edges_in_log = False,
+                                 kernel_type="one_to_one_pip_kernel_advanced"):
     """
     Test points against polygons using CuPy arrays directly.
     
@@ -470,7 +897,10 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     - combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff: 3D array of biopsy points for all trials.
     - nominal_and_dilated_structures_list_of_2d_arr: List of (N, 3) arrays for each trial, representing the dilated structures.
     - nominal_and_dilated_structures_slices_indices_list: List of indices indicating the start and end indices of each z slice for every dilated structure (trial).
-    
+    - log_sub_dirs_list: List of subdirectories for the log file.
+    - log_file_name: Name of the log file to write the debug information. If None, no log file is written to file. Important, the log file writing is quite slow, so turning off logging should be considered for performance.
+    - include_edges_in_log: If True, the log file will include the edges checked for each point. (slower)
+    - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
     Returns:
     - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
     """
@@ -486,7 +916,7 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     
     # Filter out NaN indices
     valid_mask = ~np.isnan(flat_indices)
-    valid_indices = flat_indices[valid_mask].astype(int)
+    #valid_indices = flat_indices[valid_mask].astype(int)
     valid_points = flat_points[valid_mask]
     
     # Create CuPy arrays for the points
@@ -512,7 +942,7 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     poly_indices = cp.array(poly_indices)
     
     # Test each point against the corresponding polygon
-    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log)
+    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log, kernel_type=kernel_type, return_array_as="cupy")
     
     # Map the valid results back to the original result array
     result_cp_arr_flat = result_cp_arr.flatten()
@@ -627,8 +1057,9 @@ def example():
 
         return results_matrix
 
-    num_points = 10000
+    num_points = 1000
     num_vertices_list = [4, 16, 32]
+    include_cuspatial = False
 
     for num_vertices in num_vertices_list:
         print(f"\nTesting with {num_vertices}-vertex polygons:")
@@ -649,33 +1080,52 @@ def example():
         # 🔹 Run Custom One-to-One Test
         # -------------------------------
         st = time.time()
-        log_file_name = f"cuda_log_{num_vertices}_vertices.txt"
-        one_to_one_results = one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, log_file_name=log_file_name)
+        log_file_name = f"cuda_log_{num_vertices}_vertices_adv_ker.txt"
+        one_to_one_results_adv_ker = one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, log_file_name=log_file_name, kernel_type="one_to_one_pip_kernel_advanced", return_array_as="numpy")
         et = time.time()
-        print(f"\n🔹 Custom One-to-One Time for {num_vertices}-vertex polygons:", et - st)
+        print(f"\n🔹 Custom One-to-One Time for {num_vertices}-vertex polygons (advanced kernel):", et - st)
+
+        # -------------------------------
+        # 🔹 Run Custom One-to-One Test more robust kernel (with reparameterization)
+        # -------------------------------
+        st = time.time()
+        log_file_name = f"cuda_log_{num_vertices}_vertices_adv_ker_reparam.txt"
+        one_to_one_results_adv_ker_reparam = one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indices, log_file_name=log_file_name, kernel_type="one_to_one_pip_kernel_advanced_reparameterized_version", return_array_as="numpy")
+        et = time.time()
+        print(f"\n🔹 Custom One-to-One Time for {num_vertices}-vertex polygons (advanced kernel with reparameterization):", et - st)
 
         # -------------------------------
         # 🔹 Run Default `cuspatial.point_in_polygon` in Chunks (Max 31 Polygons per Batch)
         # -------------------------------
-        st = time.time()
-        default_results = chunked_point_in_polygon(points_gs, polygons_gs)
-        et = time.time()
-        print(f"\n🔹 Default CuSpatial Time (Chunked) for {num_vertices}-vertex polygons:", et - st)
+        if include_cuspatial:
+            st = time.time()
+            default_results = chunked_point_in_polygon(points_gs, polygons_gs)
+            et = time.time()
+            print(f"\n🔹 Default CuSpatial Time (Chunked) for {num_vertices}-vertex polygons:", et - st)
 
-        # Extract diagonal results from default `point_in_polygon`
-        diagonal_results = cp.diag(default_results)
+            # Extract diagonal results from default `point_in_polygon`
+            diagonal_results = cp.diag(default_results)
 
         # -------------------------------
         # 🔹 Compare Results
         # -------------------------------
-        print(f"\n🔹 Optimized One-to-One Results for {num_vertices}-vertex polygons:")
-        print(one_to_one_results[0:50])  # Print first 20 results
+        print(f"\n🔹 Optimized One-to-One Results for {num_vertices}-vertex polygons (advanced):")
+        print(one_to_one_results_adv_ker[0:50])  # Print first 20 results
 
-        print(f"\n🔹 Diagonal Results from Default CuSpatial for {num_vertices}-vertex polygons:")
-        print(diagonal_results[0:50])  # Print first 20 results
+        print(f"\n🔹 Optimized One-to-One Results for {num_vertices}-vertex polygons:")
+        print(one_to_one_results_adv_ker_reparam[0:50])  # Print first 20 results
+        
+        if include_cuspatial:
+            print(f"\n🔹 Diagonal Results from Default CuSpatial for {num_vertices}-vertex polygons (advanced-reparameterized):")
+            print(diagonal_results[0:50])  # Print first 20 results
 
         # Check if results match
-        print(f"\n✅ Do Results Match for {num_vertices}-vertex polygons?", np.all(one_to_one_results == diagonal_results.get()))
+        if include_cuspatial:
+            print(f"\n✅ Do Results Match for {num_vertices}-vertex polygons?", np.all(one_to_one_results_adv_ker == diagonal_results.get()))
+            print(f"\n✅ Do Results Match for {num_vertices}-vertex polygons?", np.all(one_to_one_results_adv_ker_reparam == diagonal_results.get()))
+        print(f"\n✅ Do Results Match for {num_vertices}-vertex polygons?", np.all(one_to_one_results_adv_ker == one_to_one_results_adv_ker_reparam))
+    
+
         print('test')
     input()
 

@@ -32,6 +32,7 @@ import polygon_dilation_helpers_cupy
 import cProfile
 import pstats
 import io
+from line_profiler import LineProfiler
 
 
 def simulator_parallel(parallel_pool, 
@@ -87,7 +88,9 @@ def simulator_parallel(parallel_pool,
                        raw_data_mc_containment_dump_bool,
                        keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
                        show_non_bx_relative_structure_z_dilation_bool,
-                        show_non_bx_relative_structure_xy_dilation_bool
+                        show_non_bx_relative_structure_xy_dilation_bool,
+                        generate_cuda_log_files,
+                        custom_cuda_kernel_type
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -707,17 +710,64 @@ def simulator_parallel(parallel_pool,
                     print(s.getvalue())
                     """
 
+                    """
+                    lp = LineProfiler()
+                    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version)
+                    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.one_to_one_point_in_polygon_cupy_arr_version)
+
+                    lp_wrapper = lp(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version)
+                    """
+
                     pr = cProfile.Profile()
                     pr.enable()
-                    custom_cuda_log_file_name = patientUID + "_" + specific_bx_structure_roi + "_" + non_bx_structure_type + "_N-" + str(num_MC_containment_simulations) + "_containment_log.txt"
+                    
                     log_sub_dirs_list = [patientUID, specific_bx_structure_roi, non_bx_structure_type]
+                    if generate_cuda_log_files == True:
+                        custom_cuda_log_file_name = patientUID + "_" + specific_bx_structure_roi + "_" + non_bx_structure_type + "_N-" + str(num_MC_containment_simulations) + "_containment_log.txt"
+                    else:
+                        custom_cuda_log_file_name = None
+                    
                     containment_result_cp_arr_cupy_arr_version = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
                                                                                                         combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
                                                                                                         nominal_and_dilated_structures_list_of_2d_arr, 
                                                                                                         nominal_and_dilated_structures_slices_indices_list,
                                                                                                         log_sub_dirs_list = log_sub_dirs_list, 
                                                                                                         log_file_name = custom_cuda_log_file_name,
-                                                                                                        include_edges_in_log = False)
+                                                                                                        include_edges_in_log = False,
+                                                                                                        kernel_type=custom_cuda_kernel_type)
+                    containment_result_cp_arr_cupy_arr_version_2 = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                                                                                                        combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
+                                                                                                        nominal_and_dilated_structures_list_of_2d_arr, 
+                                                                                                        nominal_and_dilated_structures_slices_indices_list,
+                                                                                                        log_sub_dirs_list = log_sub_dirs_list, 
+                                                                                                        log_file_name = custom_cuda_log_file_name,
+                                                                                                        include_edges_in_log = False,
+                                                                                                        kernel_type="one_to_one_pip_kernel_advanced_reparameterized_version")
+                    """
+                    lp.enable()  
+                    containment_result_cp_arr_cupy_arr_version = lp_wrapper(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array,
+                                                                            combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff,
+                                                                            nominal_and_dilated_structures_list_of_2d_arr,
+                                                                            nominal_and_dilated_structures_slices_indices_list,
+                                                                            log_sub_dirs_list = log_sub_dirs_list,
+                                                                            log_file_name = custom_cuda_log_file_name,
+                                                                            include_edges_in_log = False,
+                                                                            kernel_type="one_to_one_pip_kernel_advanced")
+                    lp.disable()  
+                    lp.print_stats()
+
+                    lp.enable()  
+                    containment_result_cp_arr_cupy_arr_version_2 = lp_wrapper(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array,
+                                                                            combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff,
+                                                                            nominal_and_dilated_structures_list_of_2d_arr,
+                                                                            nominal_and_dilated_structures_slices_indices_list,
+                                                                            log_sub_dirs_list = log_sub_dirs_list,
+                                                                            log_file_name = custom_cuda_log_file_name,
+                                                                            include_edges_in_log = False,
+                                                                            kernel_type="one_to_one_pip_kernel_advanced_reparameterized_version")
+                    lp.disable()  
+                    lp.print_stats()
+                    """
                     pr.disable()
 
                     # Print profiling results
@@ -725,6 +775,9 @@ def simulator_parallel(parallel_pool,
                     ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
                     ps.print_stats()
                     print(s.getvalue())
+
+                    # Check  if the two arrays from two different kernels are exactly equal
+                    print(f"\n✅ Do Results Match?", cp.all(containment_result_cp_arr_cupy_arr_version == containment_result_cp_arr_cupy_arr_version_2))
 
                     # Check if the two arrays are exactly equal
                     #are_equal = cp.array_equal(containment_result_cp_arr_geoseries_version, containment_result_cp_arr_cupy_arr_version)

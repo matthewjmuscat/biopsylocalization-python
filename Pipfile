@@ -47,6 +47,7 @@ psutil = "*"
 simpleitk = "*"
 alphashape = "*"
 pymeshfix = "*"
+line-profiler = "*"
 
 [dev-packages]
 ipykernel = "*"
