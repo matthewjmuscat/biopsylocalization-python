@@ -31,7 +31,6 @@ import csv
 from prettytable import from_csv
 import pandas
 import anatomy_reconstructor_tools
-import open3d.visualization.gui as gui
 import alphashape
 import pymeshfix
 import pyvista as pv
@@ -90,6 +89,13 @@ import lattice_reconstruction_tools
 import MC_prepper_funcs 
 import MC_simulator_MR
 import dose_lattice_helper_funcs
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+import polygon_dilation_helpers_numpy
+import cProfile
+import pstats
+import io
+from line_profiler import LineProfiler
+
 
 def main():
     
@@ -372,8 +378,13 @@ def main():
     raw_data_mc_dosimetry_dump_bool = False # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for dose tests! 
     raw_data_mc_containment_dump_bool = False  # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for containment tests!
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
+    
+    # custom point containment algorithm options
     generate_cuda_log_files = True
-    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced" # The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
+    include_edges_in_log_files = False
+    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version" # The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
+    constant_z_slice_polygons_handler_option = 'auto-close-if-open' # Can be 'auto-close-if-open' or 'close-all' or None
+    remove_consecutive_duplicate_points_in_polygons = False
 
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
@@ -489,6 +500,11 @@ def main():
     plot_cupy_containment_distribution_results = True # nice because it shows all trials at once
     plot_nearest_neighbour_surface_boundary_demonstration = False # you see one trial at a time
     plot_relative_structure_centroid_demonstration = False # you see one trial at a time
+
+    # DIL biopsy optimization
+    demonstrate_dil_optimization_points_inside_correctness_bool_1 = True # shows the containment results for the generated lattice points that is passed to the optimizer function
+    demonstrate_dil_optimization_points_inside_correctness_bool_2 = False # shows the containment results for the generated lattice inside the optiomizer function, which is only caleld if you didnt pass the optimizer function a lattice. We are currently passing it a lattice.
+    demonstrate_dil_optimization_points_inside_correctness_bool_3 = True # shows the containment results for all normal distritution generated points centered at each test point lattice position
 
     # MRs
     show_3d_mr_adc_renderings = False
@@ -3606,7 +3622,7 @@ def main():
                 ########## PERFORM BIOPSY DIL OPTIMIZATION
 
 
-                #live_display.stop()
+                live_display.stop()
 
                 patientUID_default = "Initializing"
                 processing_patients_task_main_description = "[red]Optimizing Bx location within DILs [{}]...".format(patientUID_default)
@@ -3726,16 +3742,21 @@ def main():
                         interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
                         interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
                         zslices_list = interslice_interpolation_information.interpolated_pts_list
+                        # Extract the dil centroid
+                        dil_global_centroid = specific_dil_structure["Structure global centroid"]
 
+
+                        ### OLD METHODOLOGY FOR REMOVING POINTS OUTSIDE OF DIL
+                        """
+                        pr = cProfile.Profile()
+                        pr.enable()
                         # create geoseries of the dil structure for containment tests
                         max_zval = max(interpolated_zvals_list)
                         min_zval = min(interpolated_zvals_list)
                         zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in zslices_list]
                         zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(zslices_polygons_list))
 
-                        # Extract the dil centroid
-                        dil_global_centroid = specific_dil_structure["Structure global centroid"]
-
+                        
 
                         ### CONSTRUCT THE LATTICE POINTS TO PASS TO THE OPTIMIZER FUNCTION
                         all_geometries_centered_cubic_lattice_arr_XY = all_geometries_centered_cubic_lattice_arr[:,0:2]
@@ -3743,7 +3764,7 @@ def main():
 
                         
                         #nearest_interpolated_zslice_for_test_lattice_index_array, nearest_interpolated_zslice_for_test_lattice_vals_array = point_containment_tools.take_closest_cupy(interpolated_zvals_list, all_geometries_centered_cubic_lattice_arr_Z)
-
+                        
                         nearest_interpolated_zslice_for_test_lattice_index_array, nearest_interpolated_zslice_for_test_lattice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvals_list, 
                                                                                                                                                             all_geometries_centered_cubic_lattice_arr_Z,
                                                                                                                                                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
@@ -3754,6 +3775,7 @@ def main():
                         all_geometries_centered_cubic_lattice_XY_interleaved_1darr = all_geometries_centered_cubic_lattice_arr_XY.flatten()
                         all_geometries_centered_cubic_lattice_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(all_geometries_centered_cubic_lattice_XY_interleaved_1darr)
 
+                        
                         # Test point containment to remove points from the potential optimization testing point lattice that are not inside the DIL
                         containment_info_for_all_lattice_points_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_generic_numpy_pandas(zslices_polygons_cuspatial_geoseries,
                             all_geometries_centered_cubic_lattice_XY_cuspatial_geoseries_points, 
@@ -3771,6 +3793,122 @@ def main():
                         del nearest_interpolated_zslice_for_test_lattice_index_array
                         del nearest_interpolated_zslice_for_test_lattice_vals_array
                         live_display.refresh()
+
+
+                        # Print profiling results
+                        pr.disable()
+                        s = io.StringIO()
+                        ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                        ps.print_stats()
+                        print(s.getvalue())
+
+                        ### OLD METHODOLOGY FOR REMOVING POINTS OUTSIDE OF DIL END 
+                        
+
+                        """
+
+
+
+                        
+                        ### NEW METHODOLOGY FOR REMOVING POINTS OUTSIDE OF DIL
+                        #pr = cProfile.Profile()
+                        #pr.enable()
+ 
+                        # maps the first test structure to the first relative structure (since there is only 1 test structure and 1 relative structure)              
+                        test_struct_to_relative_struct_1d_mapping_array = np.array([0])          
+                        log_sub_dirs_list = [patientUID, structureID_dil]
+                        custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+
+                        containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+                                            all_geometries_centered_cubic_lattice_arr[np.newaxis,:,:],
+                                            test_struct_to_relative_struct_1d_mapping_array,
+                                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                            log_sub_dirs_list = log_sub_dirs_list,
+                                            log_file_name = custom_cuda_log_file_name,
+                                            include_edges_in_log = include_edges_in_log_files,
+                                            kernel_type = custom_cuda_kernel_type)
+
+                                            
+
+                        # For line profiling purposes
+                        """
+                        lp = LineProfiler()
+                        lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function)  # Add another function to compare
+                        lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.one_to_one_point_in_polygon_cupy_arr_version)
+                        lp_wrapper = lp(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function)
+
+                        lp.enable()
+
+                        # Now call the function through the wrapper
+                        containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = lp_wrapper(
+                            [zslices_list],
+                            all_geometries_centered_cubic_lattice_arr[np.newaxis, :, :],
+                            test_struct_to_relative_struct_1d_mapping_array, 
+                            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
+                            log_sub_dirs_list=log_sub_dirs_list,
+                            log_file_name=custom_cuda_log_file_name,
+                            include_edges_in_log=include_edges_in_log_files,
+                            kernel_type=custom_cuda_kernel_type
+                        )
+                        lp.disable()
+                        lp.print_stats()
+                        input("Press enter to continue")
+                        """
+
+                        # old methodology for calling custom kernel, now use mother function to handle all the steps
+                        """
+                        nearest_zslice_index_and_values_3d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version_prepper([zslices_list],
+                                                          all_geometries_centered_cubic_lattice_arr[np.newaxis,:,:],
+                                                          test_struct_to_relative_struct_1d_mapping_array,
+                                                          constant_z_slice_polygons_handler_option = 'auto-close-if-open')
+
+
+                        log_sub_dirs_list = [patientUID, structureID_dil]
+                        custom_cuda_log_file_name = "cuda_dil_bioposy_optimization.txt"
+                        containment_result_for_all_lattice_points_cp_arr = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_values_3d_arr, 
+                                                                                                        all_geometries_centered_cubic_lattice_arr[np.newaxis,:,:], 
+                                                                                                        all_structures_list_of_2d_arr, 
+                                                                                                        all_structures_slices_indices_list,
+                                                                                                        log_sub_dirs_list = log_sub_dirs_list, 
+                                                                                                        log_file_name = custom_cuda_log_file_name,
+                                                                                                        include_edges_in_log = include_edges_in_log_files,
+                                                                                                        kernel_type=custom_cuda_kernel_type)
+                        """
+                        
+                        containment_info_for_all_lattice_points_grand_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2I(structure_info, 
+                                                                                                                                prepper_output_tuple[0], 
+                                                                                                                                all_geometries_centered_cubic_lattice_arr[np.newaxis,:,:], 
+                                                                                                                                containment_result_for_all_lattice_points_cp_arr,
+                                                                                                                                do_not_convert_column_names_to_categorical = ["Pt contained bool"],
+                                                                                                                                float_dtype = np.float32,
+                                                                                                                                int_dtype = np.int32)
+                        #pr.disable()
+
+                        # Print profiling results
+                        #s = io.StringIO()
+                        #ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                        #ps.print_stats()
+                        #print(s.getvalue())
+
+                        ### NEW METHODOLOGY FOR REMOVING POINTS OUTSIDE OF DIL END
+                        
+
+
+
+                        ### demonstrate correctness
+                        if demonstrate_dil_optimization_points_inside_correctness_bool_1 == True:
+
+                            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                      "Test pt X", 
+                                     "Test pt Y", 
+                                     "Test pt Z",
+                                     "Pt clr R",
+                                     "Pt clr G",
+                                     "Pt clr B",
+                                     additional_point_clouds=[specific_dil_structure['Interpolated structure point cloud dict']['Full with end caps']])
+
 
                         #containment_info_for_all_lattice_points_grand_pandas_dataframe = containment_info_for_all_lattice_points_grand_cudf_dataframe.to_pandas()
                         
@@ -3814,6 +3952,12 @@ def main():
                                                                                                         nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                                                                                         nearest_zslice_vals_and_indices_numpy_generic_max_size,
                                                                                                         structures_progress,
+                                                                                                        constant_z_slice_polygons_handler_option,
+                                                                                                        remove_consecutive_duplicate_points_in_polygons,
+                                                                                                        include_edges_in_log_files,
+                                                                                                        custom_cuda_kernel_type,
+                                                                                                        demonstrate_dil_optimization_points_inside_correctness_bool_2,
+                                                                                                        demonstrate_dil_optimization_points_inside_correctness_bool_3,
                                                                                                         test_lattice_arr = centered_cubic_lattice_points_contained_only_in_sp_dil_arr,
                                                                                                         all_points_to_set_to_zero_arr = centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr # This was added to make the "search" volume to include the entire volume
                                                                                                         )

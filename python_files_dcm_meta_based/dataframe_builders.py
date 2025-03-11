@@ -4414,7 +4414,10 @@ def convert_columns_to_categorical_v3(df, threshold=0.25, ignore_types=(np.float
     return df
 
 
-def convert_columns_to_categorical_and_downcast(df, threshold=0.25, ignore_types=(np.floating,)):
+def convert_columns_to_categorical_and_downcast(df, 
+                                                threshold=0.25, 
+                                                ignore_types=(np.floating,), 
+                                                do_not_convert_column_names_to_categorical = []):
     """
     Converts DataFrame columns to categorical types based on a uniqueness threshold,
     ignoring columns of specified data types, including all subtypes of each data type.
@@ -4439,7 +4442,7 @@ def convert_columns_to_categorical_and_downcast(df, threshold=0.25, ignore_types
         unique_ratio = num_unique_values / total_entries
 
         # Convert column to categorical if the ratio of unique values is below the threshold
-        if unique_ratio <= threshold and not any(np.issubdtype(df[column].dtype, t) for t in ignore_types):
+        if unique_ratio <= threshold and not any(np.issubdtype(df[column].dtype, t) for t in ignore_types) and column not in do_not_convert_column_names_to_categorical:
             df[column] = pandas.Categorical(df[column])
         elif pandas.api.types.is_numeric_dtype(df[column]):
             # Downcast numeric columns that were not converted to categorical

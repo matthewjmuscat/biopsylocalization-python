@@ -31,6 +31,18 @@ def convert_to_2d_array_and_indices_numpy(polygons_list):
     
     return points_array, indices_array
 
+def convert_to_2d_array_and_indices_from_3d_arr_numpy(pts_3d_arr):
+    # Calculate the total number of points
+    total_points = pts_3d_arr.shape[1]
+    num_slices = pts_3d_arr.shape[0]
+
+    stacked_2d_arr = pts_3d_arr.reshape(-1, 3)
+    indices_flat_arr = np.arange(num_slices + 1) * total_points  # Generate the start and end points
+
+    indices_2d_arr = np.stack([indices_flat_arr[:-1], indices_flat_arr[1:]], axis=1)
+
+    return stacked_2d_arr, indices_2d_arr
+
 def dilate_polygons_z_direction(points_array, indices_array, dilation_distance_z, show_z_dilation_bool=False):
     """
     Dilate the Z slices by adjusting the Z coordinates using provided distance.
@@ -217,6 +229,7 @@ def generate_dilated_structures_parallelized(points_array, indices_array, dilati
     
     Returns:
     - dilated_structures_list: List of dilated structures.
+    - dilated_structures_slices_indices_list: List of indices that separate slices for each dilated structure.
     """
     num_trials = dilation_distances.shape[0]
 
@@ -241,6 +254,17 @@ def extract_constant_z_values(dilated_structures_list, dilated_structures_slices
             trial_z_values.append(z_value)
         z_values_list.append(trial_z_values)
     return z_values_list
+
+def extract_constant_z_values_arr_version(all_structures_list_of_2d_arr, all_structures_slices_indices_list):
+    num_structures = len(all_structures_list_of_2d_arr)    
+    z_values_list_of_arrays = [None]*num_structures
+    for index in range(num_structures):
+        structure_2d_arr = all_structures_list_of_2d_arr[index]
+        indices_array = all_structures_slices_indices_list[index]
+        start_indices = indices_array[:, 0]
+        z_vals_arr = structure_2d_arr[start_indices, 2]
+        z_values_list_of_arrays[index] = z_vals_arr
+    return z_values_list_of_arrays
 
 
 def extract_constant_z_values_single_configuration(list_of_constant_z_slices_arrays):
@@ -299,31 +323,32 @@ def nearest_zslice_vals_and_indices_all_trials_vectorized(non_bx_struct_nominal_
     
     return grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_array, grand_all_dilation_sp_trial_nearest_interpolated_zslice_vals_array
 
-import numpy as np
 
-def nearest_zslice_vals_and_indices_all_trials(non_bx_struct_nominal_and_all_dilations_zvals_list, combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff):
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr(relative_structures_list_of_zvals_1d_arrays_or_lists, points_to_test_3d_arr, test_struct_to_relative_struct_1d_mapping_array):
     """
-    Find the nearest z values and associated indices for all biopsy points across all trials using NumPy.
+    Find the nearest z values and associated indices for all biopsy points across all trials using NumPy. This function is for test points that have the same number of points for each relative structure (likely the same object that has been transformed for each trial, or is just the same object for each trial).
     
     Parameters:
     - non_bx_struct_nominal_and_all_dilations_zvals_list: List of z values for each trial of the dilated relative structure.
     - combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff: 3D array of biopsy points for all trials.
-    
+    - test_struct_to_relative_struct_1d_mapping_array: 1D array that maps each test structure to its associated relative structure.
+
     Returns:
-    - grand_all_dilations_sp_trial_nearest_interpolated_zslice_array: Array of the nearest z values and their indices for each biopsy point.
+    - grand_all_dilations_sp_trial_nearest_interpolated_zslice_array: Array of the relative structure index, nearest z index slice and nearest z values on the associated relative structure for each test structure point (row).
     """
-    num_trials = len(non_bx_struct_nominal_and_all_dilations_zvals_list)
-    num_points_per_trial = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff.shape[1]
+    #num_trials = len(relative_structures_list_of_zvals_1d_arrays_or_lists)
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
     
     # Initialize array to store the results
-    grand_all_dilations_sp_trial_nearest_interpolated_zslice_array = np.empty((num_trials, num_points_per_trial, 3), dtype=np.float32)
+    nearest_zslice_index_and_values_3d_arr = np.empty((num_test_structures, num_points_per_trial, 4), dtype=np.float32)
     
-    for trial_index in range(num_trials):
-        zvals_array = np.array(non_bx_struct_nominal_and_all_dilations_zvals_list[trial_index])
-        biopsy_z_coords = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff[trial_index, :, 2]
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        zvals_array = np.array(relative_structures_list_of_zvals_1d_arrays_or_lists[relative_structure_index])
+        pts_to_test_z_coords = points_to_test_3d_arr[test_structure_index, :, 2]
         
         # Use broadcasting to compute the absolute differences between z values
-        z_diffs = np.abs(zvals_array[:, np.newaxis] - biopsy_z_coords[np.newaxis, :])
+        z_diffs = np.abs(zvals_array[:, np.newaxis] - pts_to_test_z_coords[np.newaxis, :])
         
         # Find the indices of the minimum differences
         nearest_zslice_indices = np.argmin(z_diffs, axis=0)
@@ -335,19 +360,140 @@ def nearest_zslice_vals_and_indices_all_trials(non_bx_struct_nominal_and_all_dil
         min_zval = np.min(zvals_array)
         max_zval = np.max(zvals_array)
         
-        outside_min_mask = biopsy_z_coords < min_zval
-        outside_max_mask = biopsy_z_coords > max_zval
+        outside_min_mask = pts_to_test_z_coords < min_zval
+        outside_max_mask = pts_to_test_z_coords > max_zval
         
         # Set the indices and values to NaN where the biopsy z values are outside the range
-        nearest_zslice_indices = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_indices)
-        nearest_zslice_vals = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_vals)
+        #nearest_zslice_indices = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_indices)
+        #nearest_zslice_vals = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_vals)
+
+        # Create an out-of-bounds flag (1 if out of bounds, 0 otherwise)
+        out_of_bounds_flag = np.where(outside_min_mask | outside_max_mask, 1, 0)
         
         # Store the results
-        grand_all_dilations_sp_trial_nearest_interpolated_zslice_array[trial_index, :, 0] = trial_index
-        grand_all_dilations_sp_trial_nearest_interpolated_zslice_array[trial_index, :, 1] = nearest_zslice_indices
-        grand_all_dilations_sp_trial_nearest_interpolated_zslice_array[trial_index, :, 2] = nearest_zslice_vals
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 0] = relative_structure_index
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 1] = nearest_zslice_indices
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 2] = nearest_zslice_vals
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 3] = out_of_bounds_flag
+
+    return nearest_zslice_index_and_values_3d_arr
+
+
+
+def nearest_zslice_vals_and_indices_all_structures_2d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_2d_arr, points_to_test_indices_arr, test_struct_to_relative_struct_1d_mapping_array):
+    """
+    Find the nearest z values and associated indices for all test points across all assoicated structures using NumPy.
+
+    Parameters:
+    - relative_structures_list_of_zvals_1d_arrays: List of z value 1d arrays for each structure.
+    - points_to_test_2d_arr: 2D array of points to test.
+    - points_to_test_indices_arr: 2D array of indices that separate the points to test for each structure.
+    - test_struct_to_relative_struct_1d_mapping_array: 1D array that maps each test structure to its associated relative structure.
+
+    Returns:
+    - nearest_zslice_index_and_values_2d_arr: 2D array of the relative structure index, their indices for each test point and nearest z values.
+
+    Note: the points_to_test_indices_arr is a 2D array where each row contains the start and end indices of the points to test for each structure, are used to separate the nearest_zslice_index_and_values_2d_arr sections for each point for each structure.
+    """
+    #num_structures = len(relative_structures_list_of_zvals_1d_arrays)
+    total_num_points = points_to_test_2d_arr.shape[0]
+    # Initialize array to store the results
+    nearest_zslice_index_and_values_2d_arr = np.empty((total_num_points, 4), dtype=np.float32) 
     
-    return grand_all_dilations_sp_trial_nearest_interpolated_zslice_array
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        zvals_array = relative_structures_list_of_zvals_1d_arrays[relative_structure_index]
+        start_index = points_to_test_indices_arr[test_structure_index, 0]
+        end_index = points_to_test_indices_arr[test_structure_index, 1]
+        pts_to_test_z_coords = points_to_test_2d_arr[start_index:end_index, 2]
+        
+        # Use broadcasting to compute the absolute differences between z values
+        z_diffs = np.abs(zvals_array[:, np.newaxis] - pts_to_test_z_coords[np.newaxis, :])
+        
+        # Find the indices of the minimum differences
+        nearest_zslice_indices = np.argmin(z_diffs, axis=0)
+        
+        # Get the nearest z values using the indices
+        nearest_zslice_vals = zvals_array[nearest_zslice_indices]
+        
+        # Check if the points to test z values are outside the range of the relative structure's z values
+        min_zval = np.min(zvals_array)
+        max_zval = np.max(zvals_array)
+        
+        outside_min_mask = pts_to_test_z_coords < min_zval
+        outside_max_mask = pts_to_test_z_coords > max_zval
+        
+        # Set the indices and values to NaN where the biopsy z values are outside the range
+        #nearest_zslice_indices = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_indices)
+        #nearest_zslice_vals = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_vals)
+
+        # Create an out-of-bounds flag (1 if out of bounds, 0 otherwise)
+        out_of_bounds_flag = np.where(outside_min_mask | outside_max_mask, 1, 0)
+        
+        # Store the results
+        nearest_zslice_index_and_values_2d_arr[start_index:end_index, 0] = relative_structure_index
+        nearest_zslice_index_and_values_2d_arr[start_index:end_index, 1] = nearest_zslice_indices
+        nearest_zslice_index_and_values_2d_arr[start_index:end_index, 2] = nearest_zslice_vals
+        nearest_zslice_index_and_values_2d_arr[start_index:end_index, 3] = out_of_bounds_flag
+    
+    return nearest_zslice_index_and_values_2d_arr
+
+
+
+
+
+def remove_consecutive_duplicate_points_numpy(slice_arr):
+    """
+    Remove consecutive duplicate points from a 2D NumPy array.
+    
+    Parameters:
+    - slice_arr: 2D NumPy array of 3D points. Shape is (N, 3).
+    
+    Returns:
+    - unique_slice_arr: 2D NumPy array of unique points.
+    """
+    # Compute the differences between consecutive points
+    diffs = np.diff(slice_arr, axis=0)
+    
+    # Find the indices of non-zero differences
+    non_zero_indices = np.any(diffs != 0, axis=1)
+    
+    # Include the last point
+    non_zero_indices = np.hstack((non_zero_indices, [True]))
+    
+    # Extract the unique points
+    unique_slice_arr = slice_arr[non_zero_indices]
+    
+    return unique_slice_arr
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def example():
     load_example_data_bool = True
@@ -450,3 +596,9 @@ def plot_multipolygon(multipolygon):
     ax.set_aspect('equal')  # Keep aspect ratio square
     plt.grid(True)
     plt.show()
+
+
+
+
+
+

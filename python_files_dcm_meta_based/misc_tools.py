@@ -1010,7 +1010,7 @@ def convert_categorical_columns(df, columns, types):
     Parameters:
         df (pd.DataFrame): The DataFrame containing the columns.
         columns (list of str): List of column names to check for categorical type.
-        types (list of type): List of types to convert the corresponding columns to if they are categorical.
+        types (list of type): List of types to convert the corresponding columns to if they are categorical. Can pass numpy types like np.int64, np.float64, etc. as well as str float or int etc.
 
     Returns:
         pd.DataFrame: The DataFrame with the specified columns converted if they were categorical.

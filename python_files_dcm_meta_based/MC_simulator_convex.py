@@ -481,7 +481,7 @@ def simulator_parallel(parallel_pool,
                     # The output is a 3d array with the first dimension being the trial number, ie references the relative dilated structure, the second dimension being the biopsy point, ie every row is a biopsy point, and the third dimension having three values, the trial number, the relative dilated structure index, the closest z slice index, and the z value of the closest z slice 
                     #st = time.time()
                     ####
-                    grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_trials(non_bx_struct_nominal_and_all_dilations_zvals_list, 
+                    grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr(non_bx_struct_nominal_and_all_dilations_zvals_list, 
                                                                                                                                                                               combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff)
                     ####
                     #et = time.time()
@@ -712,14 +712,14 @@ def simulator_parallel(parallel_pool,
 
                     """
                     lp = LineProfiler()
-                    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version)
+                    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version)
                     lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.one_to_one_point_in_polygon_cupy_arr_version)
 
-                    lp_wrapper = lp(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version)
+                    lp_wrapper = lp(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version)
                     """
 
-                    pr = cProfile.Profile()
-                    pr.enable()
+                    #pr = cProfile.Profile()
+                    #pr.enable()
                     
                     log_sub_dirs_list = [patientUID, specific_bx_structure_roi, non_bx_structure_type]
                     if generate_cuda_log_files == True:
@@ -727,7 +727,7 @@ def simulator_parallel(parallel_pool,
                     else:
                         custom_cuda_log_file_name = None
                     
-                    containment_result_cp_arr_cupy_arr_version = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                    containment_result_cp_arr_cupy_arr_version = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
                                                                                                         combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
                                                                                                         nominal_and_dilated_structures_list_of_2d_arr, 
                                                                                                         nominal_and_dilated_structures_slices_indices_list,
@@ -735,7 +735,7 @@ def simulator_parallel(parallel_pool,
                                                                                                         log_file_name = custom_cuda_log_file_name,
                                                                                                         include_edges_in_log = False,
                                                                                                         kernel_type=custom_cuda_kernel_type)
-                    containment_result_cp_arr_cupy_arr_version_2 = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
+                    containment_result_cp_arr_cupy_arr_version_2 = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
                                                                                                         combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
                                                                                                         nominal_and_dilated_structures_list_of_2d_arr, 
                                                                                                         nominal_and_dilated_structures_slices_indices_list,
@@ -768,13 +768,13 @@ def simulator_parallel(parallel_pool,
                     lp.disable()  
                     lp.print_stats()
                     """
-                    pr.disable()
+                    #pr.disable()
 
                     # Print profiling results
-                    s = io.StringIO()
-                    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
-                    ps.print_stats()
-                    print(s.getvalue())
+                    #s = io.StringIO()
+                    #ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                    #ps.print_stats()
+                    #print(s.getvalue())
 
                     # Check  if the two arrays from two different kernels are exactly equal
                     print(f"\n✅ Do Results Match?", cp.all(containment_result_cp_arr_cupy_arr_version == containment_result_cp_arr_cupy_arr_version_2))

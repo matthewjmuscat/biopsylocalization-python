@@ -1112,3 +1112,71 @@ def create_thresholded_MR_point_cloud(data_all_slices_2d_arr, color_flattening_d
     return point_cloud
 
 
+
+
+
+def dataframe_to_point_cloud_colored(df, 
+                                     x_col_name, 
+                                     y_col_name, 
+                                     z_col_name,
+                                     r_col_name,
+                                     g_col_name,
+                                     b_col_name):
+    """
+    Convert a DataFrame to an Open3D point cloud with colors.
+    
+    Parameters:
+    - df: DataFrame containing the point cloud data.
+    - x_col_name: Name of the column containing the x-coordinates.
+    - y_col_name: Name of the column containing the y-coordinates.
+    - z_col_name: Name of the column containing the z-coordinates.
+    - r_col_name: Name of the column containing the red color values.
+    - g_col_name: Name of the column containing the green color values.
+    - b_col_name: Name of the column containing the blue color values.
+
+    Note: RGB values should be between 0 and 1
+    
+    Returns:
+    - point_cloud: Open3D point cloud object.
+    """
+    points = df[[x_col_name, y_col_name, z_col_name]].to_numpy()
+    colors = df[[r_col_name, g_col_name, b_col_name]].to_numpy()
+    
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    point_cloud.colors = o3d.utility.Vector3dVector(colors)
+    
+    return point_cloud
+
+
+def plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_df, 
+                                      x_col_name, 
+                                     y_col_name, 
+                                     z_col_name,
+                                     r_col_name,
+                                     g_col_name,
+                                     b_col_name,
+                                     additional_point_clouds=[]):
+    """
+    Plot the containment info point cloud and additional point clouds.
+    
+    Parameters:
+    - containment_info_df: DataFrame containing the containment info point cloud data.
+    - additional_point_clouds: List of additional Open3D point cloud objects to plot.
+    """
+    # Convert the DataFrame to a point cloud with colors
+    containment_point_cloud = dataframe_to_point_cloud_colored(
+        containment_info_df, 
+        x_col_name = x_col_name, 
+        y_col_name = y_col_name, 
+        z_col_name = z_col_name,
+        r_col_name = r_col_name,
+        g_col_name = g_col_name,
+        b_col_name = b_col_name
+    )
+    
+    # Combine the containment point cloud with additional point clouds
+    all_point_clouds = [containment_point_cloud] + additional_point_clouds
+    
+    # Visualize the point clouds
+    o3d.visualization.draw_geometries(all_point_clouds)

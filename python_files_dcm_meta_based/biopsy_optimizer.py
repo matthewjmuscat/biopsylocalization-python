@@ -14,6 +14,10 @@ import time
 import math_funcs
 from itertools import combinations
 import misc_tools
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+import cProfile
+import pstats
+import io
 
 def find_dil_optimal_sampling_position(specific_dil_structure,
                                 optimal_normal_dist_option,
@@ -44,6 +48,12 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                                 nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                 nearest_zslice_vals_and_indices_numpy_generic_max_size,
                                 progress_bar_level_task_obj,
+                                constant_z_slice_polygons_handler_option,
+                                remove_consecutive_duplicate_points_in_polygons,
+                                include_edges_in_log_files,
+                                custom_cuda_kernel_type,
+                                demonstrate_dil_optimization_points_inside_correctness_bool_2,
+                                demonstrate_dil_optimization_points_inside_correctness_bool_3,
                                 test_lattice_arr = None,
                                 all_points_to_set_to_zero_arr = np.array([[]])
                                 ):
@@ -64,6 +74,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     # reshape the centroid array 
     structure_global_centroid = structure_global_centroid.reshape((3))
 
+
+    # Old 
     # create geoseries of the dil structure for containment tests
     max_zval = max(interpolated_zvlas_list)
     min_zval = min(interpolated_zvlas_list)
@@ -92,6 +104,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     """
 
     if test_lattice_arr is None:
+
+        # Generate lattice of points for testing
         interpolated_pts_point_cloud = point_containment_tools.create_point_cloud(structure_points_array)
         interpolated_pts_point_cloud_color = np.array([0,0,1])
         interpolated_pts_point_cloud.paint_uniform_color(interpolated_pts_point_cloud_color)
@@ -115,8 +129,9 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                                                                                             lattice_sizez,
                                                                                             origin)
 
-
-
+        
+        # OLD CONTAINMENT METHODOLOGY
+        """
         centered_cubic_lattice_sp_structure_XY = centered_cubic_lattice_sp_structure[:,0:2]
         centered_cubic_lattice_sp_structure_Z = centered_cubic_lattice_sp_structure[:,2]
 
@@ -146,6 +161,43 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
             upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
             )
         live_display.refresh()
+        """
+
+        # NEW CONTAINMENT METHODOLOGY
+        structureID_dil = structure_info["Structure ID"]
+        test_struct_to_relative_struct_1d_mapping_array = np.array([0])          
+        log_sub_dirs_list = [patientUID, structureID_dil]
+        custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+
+        containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+                            centered_cubic_lattice_sp_structure[np.newaxis,:,:],
+                            test_struct_to_relative_struct_1d_mapping_array,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            log_sub_dirs_list = log_sub_dirs_list,
+                            log_file_name = custom_cuda_log_file_name,
+                            include_edges_in_log = include_edges_in_log_files,
+                            kernel_type = custom_cuda_kernel_type)
+        
+        containment_info_for_potential_optimization_points_grand_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2I(structure_info, 
+                                                                                                                                prepper_output_tuple[0], 
+                                                                                                                                centered_cubic_lattice_sp_structure[np.newaxis,:,:], 
+                                                                                                                                containment_result_for_all_lattice_points_cp_arr,
+                                                                                                                                do_not_convert_column_names_to_categorical = ["Pt contained bool"],
+                                                                                                                                float_dtype = np.float32,
+                                                                                                                                int_dtype = np.int32)
+        del containment_result_for_all_lattice_points_cp_arr
+
+        if demonstrate_dil_optimization_points_inside_correctness_bool_2 == True:
+
+            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_potential_optimization_points_grand_pandas_dataframe, 
+                        "Test pt X", 
+                        "Test pt Y", 
+                        "Test pt Z",
+                        "Pt clr R",
+                        "Pt clr G",
+                        "Pt clr B",
+                        additional_point_clouds=[specific_dil_structure['Interpolated structure point cloud dict']['Full with end caps']])
         
         containment_info_for_potential_optimization_points_only_internal_points_grand_pandas_dataframe = containment_info_for_potential_optimization_points_grand_pandas_dataframe.drop(containment_info_for_potential_optimization_points_grand_pandas_dataframe[containment_info_for_potential_optimization_points_grand_pandas_dataframe["Pt contained bool"] == False].index).reset_index()
 
@@ -163,6 +215,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
         centered_cubic_lattice_points_contained_only_sp_structure_arr = test_lattice_arr
 
 
+
+    # Insert the DIL centroid into the lattice of points at the 0th position
     centered_cubic_lattice_sp_structure_with_dil_centroid = np.insert(centered_cubic_lattice_points_contained_only_sp_structure_arr, 0, structure_global_centroid, axis=0)
     del centered_cubic_lattice_points_contained_only_sp_structure_arr
 
@@ -266,6 +320,7 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Prepping for containment", total = None)
     ###
 
+    # Building the containment test points 2d array
     point_in_cubic_lattice_index_referencer_for_dataframe_arr = np.empty(num_normal_dist_points*num_points_in_cubic_lattice_plus_centroid)
     tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr = np.tile(three_d_normal_dist_points,(num_points_in_cubic_lattice_plus_centroid,1))
     for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
@@ -275,6 +330,10 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     index_referencer_dict = {"Optimization lattice point array index": point_in_cubic_lattice_index_referencer_for_dataframe_arr}
     optimization_lattice_index_referencer_dataframe = pandas.DataFrame.from_dict(index_referencer_dict)
 
+    
+    # OLD CONTAINMENT METHODOLOGY
+    pr = cProfile.Profile()
+    pr.enable()
 
     tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,0:2]
     tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,2]
@@ -331,7 +390,7 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
 
 
     # Test point containment 
-    containment_info_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_generic_cupy_pandas(zslices_polygons_cuspatial_geoseries,
+    containment_info_grand_pandas_dataframe_old, live_display = point_containment_tools.cuspatial_points_contained_generic_cupy_pandas(zslices_polygons_cuspatial_geoseries,
         tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points, 
         tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr, 
         nearest_interpolated_zslice_index_array,
@@ -349,7 +408,79 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
 
     del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr
     del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points
+
+    # Print profiling results
+    pr.disable()
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+    ps.print_stats()
+    print(s.getvalue())
+
+    # OLD CONTAINMENT METHODOLOGY END   
+
+
+
+    # NEW METHODOLOGY FOR CONTAINMENT
+    pr = cProfile.Profile()
+    pr.enable()
+
+    # Building the containment test points 3d array
+    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr = np.tile(three_d_normal_dist_points,(num_points_in_cubic_lattice_plus_centroid,1,1))
+    for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr[point_index] = point_in_cubic_lattice + tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr[point_index]
+
+
+    structureID_dil = structure_info["Structure ID"]
+    test_struct_to_relative_struct_1d_mapping_array = np.full(num_points_in_cubic_lattice_plus_centroid, 0) # testing all normal distributions against the same relative (DIL) structure   
+    log_sub_dirs_list = [patientUID, structureID_dil]
+    custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+
+    containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+                        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr,
+                        test_struct_to_relative_struct_1d_mapping_array,
+                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                        log_sub_dirs_list = log_sub_dirs_list,
+                        log_file_name = custom_cuda_log_file_name,
+                        include_edges_in_log = include_edges_in_log_files,
+                        kernel_type = custom_cuda_kernel_type)
     
+    containment_info_grand_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2I(structure_info, 
+                                                                                                                            prepper_output_tuple[0], 
+                                                                                                                            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr, 
+                                                                                                                            containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr,
+                                                                                                                            do_not_convert_column_names_to_categorical = ["Pt contained bool"],
+                                                                                                                            float_dtype = np.float32,
+                                                                                                                            int_dtype = np.int32)
+
+
+
+    # Print profiling results
+    pr.disable()
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+    ps.print_stats()
+    print(s.getvalue())
+
+    # NEW METHODOLOGY FOR CONTAINMENT END
+
+
+    ## Compare to old method
+    print(containment_info_grand_pandas_dataframe_old.compare(containment_info_grand_pandas_dataframe))
+
+
+    if demonstrate_dil_optimization_points_inside_correctness_bool_3 == True:
+
+        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_grand_pandas_dataframe, 
+                    "Test pt X", 
+                    "Test pt Y", 
+                    "Test pt Z",
+                    "Pt clr R",
+                    "Pt clr G",
+                    "Pt clr B",
+                    additional_point_clouds=[specific_dil_structure['Interpolated structure point cloud dict']['Full with end caps']])
+
+
 
     ###
     indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -414,6 +545,7 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     
     # SHOW THE RESULTS OF THE CONTAINMENT TEST FOR EACH NORMAL DIST FOR EACH OPTIMIZATION LATTICE POINT?               
     if plot_each_normal_dist_containment_result_bool == True:
+        # For old cuspatial containment method
         for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
     
             # Extract the relevant tested points containment data 
@@ -432,6 +564,17 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
             plotting_funcs.plot_geometries(normal_dist_centered_on_cubic_lattice_pt_sp_structure_pcd, struct_interpolated_pts_pcd, label='Unknown')                                                                    
             del normal_dist_centered_on_cubic_lattice_pt_sp_structure_pcd
             del struct_interpolated_pts_pcd
+
+        # For new custom cuda containment method
+        for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
+            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_grand_pandas_dataframe, 
+                    "Test pt X", 
+                    "Test pt Y", 
+                    "Test pt Z",
+                    "Pt clr R",
+                    "Pt clr G",
+                    "Pt clr B",
+                    additional_point_clouds=[specific_dil_structure['Interpolated structure point cloud dict']['Full with end caps']])
 
         
     # PICK OUT THE OPTIMAL POSITION BY SELECTING THE HIGHEST PROPORTION OF POINTS CONTAINED! (If more than one, select one closest to DIL, if the optimal points are all equidistant to dil, then randomly select one)

@@ -751,8 +751,8 @@ def cuspatial_points_contained_generic_numpy_pandas(polygons_geoseries,
 
 
     # further set points that are outside z-range to False
-    pts_contained_below_max_zval = np.array((test_points_array[:,2] < non_bx_struct_max_zval))
-    pts_contained_above_min_zval = np.array((test_points_array[:,2] > non_bx_struct_min_zval))
+    pts_contained_below_max_zval = np.array((test_points_array[:,2] <= non_bx_struct_max_zval))
+    pts_contained_above_min_zval = np.array((test_points_array[:,2] >= non_bx_struct_min_zval))
     pts_contained_between_zvals = np.logical_and(pts_contained_below_max_zval,pts_contained_above_min_zval)
     contain_bool_arr = np.logical_and(contain_bool_arr_step_1,pts_contained_between_zvals)
     contain_color_arr = color_by_bool_array_numpy_fast(contain_bool_arr)

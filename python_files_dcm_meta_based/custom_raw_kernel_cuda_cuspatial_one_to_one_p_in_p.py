@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 import struct
 import pathlib
 from line_profiler import LineProfiler
+import copy
+import polygon_dilation_helpers_numpy
+import dataframe_builders
 
 
 
@@ -21,8 +24,8 @@ from line_profiler import LineProfiler
 ### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
 one_to_one_pip_kernel_advanced = cp.RawKernel(r'''
 extern "C" __global__
-void one_to_one_pip(const double* px, const double* py,
-                    const double* poly_x, const double* poly_y,
+void one_to_one_pip(const double* px, const double* py, const double* pz,
+                    const double* poly_x, const double* poly_y, const double* poly_z,
                     const long long int* poly_part_offsets,
                     const long long int* edge_offsets,  // ✅ Now explicitly long long int
                     int* results, int num_points, int poly_offsets_size,
@@ -50,6 +53,7 @@ void one_to_one_pip(const double* px, const double* py,
 
     double x = px[i];
     double y = py[i];
+    double z = pz[i];
 
     long long ring_start = poly_part_offsets[i];
     long long ring_end = poly_part_offsets[i + 1];
@@ -135,37 +139,54 @@ void one_to_one_pip(const double* px, const double* py,
 
                 long long k = j + 1;
 
-                double xj = poly_x[j], yj = poly_y[j];
-                double xk = poly_x[k], yk = poly_y[k];         
+                double xj = poly_x[j], yj = poly_y[j], zj = poly_z[j];
+                double xk = poly_x[k], yk = poly_y[k], zk = poly_z[k];
 
-                double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
-                                                
-                if (fabs(cross) < EPSILON_BOUNDARY) {
-                    printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
-                    
-                    double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
-                    double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
+                // Compute the edge vector and its length
+                double edge_dx = xk - xj;
+                double edge_dy = yk - yj;
+                double edge_length = sqrt(edge_dx * edge_dx + edge_dy * edge_dy);
 
-                    // Check if the point is on the line segment
-                    if (dot1 >= 0 && dot2 >= 0) {
-                        intersection_type = 2;
-                        point_on_boundary = true;
-                        inside = true;
-                        printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
-                    }
-                    else {
-                        printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
+                if (edge_length < EPSILON) {
+                    intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
+                    //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                    //log_position_temp += 7;  // ✅ Move to the next available slot for edges
+                    //continue;
+                }
+                else {       
+
+                    double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
+                                                    
+                    if (fabs(cross) < EPSILON_BOUNDARY) {
+                        printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
+                        
+                        double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
+                        double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
+
+                        // Check if the point is on the line segment
+                        if (dot1 >= 0 && dot2 >= 0) {
+                            intersection_type = 2;
+                            point_on_boundary = true;
+                            inside = true;
+                            printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
+                        }
+                        else {
+                            printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                        }
                     }
                 }
-                                                
+                                                                             
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
-                log_position_temp += 7;  // ✅ Move to the next available slot for edges
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(zj);                                                      
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(xk);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 7] = __double_as_longlong(yk);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 8] = __double_as_longlong(zk);
+                log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
             }
             // If on boundary, no need to check further                                      
             if (point_on_boundary) break;
@@ -222,58 +243,62 @@ void one_to_one_pip(const double* px, const double* py,
             // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
             if (edge_length < EPSILON) {
                 intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
-                log_position_temp += 7;  // ✅ Move to the next available slot for edges
-
-                continue;
+                //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                //log_position_temp += 7;  // ✅ Move to the next available slot for edges
+                //continue;
             }
+
+            else {                            
                                            
-            // Defines the scale of the edge for tolerance of denom
-            double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
-            double tol_edge = EPSILON * edge_scale;
-            //
+                // Defines the scale of the edge for tolerance of denom
+                double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
+                double tol_edge = EPSILON * edge_scale;
+                //
 
-            double denom = (xj - xk) * (dy) - (yj - yk) * (dx);
-                                              
-            //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-            //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
+                double denom = (xj - xk) * (dy) - (yj - yk) * (dx);
+                                                
+                //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
 
-                                              
-            
+                                                
+                
 
-            if (fabs(denom) > tol_edge) {  
-                double t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
-                double s_ray = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
+                if (fabs(denom) > tol_edge) {  
+                    double t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
+                    double s_ray = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
 
-                if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
-                    //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                    //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
-                    //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
-                    inside = !inside;
-                    intersection_count++;
-                    intersection_type = 1;
+                    if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
+                        //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                        //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                        //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                        inside = !inside;
+                        intersection_count++;
+                        intersection_type = 1;
+                    }
+                    else {
+                        //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                        //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                        //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                    }
                 }
                 else {
-                    //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                    //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
-                    //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
-                }
+                    printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                    valid_ray = false;
+                    break;                                
+                }                                  
             }
-            else {
-                printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
-                valid_ray = false;
-                break;                                
-            }                                  
-            
+                                              
             // Commenting out most of these except the intersection type, because added boundary check which writes all of these already
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
             log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
-            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
-            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
-            log_position_temp += 7;  // ✅ Move to the next available slot for edges
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(zj);                                                      
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(xk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 7] = __double_as_longlong(yk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 8] = __double_as_longlong(zk);
+            log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
 
         }
 
@@ -290,15 +315,16 @@ void one_to_one_pip(const double* px, const double* py,
     log_buffer[log_position + 2] = ring_end;
     log_buffer[log_position + 3] = __double_as_longlong(x);
     log_buffer[log_position + 4] = __double_as_longlong(y);
-    log_buffer[log_position + 5] = inside;
-    log_buffer[log_position + 6] = intersection_count;
-    log_buffer[log_position + 7] = attempt;
-    log_buffer[log_position + 8] = __double_as_longlong(angle);
-    log_buffer[log_position + 9] = __double_as_longlong(dx);
-    log_buffer[log_position + 10] = __double_as_longlong(dy);
-    log_buffer[log_position + 11] = num_edges;
-    log_buffer[log_position + 12] = edge_log_offset;  // ✅ Debugging: Log the offset
-    log_buffer[log_position + 13] = log_position;  
+    log_buffer[log_position + 5] = __double_as_longlong(z);               
+    log_buffer[log_position + 6] = inside;
+    log_buffer[log_position + 7] = intersection_count;
+    log_buffer[log_position + 8] = attempt;
+    log_buffer[log_position + 9] = __double_as_longlong(angle);
+    log_buffer[log_position + 10] = __double_as_longlong(dx);
+    log_buffer[log_position + 11] = __double_as_longlong(dy);
+    log_buffer[log_position + 12] = num_edges;
+    log_buffer[log_position + 13] = edge_log_offset;  // ✅ Debugging: Log the offset
+    log_buffer[log_position + 14] = log_position;  
                                               
     results[i] = inside ? 1 : 0;
 }
@@ -315,21 +341,23 @@ void one_to_one_pip(const double* px, const double* py,
 ### IMPORTANT NOTE: "one_to_one_pip_kernel_advanced_reparameterized_version" is a version of the kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays
 one_to_one_pip_kernel_advanced_reparameterized_version = cp.RawKernel(r'''
 extern "C" __global__
-void one_to_one_pip(const double* px, const double* py,
-                    const double* poly_x, const double* poly_y,
+void one_to_one_pip(const double* px, const double* py, const double* pz,
+                    const double* poly_x, const double* poly_y, const double* poly_z,
                     const long long int* poly_part_offsets,
                     const long long int* edge_offsets,  // ✅ Now explicitly long long int
                     int* results, int num_points, int poly_offsets_size,
                     long long int* log_buffer) {  // ✅ Now explicitly long long int
     
-    const int LOG_ENTRY_SIZE = 14;  // ✅ Increased to store debug info
+    const int LOG_ENTRY_SIZE = 15;  // ✅ Increased to store debug info
 
     long long int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i >= num_points) return;
 
+    int num_information_per_edge = 9;  // ✅ Number of information stored per edge                                                                  
+
     long long int edge_log_offset = edge_offsets[i];  // ✅ Now correctly stores large offsets
-    long long int log_position = i * LOG_ENTRY_SIZE + edge_log_offset * 7;
+    long long int log_position = i * LOG_ENTRY_SIZE + edge_log_offset * num_information_per_edge;
     //printf("Thread %lld: | Log Position: %lld | edge_log_offset: %lld\n", i, log_position, edge_log_offset);
                                                                              
     
@@ -344,6 +372,7 @@ void one_to_one_pip(const double* px, const double* py,
 
     double x = px[i];
     double y = py[i];
+    double z = pz[i];
 
     long long ring_start = poly_part_offsets[i];
     long long ring_end = poly_part_offsets[i + 1];
@@ -430,37 +459,54 @@ void one_to_one_pip(const double* px, const double* py,
 
                 long long k = j + 1;
 
-                double xj = poly_x[j], yj = poly_y[j];
-                double xk = poly_x[k], yk = poly_y[k];         
+                double xj = poly_x[j], yj = poly_y[j], zj = poly_z[j];
+                double xk = poly_x[k], yk = poly_y[k], zk = poly_z[k];
 
-                double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
-                                                
-                if (fabs(cross) < EPSILON_BOUNDARY) {
-                    printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
-                    
-                    double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
-                    double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
+                // Compute the edge vector and its length
+                double edge_dx = xk - xj;
+                double edge_dy = yk - yj;
+                double edge_length = sqrt(edge_dx * edge_dx + edge_dy * edge_dy);
 
-                    // Check if the point is on the line segment
-                    if (dot1 >= 0 && dot2 >= 0) {
-                        intersection_type = 2;
-                        point_on_boundary = true;
-                        inside = true;
-                        printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
-                    }
-                    else {
-                        printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
+                if (edge_length < EPSILON) {
+                    intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
+                    //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                    //log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
+                    //continue;
+                }
+                else {                                                               
+
+                    double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
+                                                    
+                    if (fabs(cross) < EPSILON_BOUNDARY) {
+                        printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
+                        
+                        double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
+                        double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
+
+                        // Check if the point is on the line segment
+                        if (dot1 >= 0 && dot2 >= 0) {
+                            intersection_type = 2;
+                            point_on_boundary = true;
+                            inside = true;
+                            printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
+                        }
+                        else {
+                            printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                        }
                     }
                 }
-                                                
+                                                                                                      
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 0] = j;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 1] = k;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
                 log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
-                log_position_temp += 7;  // ✅ Move to the next available slot for edges
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(zj);                                                      
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(xk);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 7] = __double_as_longlong(yk);
+                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 8] = __double_as_longlong(zk);
+                log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
             }
             // If on boundary, no need to check further                                      
             if (point_on_boundary) break;
@@ -504,8 +550,8 @@ void one_to_one_pip(const double* px, const double* py,
                                   
             long long k = j + 1;
 
-            double xj = poly_x[j], yj = poly_y[j];
-            double xk = poly_x[k], yk = poly_y[k];
+            double xj = poly_x[j], yj = poly_y[j], zj = poly_z[j];
+            double xk = poly_x[k], yk = poly_y[k], zk = poly_z[k];
                                                                       
             intersection_type = 0;
 
@@ -519,93 +565,89 @@ void one_to_one_pip(const double* px, const double* py,
             // If the edge is too short (degenerate), skip it (assume no intersection from this edge)
             if (edge_length < EPSILON) {
                 intersection_type = 3; // Set intersection type to degenerate (3), meaning we skipped this edge
-                log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
-                log_position_temp += 7;  // ✅ Move to the next available slot for edges
-
-                continue;
+                //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
+                //log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
+                //continue;
             }
-
-
-
-
-
-                                              
-            // Defines the scale of the edge for tolerance of denom
-            double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
-            double tol_edge = EPSILON * edge_scale;
-            
-                                                                      
-                                                              
-            double t_edge, s_ray;
-            double denom = (xj - xk) * dy - (yj - yk) * dx;                                                          
-            
-                                                                      
-            // Decide whether to use cross product method or reparameterization.
-            // If denom is larger than tol_edge, use the cross product method.
-            // If dx and dy differ by more than EPSILON_REPARAM (relative to the larger of the two),
-            // then use the dominant coordinate; otherwise, regenerate the ray.
-
-            if (fabs(denom) > tol_edge) {
+            else {
+                         
+                // Defines the scale of the edge for tolerance of denom
+                double edge_scale = fmax(fabs(xj - xk), fabs(yj - yk));
+                double tol_edge = EPSILON * edge_scale;
                 
-                //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);  
-                t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
-                s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;                                   
-            } else if (fabs(dx - dy) / fmax(fabs(dx), fabs(dy)) > EPSILON_REPARAM) {
-                if (fabs(dx) > fabs(dy)) {
-                    // Use x-coordinate reparameterization
-                    if (fabs(edge_dx) > EPSILON && fabs(dy) > EPSILON) {
-                        t_edge = (x - xj) / edge_dx;
-                        // Compute the intersection's y-coordinate using t_edge, then derive s_ray from y
-                        s_ray = ( (yj + t_edge * edge_dy) - y ) / dy;
-                    }
-                } else {
-                    // Use y-coordinate reparameterization
-                    if (fabs(edge_dy) > EPSILON && fabs(dy) > EPSILON) {
-                        t_edge = (y - yj) / edge_dy;
-                        // Compute the intersection's x-coordinate using t_edge, then derive s_ray from x
-                        s_ray = ( (xj + t_edge * edge_dx) - x ) / dx;
-                    }
-                }
-            } else {
-                printf("Denom is zero, and reparameterization methods invalid on attempt: %d, (Thread: %lld)\n", attempt, i);
-                valid_ray = false;
-                break;
-            }
+                                                                        
+                                                                
+                double t_edge, s_ray;
+                double denom = (xj - xk) * dy - (yj - yk) * dx;                                                          
+                
+                                                                        
+                // Decide whether to use cross product method or reparameterization.
+                // If denom is larger than tol_edge, use the cross product method.
+                // If dx and dy differ by more than EPSILON_REPARAM (relative to the larger of the two),
+                // then use the dominant coordinate; otherwise, regenerate the ray.
 
-            /*                                                       
-            // If reparameterization wasn’t performed (either because dx and dy are too close
-            // or because the chosen edge component was too small), fall back to the original method.
-            if (!computed) {
-                double denom = (xj - xk) * dy - (yj - yk) * dx;
-                //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
                 if (fabs(denom) > tol_edge) {
+                    
+                    //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);  
                     t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
-                    s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
+                    s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;                                   
+                } else if (fabs(dx - dy) / fmax(fabs(dx), fabs(dy)) > EPSILON_REPARAM) {
+                    if (fabs(dx) > fabs(dy)) {
+                        // Use x-coordinate reparameterization
+                        if (fabs(edge_dx) > EPSILON && fabs(dy) > EPSILON) {
+                            t_edge = (x - xj) / edge_dx;
+                            // Compute the intersection's y-coordinate using t_edge, then derive s_ray from y
+                            s_ray = ( (yj + t_edge * edge_dy) - y ) / dy;
+                        }
+                    } else {
+                        // Use y-coordinate reparameterization
+                        if (fabs(edge_dy) > EPSILON && fabs(dy) > EPSILON) {
+                            t_edge = (y - yj) / edge_dy;
+                            // Compute the intersection's x-coordinate using t_edge, then derive s_ray from x
+                            s_ray = ( (xj + t_edge * edge_dx) - x ) / dx;
+                        }
+                    }
                 } else {
-                    printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                    printf("Denom is zero, and reparameterization methods invalid on attempt: %d, (Thread: %lld)\n", attempt, i);
                     valid_ray = false;
                     break;
                 }
-            }
-            */
 
-            // Now, if t_edge and s_ray fall within acceptable ranges, count this as an intersection.
-            if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
-                //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
-                //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
-                inside = !inside;
-                intersection_count++;
-                intersection_type = 1;
-            }
-            else {
-                //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
-                //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
-                //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
-            }
+                /*                                                       
+                // If reparameterization wasn’t performed (either because dx and dy are too close
+                // or because the chosen edge component was too small), fall back to the original method.
+                if (!computed) {
+                    double denom = (xj - xk) * dy - (yj - yk) * dx;
+                    //printf("Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length);
+                    if (fabs(denom) > tol_edge) {
+                        t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
+                        s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
+                    } else {
+                        printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                        valid_ray = false;
+                        break;
+                    }
+                }
+                */
 
+                // Now, if t_edge and s_ray fall within acceptable ranges, count this as an intersection.
+                if (t_edge >= 0 && t_edge <= 1 && s_ray > 0 && s_ray <= ray_length) {
+                    //printf("🔥1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("🔥2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                    //printf("🔥3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | Intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                    inside = !inside;
+                    intersection_count++;
+                    intersection_type = 1;
+                }
+                else {
+                    //printf("🖤1 Thread: %lld | j: %lld | k: %lld | (x_t, y_t): (%.2f, %.2f) | (xj, yj): (%.2f, %.2f) | (xk, yk): (%.2f, %.2f)\n", i, j, k, x ,y , xj, yj, xk, yk);
+                    //printf("🖤2 Thread: %lld | j: %lld | k: %lld | dx: %f | dy: %f | denom: %f | ray_length: %f\n", i, j, k, dx, dy, denom, ray_length); 
+                    //printf("🖤3 Thread: %lld | j: %lld | k: %lld | attempt: %d | t_edge: %f | s_ray: %f | No intersection found \n", i, j, k, attempt, t_edge, s_ray);
+                }
+            }
+                                                                      
             // Log the intersection type (and other data if needed)
                                                                       
             // Commenting out most of these except the intersection type, because added boundary check which writes all of these already
@@ -614,9 +656,11 @@ void one_to_one_pip(const double* px, const double* py,
             log_buffer[log_position_temp + LOG_ENTRY_SIZE + 2] = intersection_type;
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 3] = __double_as_longlong(xj);
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
-            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
-            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
-            log_position_temp += 7;  // ✅ Move to the next available slot for edges
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(zj);                                                      
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(xk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 7] = __double_as_longlong(yk);
+            //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 8] = __double_as_longlong(zk);
+            log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
 
 
                                               
@@ -658,7 +702,7 @@ void one_to_one_pip(const double* px, const double* py,
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 4] = __double_as_longlong(yj);
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 5] = __double_as_longlong(xk);
             //log_buffer[log_position_temp + LOG_ENTRY_SIZE + 6] = __double_as_longlong(yk);
-            log_position_temp += 7;  // ✅ Move to the next available slot for edges
+            log_position_temp += num_information_per_edge;  // ✅ Move to the next available slot for edges
             
             */
 
@@ -678,15 +722,16 @@ void one_to_one_pip(const double* px, const double* py,
     log_buffer[log_position + 2] = ring_end;
     log_buffer[log_position + 3] = __double_as_longlong(x);
     log_buffer[log_position + 4] = __double_as_longlong(y);
-    log_buffer[log_position + 5] = inside;
-    log_buffer[log_position + 6] = intersection_count;
-    log_buffer[log_position + 7] = attempt;
-    log_buffer[log_position + 8] = __double_as_longlong(angle);
-    log_buffer[log_position + 9] = __double_as_longlong(dx);
-    log_buffer[log_position + 10] = __double_as_longlong(dy);
-    log_buffer[log_position + 11] = num_edges;
-    log_buffer[log_position + 12] = edge_log_offset;  // ✅ Debugging: Log the offset
-    log_buffer[log_position + 13] = log_position;  
+    log_buffer[log_position + 5] = __double_as_longlong(z);
+    log_buffer[log_position + 6] = inside;
+    log_buffer[log_position + 7] = intersection_count;
+    log_buffer[log_position + 8] = attempt;
+    log_buffer[log_position + 9] = __double_as_longlong(angle);
+    log_buffer[log_position + 10] = __double_as_longlong(dx);
+    log_buffer[log_position + 11] = __double_as_longlong(dy);
+    log_buffer[log_position + 12] = num_edges;
+    log_buffer[log_position + 13] = edge_log_offset;  // ✅ Debugging: Log the offset
+    log_buffer[log_position + 14] = log_position;  
                                               
     results[i] = inside ? 1 : 0;
 }
@@ -717,34 +762,57 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
 
     points_x = points[:, 0]
     points_y = points[:, 1]
+    points_z = points[:, 2]
     points_x = cp.ascontiguousarray(points_x, dtype=cp.float64)
     points_y = cp.ascontiguousarray(points_y, dtype=cp.float64)
+    points_z = cp.ascontiguousarray(points_z, dtype=cp.float64)
 
     poly_x = poly_points[:, 0]
     poly_y = poly_points[:, 1]
+    poly_z = poly_points[:, 2]
     poly_x = cp.ascontiguousarray(poly_x, dtype=cp.float64)
     poly_y = cp.ascontiguousarray(poly_y, dtype=cp.float64)
+    poly_z = cp.ascontiguousarray(poly_z, dtype=cp.float64)
 
+
+    # Faster to compute on CPU using NumPy then convert back to CuPy
+    """
     poly_part_offsets = cp.zeros(poly_indices.shape[0] + 1, dtype=cp.int64)
     poly_part_offsets[1:] = cp.cumsum(poly_indices[:, 1] - poly_indices[:, 0]).astype(cp.int64)
     #poly_part_offsets = cp.ascontiguousarray(poly_part_offsets, dtype=cp.int64)
+    """
+
+    # Compute cumsum on CPU using NumPy
+    poly_part_offsets_np = np.cumsum(np.hstack(([0], (poly_indices.get()[:, 1] - poly_indices.get()[:, 0]))), dtype=np.int64)
+
+    # Convert back to CuPy
+    poly_part_offsets = cp.asarray(poly_part_offsets_np)
+    poly_part_offsets = cp.ascontiguousarray(poly_part_offsets, dtype=cp.int64)
+
+    """
+    print(cp.array_equal(poly_part_offsets, poly_part_offsets_1))  # True
+
+    if cp.array_equal(poly_part_offsets, poly_part_offsets_1) == False:
+        input("Enter to continue")
+    """
 
     poly_offsets_size = cp.int32(poly_part_offsets.shape[0])
 
     results = cp.zeros(num_points, dtype=cp.int32)
     results = cp.ascontiguousarray(results, dtype=cp.int32)
 
-    log_entry_size = 14  # ✅ Matches CUDA kernel
+    log_entry_size = 15  # ✅ Number of static log information stored per thread prior to edge info. IMPORTANT: MUST MATCH KERNEL DEFINITION
+    num_information_per_edge = 9 # ✅ Number of information stored per edge. IMPORTANT: MUST MATCH KERNEL DEFINITION
 
     num_edges_per_polygon = (poly_indices[:, 1] - poly_indices[:, 0]) - 1  
-    edge_offsets = cp.zeros(num_points.item() + 1, dtype=cp.int64) ## which is faster?
+    #edge_offsets = cp.zeros(num_points.item() + 1, dtype=cp.int64) ## which is faster?
     edge_offsets = cp.zeros(num_points + 1, dtype=cp.int64)  ## which is faster?  
 
     edge_offsets[1:] = cp.cumsum(num_edges_per_polygon).astype(cp.int64)
     edge_offsets = cp.ascontiguousarray(edge_offsets, dtype=cp.int64)  
 
-    total_edge_entries = edge_offsets[-1].item() * 7 ## which is faster?
-    total_edge_entries = int(edge_offsets[-1].get()) * 7 ## which is faster?
+    #total_edge_entries = edge_offsets[-1].item() * num_information_per_edge ## which is faster?
+    total_edge_entries = int(edge_offsets[-1].get()) * num_information_per_edge ## which is faster?
 
     log_buffer = cp.zeros(num_points.item() * log_entry_size + total_edge_entries, dtype=cp.int64)
     log_buffer = cp.ascontiguousarray(log_buffer, dtype=cp.int64)
@@ -757,12 +825,12 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
     if kernel_type == "one_to_one_pip_kernel_advanced":
         one_to_one_pip_kernel_advanced(
             (grid_size,), (block_size,),
-            (points_x, points_y, poly_x, poly_y, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
+            (points_x, points_y, points_z, poly_x, poly_y, poly_z, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
         )
     elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version":
         one_to_one_pip_kernel_advanced_reparameterized_version(
             (grid_size,), (block_size,),
-            (points_x, points_y, poly_x, poly_y, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
+            (points_x, points_y, points_z, poly_x, poly_y, poly_z, poly_part_offsets, edge_offsets, results, num_points, poly_offsets_size, log_buffer)
         )
 
     if log_file_name is not None:
@@ -780,8 +848,8 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
 
             for i in range(num_points.item()):
                 # ✅ Compute `log_position` exactly as in the CUDA kernel
-                #edge_log_offset = edge_offsets[i].item() * 7 ## which is faster?
-                edge_log_offset = edge_offsets_host[i] * 7 ## which is faster? ... This one is slightly faster
+                #edge_log_offset = edge_offsets[i].item() * num_information_per_edge ## which is faster?
+                edge_log_offset = edge_offsets_host[i] * num_information_per_edge ## which is faster? ... This one is slightly faster
 
                 log_position = i * log_entry_size + edge_log_offset  # ✅ Now perfectly aligned with kernel
 
@@ -794,26 +862,27 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
                 ring_end = log[2]
                 x_coord = struct.unpack('d', struct.pack('q', log[3]))[0]
                 y_coord = struct.unpack('d', struct.pack('q', log[4]))[0]
-                inside_flag = log[5]
-                intersection_count = log[6]
-                retries = log[7]
-                angle = struct.unpack('d', struct.pack('q', log[8]))[0]
-                dx = struct.unpack('d', struct.pack('q', log[9]))[0]
-                dy = struct.unpack('d', struct.pack('q', log[10]))[0]
-                num_edges = log[11]
-                log_offset_debug = log[12]
-                log_position_debug = log[13]
+                z_coord = struct.unpack('d', struct.pack('q', log[5]))[0]
+                inside_flag = log[6]
+                intersection_count = log[7]
+                retries = log[8]
+                angle = struct.unpack('d', struct.pack('q', log[9]))[0]
+                dx = struct.unpack('d', struct.pack('q', log[10]))[0]
+                dy = struct.unpack('d', struct.pack('q', log[11]))[0]
+                num_edges = log[12]
+                log_offset_debug = log[13]
+                log_position_debug = log[14]
 
                 # ✅ Extract checked edges using `edge_offsets[i]`
                 if include_edges_in_log == True:
                     edge_log_start = static_meta_end
-                    edge_log_end = edge_log_start + num_edges_per_polygon[i].item() * 7
-                    checked_edges = logs_host[edge_log_start:edge_log_end].reshape(-1, 7)
+                    edge_log_end = edge_log_start + num_edges_per_polygon[i].item() * num_information_per_edge
+                    checked_edges = logs_host[edge_log_start:edge_log_end].reshape(-1, num_information_per_edge)
                     
                     """
-                    checked_edges[:, 3:7] = checked_edges[:, 3:7].view(np.float64)
+                    checked_edges[:, 3:num_information_per_edge] = checked_edges[:, 3:num_information_per_edge].view(np.float64)
                     # Optionally round:
-                    checked_edges[:, 3:7] = np.around(checked_edges[:, 3:7], decimals=2)
+                    checked_edges[:, 3:num_information_per_edge] = np.around(checked_edges[:, 3:num_information_per_edge], decimals=2)
 
                     checked_edges_str = np.array2string(checked_edges, separator=', ')
 
@@ -830,20 +899,22 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
                         ]
                     """
 
-                    checked_edges_list_converted_long_to_double = format_edges_for_point(checked_edges)
+                    double_info_start_index = 3 
+                    checked_edges_list_converted_long_to_double = format_edges_for_point_ver2(checked_edges, double_info_start_index, num_information_per_edge)
+
 
                     # ✅ Write correct logs to the file
-                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.4f}, {y_coord:.4f}) -> "
+                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.2f}, {y_coord:.2f}, {z_coord:.2f}) -> "
                             f"ring_start={ring_start}, ring_end={ring_end}, num_edges={num_edges}, Inside={inside_flag}, "
-                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
-                            f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}, "
-                            f"Checked Edges={checked_edges_list_converted_long_to_double}\n")
+                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.3f}, dy={dy:.3f}, "
+                            f"angle={angle:.3f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}, "
+                            f"Checked Edges (j,k,intersection type, edge_xj,yj,zj, edge_xk,yk,zk)={checked_edges_list_converted_long_to_double}\n")
                 else:
 
-                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.4f}, {y_coord:.4f}) -> "
+                    f.write(f"[Thread {thread_id}] ✅ Checked Point ({x_coord:.2f}, {y_coord:.2f}, {z_coord:.2f}) -> "
                             f"ring_start={ring_start}, ring_end={ring_end}, num_edges={num_edges}, Inside={inside_flag}, "
-                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.4f}, dy={dy:.4f}, "
-                            f"angle={angle:.4f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
+                            f"Intersections={intersection_count}, Retries={retries}, dx={dx:.3f}, dy={dy:.3f}, "
+                            f"angle={angle:.3f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
 
     if return_array_as == "cupy":
         return results
@@ -853,19 +924,293 @@ def one_to_one_point_in_polygon_cupy_arr_version(points, poly_points, poly_indic
 
 
 
-
-
-def format_edges_for_point(checked_edges):
-    # Vectorized conversion:
+def format_edges_for_point_upcast_ver(checked_edges, double_info_start_index, num_information_per_edge, decimals=3):
+    # Create a copy to avoid modifying the original array
     conv = checked_edges.copy()
-    conv[:, 3:7] = conv[:, 3:7].view(np.float64)
-    conv[:, 3:7] = np.around(conv[:, 3:7], decimals=2)
-    # Now convert each row into a string.
-    # Because the number of edges per point is typically small, a list comprehension is efficient.
-    #row_strings = [", ".join(map(str, row)) for row in conv]
     
+    # Preserve the first columns as integers
+    int_cols = conv[:, :double_info_start_index].astype(np.int64)  # Integer columns
+    
+    # Convert only the floating-point columns
+    int_view = conv[:, double_info_start_index:num_information_per_edge].astype(np.int64)
+    float_view = np.frombuffer(int_view.tobytes(), dtype=np.float64).reshape(int_view.shape)
+    
+    # Apply rounding to floating-point values
+    float_view = np.around(float_view, decimals=decimals)
+    
+    # Combine integer and float parts back together
+    combined = np.hstack([int_cols, float_view])  # Keep int columns as int, float columns as float
+
+    # Convert each row into a formatted string
+    row_strings = [
+        ", ".join(map(str, row)) for row in combined  # Vectorized conversion to string
+    ]
+
     # Join all rows with the separator " | "
-    return conv.tolist()
+    return " | ".join(row_strings)
+
+
+# This function is the quickest
+def format_edges_for_point_ver2(checked_edges, double_info_start_index, num_information_per_edge, decimals=3):
+    # Convert the first columns to integers
+    int_cols = checked_edges[:, :double_info_start_index].astype(np.int64)
+    
+    # Convert the remaining columns from int64 to float64
+    int_view = checked_edges[:, double_info_start_index:num_information_per_edge].astype(np.int64)
+    float_view = np.frombuffer(int_view.tobytes(), dtype=np.float64).reshape(int_view.shape)
+    
+    # Apply rounding
+    float_view = np.around(float_view, decimals=decimals)
+    
+    # Efficiently format each row while keeping integer and float types
+    row_strings = []
+    for int_part, float_part in zip(int_cols, float_view):
+        int_str = ", ".join(map(str, int_part))  # Convert integer columns to string
+        float_str = ", ".join(f"{val:.{decimals}f}" for val in float_part)  # Convert float columns with formatting
+        row_strings.append(f"{int_str}, {float_str}")  # Combine both parts
+
+    # Join all rows with separator
+    return " | ".join(row_strings)
+
+
+
+
+def format_edges_for_point_optimized(checked_edges, double_info_start_index, num_information_per_edge, decimals=3):
+    """
+    Efficiently formats the first columns as integers and the last columns as floats.
+
+    Parameters:
+    - checked_edges: NumPy array where first `double_info_start_index` columns are integers
+                     and remaining columns are float values (stored as int64 and reinterpreted).
+    - double_info_start_index: Number of columns that should be formatted as integers.
+    - decimals: Number of decimal places for float formatting.
+
+    Returns:
+    - A formatted string where each row is separated by " | " and columns are comma-separated.
+    """
+
+    # Step 1: Extract integer and float columns
+    int_cols = checked_edges[:, :double_info_start_index].astype(np.int64)
+    float_int_view = checked_edges[:, double_info_start_index:num_information_per_edge].astype(np.int64)
+
+    # Step 2: Convert integer part to strings efficiently
+    int_str_arr = np.char.mod('%d', int_cols)  # Vectorized integer conversion
+
+    # Step 3: Convert float values from int64 bit representation
+    float_view = np.frombuffer(float_int_view.tobytes(), dtype=np.float64).reshape(float_int_view.shape)
+
+    # Step 4: Round floats and convert them efficiently
+    float_view = np.around(float_view, decimals=decimals)
+    float_str_arr = np.char.mod(f"%.{decimals}f", float_view)  # Vectorized float formatting
+
+    # Step 5: Stack the integer and float string arrays column-wise
+    combined_str_arr = np.hstack((int_str_arr, float_str_arr))  # ✅ No broadcasting issues
+
+    # Step 6: Join columns within each row
+    row_strings = np.apply_along_axis(lambda row: ", ".join(row), axis=1, arr=combined_str_arr)
+
+    # Step 7: Join all rows with separator
+    return " | ".join(row_strings)
+
+
+
+
+def format_edges_for_point_optimized_ver2(checked_edges, double_info_start_index, decimals=3):
+    """
+    Efficiently formats the first columns as integers and the last columns as properly rounded floats.
+
+    Parameters:
+    - checked_edges: NumPy array where first `double_info_start_index` columns are integers
+                     and remaining columns are float values (stored as int64 and reinterpreted).
+    - double_info_start_index: Number of columns that should be formatted as integers.
+    - decimals: Number of decimal places for float formatting.
+
+    Returns:
+    - A formatted string where each row is separated by " | " and columns are comma-separated.
+    """
+
+    # Step 1: Extract integer and float columns
+    int_cols = checked_edges[:, :double_info_start_index].astype(np.int64)
+    float_int_view = checked_edges[:, double_info_start_index:].astype(np.int64)
+
+    # Step 2: Convert integer part to strings efficiently
+    int_str_arr = np.char.mod('%d', int_cols)  # Vectorized integer conversion
+
+    # Step 3: Convert float values from int64 representation
+    float_view = np.frombuffer(float_int_view.tobytes(), dtype=np.float64).reshape(float_int_view.shape)
+
+    # Step 4: Round the floats (ensuring proper decimal precision)
+    float_view = np.round(float_view, decimals=decimals)
+
+    # Step 5: Convert rounded floats **explicitly to strings with forced formatting**
+    float_format = f"%.{decimals}f"
+    float_str_arr = np.core.defchararray.mod(float_format, float_view)  # ✅ Forces correct rounding in output
+
+    # Step 6: Stack the integer and float string arrays column-wise
+    combined_str_arr = np.hstack((int_str_arr, float_str_arr))  # ✅ No broadcasting issues
+
+    # Step 7: Join columns within each row
+    row_strings = np.apply_along_axis(lambda row: ", ".join(row), axis=1, arr=combined_str_arr)
+
+    # Step 8: Join all rows with separator
+    return " | ".join(row_strings)
+
+
+
+
+def custom_point_containment_mother_function(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+                                            points_to_test_3d_arr_or_list_of_2d_arrays,
+                                            test_struct_to_relative_struct_1d_mapping_array,
+                                            constant_z_slice_polygons_handler_option = 'auto-close-if-open',
+                                            remove_consecutive_duplicate_points_in_polygons = False,
+                                            log_sub_dirs_list = [],
+                                            log_file_name = "cuda_log.txt",
+                                            include_edges_in_log = False,
+                                            kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version"):
+
+    prepper_output_tuple = test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+                                                          points_to_test_3d_arr_or_list_of_2d_arrays,
+                                                          test_struct_to_relative_struct_1d_mapping_array,
+                                                          constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                          remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons)
+
+    if prepper_output_tuple[0].ndim == 2:
+        result_cp_arr = test_points_against_polygons_cupy_2d_arr_version(prepper_output_tuple[0], 
+                                 prepper_output_tuple[3],
+                                 prepper_output_tuple[4], 
+                                 prepper_output_tuple[1], 
+                                 prepper_output_tuple[2],
+                                 log_sub_dirs_list = log_sub_dirs_list,
+                                 log_file_name=log_file_name,
+                                 include_edges_in_log = include_edges_in_log,
+                                 kernel_type=kernel_type)
+        
+        return result_cp_arr, prepper_output_tuple
+    
+    elif prepper_output_tuple[0].ndim == 3:
+        result_cp_arr = test_points_against_polygons_cupy_3d_arr_version(prepper_output_tuple[0], 
+                                 points_to_test_3d_arr_or_list_of_2d_arrays, 
+                                 prepper_output_tuple[1], 
+                                 prepper_output_tuple[2],
+                                 log_sub_dirs_list = log_sub_dirs_list,
+                                 log_file_name=log_file_name,
+                                 include_edges_in_log = include_edges_in_log,
+                                 kernel_type=kernel_type)
+        
+        return result_cp_arr, prepper_output_tuple
+    else:
+        raise ValueError("The nearest zslice index and values array must be either a 2d or 3d array!")
+
+
+
+def test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+                                                          points_to_test_3d_arr_or_list_of_2d_arrays,
+                                                          test_struct_to_relative_struct_1d_mapping_array,
+                                                          constant_z_slice_polygons_handler_option = 'auto-close-if-open',
+                                                          remove_consecutive_duplicate_points_in_polygons = False):
+    """
+    This function prepares the data for the custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function.
+    It takes the list of relative structures containing the constant z slices arrays and the points to test, and then it closes the polygons if they are not closed, and then converts the structures to 2d arrays with accompanying indices arrays.
+    It then extracts the z values of all slices of every relative structure and finds the nearest z slices for every point.
+
+    Parameters:
+    - list_of_relative_structures_containting_list_of_constant_zslices_arrays: A list of relative structures where each relative structure is a list of constant z slices arrays.
+    - points_to_test_3d_arr_or_list_of_2d_arrays: Either a list of 2d arrays or a 3d array where the first dimension (or element of the list) are constant 2 dimensional arrays assoicated with each structure to test against in the relative structures list.
+    - test_struct_to_relative_struct_2d_mapping_array: A 1d array of length the number of test objects, so either same as the number of slices of the 3d test array or same number of elements of the list of 2d arrays. Each element indicates which test structure (indicated by the index of the array itself) should be tested against which relative structure (indicated by the value stored at that index). This is used to map the test structures to test against the correct relative structure. Therefore the number of relative structures need not be the same as the number of test structures.
+    - constant_z_slice_polygons_handler_option: Note that for the test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function that this function feeds, all polygons must be closed. The option for handling the constant z slice polygons. The default is 'auto-close-if-open' which closes the polygons if they are not closed. The other options are 'close-all' which closes every single polygon, and None which makes no changes to the polygons.
+    
+    Returns:
+    - nearest_zslice_index_and_values_3d_arr or nearest_zslice_index_and_values_2d_arr: Either a 3d array Shape: (num_test_structures, num_test_points_per, 4) or a 2d array Shape: (total num test points, 4) indicating for each test point the assoicated relative structure index, the nearest z index on that structure, the nearest z val on that structure and a flag whether the point lies outside the z extent of the relative structure.
+    - all_structures_list_of_2d_arr: A list of 2d arrays where each 2d array is a structure with accompanying indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
+    - all_structures_slices_indices_list: A list of indices arrays where each array is a structure with accompanying indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
+    - points_to_test_2d_arr: only output if the input test points were a list of 2d arrays
+    - points_to_test_indices_arr: only output if the input test points were a list of 2d arrays, accompnaies points_to_test_2d_arr
+    """
+
+    
+    ### Step 0: Convert the points to test to a 2d array with accompanying 2d indices array, each row is a point with two indices indicating the start_index and end_index+1 of that point (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
+    if isinstance(points_to_test_3d_arr_or_list_of_2d_arrays, list):
+        points_to_test_2d_arr, points_to_test_indices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(points_to_test_3d_arr_or_list_of_2d_arrays)
+
+
+
+    num_relative_structures = len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+
+
+    ### Step 1: Remove consecutive duplicate points
+    if remove_consecutive_duplicate_points_in_polygons == True:
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = [None]*num_relative_structures
+        for relative_structure_index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
+            relative_structure_zslices_list_no_consecutive_duplicates = [None]*len(relative_structure_zslices_list)
+            for sp_rel_struct_zslice_index, zslice_arr in enumerate(relative_structure_zslices_list):
+                # Remove consecutive duplicate points
+                relative_structure_zslices_list_no_consecutive_duplicates[sp_rel_struct_zslice_index] = polygon_dilation_helpers_numpy.remove_consecutive_duplicate_points_numpy(zslice_arr)
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates[relative_structure_index] = relative_structure_zslices_list_no_consecutive_duplicates
+    else:
+        # Make no changes
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = copy.deepcopy(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+
+    
+
+    ### Step 2: Close all constant slice polygons in every structure
+    if constant_z_slice_polygons_handler_option == 'auto-close-if-open':
+        # Check whether each relative structure has closed polygons, and close them if not
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None]*num_relative_structures
+        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
+            relative_structure_zslices_list_closed_polygons = [None]*len(relative_structure_zslices_list)
+            for i, zslice_arr in enumerate(relative_structure_zslices_list):
+                # Check if the first and last points are the same
+                if not np.all(zslice_arr[0] == zslice_arr[-1]):
+                    # Append the first point to the end of the array
+                    relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+                else:
+                    # Make no changes if detected to be closed
+                    relative_structure_zslices_list_closed_polygons[i] = zslice_arr
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
+
+    elif constant_z_slice_polygons_handler_option == 'close-all':
+        # Close every polygon
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None]*num_relative_structures
+        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
+            relative_structure_zslices_list_closed_polygons = [None]*len(relative_structure_zslices_list)
+            for i, zslice_arr in enumerate(relative_structure_zslices_list):
+                # append the first point to the end of the array
+                relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
+    elif constant_z_slice_polygons_handler_option == None:
+        # Make no changes
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = list_of_relative_structures_containting_list_of_constant_zslices_arrays
+
+    
+
+    # Step 3: Convert every structure to a 2d array with accompanying indices array
+    all_structures_list_of_2d_arr = [None]*num_relative_structures
+    all_structures_slices_indices_list = [None]*num_relative_structures
+    for index, relative_structure_zslices_list_closed_polygons in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons):
+        # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
+        relative_structure_closed_polygons_2d_arr, relative_structure_closed_polygons_indices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(relative_structure_zslices_list_closed_polygons)
+        all_structures_list_of_2d_arr[index] = relative_structure_closed_polygons_2d_arr
+        all_structures_slices_indices_list[index] = relative_structure_closed_polygons_indices_arr
+    
+
+    # Step 4: Get the z values of all slices of every relative structure
+    relative_structures_list_of_zvals_1d_arrays = polygon_dilation_helpers_numpy.extract_constant_z_values_arr_version(all_structures_list_of_2d_arr, all_structures_slices_indices_list)
+
+
+    if isinstance(points_to_test_3d_arr_or_list_of_2d_arrays, list):
+        # Step 5: Find the nearest z slices for every point (list of 2d arrays input)    
+        nearest_zslice_index_and_values_2d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_2d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_2d_arr, points_to_test_indices_arr, test_struct_to_relative_struct_1d_mapping_array)
+        
+        return nearest_zslice_index_and_values_2d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, points_to_test_2d_arr, points_to_test_indices_arr
+    else:
+        # Step 5: Find the nearest z slices for every point (3d array input)   
+        nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
+        
+        return nearest_zslice_index_and_values_3d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list
+    
 
 
 
@@ -875,48 +1220,164 @@ def format_edges_for_point(checked_edges):
 
 
 
-
-
-
-
-
-
-def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
-                                 combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff, 
-                                 nominal_and_dilated_structures_list_of_2d_arr, 
-                                 nominal_and_dilated_structures_slices_indices_list,
+def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_values_3d_arr, 
+                                 points_to_test_3d_arr, 
+                                 all_structures_list_of_2d_arr, 
+                                 all_structures_slices_indices_list,
                                  log_sub_dirs_list = [],
                                  log_file_name="cuda_log.txt",
                                  include_edges_in_log = False,
                                  kernel_type="one_to_one_pip_kernel_advanced"):
     """
-    Test points against polygons using CuPy arrays directly.
+    Important! This verion is to handle test structures with EQUAL number of points per test structure. 
+
+    Test points against polygons using CuPy arrays directly. 
     
     Parameters:
-    - grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array: Array of the nearest z values and their indices for each biopsy point.
-    - combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff: 3D array of biopsy points for all trials.
-    - nominal_and_dilated_structures_list_of_2d_arr: List of (N, 3) arrays for each trial, representing the dilated structures.
-    - nominal_and_dilated_structures_slices_indices_list: List of indices indicating the start and end indices of each z slice for every dilated structure (trial).
+    - nearest_zslice_index_and_values_3d_arr: Array of the relative structure index for that test structure, nearest z indices and z values for each test point (row), as well as a flag indicating if point is outside z extent. Shape is (num_test_structures, num_points_per_trial, 4). 
+    - points_to_test_3d_arr: 3D array of test structures. Shape is (num_test_structures, num_points_per_structure (all equal), 3).
+    - all_structures_list_of_2d_arr: List (num_trials is the number of elements in the list), each element is an (N_i, 3) array for each trial (i), where N_i is the number of points (3-element row vectors) representing the structure associated with trial (i).
+    - all_structures_slices_indices_list: List (num_trials is the number of elements in the list), each element is an (Z_i, 2) array for each trial (i), where Z_i is the number of constant plane slices of the structure, and each row of that array is the start_index and end_index+1 (done so for easy python slicing) describing how to access a constant plane slice of the assoicated (N_i, 3) of the above (nominal_and_dilated_structures_list_of_2d_arr) list elements.
     - log_sub_dirs_list: List of subdirectories for the log file.
     - log_file_name: Name of the log file to write the debug information. If None, no log file is written to file. Important, the log file writing is quite slow, so turning off logging should be considered for performance.
     - include_edges_in_log: If True, the log file will include the edges checked for each point. (slower)
     - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
     Returns:
-    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon. Shape of the output array is (num_trials, num_points_per_trial) full of True/False values.
     """
-    num_trials = grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array.shape[0]
-    num_points_per_trial = grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array.shape[1]
+    num_test_structures = nearest_zslice_index_and_values_3d_arr.shape[0]
+    num_points_in_every_test_structure = nearest_zslice_index_and_values_3d_arr.shape[1]
     
     # Initialize an array to store the results
-    result_cp_arr = cp.zeros((num_trials, num_points_per_trial), dtype=cp.bool_)
+    result_cp_arr = cp.zeros((num_test_structures, num_points_in_every_test_structure), dtype=cp.bool_)
     
     # Flatten the input arrays for easier processing
-    flat_indices = grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array[:, :, 1].flatten()
-    flat_points = combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff[:, :, :2].reshape(-1, 2)
+    flat_points = points_to_test_3d_arr[:, :, :3].reshape(-1, 3)
     
-    # Filter out NaN indices
-    valid_mask = ~np.isnan(flat_indices)
-    #valid_indices = flat_indices[valid_mask].astype(int)
+    # Filter out invalid points using the flag in column 3 (1 = out of bounds, 0 = valid)
+    valid_mask = nearest_zslice_index_and_values_3d_arr[:, :, 3].flatten() == 0
+    
+    # Get the valid points
+    valid_points = flat_points[valid_mask]
+    
+    # Create CuPy arrays for the points
+    valid_points_cp_arr = cp.array(valid_points)
+    
+    # This method is slightly slower
+    """
+    st = time.time()
+    # Create CuPy arrays for the polygons and indices
+    poly_points = []
+    poly_indices = []
+    current_index = 0
+
+    # Precompute the necessary values outside the loop
+    valid_indices = np.where(valid_mask)[0]
+    valid_points_nearest_zslice_index_and_values_3d_arr = nearest_zslice_index_and_values_3d_arr.reshape(-1, 3)[valid_indices]
+
+    for nearest_zslice_index_and_values in valid_points_nearest_zslice_index_and_values_3d_arr:
+        relative_structure_index = nearest_zslice_index_and_values[0].astype(int)
+        nearest_zslice_index = nearest_zslice_index_and_values[1].astype(int)
+        start_idx, end_idx = all_structures_slices_indices_list[relative_structure_index][nearest_zslice_index]
+        polygon_points = all_structures_list_of_2d_arr[relative_structure_index][start_idx:end_idx, :2]
+        poly_points.append(polygon_points)
+        poly_indices.append([current_index, current_index + len(polygon_points)])
+        current_index += len(polygon_points)
+    
+    et = time.time()
+    print("Time taken to prepare the polygons (1): ", et-st)
+    """
+    
+    # Create CuPy arrays for the polygons and indices
+    poly_points = []
+    poly_indices = []
+    current_index = 0
+    
+    for trial_index in range(num_test_structures):
+        for point_index in range(num_points_in_every_test_structure):
+            if not valid_mask[trial_index * num_points_in_every_test_structure + point_index]:
+                continue
+            relative_structure_index = int(nearest_zslice_index_and_values_3d_arr[trial_index, point_index, 0])
+            nearest_zslice_index = int(nearest_zslice_index_and_values_3d_arr[trial_index, point_index, 1])
+            start_idx, end_idx = all_structures_slices_indices_list[relative_structure_index][nearest_zslice_index]
+            polygon_points = all_structures_list_of_2d_arr[relative_structure_index][start_idx:end_idx, :3]
+            poly_points.append(polygon_points)
+            poly_indices.append([current_index, current_index + len(polygon_points)])
+            current_index += len(polygon_points)
+    
+    poly_points = cp.array(np.vstack(poly_points))
+    poly_indices = cp.array(poly_indices)
+
+    #poly_points_old = cp.array(np.vstack(poly_points_old))
+    #poly_indices_old = cp.array(poly_indices_old)
+
+    # compare and ensure they are equivalent
+    #assert cp.all(poly_points == poly_points_old)
+    #assert cp.all(poly_indices == poly_indices_old)
+
+    
+    # Test each point against the corresponding polygon
+    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, 
+                                                                 poly_points, 
+                                                                 poly_indices, 
+                                                                 log_sub_dirs_list = log_sub_dirs_list, 
+                                                                 log_file_name=log_file_name, 
+                                                                 include_edges_in_log = include_edges_in_log, 
+                                                                 kernel_type=kernel_type, 
+                                                                 return_array_as="cupy")
+    
+    # Map the valid results back to the original result array
+    result_cp_arr_flat = result_cp_arr.flatten()
+    result_cp_arr_flat[valid_mask] = valid_results
+    
+    # Reshape the result array back to the original shape
+    result_cp_arr = result_cp_arr_flat.reshape(num_test_structures, num_points_in_every_test_structure)
+    
+    return result_cp_arr # result is 2d array with shape (num_test_structures, num_points_in_every_test_structure)
+
+
+
+
+def test_points_against_polygons_cupy_2d_arr_version(nearest_zslice_index_and_values_2d_arr, 
+                                 points_to_test_2d_arr,
+                                 points_to_test_indices_arr, 
+                                 all_structures_list_of_2d_arr, 
+                                 all_structures_slices_indices_list,
+                                 log_sub_dirs_list = [],
+                                 log_file_name="cuda_log.txt",
+                                 include_edges_in_log = False,
+                                 kernel_type="one_to_one_pip_kernel_advanced"):
+    """
+    Important! This verion is to handle test structures with UNEQUAL number of points per test structure. 
+
+    Test points against polygons using CuPy arrays directly.
+    
+    Parameters:
+    - nearest_zslice_index_and_values_3d_arr: Array of the relative structure index for that test structure, nearest z indices and z values for each test point (row). Shape is (num_test_structures, num_points_per_trial, 3). 
+    - points_to_test_2d_arr: 2D array of test structures. Shape is (total num test points, 3).
+    - points_to_test_indices_arr: 2D array of indices indicating the start and end index+1 of each test structure in the points_to_test_2d_arr. Shape is (num_test_structures, 2).
+    - all_structures_list_of_2d_arr: List (num_trials is the number of elements in the list), each element is an (N_i, 3) array for each trial (i), where N_i is the number of points (3-element row vectors) representing the structure associated with trial (i).
+    - all_structures_slices_indices_list: List (num_trials is the number of elements in the list), each element is an (Z_i, 2) array for each trial (i), where Z_i is the number of constant plane slices of the structure, and each row of that array is the start_index and end_index+1 (done so for easy python slicing) describing how to access a constant plane slice of the assoicated (N_i, 3) of the above (nominal_and_dilated_structures_list_of_2d_arr) list elements.
+    - log_sub_dirs_list: List of subdirectories for the log file.
+    - log_file_name: Name of the log file to write the debug information. If None, no log file is written to file. Important, the log file writing is quite slow, so turning off logging should be considered for performance.
+    - include_edges_in_log: If True, the log file will include the edges checked for each point. (slower)
+    - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
+    Returns:
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon. Shape of the output array is (total_num_points) full of True/False values.
+    """
+    total_num_points_to_test = points_to_test_2d_arr.shape[0]
+    #num_test_structures = points_to_test_indices_arr.shape[0]
+    #num_points_in_every_test_structure = nearest_zslice_index_and_values_3d_arr.shape[1]
+    
+    # Initialize an array to store the results
+    result_cp_arr = cp.zeros((total_num_points_to_test), dtype=cp.bool_)
+    
+    # Flatten the input arrays for easier processing
+    flat_points = points_to_test_2d_arr[:, :3].reshape(-1, 3)
+    
+    # Filter out invalid points using the flag in column 3 (1 = out of bounds, 0 = valid)
+    valid_mask = nearest_zslice_index_and_values_2d_arr[:, 3].flatten() == 0
+
     valid_points = flat_points[valid_mask]
     
     # Create CuPy arrays for the points
@@ -926,17 +1387,19 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     poly_points = []
     poly_indices = []
     current_index = 0
-    
-    for trial_index in range(num_trials):
-        for point_index in range(num_points_per_trial):
-            if not valid_mask[trial_index * num_points_per_trial + point_index]:
-                continue
-            nearest_zslice_index = int(grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array[trial_index, point_index, 1])
-            start_idx, end_idx = nominal_and_dilated_structures_slices_indices_list[trial_index][nearest_zslice_index]
-            polygon_points = nominal_and_dilated_structures_list_of_2d_arr[trial_index][start_idx:end_idx, :2]
-            poly_points.append(polygon_points)
-            poly_indices.append([current_index, current_index + len(polygon_points)])
-            current_index += len(polygon_points)
+
+    # Precompute the necessary values outside the loop
+    valid_indices = np.where(valid_mask)[0]
+    valid_nearest_zslice_index_and_values_2d_arr = nearest_zslice_index_and_values_2d_arr[valid_indices]
+
+    for nearest_zslice_index_and_values in valid_nearest_zslice_index_and_values_2d_arr:
+        relative_structure_index = nearest_zslice_index_and_values[0].astype(int)
+        nearest_zslice_index = nearest_zslice_index_and_values[1].astype(int)
+        start_idx, end_idx = all_structures_slices_indices_list[relative_structure_index][nearest_zslice_index]
+        polygon_points = all_structures_list_of_2d_arr[relative_structure_index][start_idx:end_idx, :3]
+        poly_points.append(polygon_points)
+        poly_indices.append([current_index, current_index + len(polygon_points)])
+        current_index += len(polygon_points)
     
     poly_points = cp.array(np.vstack(poly_points))
     poly_indices = cp.array(poly_indices)
@@ -948,10 +1411,8 @@ def test_points_against_polygons_cupy_arr_version(grand_all_dilations_sp_trial_n
     result_cp_arr_flat = result_cp_arr.flatten()
     result_cp_arr_flat[valid_mask] = valid_results
     
-    # Reshape the result array back to the original shape
-    result_cp_arr = result_cp_arr_flat.reshape(num_trials, num_points_per_trial)
     
-    return result_cp_arr
+    return result_cp_arr # result is 1d array of length total_num_points_to_test, refer to points_to_test_indices_arr to get the mapping of the results to the original test structures
 
 
 
@@ -1016,11 +1477,111 @@ def create_containment_results_dataframe(patientUID, biopsy_structure_info, stru
 
 
 
+def create_containment_results_dataframe_type_2I(structure_info, 
+                                         nearest_zslice_index_and_values_3d_arr, 
+                                         test_points_array, 
+                                         result_cp_arr,
+                                         do_not_convert_column_names_to_categorical = [],
+                                         float_dtype = np.float32,
+                                         int_dtype = np.int32):
+    """
+    Create a DataFrame to keep track of the containment results. This one is meant to handle two 3d array inputs.
+    
+    Parameters:
+    - structure_info: List containing relative structure information.
+    - nearest_zslice_index_and_values_3d_arr: 3d array of the nearest z values and their indices for each biopsy point.
+    - test_points_array: 3d array of test points.
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
+    - float_dtype: The float data type to use for the DataFrame.
+    - int_dtype: The integer data type to use for the DataFrame.
+    
+    Returns:
+    - containment_results_df: DataFrame containing the containment results.
+    """
+    
+    # Flatten the input arrays for easier processing
+    flat_nearest_zslices_vals_arr = nearest_zslice_index_and_values_3d_arr[:, :, 2].flatten()
+    flat_nearest_zslices_indices_arr = nearest_zslice_index_and_values_3d_arr[:, :, 1].flatten()
+    flat_test_points_array = test_points_array.reshape(-1, 3)
+    flat_result_cp_arr = result_cp_arr.get().flatten()
+    
+    # Create RGB color arrays based on the containment results
+    pt_clr_r = np.where(flat_result_cp_arr, 0., 1.)  # Red for false
+    pt_clr_g = np.where(flat_result_cp_arr, 1., 0.)  # Green for true
+    pt_clr_b = np.zeros_like(pt_clr_r)  # Blue is always 0
+    
+    # Create a dictionary to store the results
+    results_dictionary = {
+        "Relative structure ROI": [structure_info['Structure ID']] * len(flat_result_cp_arr),
+        "Relative structure type": [structure_info['Struct ref type']] * len(flat_result_cp_arr),
+        "Relative structure index": np.full(len(flat_result_cp_arr), [structure_info['Index number']]).astype(int_dtype),
+        "Pt contained bool": flat_result_cp_arr,
+        "Nearest zslice zval": flat_nearest_zslices_vals_arr.astype(float_dtype),
+        "Nearest zslice index": flat_nearest_zslices_indices_arr.astype(int_dtype),
+        "Pt clr R": pt_clr_r.astype(float_dtype),
+        "Pt clr G": pt_clr_g.astype(float_dtype),
+        "Pt clr B": pt_clr_b.astype(float_dtype),
+        "Test pt X": flat_test_points_array[:, 0].astype(float_dtype),
+        "Test pt Y": flat_test_points_array[:, 1].astype(float_dtype),
+        "Test pt Z": flat_test_points_array[:, 2].astype(float_dtype),
+    }
+    
+    containment_results_df = pd.DataFrame(results_dictionary)
+
+    containment_results_df = dataframe_builders.convert_columns_to_categorical_and_downcast(containment_results_df, 
+                                                                                            threshold=0.25, 
+                                                                                            do_not_convert_column_names_to_categorical = do_not_convert_column_names_to_categorical)
+
+    return containment_results_df
 
 
 
-
-
+def create_containment_results_dataframe_type_2II(structure_info, 
+                                         nearest_zslice_index_and_values_2d_arr,
+                                         points_to_test_2d_arr, 
+                                         result_cp_arr):
+    """
+    Create a DataFrame to keep track of the containment results. This one is meant to handle two stacked 2d array inputs
+    
+    Parameters:
+    - structure_info: List containing relative structure information.
+    - nearest_zslice_index_and_values_2d_arr: 2d array of the nearest z values and their indices for each biopsy point.
+    - test_points_array: Array of test points.
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
+    
+    Returns:
+    - containment_results_df: DataFrame containing the containment results.
+    """
+    
+    # Flatten the input arrays for easier processing
+    flat_nearest_zslices_vals_arr = nearest_zslice_index_and_values_2d_arr[:, 2]
+    flat_nearest_zslices_indices_arr = nearest_zslice_index_and_values_2d_arr[:, 1]
+    flat_test_points_array = points_to_test_2d_arr
+    flat_result_cp_arr = result_cp_arr.get().flatten()
+    
+    # Create RGB color arrays based on the containment results
+    pt_clr_r = np.where(flat_result_cp_arr, 0, 1)  # Red for false
+    pt_clr_g = np.where(flat_result_cp_arr, 1, 0)  # Green for true
+    pt_clr_b = np.zeros_like(pt_clr_r)  # Blue is always 0
+    
+    # Create a dictionary to store the results
+    results_dictionary = {
+        "Relative structure ROI": [structure_info[0]] * len(flat_result_cp_arr),
+        "Relative structure type": [structure_info[1]] * len(flat_result_cp_arr),
+        "Relative structure index": [structure_info[3]] * len(flat_result_cp_arr),
+        "Pt contained bool": flat_result_cp_arr,
+        "Nearest zslice zval": flat_nearest_zslices_vals_arr,
+        "Nearest zslice index": flat_nearest_zslices_indices_arr,
+        "Pt clr R": pt_clr_r,
+        "Pt clr G": pt_clr_g,
+        "Pt clr B": pt_clr_b,
+        "Test pt X": flat_test_points_array[:, 0],
+        "Test pt Y": flat_test_points_array[:, 1],
+        "Test pt Z": flat_test_points_array[:, 2],
+    }
+    
+    containment_results_df = pd.DataFrame(results_dictionary)
+    return containment_results_df
 
 
 
