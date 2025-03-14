@@ -89,7 +89,7 @@ def simulator_parallel(parallel_pool,
                        keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
                        show_non_bx_relative_structure_z_dilation_bool,
                         show_non_bx_relative_structure_xy_dilation_bool,
-                        generate_cuda_log_files,
+                        generate_cuda_log_files_MC_containment_sim,
                         custom_cuda_kernel_type
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
@@ -722,7 +722,7 @@ def simulator_parallel(parallel_pool,
                     #pr.enable()
                     
                     log_sub_dirs_list = [patientUID, specific_bx_structure_roi, non_bx_structure_type]
-                    if generate_cuda_log_files == True:
+                    if generate_cuda_log_files_MC_containment_sim == True:
                         custom_cuda_log_file_name = patientUID + "_" + specific_bx_structure_roi + "_" + non_bx_structure_type + "_N-" + str(num_MC_containment_simulations) + "_containment_log.txt"
                     else:
                         custom_cuda_log_file_name = None

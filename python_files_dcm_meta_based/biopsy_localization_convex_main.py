@@ -137,8 +137,7 @@ def main():
     # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
     # specify the patient IDs and the list of biopsy names to remove from the dataset
     data_removals_dict = {"189 (F2)": ["Bx_Tr LM1 blood"],
-                            "192 (F2)": ["Bx_trk LM blood"]
-                            }
+                            "192 (F2)": ["Bx_trk LM blood"]}
 
 
     # The following could be user input, for now they are defined here, and used throughout 
@@ -380,11 +379,20 @@ def main():
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
     
     # custom point containment algorithm options
-    generate_cuda_log_files = True
+    generate_cuda_log_files_MC_containment_sim = False
+    generate_cuda_log_files_volume_calculation = False
+    generate_cuda_log_files_biopsy_optimizer = False
     include_edges_in_log_files = False
-    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version" # The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
+
+    ### Kernel selection:
+    """
+    1. The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. 
+    2. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays. 
+    3. The other is "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" which implements much better practices of gpu memory and performance optimization by not calculating poly_points at all, and passing pointers to indices instead to the kernel.
+    """
+    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" 
     constant_z_slice_polygons_handler_option = 'auto-close-if-open' # Can be 'auto-close-if-open' or 'close-all' or None
-    remove_consecutive_duplicate_points_in_polygons = False
+    remove_consecutive_duplicate_points_in_polygons = True
 
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
@@ -415,7 +423,7 @@ def main():
     normal_dist_sigma_factor_biopsy_optimizer = 1/4
     plot_each_normal_dist_containment_result_bool = False
     plot_optimization_point_lattice_bool = False
-    show_optimization_point_bool = False
+    show_optimization_point_bool = True
     display_optimization_contour_plots_bool = False
     optimal_normal_dist_option = 'dil dimension driven' # can be 'biopsy_and_dil_sigmas' or 'dil dimension driven', note that the biopsy_and_dil_sigmas option adds all sigmas in quadrature and then uses this value as TWO sigma. Note that the dil deimnsion driven option uses the dimension of the respective dil at the position of the dil centroid in each direction as TWO sigma
     # these multipliers provide a lengthening or stretching of the normal dist to bias a certain dimension as relatively more important 
@@ -480,6 +488,9 @@ def main():
     
     ### PLOTS TO SHOW:
 
+    # preprocessing
+    demonstrate_volume_calculation_correctness_bool_1 = False # NEW CUSTOM CONTAINMENT ALGO: shows the volume calculation from PIP test
+
     # Transformations
     inspect_self_biopsy_dilate_bool = False # per trial basis
     inspect_self_biopsy_dilate_and_rotate_bool = False # per trial basis
@@ -504,7 +515,7 @@ def main():
     # DIL biopsy optimization
     demonstrate_dil_optimization_points_inside_correctness_bool_1 = True # shows the containment results for the generated lattice points that is passed to the optimizer function
     demonstrate_dil_optimization_points_inside_correctness_bool_2 = False # shows the containment results for the generated lattice inside the optiomizer function, which is only caleld if you didnt pass the optimizer function a lattice. We are currently passing it a lattice.
-    demonstrate_dil_optimization_points_inside_correctness_bool_3 = True # shows the containment results for all normal distritution generated points centered at each test point lattice position
+    demonstrate_dil_optimization_points_inside_correctness_num_3 = 5 # 0, means off! Shows the containment results for all normal distritution generated points centered at each test point lattice position, shows random 5 trials
 
     # MRs
     show_3d_mr_adc_renderings = False
@@ -521,7 +532,7 @@ def main():
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     plot_translation_vectors_pointclouds = False
     plot_shifted_biopsies = False
-    plot_volume_calculation_containment_result_bool = False
+    plot_volume_calculation_containment_result_bool_1_old = False
     display_curvature_bool = False
     display_structure_surface_mesh_bool = False
     plot_binary_mask_bool = False
@@ -2083,7 +2094,7 @@ def main():
                 ### PREPROCESSING OARs
 
 
-                #live_display.stop()
+                live_display.stop()
 
                 patientUID_default = "Initializing"
                 processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID_default)
@@ -2252,15 +2263,23 @@ def main():
                             interpolated_zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
+                            patientUID,
                             voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
                         ###
@@ -2639,15 +2658,23 @@ def main():
                             interpolated_zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
+                            patientUID,
                             voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
                         ###
@@ -2985,15 +3012,23 @@ def main():
                             interpolated_zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
+                            patientUID,
                             voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
                         ###
@@ -3382,15 +3417,23 @@ def main():
                             interpolated_zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
+                            patientUID,
                             voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
                         ###
@@ -3957,7 +4000,8 @@ def main():
                                                                                                         include_edges_in_log_files,
                                                                                                         custom_cuda_kernel_type,
                                                                                                         demonstrate_dil_optimization_points_inside_correctness_bool_2,
-                                                                                                        demonstrate_dil_optimization_points_inside_correctness_bool_3,
+                                                                                                        demonstrate_dil_optimization_points_inside_correctness_num_3,
+                                                                                                        generate_cuda_log_files_biopsy_optimizer,
                                                                                                         test_lattice_arr = centered_cubic_lattice_points_contained_only_in_sp_dil_arr,
                                                                                                         all_points_to_set_to_zero_arr = centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr # This was added to make the "search" volume to include the entire volume
                                                                                                         )
@@ -4592,15 +4636,23 @@ def main():
                             zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
-                            voxel_size_for_structure_volume_calc_bx,
+                            patientUID,
+                            voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
 
@@ -4975,15 +5027,23 @@ def main():
                             zvals_list,
                             zslices_list,
                             structure_info,
-                            plot_volume_calculation_containment_result_bool,
-                            plot_binary_mask_bool,
-                            voxel_size_for_structure_volume_calc_bx,
+                            patientUID,
+                            voxel_size_for_structure_volume_calc_non_bx,
                             factor_for_voxel_size,
                             cupy_array_upper_limit_NxN_size_input,
                             layout_groups,
                             nearest_zslice_vals_and_indices_cupy_generic_max_size,
                             structures_progress,
-                            live_display
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                             )
                         
                         ###
@@ -6345,7 +6405,7 @@ def main():
                                                                                             keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
                                                                                             show_non_bx_relative_structure_z_dilation_bool,
                                                                                             show_non_bx_relative_structure_xy_dilation_bool,
-                                                                                            generate_cuda_log_files,
+                                                                                            generate_cuda_log_files_MC_containment_sim,
                                                                                             custom_cuda_kernel_type
                                                                                             )
 

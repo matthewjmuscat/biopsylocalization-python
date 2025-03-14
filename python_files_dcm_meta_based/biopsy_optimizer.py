@@ -18,6 +18,8 @@ import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 import cProfile
 import pstats
 import io
+from line_profiler import LineProfiler
+import polygon_dilation_helpers_numpy
 
 def find_dil_optimal_sampling_position(specific_dil_structure,
                                 optimal_normal_dist_option,
@@ -53,7 +55,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                                 include_edges_in_log_files,
                                 custom_cuda_kernel_type,
                                 demonstrate_dil_optimization_points_inside_correctness_bool_2,
-                                demonstrate_dil_optimization_points_inside_correctness_bool_3,
+                                demonstrate_dil_optimization_points_inside_correctness_num_3,
+                                generate_cuda_log_files_biopsy_optimizer,
                                 test_lattice_arr = None,
                                 all_points_to_set_to_zero_arr = np.array([[]])
                                 ):
@@ -319,123 +322,149 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     ###
     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Prepping for containment", total = None)
     ###
-
-    # Building the containment test points 2d array
-    point_in_cubic_lattice_index_referencer_for_dataframe_arr = np.empty(num_normal_dist_points*num_points_in_cubic_lattice_plus_centroid)
-    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr = np.tile(three_d_normal_dist_points,(num_points_in_cubic_lattice_plus_centroid,1))
-    for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
-        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points] = point_in_cubic_lattice + tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points]
-        point_in_cubic_lattice_index_referencer_for_dataframe_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points] = point_index
-    # create reference dataframe to join to the results containment dataframe
-    index_referencer_dict = {"Optimization lattice point array index": point_in_cubic_lattice_index_referencer_for_dataframe_arr}
-    optimization_lattice_index_referencer_dataframe = pandas.DataFrame.from_dict(index_referencer_dict)
-
+    
     
     # OLD CONTAINMENT METHODOLOGY
-    pr = cProfile.Profile()
-    pr.enable()
+    if False:
+        # Building the containment test points 2d array
+        point_in_cubic_lattice_index_referencer_for_dataframe_arr = np.empty(num_normal_dist_points*num_points_in_cubic_lattice_plus_centroid)
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr = np.tile(three_d_normal_dist_points,(num_points_in_cubic_lattice_plus_centroid,1))
+        for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
+            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points] = point_in_cubic_lattice + tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points]
+            point_in_cubic_lattice_index_referencer_for_dataframe_arr[point_index*num_normal_dist_points:point_index*num_normal_dist_points+num_normal_dist_points] = point_index
+        # create reference dataframe to join to the results containment dataframe
+        index_referencer_dict = {"Optimization lattice point array index": point_in_cubic_lattice_index_referencer_for_dataframe_arr}
+        optimization_lattice_index_referencer_dataframe = pandas.DataFrame.from_dict(index_referencer_dict)
 
-    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,0:2]
-    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,2]
+        
+        pr = cProfile.Profile()
+        pr.enable()
 
-    #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z)
-    #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input_cp(interpolated_zvlas_list,tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z)
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,0:2]
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr[:,2]
 
-    """
-    ### this can take some time for many points!
-    nearest_interpolated_zslice_index_array = np.empty(num_points_in_cubic_lattice_plus_centroid*num_normal_dist_points, dtype = np.int64)
-    nearest_interpolated_zslice_vals_array = np.empty(num_points_in_cubic_lattice_plus_centroid*num_normal_dist_points)
-    for optimization_point_index in range(num_points_in_cubic_lattice_plus_centroid):
-        ### Note cant do all the points at once on the gpu as it is too memory intensive, but breaking it up and performing it on the gpu is 
-        ### still faster than what was done above with the old function! Doing it in the same way as below but with numpy is slower and very cpu memory intensive to do it without 
-        ### breaking it up
-        nearest_interpolated_zslice_index_array_intermediate, nearest_interpolated_zslice_vals_intermediate = point_containment_tools.take_closest_cupy(interpolated_zvlas_list, tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points])
-        nearest_interpolated_zslice_index_array[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points] = nearest_interpolated_zslice_index_array_intermediate
-        nearest_interpolated_zslice_vals_array[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points] = nearest_interpolated_zslice_vals_intermediate
-    ###
-    """  
+        #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z)
+        #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input_cp(interpolated_zvlas_list,tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z)
 
-    ### CUPY IS ABOUT 10X FASTER!
-    """
-    st = time.time()
-    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_numpy_generic(interpolated_zvlas_list, 
-                                                                                                                                                            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z,
-                                                                                                                                                            nearest_zslice_vals_and_indices_numpy_generic_max_size,
-                                                                                                                                                            progress_bar_level_task_obj
-                                                                                                                                                            )
-    et = time.time()
-    elapsed_time = et - st
-    print('\n Execution time (numpy):', elapsed_time, 'seconds')
-    """
-    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
-                                                                                                                                                            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z,
-                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                            progress_bar_level_task_obj
-                                                                                                                                                            )
+        """
+        ### this can take some time for many points!
+        nearest_interpolated_zslice_index_array = np.empty(num_points_in_cubic_lattice_plus_centroid*num_normal_dist_points, dtype = np.int64)
+        nearest_interpolated_zslice_vals_array = np.empty(num_points_in_cubic_lattice_plus_centroid*num_normal_dist_points)
+        for optimization_point_index in range(num_points_in_cubic_lattice_plus_centroid):
+            ### Note cant do all the points at once on the gpu as it is too memory intensive, but breaking it up and performing it on the gpu is 
+            ### still faster than what was done above with the old function! Doing it in the same way as below but with numpy is slower and very cpu memory intensive to do it without 
+            ### breaking it up
+            nearest_interpolated_zslice_index_array_intermediate, nearest_interpolated_zslice_vals_intermediate = point_containment_tools.take_closest_cupy(interpolated_zvlas_list, tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points])
+            nearest_interpolated_zslice_index_array[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points] = nearest_interpolated_zslice_index_array_intermediate
+            nearest_interpolated_zslice_vals_array[optimization_point_index*num_normal_dist_points:optimization_point_index*num_normal_dist_points + num_normal_dist_points] = nearest_interpolated_zslice_vals_intermediate
+        ###
+        """  
 
-    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY.flatten()
-    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr)
+        ### CUPY IS ABOUT 10X FASTER!
+        """
+        st = time.time()
+        nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_numpy_generic(interpolated_zvlas_list, 
+                                                                                                                                                                tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z,
+                                                                                                                                                                nearest_zslice_vals_and_indices_numpy_generic_max_size,
+                                                                                                                                                                progress_bar_level_task_obj
+                                                                                                                                                                )
+        et = time.time()
+        elapsed_time = et - st
+        print('\n Execution time (numpy):', elapsed_time, 'seconds')
+        """
+        nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
+                                                                                                                                                                tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_Z,
+                                                                                                                                                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                                progress_bar_level_task_obj
+                                                                                                                                                                )
 
-
-
-    ###
-    indeterminate_progress_sub.update(indeterminate_task, visible = False)
-    ###
-
-
-
-    ###
-    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Performing containment of all distributions", total = None)
-    ###
-
-
-    # Test point containment 
-    containment_info_grand_pandas_dataframe_old, live_display = point_containment_tools.cuspatial_points_contained_generic_cupy_pandas(zslices_polygons_cuspatial_geoseries,
-        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points, 
-        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr, 
-        nearest_interpolated_zslice_index_array,
-        nearest_interpolated_zslice_vals_array,
-        max_zval,
-        min_zval,
-        structure_info,
-        layout_groups,
-        live_display,
-        progress_bar_level_task_obj,
-        upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
-        )
-    live_display.refresh()
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr = tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY.flatten()
+        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr)
 
 
-    del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr
-    del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points
 
-    # Print profiling results
-    pr.disable()
-    s = io.StringIO()
-    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
-    ps.print_stats()
-    print(s.getvalue())
+        ###
+        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+        ###
+
+
+
+        ###
+        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Performing containment of all distributions", total = None)
+        ###
+
+
+        # Test point containment 
+        containment_info_grand_pandas_dataframe_old, live_display = point_containment_tools.cuspatial_points_contained_generic_cupy_pandas(zslices_polygons_cuspatial_geoseries,
+            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points, 
+            tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr, 
+            nearest_interpolated_zslice_index_array,
+            nearest_interpolated_zslice_vals_array,
+            max_zval,
+            min_zval,
+            structure_info,
+            layout_groups,
+            live_display,
+            progress_bar_level_task_obj,
+            upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
+            )
+        live_display.refresh()
+
+
+        del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_interleaved_1darr
+        del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_arr_XY_cuspatial_geoseries_points
+
+        # Print profiling results
+        pr.disable()
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+        ps.print_stats()
+        print(s.getvalue())
 
     # OLD CONTAINMENT METHODOLOGY END   
 
 
 
     # NEW METHODOLOGY FOR CONTAINMENT
+    """
     pr = cProfile.Profile()
     pr.enable()
+    """
 
     # Building the containment test points 3d array
+    # loop method is faster than vectorized method (note that neither are very slow , for N=10000, they are both about 0.3s)
     tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr = np.tile(three_d_normal_dist_points,(num_points_in_cubic_lattice_plus_centroid,1,1))
     for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
         tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr[point_index] = point_in_cubic_lattice + tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr[point_index]
-
+    
+    # Vectorized is actually slower than the loop method:
+    """
+    tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr = (
+        centered_cubic_lattice_sp_structure_with_dil_centroid[:, np.newaxis, :] 
+        + three_d_normal_dist_points[np.newaxis, :, :])
+    """
 
     structureID_dil = structure_info["Structure ID"]
     test_struct_to_relative_struct_1d_mapping_array = np.full(num_points_in_cubic_lattice_plus_centroid, 0) # testing all normal distributions against the same relative (DIL) structure   
     log_sub_dirs_list = [patientUID, structureID_dil]
-    custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+    if generate_cuda_log_files_biopsy_optimizer == True:
+        custom_cuda_log_file_name = patientUID + "_" + structureID_dil + "_N-" + str(num_normal_dist_points) + "_containment_log.txt"
+    else:
+        custom_cuda_log_file_name = None 
 
-    containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+    """
+    lp = LineProfiler()
+    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function)  # Add another function to compare
+    lp.add_function(polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr)
+    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_arr_version_prepper)
+    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version)
+    lp.add_function(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.one_to_one_point_in_polygon_cupy_arr_version_ver2)
+    lp_wrapper = lp(custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function)
+
+    lp.enable()
+
+    # Now call the function through the wrapper
+    containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr, prepper_output_tuple = lp_wrapper([zslices_list],
                         tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr,
                         test_struct_to_relative_struct_1d_mapping_array,
                         constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
@@ -444,34 +473,62 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                         log_file_name = custom_cuda_log_file_name,
                         include_edges_in_log = include_edges_in_log_files,
                         kernel_type = custom_cuda_kernel_type)
+    lp.disable()
+    lp.print_stats()
+    input("Press enter to continue")
+    """
+
     
-    containment_info_grand_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2I(structure_info, 
+    containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+                        tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr,
+                        test_struct_to_relative_struct_1d_mapping_array,
+                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                        log_sub_dirs_list = log_sub_dirs_list,
+                        log_file_name = custom_cuda_log_file_name,
+                        include_edges_in_log = False,
+                        kernel_type = custom_cuda_kernel_type)
+    
+    containment_info_grand_pandas_dataframe_with_indices = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2II(structure_info, 
                                                                                                                             prepper_output_tuple[0], 
                                                                                                                             tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr, 
                                                                                                                             containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr,
+                                                                                                                            test_struct_to_relative_struct_1d_mapping_array,
+                                                                                                                            convert_to_categorical_and_downcast = True,
                                                                                                                             do_not_convert_column_names_to_categorical = ["Pt contained bool"],
-                                                                                                                            float_dtype = np.float32,
-                                                                                                                            int_dtype = np.int32)
-
-
-
+                                                                                                                            float_dtype = np.float64,
+                                                                                                                            int_dtype = np.int64)
+    test_struct_input_index_column_name = "Test struct input index"
+    
+    # Cleanup, I think prepper_output_tuple is largest
+    del containment_result_for_all_normal_dist_centered_at_lattice_points_cp_arr, prepper_output_tuple
+    del tiled_threeD_normal_dist_centered_at_sp_cubic_lattice_point_3d_arr
+    del three_d_normal_dist_points_cupy
+    del three_d_normal_dist_points
+    del three_d_normal_dist_points_x_cupy
+    del three_d_normal_dist_points_y_cupy
+    del three_d_normal_dist_points_z_cupy
+    cp.get_default_memory_pool().free_all_blocks()
+    """
     # Print profiling results
     pr.disable()
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
     ps.print_stats()
     print(s.getvalue())
-
+    """
     # NEW METHODOLOGY FOR CONTAINMENT END
 
 
     ## Compare to old method
-    print(containment_info_grand_pandas_dataframe_old.compare(containment_info_grand_pandas_dataframe))
+    #print(containment_info_grand_pandas_dataframe_old.compare(containment_info_grand_pandas_dataframe))
 
 
-    if demonstrate_dil_optimization_points_inside_correctness_bool_3 == True:
 
-        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_grand_pandas_dataframe, 
+    ## with N=10000 way too many points to plot! crashes computer, must do subset! Done!
+    if demonstrate_dil_optimization_points_inside_correctness_num_3 > 0:
+        for point_index in np.random.randint(0, num_points_in_cubic_lattice_plus_centroid, demonstrate_dil_optimization_points_inside_correctness_num_3):
+            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_grand_pandas_dataframe_with_indices[containment_info_grand_pandas_dataframe_with_indices["Test struct input index"] == point_index], 
                     "Test pt X", 
                     "Test pt Y", 
                     "Test pt Z",
@@ -497,9 +554,9 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     #containment_info_grand_cudf_dataframe_with_optimization_point_array_index_reference = optimization_lattice_index_referencer_dataframe.join(containment_info_grand_cudf_dataframe)
     
     # USE THIS INSTEAD!
-    containment_info_grand_cudf_dataframe_with_optimization_point_array_index_reference = pandas.concat([optimization_lattice_index_referencer_dataframe,containment_info_grand_pandas_dataframe],axis=1)
-    del containment_info_grand_pandas_dataframe
-    del optimization_lattice_index_referencer_dataframe
+    #containment_info_grand_cudf_dataframe_with_optimization_point_array_index_reference = pandas.concat([optimization_lattice_index_referencer_dataframe,containment_info_grand_pandas_dataframe],axis=1)
+    #del containment_info_grand_pandas_dataframe
+    #del optimization_lattice_index_referencer_dataframe
 
 
     # NOTE THAT THE POINT_IN_CUBIC_LATTICE ARE THE POTENTIAL OPTIMAL POSITIONS BEING TESTED!
@@ -507,7 +564,7 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     distance_to_dil_centroid_arr = np.linalg.norm(test_location_to_dil_centroid_arr, axis=1) 
     prostate_centroid_to_test_location_arr = centered_cubic_lattice_sp_structure_with_dil_centroid - prostate_centroid
     distance_to_prostate_centroid_arr = np.linalg.norm(prostate_centroid_to_test_location_arr, axis=1) 
-    number_of_contained_points_arr = containment_info_grand_cudf_dataframe_with_optimization_point_array_index_reference.groupby("Optimization lattice point array index",sort=True)['Pt contained bool'].sum().to_numpy()
+    number_of_contained_points_arr = containment_info_grand_pandas_dataframe_with_indices.groupby(test_struct_input_index_column_name,sort=True)['Pt contained bool'].sum().to_numpy()
     proportion_of_contained_points_arr = number_of_contained_points_arr/num_normal_dist_points_for_biopsy_optimizer
 
         
@@ -543,7 +600,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
     potential_optimal_locations_dataframe = pandas.DataFrame(potential_optimal_locations_dict_for_dataframe)
     del potential_optimal_locations_dict_for_dataframe
     
-    # SHOW THE RESULTS OF THE CONTAINMENT TEST FOR EACH NORMAL DIST FOR EACH OPTIMIZATION LATTICE POINT?               
+    # SHOW THE RESULTS OF THE CONTAINMENT TEST FOR EACH NORMAL DIST FOR EACH OPTIMIZATION LATTICE POINT?
+    """               
     if plot_each_normal_dist_containment_result_bool == True:
         # For old cuspatial containment method
         for point_index, point_in_cubic_lattice in enumerate(centered_cubic_lattice_sp_structure_with_dil_centroid):
@@ -575,7 +633,7 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                     "Pt clr G",
                     "Pt clr B",
                     additional_point_clouds=[specific_dil_structure['Interpolated structure point cloud dict']['Full with end caps']])
-
+    """
         
     # PICK OUT THE OPTIMAL POSITION BY SELECTING THE HIGHEST PROPORTION OF POINTS CONTAINED! (If more than one, select one closest to DIL, if the optimal points are all equidistant to dil, then randomly select one)
     #live_display.stop()

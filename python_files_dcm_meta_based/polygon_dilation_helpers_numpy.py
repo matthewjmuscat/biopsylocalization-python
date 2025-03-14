@@ -9,20 +9,21 @@ import pstats
 import io
 import multiprocess
 import os 
+import cupy as cp
 
-def convert_to_2d_array_and_indices_numpy(polygons_list):
+def convert_to_2d_array_and_indices_numpy(list_of_arrays, num_columns = 3, main_arr_dtype = np.float32, indices_arr_dtype = np.int32):
     # Calculate the total number of points
-    total_points = sum(len(polygon) for polygon in polygons_list)
+    total_points = sum(len(polygon) for polygon in list_of_arrays)
     
     # Preallocate the points array using NumPy
-    points_array = np.empty((total_points, 3), dtype=np.float32)
+    points_array = np.empty((total_points, num_columns), dtype=main_arr_dtype)
     
     # Preallocate the indices array using NumPy
-    indices_array = np.empty((len(polygons_list), 2), dtype=np.int32)
+    indices_array = np.empty((len(list_of_arrays), 2), dtype=indices_arr_dtype)
     
     # Fill the points array and indices array
     current_index = 0
-    for i, polygon in enumerate(polygons_list):
+    for i, polygon in enumerate(list_of_arrays):
         num_points = len(polygon)
         points_array[current_index:current_index + num_points] = np.array(polygon)
         indices_array[i, 0] = current_index
@@ -375,6 +376,200 @@ def nearest_zslice_vals_and_indices_all_structures_3d_point_arr(relative_structu
         nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 1] = nearest_zslice_indices
         nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 2] = nearest_zslice_vals
         nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 3] = out_of_bounds_flag
+
+    return nearest_zslice_index_and_values_3d_arr
+
+
+# much better to use cupy for the z_diffs and argmin lines!!
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver4(relative_structures_list_of_zvals_1d_arrays_or_lists, points_to_test_3d_arr, test_struct_to_relative_struct_1d_mapping_array):
+    """
+    Find the nearest z values and associated indices for all biopsy points across all trials using NumPy. This function is for test points that have the same number of points for each relative structure (likely the same object that has been transformed for each trial, or is just the same object for each trial).
+    
+    Parameters:
+    - non_bx_struct_nominal_and_all_dilations_zvals_list: List of z values for each trial of the dilated relative structure.
+    - combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff: 3D array of biopsy points for all trials.
+    - test_struct_to_relative_struct_1d_mapping_array: 1D array that maps each test structure to its associated relative structure.
+
+    Returns:
+    - grand_all_dilations_sp_trial_nearest_interpolated_zslice_array: Array of the relative structure index, nearest z index slice and nearest z values on the associated relative structure for each test structure point (row).
+    """
+    #num_trials = len(relative_structures_list_of_zvals_1d_arrays_or_lists)
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
+    
+    # Initialize array to store the results
+    nearest_zslice_index_and_values_3d_arr = np.empty((num_test_structures, num_points_per_trial, 4), dtype=np.float32)
+    
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        zvals_array = np.array(relative_structures_list_of_zvals_1d_arrays_or_lists[relative_structure_index])
+        pts_to_test_z_coords = points_to_test_3d_arr[test_structure_index, :, 2]
+        
+
+        # Converting to cupy for zdiffs and argmin then converting back to numpy much faster for large arrays!!
+        """
+        # Use broadcasting to compute the absolute differences between z values
+        z_diffs = np.abs(zvals_array[:, np.newaxis] - pts_to_test_z_coords[np.newaxis, :])
+        
+        # Find the indices of the minimum differences
+        nearest_zslice_indices = np.argmin(z_diffs, axis=0)
+        """
+
+        # Convert them to CuPy arrays
+        zvals_cp = cp.asarray(zvals_array)  # shape: (num_slices,)
+        pts_cp   = cp.asarray(pts_to_test_z_coords)  # shape: (num_points,)
+
+        # Use broadcasting on GPU:
+        z_diffs_cp = cp.abs(zvals_cp[:, cp.newaxis] - pts_cp[cp.newaxis, :])
+        nearest_zslice_indices_cp = cp.argmin(z_diffs_cp, axis=0)  # shape: (num_points,)
+
+        # Convert back to NumPy array
+        nearest_zslice_indices = cp.asnumpy(nearest_zslice_indices_cp)
+        
+        # Get the nearest z values using the indices
+        nearest_zslice_vals = zvals_array[nearest_zslice_indices]
+        
+        # Check if the biopsy z values are outside the range of the relative structure's z values
+        min_zval = np.min(zvals_array)
+        max_zval = np.max(zvals_array)
+        
+        outside_min_mask = pts_to_test_z_coords < min_zval
+        outside_max_mask = pts_to_test_z_coords > max_zval
+        
+        # Set the indices and values to NaN where the biopsy z values are outside the range
+        #nearest_zslice_indices = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_indices)
+        #nearest_zslice_vals = np.where(outside_min_mask | outside_max_mask, np.nan, nearest_zslice_vals)
+
+        # Create an out-of-bounds flag (1 if out of bounds, 0 otherwise)
+        out_of_bounds_flag = np.where(outside_min_mask | outside_max_mask, 1, 0)
+        
+        # Store the results
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 0] = relative_structure_index
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 1] = nearest_zslice_indices
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 2] = nearest_zslice_vals
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 3] = out_of_bounds_flag
+
+    return nearest_zslice_index_and_values_3d_arr
+
+
+## Also very slow compared to nearest_zslice_vals_and_indices_all_structures_3d_point_arr for large arrays points_to_test_3d_arr.shape = (1750,10000,3)
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver3(
+    relative_structures_list_of_zvals_1d_arrays, 
+    points_to_test_3d_arr, 
+    test_struct_to_relative_struct_1d_mapping_array
+):
+    """
+    Vectorized NumPy version to compute, for each test point,
+    the nearest z-slice index, the corresponding z value, and an out-of-bounds flag.
+    
+    Parameters:
+      - relative_structures_list_of_zvals_1d_arrays: list of 1D arrays (or lists) of z-values for each relative structure.
+      - points_to_test_3d_arr: NumPy array of shape (num_test_structures, num_points_per_trial, 3) containing test points.
+      - test_struct_to_relative_struct_1d_mapping_array: 1D array mapping each test structure to a relative structure index.
+    
+    Returns:
+      - A NumPy array of shape (num_test_structures, num_points_per_trial, 4) with:
+            Column 0: the relative structure index (repeated)
+            Column 1: the nearest z-slice index (within the padded z-values array)
+            Column 2: the nearest z value
+            Column 3: out-of-bounds flag (1 if the test point's z is outside the min/max of the relative structure's z-values, 0 otherwise)
+    """
+    num_test_structures, num_points_per_trial, _ = points_to_test_3d_arr.shape
+    num_structures = len(relative_structures_list_of_zvals_1d_arrays)
+    
+    # Determine maximum number of slices among all relative structures
+    max_slices = max(len(zvals) for zvals in relative_structures_list_of_zvals_1d_arrays)
+    
+    # Create a padded array of z-values with shape (num_structures, max_slices), filled with np.nan
+    padded_zvals = np.full((num_structures, max_slices), np.nan, dtype=np.float32)
+    for i, zvals in enumerate(relative_structures_list_of_zvals_1d_arrays):
+        zvals = np.array(zvals, dtype=np.float32)
+        padded_zvals[i, :len(zvals)] = zvals
+
+    # Get test points' z coordinates; shape: (num_test_structures, num_points_per_trial)
+    test_z = points_to_test_3d_arr[..., 2]
+    
+    # For each test structure, select its corresponding relative structure's z-values
+    # test_struct_to_relative_struct_1d_mapping_array should be an array of integers of length num_test_structures.
+    mapping = np.asarray(test_struct_to_relative_struct_1d_mapping_array, dtype=np.int32)
+    struct_zvals = padded_zvals[mapping]  # shape: (num_test_structures, max_slices)
+    
+    # --- The two critical (and heavy) lines ---
+    # Compute the absolute differences between every candidate z value and each test point's z.
+    # This yields an array of shape: (num_test_structures, max_slices, num_points_per_trial)
+    z_diffs = np.abs(struct_zvals[:, :, np.newaxis] - test_z[:, np.newaxis, :])
+    
+    # For each test point, find the index of the z value with the minimum difference.
+    nearest_z_indices = np.argmin(z_diffs, axis=1)  # shape: (num_test_structures, num_points_per_trial)
+    # ---------------------------------------------------------------
+    
+    # Retrieve the nearest z values using advanced indexing.
+    row_idx = np.arange(num_test_structures)[:, np.newaxis]
+    nearest_zvals = struct_zvals[row_idx, nearest_z_indices]  # shape: (num_test_structures, num_points_per_trial)
+    
+    # Compute the minimum and maximum z values for each structure (ignoring nan)
+    min_zvals = np.nanmin(struct_zvals, axis=1, keepdims=True)  # shape: (num_test_structures, 1)
+    max_zvals = np.nanmax(struct_zvals, axis=1, keepdims=True)  # shape: (num_test_structures, 1)
+    
+    # Determine out-of-bounds flag: 1 if test point's z is less than min or greater than max, 0 otherwise.
+    out_of_bounds = ((test_z < min_zvals) | (test_z > max_zvals)).astype(np.float32)
+    
+    # Build the final output array with shape (num_test_structures, num_points_per_trial, 4)
+    # Column 0: relative structure index (repeated for each test point)
+    out0 = np.broadcast_to(mapping[:, np.newaxis].astype(np.float32), (num_test_structures, num_points_per_trial))
+    out1 = nearest_z_indices.astype(np.float32)
+    out2 = nearest_zvals
+    out3 = out_of_bounds
+    
+    result = np.stack([out0, out1, out2, out3], axis=-1)
+    return result
+
+
+
+
+### Note this one seems actually very slow compared to nearest_zslice_vals_and_indices_all_structures_3d_point_arr for large arrays points_to_test_3d_arr.shape = (1750,10000,3)
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver2(
+    relative_structures_list_of_zvals_1d_arrays_or_lists, 
+    points_to_test_3d_arr, 
+    test_struct_to_relative_struct_1d_mapping_array):
+    """
+    Optimized version using vectorized NumPy operations to find nearest z-slice indices and values.
+    """
+    num_test_structures, num_points_per_trial = points_to_test_3d_arr.shape[:2]
+    
+    # Convert list of z-values arrays into a padded 2D NumPy array (fast indexing)
+    max_slices = max(len(z) for z in relative_structures_list_of_zvals_1d_arrays_or_lists)
+    zvals_padded = np.full((len(relative_structures_list_of_zvals_1d_arrays_or_lists), max_slices), np.nan, dtype=np.float32)
+    for i, zvals in enumerate(relative_structures_list_of_zvals_1d_arrays_or_lists):
+        zvals_padded[i, :len(zvals)] = zvals  # Fill valid entries
+    
+    # Get the Z-coordinates of test points
+    test_z_coords = points_to_test_3d_arr[..., 2]  # Shape: (num_test_structures, num_points_per_trial)
+
+    # Retrieve corresponding structure z-values for each test structure
+    struct_zvals = zvals_padded[test_struct_to_relative_struct_1d_mapping_array]  # Shape: (num_test_structures, max_slices)
+
+    # Compute absolute differences in a vectorized manner
+    z_diffs = np.abs(struct_zvals[:, :, np.newaxis] - test_z_coords[:, np.newaxis, :])  # Shape: (num_test_structures, max_slices, num_points_per_trial)
+
+    # Find the indices of the minimum differences (nearest z-slice)
+    nearest_zslice_indices = np.nanargmin(z_diffs, axis=1)  # Shape: (num_test_structures, num_points_per_trial)
+
+    # Get the nearest z values using the indices
+    nearest_zslice_vals = np.take_along_axis(struct_zvals, nearest_zslice_indices[:, np.newaxis], axis=1)[:, 0]
+
+    # Find out-of-bounds flags
+    min_zvals = np.nanmin(struct_zvals, axis=1)[:, np.newaxis]  # Shape: (num_test_structures, 1)
+    max_zvals = np.nanmax(struct_zvals, axis=1)[:, np.newaxis]  # Shape: (num_test_structures, 1)
+
+    out_of_bounds_flag = ((test_z_coords < min_zvals) | (test_z_coords > max_zvals)).astype(np.float32)
+
+    # Construct final result array (fast with NumPy stacking)
+    nearest_zslice_index_and_values_3d_arr = np.stack([
+        test_struct_to_relative_struct_1d_mapping_array[:, np.newaxis] * np.ones((1, num_points_per_trial), dtype=np.float32),
+        nearest_zslice_indices.astype(np.float32),
+        nearest_zslice_vals,
+        out_of_bounds_flag
+    ], axis=-1)
 
     return nearest_zslice_index_and_values_3d_arr
 

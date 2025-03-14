@@ -20,6 +20,8 @@ import pandas
 from fuzzywuzzy import process, fuzz
 import re 
 import copy
+import gc
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 
 def checkdirs(live_display, important_info, *paths):
     created_a_dir = False
@@ -56,22 +58,30 @@ def structure_volume_calculator(structure_points_array,
                                 interpolated_zvlas_list,
                                 zslices_list,
                                 structure_info,
-                                plot_volume_calculation_containment_result_bool,
-                                plot_binary_mask_bool,
+                                patientUID,
                                 voxel_size_for_structure_volume_calc,
                                 factor_for_voxel_size,
                                 cupy_array_upper_limit_NxN_size_input,
                                 layout_groups,
                                 nearest_zslice_vals_and_indices_cupy_generic_max_size,
                                 progress_bar_level_task_obj,
-                                live_display
+                                live_display,
+                                generate_cuda_log_files_volume_calculation = False,
+                                constant_z_slice_polygons_handler_option = 'auto-close-if-open',
+                                remove_consecutive_duplicate_points_in_polygons = True,
+                                include_edges_in_log_files = False,
+                                custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized",
+                                demonstrate_volume_calculation_correctness_bool_1 = True,
+                                plot_volume_calculation_containment_result_bool_1_old = False,
+                                plot_binary_mask_bool = False,
+                                other_pcds_to_plot_list = []
                                 ):
     
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
     
     #with live_display:
-    live_display.start(refresh = True)
+    #live_display.start(refresh = True)
     # two points which are fruthest apart will occur as vertices of the convex hull
     candidates = structure_points_array[scipy.spatial.ConvexHull(structure_points_array).vertices]
 
@@ -123,83 +133,162 @@ def structure_volume_calculator(structure_points_array,
     num_test_points = centered_cubic_lattice_sp_structure.shape[0]
 
 
+    ### OLD CONTAINMENT METHODOLOGY START
+    compare_with_old_containment_methodology = True
+    if compare_with_old_containment_methodology:
+        # Extract and calculate relative structure info
+        #interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+        #interpolated_zvlas_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+        #zslices_list = interslice_interpolation_information.interpolated_pts_list
+        max_zval = max(interpolated_zvlas_list)
+        min_zval = min(interpolated_zvlas_list)
+        zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in zslices_list]
+        zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(zslices_polygons_list))
+
+        centered_cubic_lattice_sp_structure_XY = centered_cubic_lattice_sp_structure[:,0:2]
+        centered_cubic_lattice_sp_structure_Z = centered_cubic_lattice_sp_structure[:,2]
+
+        #start = time.time()
+        #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,centered_cubic_lattice_sp_structure_Z)
+        #end = time.time()
+        #print(end - start)
+        
+        ### Using cupy is quicker than the old way (above) with the vectorized function (the function was crap anyways)
+        ### updated it further with the below generic function!
+        #start = time.time()
+        #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_cupy(interpolated_zvlas_list, centered_cubic_lattice_sp_structure_Z)
+        #end = time.time()
+        #print(end - start)
+        
+
+        nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
+                                                                                                                                                                centered_cubic_lattice_sp_structure_Z,
+                                                                                                                                                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                                                                progress_bar_level_task_obj
+                                                                                                                                                                )
+
+        centered_cubic_lattice_sp_structure_XY_interleaved_1darr = centered_cubic_lattice_sp_structure_XY.flatten()
+        centered_cubic_lattice_sp_structure_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(centered_cubic_lattice_sp_structure_XY_interleaved_1darr)
+
+        # Test point containment 
+        #start = time.time()
+        containment_info_for_volume_calc_pandas_dataframe_old, live_display = point_containment_tools.cuspatial_points_contained_generic_numpy_pandas(zslices_polygons_cuspatial_geoseries,
+            centered_cubic_lattice_sp_structure_XY_cuspatial_geoseries_points, 
+            centered_cubic_lattice_sp_structure, 
+            nearest_interpolated_zslice_index_array,
+            nearest_interpolated_zslice_vals_array,
+            max_zval,
+            min_zval,
+            structure_info,
+            layout_groups,
+            live_display,
+            structures_progress,
+            upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
+            )
+        
+        #end = time.time()
+        #print(end - start)               
+
+        if plot_volume_calculation_containment_result_bool_1_old == True:
+            test_pts_color_R = containment_info_for_volume_calc_pandas_dataframe_old["Pt clr R"].to_numpy()
+            test_pts_color_G = containment_info_for_volume_calc_pandas_dataframe_old["Pt clr G"].to_numpy()
+            test_pts_color_B = containment_info_for_volume_calc_pandas_dataframe_old["Pt clr B"].to_numpy()
+            test_pts_color_arr = np.empty([num_test_points,3])
+            test_pts_color_arr[:,0] = test_pts_color_R
+            test_pts_color_arr[:,1] = test_pts_color_G
+            test_pts_color_arr[:,2] = test_pts_color_B
+            centered_cubic_lattice_sp_structure_pcd = point_containment_tools.create_point_cloud_with_colors_array(centered_cubic_lattice_sp_structure, test_pts_color_arr)
+            struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(structure_points_array, color = np.array([0,0,1]))
+            plotting_funcs.plot_geometries(centered_cubic_lattice_sp_structure_pcd, struct_interpolated_pts_pcd, label='Unknown')                                                                    
+            del centered_cubic_lattice_sp_structure_pcd
+            del struct_interpolated_pts_pcd
+
+    ### OLD CONTAINMENT METHODOLOGY END
+
+    ### NEW CONTAINMENT METHODOLOGY START
+
+    structureID = structure_info["Structure ID"]
+    test_struct_to_relative_struct_1d_mapping_array = np.array([0])          
+    log_sub_dirs_list = [patientUID, structureID]
+    if generate_cuda_log_files_volume_calculation == True:
+        custom_cuda_log_file_name = patientUID + "_" + structureID + "_volume_calc_containment_log.txt"
+    else:
+        custom_cuda_log_file_name = None 
+    custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+
+    containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
+                        centered_cubic_lattice_sp_structure[np.newaxis,:,:],
+                        test_struct_to_relative_struct_1d_mapping_array,
+                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                        log_sub_dirs_list = log_sub_dirs_list,
+                        log_file_name = custom_cuda_log_file_name,
+                        include_edges_in_log = include_edges_in_log_files,
+                        kernel_type = custom_cuda_kernel_type)
     
-    # Extract and calculate relative structure info
-    #interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-    #interpolated_zvlas_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-    #zslices_list = interslice_interpolation_information.interpolated_pts_list
-    max_zval = max(interpolated_zvlas_list)
-    min_zval = min(interpolated_zvlas_list)
-    zslices_polygons_list = [Polygon(polygon[:,0:2]) for polygon in zslices_list]
-    zslices_polygons_cuspatial_geoseries = cuspatial.GeoSeries(geopandas.GeoSeries(zslices_polygons_list))
+    containment_info_for_volume_calc_pandas_dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2I(structure_info, 
+                                                                                                                            prepper_output_tuple[0], 
+                                                                                                                            centered_cubic_lattice_sp_structure[np.newaxis,:,:], 
+                                                                                                                            containment_result_for_all_lattice_points_cp_arr,
+                                                                                                                            do_not_convert_column_names_to_categorical = ["Pt contained bool"],
+                                                                                                                            float_dtype = np.float32,
+                                                                                                                            int_dtype = np.int32)
+    del containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple
 
-    centered_cubic_lattice_sp_structure_XY = centered_cubic_lattice_sp_structure[:,0:2]
-    centered_cubic_lattice_sp_structure_Z = centered_cubic_lattice_sp_structure[:,2]
+    ### Compare to old methodology start
+    if compare_with_old_containment_methodology:
+        _, diff_count = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.count_differing_rows(containment_info_for_volume_calc_pandas_dataframe, containment_info_for_volume_calc_pandas_dataframe_old, "Pt contained bool")
+        print("Num differing rows: ", diff_count)
 
-    #start = time.time()
-    #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_array_input(interpolated_zvlas_list,centered_cubic_lattice_sp_structure_Z)
-    #end = time.time()
-    #print(end - start)
+        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.plot_differing_points(containment_info_for_volume_calc_pandas_dataframe,
+                                                                                containment_info_for_volume_calc_pandas_dataframe_old, 
+                                                                                other_pcds_to_plot_list, 
+                                                                                column_to_check = "Pt contained bool",
+                                                                                x_col_name="Test pt X", 
+                                                                                y_col_name="Test pt Y", 
+                                                                                z_col_name="Test pt Z",
+                                                                                r_col_name="Pt clr R", 
+                                                                                g_col_name="Pt clr G", 
+                                                                                b_col_name="Pt clr B")
+
+    ## Compare to old methodology end
+
+    if demonstrate_volume_calculation_correctness_bool_1 == True:
+
+        # Extract only the points that are contained in the structure
+        containment_info_for_volume_calc_only_internal_pts_pandas_dataframe = containment_info_for_volume_calc_pandas_dataframe.drop(containment_info_for_volume_calc_pandas_dataframe[containment_info_for_volume_calc_pandas_dataframe["Pt contained bool"] == False].index).reset_index()
+
+        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_volume_calc_pandas_dataframe, 
+                    "Test pt X", 
+                    "Test pt Y", 
+                    "Test pt Z",
+                    "Pt clr R",
+                    "Pt clr G",
+                    "Pt clr B",
+                    additional_point_clouds=other_pcds_to_plot_list)
+        
+        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_volume_calc_only_internal_pts_pandas_dataframe, 
+                    "Test pt X", 
+                    "Test pt Y", 
+                    "Test pt Z",
+                    "Pt clr R",
+                    "Pt clr G",
+                    "Pt clr B",
+                    additional_point_clouds=other_pcds_to_plot_list)
+        
+        del containment_info_for_volume_calc_only_internal_pts_pandas_dataframe
     
-    ### Using cupy is quicker than the old way (above) with the vectorized function (the function was crap anyways)
-    ### updated it further with the below generic function!
-    #start = time.time()
-    #nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.take_closest_cupy(interpolated_zvlas_list, centered_cubic_lattice_sp_structure_Z)
-    #end = time.time()
-    #print(end - start)
     
 
-    nearest_interpolated_zslice_index_array, nearest_interpolated_zslice_vals_array = point_containment_tools.nearest_zslice_vals_and_indices_cupy_generic(interpolated_zvlas_list, 
-                                                                                                                                                            centered_cubic_lattice_sp_structure_Z,
-                                                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                            progress_bar_level_task_obj
-                                                                                                                                                            )
-
-    centered_cubic_lattice_sp_structure_XY_interleaved_1darr = centered_cubic_lattice_sp_structure_XY.flatten()
-    centered_cubic_lattice_sp_structure_XY_cuspatial_geoseries_points = cuspatial.GeoSeries.from_points_xy(centered_cubic_lattice_sp_structure_XY_interleaved_1darr)
-
-    # Test point containment 
-    #start = time.time()
-    containment_info_grand_pandas_dataframe, live_display = point_containment_tools.cuspatial_points_contained_generic_numpy_pandas(zslices_polygons_cuspatial_geoseries,
-        centered_cubic_lattice_sp_structure_XY_cuspatial_geoseries_points, 
-        centered_cubic_lattice_sp_structure, 
-        nearest_interpolated_zslice_index_array,
-        nearest_interpolated_zslice_vals_array,
-        max_zval,
-        min_zval,
-        structure_info,
-        layout_groups,
-        live_display,
-        structures_progress,
-        upper_limit_size_input = cupy_array_upper_limit_NxN_size_input
-        )
-    
-    live_display.refresh()
-    #end = time.time()
-    #print(end - start)               
-
-    if plot_volume_calculation_containment_result_bool == True:
-        test_pts_color_R = containment_info_grand_pandas_dataframe["Pt clr R"].to_numpy()
-        test_pts_color_G = containment_info_grand_pandas_dataframe["Pt clr G"].to_numpy()
-        test_pts_color_B = containment_info_grand_pandas_dataframe["Pt clr B"].to_numpy()
-        test_pts_color_arr = np.empty([num_test_points,3])
-        test_pts_color_arr[:,0] = test_pts_color_R
-        test_pts_color_arr[:,1] = test_pts_color_G
-        test_pts_color_arr[:,2] = test_pts_color_B
-        centered_cubic_lattice_sp_structure_pcd = point_containment_tools.create_point_cloud_with_colors_array(centered_cubic_lattice_sp_structure, test_pts_color_arr)
-        struct_interpolated_pts_pcd = point_containment_tools.create_point_cloud(structure_points_array, color = np.array([0,0,1]))
-        plotting_funcs.plot_geometries(centered_cubic_lattice_sp_structure_pcd, struct_interpolated_pts_pcd, label='Unknown')                                                                    
-        del centered_cubic_lattice_sp_structure_pcd
-        del struct_interpolated_pts_pcd
-
+    ### NEW CONTAINMENT METHODOLOGY END
     
     # calculate volume of structure
-    number_of_contained_points = len(containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Pt contained bool"] == True].index)
+    number_of_contained_points = len(containment_info_for_volume_calc_pandas_dataframe[containment_info_for_volume_calc_pandas_dataframe["Pt contained bool"] == True].index)
     structure_volume = number_of_contained_points*volume_element
 
     ## get binary mask
         
-    binary_mask_dataframe = containment_info_grand_pandas_dataframe[containment_info_grand_pandas_dataframe["Pt contained bool"] == True]
+    binary_mask_dataframe = containment_info_for_volume_calc_pandas_dataframe[containment_info_for_volume_calc_pandas_dataframe["Pt contained bool"] == True]
     binary_mask_x_vals_arr = binary_mask_dataframe["Test pt X"].to_numpy()
     binary_mask_y_vals_arr = binary_mask_dataframe["Test pt Y"].to_numpy()
     binary_mask_z_vals_arr = binary_mask_dataframe["Test pt Z"].to_numpy()
@@ -221,7 +310,7 @@ def structure_volume_calculator(structure_points_array,
         
 
 
-    del containment_info_grand_pandas_dataframe
+    del containment_info_for_volume_calc_pandas_dataframe
 
     return structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display
 
@@ -1229,3 +1318,49 @@ def extract_number_from_string(s, allowed_prefixes):
     if match:
         return int(match.group(1))
     return None
+
+
+
+
+
+
+
+
+
+
+
+def deep_getsizeof(obj, seen=None):
+    """Recursively finds the deep memory size of an object in bytes."""
+    if seen is None:
+        seen = set()
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0  # Avoid infinite recursion on self-referential objects
+
+    seen.add(obj_id)
+    
+    size = sys.getsizeof(obj)  # Get base object size
+
+    if isinstance(obj, dict):
+        size += sum(deep_getsizeof(k, seen) + deep_getsizeof(v, seen) for k, v in obj.items())
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        size += sum(deep_getsizeof(i, seen) for i in obj)
+
+    return size
+
+
+
+
+
+
+
+
+def gpu_memory_usage(array):
+    """
+    Returns GPU memory usage in bytes for a CuPy array.
+    """
+    if isinstance(array, cp.ndarray):
+        return array.nbytes  # Memory used on GPU
+    else:
+        raise TypeError("Input is not a CuPy array.")
