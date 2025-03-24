@@ -283,7 +283,7 @@ def plot_point_clouds(*points_arr, label='Unknown'):
         geometry_list.append(point_cloud)
     o3d.visualization.draw_geometries(geometry_list)
 
-def plot_geometries(*geometries, label='Unknown', lookat_inp=None, up_inp=None, front_inp=None, zoom_inp=None, show_axes=False, axes_length=1.0, axes_origin=[0, 0, 0]):
+def plot_geometries(*geometries, label='Unknown', lookat_inp=None, up_inp=None, front_inp=None, zoom_inp=None, show_axes=True, axes_length=1.0, axes_origin=[0, 0, 0]):
     geom_list = []
     for geom_item in geometries:
         geom_list.append(geom_item)
@@ -688,7 +688,7 @@ def dose_point_cloud_with_dose_labels_for_animation(NN_pts_on_dose_lattice_arr, 
 
 
 
-def dose_point_cloud_with_lines_only_for_animation(org_sampled_bx_pcd, thresholded_dose_pcd, NN_pts_on_dose_lattice_arr, queried_bx_pts_arr, num_dose_NN_per_bx_pt, draw_lines = True):
+def dose_point_cloud_with_lines_only_for_animation(org_sampled_bx_pcd, thresholded_dose_pcd, NN_pts_on_dose_lattice_arr, queried_bx_pts_arr, num_dose_NN_per_bx_pt, draw_lines = True, other_pcds_list = []):
     NN_doses_locations_pointcloud = point_containment_tools.create_point_cloud(NN_pts_on_dose_lattice_arr)
     queried_bx_pts_locations_pointcloud = point_containment_tools.create_point_cloud(queried_bx_pts_arr, color = np.array([0,1,0]))
     
@@ -707,7 +707,7 @@ def dose_point_cloud_with_lines_only_for_animation(org_sampled_bx_pcd, threshold
             line_set.paint_uniform_color(line_color)
             line_set_list.append(copy.copy(line_set))
     
-        geometry_list = geometry_list + line_set_list
+        geometry_list = geometry_list + line_set_list + other_pcds_list
     
     o3d.visualization.draw_geometries(geometry_list)
     return geometry_list

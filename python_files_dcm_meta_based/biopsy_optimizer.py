@@ -170,7 +170,10 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
         structureID_dil = structure_info["Structure ID"]
         test_struct_to_relative_struct_1d_mapping_array = np.array([0])          
         log_sub_dirs_list = [patientUID, structureID_dil]
-        custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+        if generate_cuda_log_files_biopsy_optimizer == True:
+            custom_cuda_log_file_name = "cuda_dil_bioposy_optimization_lattice_default.txt"
+        else:
+            custom_cuda_log_file_name = None 
 
         containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
                             centered_cubic_lattice_sp_structure[np.newaxis,:,:],
@@ -657,9 +660,10 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
         optimal_points_np_array = np.empty([num_optimal_points,3])
         for arr_index, (index, row) in enumerate(optimal_locations_dataframe.iterrows()):
             optimal_points_np_array[arr_index,0:3] = np.array([row['Test location (X)'], row['Test location (Y)'], row['Test location (Z)']])
-        # optimal positions are colored green
-        optimal_points_pcd = point_containment_tools.create_point_cloud(optimal_points_np_array.reshape((-1,3)), color = np.array([0,1,0]))
-        structure_global_centroid_pcd = point_containment_tools.create_point_cloud(structure_global_centroid.reshape((-1,3)), color = np.array([1,0,1])) 
+        
+        optimal_points_pcd = point_containment_tools.create_point_cloud(optimal_points_np_array.reshape((-1,3)), color = np.array([0,1,0])) # optimal positions are colored green
+        structure_global_centroid_pcd = point_containment_tools.create_point_cloud(structure_global_centroid.reshape((-1,3)), color = np.array([1,0,1])) # centroid is colored in magenta
+        
         plotting_funcs.plot_geometries(optimal_points_pcd, struct_interpolated_pts_pcd,structure_global_centroid_pcd, label='Unknown')                                                                    
 
 

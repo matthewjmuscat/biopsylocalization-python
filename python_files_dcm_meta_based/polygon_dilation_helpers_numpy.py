@@ -1,5 +1,6 @@
 import numpy as np
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
+
 import plotting_funcs
 import point_containment_tools
 import time
@@ -10,6 +11,7 @@ import io
 import multiprocess
 import os 
 import cupy as cp
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 
 def convert_to_2d_array_and_indices_numpy(list_of_arrays, num_columns = 3, main_arr_dtype = np.float32, indices_arr_dtype = np.int32):
     # Calculate the total number of points
@@ -31,6 +33,23 @@ def convert_to_2d_array_and_indices_numpy(list_of_arrays, num_columns = 3, main_
         current_index += num_points
     
     return points_array, indices_array
+
+
+def reconstruct_list_from_2d_array(points_array, indices_array):
+    """
+    Reconstructs a list of arrays from a 2D points array and an indices array.
+    
+    Parameters:
+        points_array (np.ndarray): The stacked points array of shape (total_points, num_columns).
+        indices_array (np.ndarray): The indices array of shape (num_slices, 2), where each row contains
+                                    the start and end indices of each slice.
+
+    Returns:
+        list_of_arrays (list of np.ndarray): A list of arrays, each containing points from a constant Z slice.
+    """
+    list_of_arrays = [points_array[start:end] for start, end in indices_array]
+    return list_of_arrays
+
 
 def convert_to_2d_array_and_indices_from_3d_arr_numpy(pts_3d_arr):
     # Calculate the total number of points
@@ -663,19 +682,193 @@ def remove_consecutive_duplicate_points_numpy(slice_arr):
 
 
 
+# extremely slow
+def create_end_caps_for_zslices(zslices_list, maximum_point_distance):
+    """
+    Creates end caps for the first and last Z slices in the given zslices_list.
+
+    Parameters:
+        zslices_list (list of np.ndarray): List of N_j x 3 arrays where each element is a constant Z slice.
+        maximum_point_distance (float): The maximum allowed distance between points for the grid spacing.
+
+    Returns:
+        new_zslices_list (list of np.ndarray): A new zslices list where the first and last slices have end caps.
+    """
+    if not zslices_list:
+        raise ValueError("The input zslices_list is empty.")
+    
+    grid_spacing = maximum_point_distance / np.sqrt(2)
+
+    def create_fill_points(threeDdata_zslice):
+        """
+        Generates fill points within the polygon formed by the given 3D Z slice.
+
+        Parameters:
+            threeDdata_zslice (np.ndarray): A single slice of N x 3 points where Z is constant.
+
+        Returns:
+            np.ndarray: The fill points as an array (M, 3).
+        """
+        z_val = threeDdata_zslice[0, 2]
+        min_x, min_y = np.amin(threeDdata_zslice[:, 0:2], axis=0)
+        max_x, max_y = np.amax(threeDdata_zslice[:, 0:2], axis=0)
+
+        # Create a grid of candidate points
+        fill_points_xy_grid_arr = np.mgrid[
+            min_x - grid_spacing : max_x + grid_spacing : grid_spacing,
+            min_y - grid_spacing : max_y + grid_spacing : grid_spacing
+        ].reshape(2, -1).T
+
+        # Convert to 3D by adding the constant Z value
+        fill_points_xyz_grid_arr = np.empty((len(fill_points_xy_grid_arr), 3), dtype=float)
+        fill_points_xyz_grid_arr[:, 0:2] = fill_points_xy_grid_arr
+        fill_points_xyz_grid_arr[:, 2] = z_val
+
+        # Create a polygon from the original slice
+        zslice_polygon_shapely = Polygon(threeDdata_zslice[:, 0:2])
+
+        # Filter points that are inside the polygon
+        valid_fill_points = np.array(
+            [pt for pt in fill_points_xyz_grid_arr if Point(pt[:2]).within(zslice_polygon_shapely)]
+        )
+
+        return valid_fill_points
+
+    # Generate the end caps
+    first_end_cap = create_fill_points(zslices_list[0])
+    last_end_cap = create_fill_points(zslices_list[-1])
+
+    # Construct the new zslices list
+    new_zslices_list = [first_end_cap] + zslices_list + [last_end_cap]
+
+    return new_zslices_list
 
 
 
 
 
+def create_end_caps_for_zslices_ver2(all_structures_zslices_list, 
+                                     grid_factor = 0.1, 
+                                     kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"):
+    """
+    Fast version: builds a grid and uses the GPU PIP kernel to generate end caps.
+    """
+    if not all_structures_zslices_list:
+        raise ValueError("The input zslices_list is empty.")
+
+    # Build candidate 3d arr
+    # Note: each slice is a 2D array of points, with the first candidate end cap stacked on top of the last candidate end cap
+    all_structures_first_and_last_zslices_only = [[zslices_list[0], zslices_list[-1]] for zslices_list in all_structures_zslices_list]  # just the first and last slice
+    end_caps_candidates_3d_arr, num_max_end_cap_candidate_pts = get_fill_candidates_max_3d_arr(all_structures_first_and_last_zslices_only, grid_factor)
+    
+    num_structures = len(all_structures_zslices_list)
+
+    # Use your fast CUDA-based PIP function
+    mapping_array = np.arange(0, num_structures, dtype=np.int32)
+
+    containment_results_cp_arr, _ = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
+        all_structures_first_and_last_zslices_only,
+        end_caps_candidates_3d_arr,
+        mapping_array,
+        constant_z_slice_polygons_handler_option='auto-close-if-open',
+        remove_consecutive_duplicate_points_in_polygons=True,
+        log_sub_dirs_list=[],
+        log_file_name=None,
+        include_edges_in_log=False,
+        kernel_type=kernel_type
+    )
+
+    all_structures_zslices_list_filled_end_caps = []
+    for structure_idx, sp_structure_containment_result_row in enumerate(containment_results_cp_arr):
+        first_end_cap_candidates = end_caps_candidates_3d_arr[structure_idx][0:num_max_end_cap_candidate_pts]
+        first_end_cap_valid_pts = first_end_cap_candidates[sp_structure_containment_result_row[0:num_max_end_cap_candidate_pts].get()]
+
+        last_end_cap_candidates = end_caps_candidates_3d_arr[structure_idx][num_max_end_cap_candidate_pts:]
+        last_end_cap_valid_pts = last_end_cap_candidates[sp_structure_containment_result_row[num_max_end_cap_candidate_pts:].get()]
+
+        sp_structure_zslices_list_filled_end_caps = [first_end_cap_valid_pts] + all_structures_zslices_list[structure_idx] + [last_end_cap_valid_pts]
+        all_structures_zslices_list_filled_end_caps.append(sp_structure_zslices_list_filled_end_caps)
+
+    return all_structures_zslices_list_filled_end_caps
+
+def get_max_fill_candidates(all_structures_zslices_list):
+    """
+    Get the maximum bounding box for the end cap fill candidates.
+    """
+    min_x, min_y, max_x, max_y = np.inf, np.inf, -np.inf, -np.inf
+    for structure_zslices_list in all_structures_zslices_list:
+        first_slice = structure_zslices_list[0]
+        last_slice = structure_zslices_list[-1]
+
+        min_x_first, min_y_first = np.amin(first_slice[:, 0:2], axis=0)
+        max_x_first, max_y_first = np.amax(first_slice[:, 0:2], axis=0)
+        
+        min_x_last, min_y_last = np.amin(last_slice[:, 0:2], axis=0)
+        max_x_last, max_y_last = np.amax(last_slice[:, 0:2], axis=0)
+
+        min_x = min(min_x, min_x_first, min_x_last)
+        min_y = min(min_y, min_y_first, min_y_last)
+        max_x = max(max_x, max_x_first, max_x_last)
+        max_y = max(max_y, max_y_first, max_y_last)
+
+    return min_x, min_y, max_x, max_y
 
 
+def get_fill_candidates_max_3d_arr(all_structures_zslices_list, grid_factor = 0.1):
+    min_x, min_y, max_x, max_y = get_max_fill_candidates(all_structures_zslices_list)
+
+    diameter = np.sqrt((max_x - min_x)**2 + (max_y - min_y)**2)
+
+    maximum_point_distance = grid_factor * diameter
+    grid_spacing = maximum_point_distance / np.sqrt(2)
 
 
+    # build grid
+    xx, yy = np.meshgrid(
+        np.arange(min_x - grid_spacing, max_x + grid_spacing, grid_spacing),
+        np.arange(min_y - grid_spacing, max_y + grid_spacing, grid_spacing)
+    )
+
+    num_structures = len(all_structures_zslices_list)
+
+    num_max_end_cap_candidate_pts = xx.size
+
+    end_caps_candidates_3d_arr = np.empty((num_structures, 2 * num_max_end_cap_candidate_pts, 3), dtype=float)
+    for i, structure_zslices_list in enumerate(all_structures_zslices_list):
+        first_slice = structure_zslices_list[0]
+        last_slice = structure_zslices_list[-1]
+
+        first_slice_zval = first_slice[0, 2]
+        last_slice_zval = last_slice[0, 2]
+
+        
+        candidates_xy = np.column_stack((xx.ravel(), yy.ravel()))
+        candidates_xyz_first = np.column_stack((candidates_xy, np.full(len(candidates_xy), first_slice_zval)))
+        candidates_xyz_last = np.column_stack((candidates_xy, np.full(len(candidates_xy), last_slice_zval)))
+
+        candidates_xyz = np.vstack((candidates_xyz_first, candidates_xyz_last))
+
+        end_caps_candidates_3d_arr[i, :, :] = candidates_xyz
 
 
+    return end_caps_candidates_3d_arr, num_max_end_cap_candidate_pts
 
 
+"""
+def get_fill_candidates(zslice_3d_arr, grid_spacing):
+    z_val = zslice_3d_arr[0, 2]
+    min_x, min_y = np.amin(zslice_3d_arr[:, 0:2], axis=0)
+    max_x, max_y = np.amax(zslice_3d_arr[:, 0:2], axis=0)
+
+    # Build grid
+    xx, yy = np.meshgrid(
+        np.arange(min_x - grid_spacing, max_x + grid_spacing, grid_spacing),
+        np.arange(min_y - grid_spacing, max_y + grid_spacing, grid_spacing)
+    )
+    candidates_xy = np.column_stack((xx.ravel(), yy.ravel()))
+    candidates_xyz = np.column_stack((candidates_xy, np.full(len(candidates_xy), z_val)))
+    return candidates_xyz
+"""
 
 
 

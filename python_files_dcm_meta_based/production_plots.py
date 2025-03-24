@@ -35,7 +35,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.offsetbox import AnnotationBbox, TextArea
 import warnings
 import dataframe_builders
-
+import math
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -125,7 +125,6 @@ def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
     fig.update_layout(
         boxmode='group'
     )
-
 
     """
     # box plot
@@ -451,10 +450,10 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
 
             
 
-            x_dist = mc_trial_shift_vec_df.at[0,'Shift X']
-            y_dist = mc_trial_shift_vec_df.at[0,'Shift Y']
-            z_dist = mc_trial_shift_vec_df.at[0,'Shift Z']
-            d_tot = mc_trial_shift_vec_df.at[0,'Shift magnitude']
+            x_dist = mc_trial_shift_vec_df.at[0,'Shift (X)']
+            y_dist = mc_trial_shift_vec_df.at[0,'Shift (Y)']
+            z_dist = mc_trial_shift_vec_df.at[0,'Shift (Z)']
+            d_tot = math.sqrt(x_dist**2 + y_dist**2 + z_dist**2)
 
             annotation_text_for_trial = f"({x_dist:.1f},{y_dist:.1f},{z_dist:.1f}), d = {d_tot:.1f}"
             
@@ -492,8 +491,7 @@ def production_plot_axial_dose_distribution_quantile_regression_by_patient_matpl
         bx_struct_roi = specific_bx_structure["ROI"]
         bx_struct_ind = specific_bx_structure["Index number"]
 
-        sp_patient_all_structure_shifts_pandas_data_frame = pydicom_item[all_ref]["Multi-structure MC simulation output dataframes dict"]["All MC structure shift vectors"]
-
+        sp_patient_all_structure_shifts_pandas_data_frame = pydicom_item[all_ref]["Multi-structure MC simulation output dataframes dict"]["All MC structure transformation values"]
         
         dose_output_nominal_and_all_MC_trials_pandas_data_frame = specific_bx_structure["Output data frames"]["Point-wise dose output by MC trial number"]
 

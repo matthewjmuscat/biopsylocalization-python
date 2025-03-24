@@ -136,8 +136,35 @@ def main():
 
     # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
     # specify the patient IDs and the list of biopsy names to remove from the dataset
-    data_removals_dict = {"189 (F2)": ["Bx_Tr LM1 blood"],
-                            "192 (F2)": ["Bx_trk LM blood"]}
+    data_removals_dict_bx = {"189 (F2)": ["Bx_Tr LM1 blood"],
+                            "192 (F2)": ["Bx_trk LM blood"]
+                            }
+    
+    data_removals_dict_dil = {"194 (F1)": ["DIL 2"],
+                            "194 (F2)": ["DIL 2"],
+                            "195 (F2)": ["DIL 1 MIN", "DIL 2 MIN"],
+                            "196 (F1)": ["DIL 1 MIN"],
+                            "196 (F2)": ["DIL 1 MIN"],
+                            "199 (F1)": ["DIL 1 MIN", "DIL 2 MIN"],
+                            "199 (F2)": ["DIL 1 MIN", "DIL 2 MIN"],
+                            }
+    
+    data_removals_dict_prostate = {"194 (F1)": ["Prostate pre"],
+                            "195 (F1)": ["Prostate bx"],
+                            "195 (F2)": ["Prostate pre"]
+                            }
+    
+    data_removals_dict_urethra = {"194 (F1)": ["Opti Urethra"],
+                            "194 (F2)": ["Opti Urethra"],
+                            "195 (F1)": ["Opti Urethra", "Urethra_pre"],
+                            "195 (F2)": ["Opti Urethra", "Urethra_pre"],
+                            "196 (F1)": ["Opti Urethra"],
+                            "196 (F2)": ["Opti Urethra"],
+                            "199 (F1)": ["Opti Urethra"],
+                            "199 (F2)": ["Opti Urethra"]
+                            }
+    
+    data_removals_dict_rectum = {}
 
 
     # The following could be user input, for now they are defined here, and used throughout 
@@ -364,9 +391,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10000
+    num_MC_containment_simulations_input = 100
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 1000
+    num_MC_dose_simulations_input = 100
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -377,18 +404,21 @@ def main():
     raw_data_mc_dosimetry_dump_bool = False # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for dose tests! 
     raw_data_mc_containment_dump_bool = False  # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for containment tests!
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
-    
+    cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
+    nn_search_end_cap_grid_factor = 0.1
+
     # custom point containment algorithm options
     generate_cuda_log_files_MC_containment_sim = False
     generate_cuda_log_files_volume_calculation = False
+    generate_cuda_log_files_structure_dimension_calculation = False
     generate_cuda_log_files_biopsy_optimizer = False
     include_edges_in_log_files = False
 
     ### Kernel selection:
     """
-    1. The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. 
+    1. The type of kernel to use. The default is "one_to_one_pip_kernel_advanced". 
     2. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays. 
-    3. The other is "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" which implements much better practices of gpu memory and performance optimization by not calculating poly_points at all, and passing pointers to indices instead to the kernel.
+    3. (MOST ADVANCED VERSION) The other is "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" which implements much better practices of gpu memory and performance optimization by not calculating poly_points at all, and passing pointers to indices instead to the kernel.
     """
     custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" 
     constant_z_slice_polygons_handler_option = 'auto-close-if-open' # Can be 'auto-close-if-open' or 'close-all' or None
@@ -421,10 +451,6 @@ def main():
     voxel_size_for_dil_optimizer_grid = 1
     num_normal_dist_points_for_biopsy_optimizer = 10000
     normal_dist_sigma_factor_biopsy_optimizer = 1/4
-    plot_each_normal_dist_containment_result_bool = False
-    plot_optimization_point_lattice_bool = False
-    show_optimization_point_bool = True
-    display_optimization_contour_plots_bool = False
     optimal_normal_dist_option = 'dil dimension driven' # can be 'biopsy_and_dil_sigmas' or 'dil dimension driven', note that the biopsy_and_dil_sigmas option adds all sigmas in quadrature and then uses this value as TWO sigma. Note that the dil deimnsion driven option uses the dimension of the respective dil at the position of the dil centroid in each direction as TWO sigma
     # these multipliers provide a lengthening or stretching of the normal dist to bias a certain dimension as relatively more important 
     bias_LR_multiplier = 1
@@ -438,12 +464,12 @@ def main():
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
                               {"Create": True,
-                              "Relative to": 'DIL',
+                              "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
                               {"Create": True,
-                              "Relative to": 'DIL',
+                              "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_optimal_dil'}
                             }
     simulated_biopsy_length_method = 'real normal' # can be 'full' (ie. 19mm), 'real normal' (samples from a normal distribution with mu=real_mean, std = real_std) or 'real mean' (all sim biopsy lengths are equal to real_mean)
@@ -488,8 +514,12 @@ def main():
     
     ### PLOTS TO SHOW:
 
-    # preprocessing
-    demonstrate_volume_calculation_correctness_bool_1 = False # NEW CUSTOM CONTAINMENT ALGO: shows the volume calculation from PIP test
+    # Preprocessing
+    demonstrate_volume_calculation_correctness_bool_1 = False # Volume ---- NEW CUSTOM CONTAINMENT ALGO: shows the volume calculation from PIP test
+    plot_volume_calculation_containment_result_bool_1_old = False # Volume ---- OLD CUSPATIAL CONTAINMENT ALGO: shows the volume calculation from PIP test
+    demonstrate_structure_dimension_calculation_correctness_bool_1 = False # Dimension ---- NEW CUSTOM CONTAINMENT ALGO: shows the dimension calculation from PIP test
+    demonstrate_structure_dimension_calculation_correctness_bool_1_old = False # Dimension ---- OLD CUSPATIAL CONTAINMENT ALGO: shows the dimension calculation from PIP test
+
 
     # Transformations
     inspect_self_biopsy_dilate_bool = False # per trial basis
@@ -506,16 +536,21 @@ def main():
     show_NN_dose_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
 
     # Tissue class and structure distances
-    show_num_containment_demonstration_plots = 10 # this shows one trial at a time!!!
+    show_num_containment_demonstration_plots = 0 # this shows one trial at a time!!!
     containment_results_structure_types_to_show_per_trial = [oar_ref, dil_ref] # can be any combination of the structure references
-    plot_cupy_containment_distribution_results = True # nice because it shows all trials at once
-    plot_nearest_neighbour_surface_boundary_demonstration = False # you see one trial at a time
-    plot_relative_structure_centroid_demonstration = False # you see one trial at a time
+    plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
+    show_num_nearest_neighbour_surface_boundary_demonstration = 0 # must be an integer, 0 means show none, you see one trial at a time
+    show_num_relative_structure_centroid_demonstration = 0 # must be an integer, 0 means show none, you see one trial at a time
+    check_if_end_caps_filled_proper_NN_num = 0
 
     # DIL biopsy optimization
-    demonstrate_dil_optimization_points_inside_correctness_bool_1 = True # shows the containment results for the generated lattice points that is passed to the optimizer function
+    demonstrate_dil_optimization_points_inside_correctness_bool_1 = False # shows the containment results for the generated lattice points that is passed to the optimizer function
     demonstrate_dil_optimization_points_inside_correctness_bool_2 = False # shows the containment results for the generated lattice inside the optiomizer function, which is only caleld if you didnt pass the optimizer function a lattice. We are currently passing it a lattice.
-    demonstrate_dil_optimization_points_inside_correctness_num_3 = 5 # 0, means off! Shows the containment results for all normal distritution generated points centered at each test point lattice position, shows random 5 trials
+    demonstrate_dil_optimization_points_inside_correctness_num_3 = 0 # 0, means off! Shows the containment results for all normal distritution generated points centered at each test point lattice position, shows random 5 trials
+    plot_each_normal_dist_containment_result_bool = False
+    plot_optimization_point_lattice_bool = False
+    show_optimization_point_bool = False
+    display_optimization_contour_plots_bool = False
 
     # MRs
     show_3d_mr_adc_renderings = False
@@ -532,13 +567,11 @@ def main():
     plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
     plot_translation_vectors_pointclouds = False
     plot_shifted_biopsies = False
-    plot_volume_calculation_containment_result_bool_1_old = False
     display_curvature_bool = False
     display_structure_surface_mesh_bool = False
     plot_binary_mask_bool = False
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
-    plot_dimension_calculation_containment_result_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
 
     ###
@@ -558,7 +591,7 @@ def main():
     num_z_vals_to_evaluate_for_regression_plots = 1000
     tissue_class_probability_plot_type_list = ['with_errors','']
     production_plots_input_dictionary = {"Sampled translation vector magnitudes box plots": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": " - sampling-box_plot-sampled_translations_magnitudes_all_trials",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
@@ -573,7 +606,7 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Guidance maps with actual cores":\
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": "guidance maps with actual cores",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },      
@@ -669,11 +702,11 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Tissue classification sum-to-one plot": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
                                             },
                                         "Tissue classification sum-to-one nominal plot": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": True, #
                                              "Plot name": ' - tissue_class_sum-to-one_nominal_chart',
                                             },
                                         "Axial tissue class voxelized ridgeline plot": \
@@ -1401,21 +1434,11 @@ def main():
                 """
                 if num_simulated_bxs_to_create >= 1:
                     for sim_bx_type_str,sim_bx_type_dict in bx_sim_locations_dict.items():
-                        simulate_biopsies_relative_to = sim_bx_type_dict["Relative to"]
-                        keyfound = False
-                        for struct_type_key in structs_referenced_dict.keys():
-                            if simulate_biopsies_relative_to in structs_referenced_dict[struct_type_key]["Contour names"]:
-                                if keyfound == True:
-                                    raise Exception("Structure specified to simulate biopsies to was found in more than one structure type.")
-                                simulate_biopsies_relative_to_struct_type = struct_type_key
-                                keyfound = True
-                        if keyfound == False:
-                            raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
-                        sim_bx_type_dict["Relative to struct type"] = simulate_biopsies_relative_to_struct_type
-                        important_info.add_text_line("Simulating "+ sim_bx_type_str+" biopsies relative to "+simulate_biopsies_relative_to+" (Found under "+simulate_biopsies_relative_to_struct_type+").", live_display)          
+                        simulate_biopsies_relative_to = sim_bx_type_dict["Relative to struct type"]
+                        
+                        important_info.add_text_line("Simulating "+ sim_bx_type_str+" biopsies relative to "+simulate_biopsies_relative_to+".", live_display)          
                         live_display.refresh()
                 else: 
-                    simulate_biopsies_relative_to_struct_type = None
                     important_info.add_text_line("Not creating any simulated biopsies.", live_display)          
                     live_display.refresh() 
                 
@@ -1423,7 +1446,11 @@ def main():
                 # patient dictionary creation
                 building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
                 building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
-                master_structure_reference_dict, master_structure_info_dict = structure_referencer(data_removals_dict,
+                master_structure_reference_dict, master_structure_info_dict = structure_referencer(data_removals_dict_bx,
+                                                                                                data_removals_dict_prostate,
+                                                                                                data_removals_dict_dil,
+                                                                                                data_removals_dict_urethra,
+                                                                                                data_removals_dict_rectum,
                                                                                                 RTst_dcms_dict, 
                                                                                                 RTdose_dcms_dict,
                                                                                                 RTplan_dcms_dict, 
@@ -1434,6 +1461,7 @@ def main():
                                                                                                 dil_contour_names,
                                                                                                 biopsy_contour_names,
                                                                                                 structs_referenced_list_generalized,
+                                                                                                structs_referenced_dict,
                                                                                                 dose_ref,
                                                                                                 plan_ref,
                                                                                                 mr_adc_ref,
@@ -1531,7 +1559,7 @@ def main():
                 #important_info.add_text_line("important info will appear here1", live_display)
                 #rich_layout["main-right"].update(important_info_Text)
             
-                live_display.stop()
+                
                 """
                 patientUID_default = "Initializing"
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
@@ -2094,7 +2122,7 @@ def main():
                 ### PREPROCESSING OARs
 
 
-                live_display.stop()
+                live_display.start()
 
                 patientUID_default = "Initializing"
                 processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID_default)
@@ -2186,8 +2214,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+                        
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -2301,23 +2335,33 @@ def main():
                         non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
 
                         structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                                                    interpolated_zvals_list,
-                                                                                                                                                    zslices_list,
-                                                                                                                                                    non_bx_structure_global_centroid,
-                                                                                                                                                    structure_info,
-                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
-                                                                                                                                                    voxel_size_for_structure_dimension_calc,
-                                                                                                                                                    factor_for_voxel_size,
-                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
-                                                                                                                                                    layout_groups,
-                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                    structures_progress,
-                                                                                                                                                    live_display
-                                                                                                                                                    )
+                                                                                                                        interpolated_zvals_list,
+                                                                                                                        zslices_list,
+                                                                                                                        non_bx_structure_global_centroid,
+                                                                                                                        structure_info,
+                                                                                                                        patientUID,
+                                                                                                                        voxel_size_for_structure_dimension_calc,
+                                                                                                                        factor_for_voxel_size,
+                                                                                                                        cupy_array_upper_limit_NxN_size_input,
+                                                                                                                        layout_groups,
+                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                        structures_progress,
+                                                                                                                        live_display,
+                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                        )
 
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
                         ###
+
+
 
 
                         """
@@ -2356,13 +2400,15 @@ def main():
                         #st = time.time()
 
 
-                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
                             interp_intra_slice_dist,
                             threeDdata_array_fully_interpolated_with_end_caps,
                             radius_for_normals_estimation,
                             max_nn_for_normals_estimation
                             )
 
+                        if water_tight_bool == False:
+                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
                         
                         #et = time.time()
                         #regular_time = et - st
@@ -2422,7 +2468,9 @@ def main():
                         compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        maximum_3D_diameter = maximum_distance 
+                        maximum_3D_diameter = maximum_distance
+                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
+ 
 
                         # Note that the eigenvectors are vstacked
                         pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
@@ -2468,7 +2516,8 @@ def main():
                                                         "Flatness": [flatness],
                                                         "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
                                                         "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid']
+                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                        "S/I arclength": [si_arclength]
                                                         }
 
                         shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
@@ -2592,8 +2641,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -2696,19 +2751,27 @@ def main():
                         non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
 
                         structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                                                    interpolated_zvals_list,
-                                                                                                                                                    zslices_list,
-                                                                                                                                                    non_bx_structure_global_centroid,
-                                                                                                                                                    structure_info,
-                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
-                                                                                                                                                    voxel_size_for_structure_dimension_calc,
-                                                                                                                                                    factor_for_voxel_size,
-                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
-                                                                                                                                                    layout_groups,
-                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                    structures_progress,
-                                                                                                                                                    live_display
-                                                                                                                                                    )
+                                                                                                                        interpolated_zvals_list,
+                                                                                                                        zslices_list,
+                                                                                                                        non_bx_structure_global_centroid,
+                                                                                                                        structure_info,
+                                                                                                                        patientUID,
+                                                                                                                        voxel_size_for_structure_dimension_calc,
+                                                                                                                        factor_for_voxel_size,
+                                                                                                                        cupy_array_upper_limit_NxN_size_input,
+                                                                                                                        layout_groups,
+                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                        structures_progress,
+                                                                                                                        live_display,
+                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                        )
 
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -2749,12 +2812,15 @@ def main():
                         ###
                         #live_display.stop()
 
-                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
                             interp_intra_slice_dist,
                             threeDdata_array_fully_interpolated_with_end_caps,
                             radius_for_normals_estimation,
                             max_nn_for_normals_estimation
                             )
+                        
+                        if water_tight_bool == False:
+                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
                         
                         if display_structure_surface_mesh_bool == True:
                             o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
@@ -2782,6 +2848,7 @@ def main():
                         compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         maximum_3D_diameter = maximum_distance 
+                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
 
                         # Note that the eigenvectors are vstacked
                         pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
@@ -2827,7 +2894,8 @@ def main():
                                                         "Flatness": [flatness],
                                                         "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
                                                         "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid']
+                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                        "S/I arclength": [si_arclength]
                                                         }
 
 
@@ -2946,8 +3014,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+                        
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -3050,19 +3124,27 @@ def main():
                         non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
 
                         structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                                                    interpolated_zvals_list,
-                                                                                                                                                    zslices_list,
-                                                                                                                                                    non_bx_structure_global_centroid,
-                                                                                                                                                    structure_info,
-                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
-                                                                                                                                                    voxel_size_for_structure_dimension_calc,
-                                                                                                                                                    factor_for_voxel_size,
-                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
-                                                                                                                                                    layout_groups,
-                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                    structures_progress,
-                                                                                                                                                    live_display
-                                                                                                                                                    )
+                                                                                                                        interpolated_zvals_list,
+                                                                                                                        zslices_list,
+                                                                                                                        non_bx_structure_global_centroid,
+                                                                                                                        structure_info,
+                                                                                                                        patientUID,
+                                                                                                                        voxel_size_for_structure_dimension_calc,
+                                                                                                                        factor_for_voxel_size,
+                                                                                                                        cupy_array_upper_limit_NxN_size_input,
+                                                                                                                        layout_groups,
+                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                        structures_progress,
+                                                                                                                        live_display,
+                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                        )
 
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -3103,13 +3185,16 @@ def main():
                         ###
                         #live_display.stop()
 
-                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
                             interp_intra_slice_dist,
                             threeDdata_array_fully_interpolated_with_end_caps,
                             radius_for_normals_estimation,
                             max_nn_for_normals_estimation
                             )
                         
+                        if water_tight_bool == False:
+                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
+
                         if display_structure_surface_mesh_bool == True:
                             o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
 
@@ -3136,6 +3221,7 @@ def main():
                         compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         maximum_3D_diameter = maximum_distance 
+                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
 
                         # Note that the eigenvectors are vstacked
                         pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
@@ -3181,7 +3267,8 @@ def main():
                                                         "Flatness": [flatness],
                                                         "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
                                                         "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid']
+                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                        "S/I arclength": [si_arclength]
                                                         }
 
 
@@ -3349,8 +3436,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
+                        
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -3455,19 +3548,27 @@ def main():
                         non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
 
                         structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                                                    interpolated_zvals_list,
-                                                                                                                                                    zslices_list,
-                                                                                                                                                    non_bx_structure_global_centroid,
-                                                                                                                                                    structure_info,
-                                                                                                                                                    plot_dimension_calculation_containment_result_bool,
-                                                                                                                                                    voxel_size_for_structure_dimension_calc,
-                                                                                                                                                    factor_for_voxel_size,
-                                                                                                                                                    cupy_array_upper_limit_NxN_size_input,
-                                                                                                                                                    layout_groups,
-                                                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                                                    structures_progress,
-                                                                                                                                                    live_display
-                                                                                                                                                    )
+                                                                                                                    interpolated_zvals_list,
+                                                                                                                    zslices_list,
+                                                                                                                    non_bx_structure_global_centroid,
+                                                                                                                    structure_info,
+                                                                                                                    patientUID,
+                                                                                                                    voxel_size_for_structure_dimension_calc,
+                                                                                                                    factor_for_voxel_size,
+                                                                                                                    cupy_array_upper_limit_NxN_size_input,
+                                                                                                                    layout_groups,
+                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                    structures_progress,
+                                                                                                                    live_display,
+                                                                                                                    generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                    constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                    remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                    include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                    custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                    demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                    demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                    other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                    )
 
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -3508,12 +3609,15 @@ def main():
                         ###
                         #live_display.stop()
 
-                        fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
                             interp_intra_slice_dist,
                             threeDdata_array_fully_interpolated_with_end_caps,
                             radius_for_normals_estimation,
                             max_nn_for_normals_estimation
                             )
+                        
+                        if water_tight_bool == False:
+                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
                         
                         if display_structure_surface_mesh_bool == True:
                             o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
@@ -3541,6 +3645,7 @@ def main():
                         compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
                         maximum_3D_diameter = maximum_distance 
+                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
 
                         # Note that the eigenvectors are vstacked
                         pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
@@ -3614,13 +3719,14 @@ def main():
                                                         "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
                                                         "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
                                                         "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                        "S/I arclength": [si_arclength],
                                                         "DIL centroid (X, prostate frame)": specific_structure_global_centroid_in_prostate_frame[0],
                                                         "DIL centroid (Y, prostate frame)": specific_structure_global_centroid_in_prostate_frame[1],
                                                         "DIL centroid (Z, prostate frame)": specific_structure_global_centroid_in_prostate_frame[2],
                                                         "DIL centroid distance (prostate frame)": np.linalg.norm(specific_structure_global_centroid_in_prostate_frame),
                                                         "DIL prostate sextant (LR)": dil_prostate_position_dict["LR"],
                                                         "DIL prostate sextant (AP)": dil_prostate_position_dict["AP"],
-                                                        "DIL prostate sextant (SI)": dil_prostate_position_dict["SI"]
+                                                        "DIL prostate sextant (SI)": dil_prostate_position_dict["SI"]                                                        
                                                         }
 
 
@@ -3665,7 +3771,7 @@ def main():
                 ########## PERFORM BIOPSY DIL OPTIMIZATION
 
 
-                live_display.stop()
+                #live_display.stop()
 
                 patientUID_default = "Initializing"
                 processing_patients_task_main_description = "[red]Optimizing Bx location within DILs [{}]...".format(patientUID_default)
@@ -3860,7 +3966,11 @@ def main():
                         # maps the first test structure to the first relative structure (since there is only 1 test structure and 1 relative structure)              
                         test_struct_to_relative_struct_1d_mapping_array = np.array([0])          
                         log_sub_dirs_list = [patientUID, structureID_dil]
-                        custom_cuda_log_file_name = None # "cuda_dil_bioposy_optimization.txt" <- change from None to a name such as this if you want to include detailed containment algorithm logs
+                        if generate_cuda_log_files_biopsy_optimizer == True:
+                            custom_cuda_log_file_name = "cuda_dil_bioposy_optimization_lattice.txt"
+                        else:
+                            custom_cuda_log_file_name = None 
+
 
                         containment_result_for_all_lattice_points_cp_arr, prepper_output_tuple = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function([zslices_list],
                                             all_geometries_centered_cubic_lattice_arr[np.newaxis,:,:],
@@ -4441,10 +4551,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
                         
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[bx_ref]['PCD color dict'][sim_type]
@@ -4873,10 +4987,14 @@ def main():
                         # fill in the end caps
                         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
                         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
                         
+                        # old
+                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                        # new
+                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[bx_ref]['PCD color dict'][sim_type]
@@ -6238,6 +6356,7 @@ def main():
 
             """
 
+            live_display.start()
 
             rich_preambles.section_completed("Preparing for simulations", section_start_time, completed_progress, completed_sections_manager)
 
@@ -6376,8 +6495,8 @@ def main():
                                                                                             show_NN_dose_demonstration_plots_all_trials_at_once,
                                                                                             show_num_containment_demonstration_plots,
                                                                                             containment_results_structure_types_to_show_per_trial,
-                                                                                            plot_nearest_neighbour_surface_boundary_demonstration,
-                                                                                            plot_relative_structure_centroid_demonstration,
+                                                                                            show_num_nearest_neighbour_surface_boundary_demonstration,
+                                                                                            show_num_relative_structure_centroid_demonstration,
                                                                                             biopsy_needle_compartment_length,
                                                                                             simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                                                             plot_uniform_shifts_to_check_plotly,
@@ -6406,7 +6525,13 @@ def main():
                                                                                             show_non_bx_relative_structure_z_dilation_bool,
                                                                                             show_non_bx_relative_structure_xy_dilation_bool,
                                                                                             generate_cuda_log_files_MC_containment_sim,
-                                                                                            custom_cuda_kernel_type
+                                                                                            custom_cuda_kernel_type,
+                                                                                            constant_z_slice_polygons_handler_option,
+                                                                                            remove_consecutive_duplicate_points_in_polygons,
+                                                                                            interp_dist_caps,
+                                                                                            cuml_NN_algo,
+                                                                                            check_if_end_caps_filled_proper_NN_num,
+                                                                                            nn_search_end_cap_grid_factor
                                                                                             )
 
                     if no_cohort_mr_adc_flag == False:
@@ -9397,7 +9522,11 @@ def UID_generator(pydicom_obj):
     return UID_def
 
 
-def structure_referencer(data_removals_dict,
+def structure_referencer(data_removals_dict_bx,
+                        data_removals_dict_prostate,
+                        data_removals_dict_dil,
+                        data_removals_dict_urethra,
+                        data_removals_dict_rectum,
                          structure_dcm_dict, 
                          dose_dcm_dict, 
                          plan_dcm_dict,
@@ -9408,6 +9537,7 @@ def structure_referencer(data_removals_dict,
                          DIL_list,
                          Bx_list,
                          st_ref_list,
+                         structs_referenced_dict,
                          ds_ref,
                          pln_ref,
                          mr_adc_ref,
@@ -9446,6 +9576,15 @@ def structure_referencer(data_removals_dict,
         with pydicom.dcmread(structure_item_path, defer_size = '2 MB') as structure_item:      
             
             filtered_OARs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in OAR_list)]
+
+            ### Remove unwanted data (prostate)
+            if UID in data_removals_dict_prostate.keys():
+                for prost_id_to_remove in data_removals_dict_prostate[UID]:
+                    for prost in filtered_OARs:
+                        if prost.ROIName == prost_id_to_remove:
+                            filtered_OARs.remove(prost)
+                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Prostate: {prost_id_to_remove})) ", live_display)
+
             OAR_ref = [{"ROI":x.ROIName, 
                         "Ref #":x.ROINumber,
                         "Index number": idx,
@@ -9476,6 +9615,15 @@ def structure_referencer(data_removals_dict,
                         } for idx, x in enumerate(filtered_OARs)]
             
             filtered_DILs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in DIL_list)]
+
+            ### Remove unwanted data (dils)
+            if UID in data_removals_dict_dil.keys():
+                for dil_id_to_remove in data_removals_dict_dil[UID]:
+                    for dil in filtered_DILs:
+                        if dil.ROIName == dil_id_to_remove:
+                            filtered_DILs.remove(dil)
+                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, DIL: {dil_id_to_remove})) ", live_display)
+
             DIL_ref = [{"ROI":x.ROIName, 
                         "Ref #":x.ROINumber,
                         "Index number": idx,
@@ -9506,6 +9654,15 @@ def structure_referencer(data_removals_dict,
                         } for idx, x in enumerate(filtered_DILs)] 
 
             filtered_rectums = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in rectum_list)]
+
+            ### Remove unwanted data (rectum)
+            if UID in data_removals_dict_rectum.keys():
+                for rect_id_to_remove in data_removals_dict_rectum[UID]:
+                    for rect in filtered_rectums:
+                        if rect.ROIName == rect_id_to_remove:
+                            filtered_rectums.remove(rect)
+                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Rect: {rect_id_to_remove})) ", live_display)
+
             rectum_ref = [{"ROI":x.ROIName, 
                         "Ref #":x.ROINumber,
                         "Index number": idx,
@@ -9536,6 +9693,15 @@ def structure_referencer(data_removals_dict,
                         } for idx, x in enumerate(filtered_rectums)]
 
             filtered_urethras = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in urethra_list)]
+
+            ### Remove unwanted data (urethra)
+            if UID in data_removals_dict_urethra.keys():
+                for uret_id_to_remove in data_removals_dict_urethra[UID]:
+                    for uret in filtered_urethras:
+                        if uret.ROIName == uret_id_to_remove:
+                            filtered_urethras.remove(uret)
+                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Uret: {uret_id_to_remove})) ", live_display)
+
             urethra_ref = [{"ROI":x.ROIName, 
                         "Ref #":x.ROINumber,
                         "Index number": idx,
@@ -9567,9 +9733,9 @@ def structure_referencer(data_removals_dict,
             
             filtered_BXs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in Bx_list)]
 
-            ### Remove unwanted data
-            if UID in data_removals_dict.keys():
-                for bx_id_to_remove in data_removals_dict[UID]:
+            ### Remove unwanted data (bx)
+            if UID in data_removals_dict_bx.keys():
+                for bx_id_to_remove in data_removals_dict_bx[UID]:
                     for bpsy in filtered_BXs:
                         if bpsy.ROIName == bx_id_to_remove:
                             filtered_BXs.remove(bpsy)
@@ -9676,10 +9842,37 @@ def structure_referencer(data_removals_dict,
             bpsy_ref_simulated_total = []
             for bx_sim_type_str, bx_sim_type_dict in bx_sim_locations_dict.items():
                 if bx_sim_type_dict["Create"] == True and str(structure_item[0x0010,0x0020].value) == 'F2':
-                    sim_bx_relative_to = bx_sim_type_dict["Relative to"]
+                    sim_bx_relative_to = bx_sim_type_dict["Relative to struct type"]
                     bx_sim_ref_identifier_str = bx_sim_type_dict["Identifier string"]
+
+                    sim_bx_relative_to_contour_names = structs_referenced_dict[sim_bx_relative_to]["Contour names"]
                     
-                    filtered_sim_BXs = [x for x in structure_item.StructureSetROISequence if sim_bx_relative_to.lower() in x.ROIName.lower()]
+
+                    # Determine the appropriate removal list based on the relative structure type.
+                    if bx_sim_type_dict["Relative to struct type"] == st_ref_list[2]:
+                        removal_list = data_removals_dict_dil.get(UID, [])
+                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[0]:
+                        removal_list = data_removals_dict_bx.get(UID, [])
+                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[1]:
+                        removal_list = data_removals_dict_prostate.get(UID, [])
+                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[3]:
+                        removal_list = data_removals_dict_rectum.get(UID, [])
+                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[4]:
+                        removal_list = data_removals_dict_urethra.get(UID, [])
+                    else:
+                        removal_list = []
+
+                    # Now filter simulated biopsy candidates by including the removal condition.
+                    filtered_sim_BXs = [
+                        x for x in structure_item.StructureSetROISequence
+                        if any(contour.lower() in x.ROIName.lower() for contour in sim_bx_relative_to_contour_names)
+                        and x.ROIName not in removal_list
+                    ]
+
+                    # old doesnt account for data point removals of relative structures for simulating biopsies!
+                    #filtered_sim_BXs = [x for x in structure_item.StructureSetROISequence if sim_bx_relative_to.lower() in x.ROIName.lower()]
+                    
+                    
                     bpsy_ref_simulated = [{"ROI": "Bx_Tr_"+bx_sim_ref_identifier_str+" " + x.ROIName, 
                                 "Ref #": bx_sim_ref_identifier_str +" "+ x.ROIName,
                                 "Index number": bpsy_ref_index_start + sim_bpsy_ref_index_start + idx,
@@ -10257,6 +10450,84 @@ class interpolation_information_obj:
             self.endcaps_points.append(fill_point_as_arr)
             self.interpolated_pts_with_end_caps_list.append(fill_point_as_arr)
         self.interpolated_pts_with_end_caps_np_arr = np.vstack(self.interpolated_pts_with_end_caps_list)
+
+
+    def create_fill_new(self, threeDdata_zslice, maximum_point_distance, 
+                   kernel_type="one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"):
+        """
+        Fill a given z-slice using the GPU-accelerated point-in-polygon method.
+        Instead of appending points one by one, this version stores points in NumPy arrays
+        using vectorized concatenation. The output (the stored points) remains identical
+        so that downstream code can continue to work as expected.
+        
+        Parameters:
+        threeDdata_zslice : numpy.ndarray
+            An (N, 3) array representing the points (with constant z) that form the polygon.
+        maximum_point_distance : float
+            Parameter used to determine grid spacing as maximum_point_distance/√2.
+        kernel_type : str
+            The GPU kernel type to use.
+        """
+        # Initialize the storage arrays if needed.
+        # Instead of lists, we now store points in NumPy arrays.
+        if not hasattr(self, "endcaps_points_np") or self.endcaps_points_np is None:
+            self.endcaps_points_np = np.empty((0, 3), dtype=float)
+        if not hasattr(self, "interpolated_pts_with_end_caps_np_arr") or self.interpolated_pts_with_end_caps_np_arr is None:
+            self.interpolated_pts_with_end_caps_np_arr = np.empty((0, 3), dtype=float)
+
+        # Determine constant z value.
+        z_val = threeDdata_zslice[0, 2]
+
+        # Compute the 2D bounding box.
+        min_x, min_y = np.amin(threeDdata_zslice[:, 0:2], axis=0)
+        max_x, max_y = np.amax(threeDdata_zslice[:, 0:2], axis=0)
+
+        # Calculate grid spacing.
+        grid_spacing = maximum_point_distance / np.sqrt(2)
+
+        # Create a grid of candidate (x, y) points.
+        xx, yy = np.meshgrid(
+            np.arange(min_x - grid_spacing, max_x + grid_spacing, grid_spacing),
+            np.arange(min_y - grid_spacing, max_y + grid_spacing, grid_spacing)
+        )
+        candidate_xy = np.column_stack((xx.ravel(), yy.ravel()))
+        candidate_points = np.column_stack((candidate_xy, np.full(candidate_xy.shape[0], z_val)))
+        num_candidate_pts = candidate_points.shape[0]
+
+        # Reshape candidates to (1, num_candidate_pts, 3) for the GPU kernel.
+        candidates_all = candidate_points.reshape(1, num_candidate_pts, 3)
+
+        # Prepare the polygon as a list with a single slice.
+        all_structures_slices = [[threeDdata_zslice]]
+        mapping_array = np.array([0], dtype=np.int32)
+
+        # Run the GPU-based point-in-polygon test.
+        containment_results_cp_arr, _ = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
+            all_structures_slices,
+            candidates_all,
+            mapping_array,
+            constant_z_slice_polygons_handler_option='auto-close-if-open',
+            remove_consecutive_duplicate_points_in_polygons=True,
+            log_sub_dirs_list=[],
+            log_file_name=None,
+            include_edges_in_log=False,
+            kernel_type=kernel_type
+        )
+
+        # Fetch the boolean mask (assumed shape: (num_candidate_pts,)).
+        result_mask = containment_results_cp_arr[0].get()
+
+        # Select the candidate points that are inside the polygon.
+        valid_points = candidate_points[result_mask]
+
+        # Use vectorized concatenation to update the storage arrays.
+        self.endcaps_points_np = np.concatenate((self.endcaps_points_np, valid_points), axis=0)
+        self.interpolated_pts_with_end_caps_np_arr = np.concatenate(
+            (self.interpolated_pts_with_end_caps_np_arr, valid_points), axis=0
+        )
+
+        # Optionally, if you need to preserve the old "list" interface for compatibility,
+        # you can add properties that convert the arrays to lists on-the-fly.
 
 
 

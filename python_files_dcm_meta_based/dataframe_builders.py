@@ -136,19 +136,19 @@ def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_d
                     bx_simulated_bool = specific_structure['Simulated bool']
                     bx_sim_type = specific_structure["Simulated type"]
 
-                    specific_structure_normal_dist_dilations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples dilations arr"])
                     specific_structure_structure_uniform_dist_shift_samples_arr = cp.asnumpy(specific_structure["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"])
                     
                 else:
                     bx_simulated_bool = None
                     bx_sim_type = None
 
-                    # dilations not included for non-bx structures
-                    specific_structure_normal_dist_dilations_samples_arr = np.full((num_simulations, 2), np.nan)
+                    # dilations not included for non-bx structures (EDIT: Now they are!)
+                    #specific_structure_normal_dist_dilations_samples_arr = np.full((num_simulations, 2), np.nan)
                     # no z needle for non-bx structures
                     specific_structure_structure_uniform_dist_shift_samples_arr = np.full(num_simulations, np.nan)
                     
-                
+                # dilations
+                specific_structure_normal_dist_dilations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples dilations arr"]) 
                 # rotations
                 specific_structure_normal_dist_rotations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples rotations arr"])
                 # translations

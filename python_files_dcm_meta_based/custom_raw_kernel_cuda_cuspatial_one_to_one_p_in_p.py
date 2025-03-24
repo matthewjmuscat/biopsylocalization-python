@@ -1988,7 +1988,28 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                             log_sub_dirs_list = [],
                                             log_file_name = "cuda_log.txt",
                                             include_edges_in_log = False,
-                                            kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version"):
+                                            kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"):
+    """
+    This function is the mother function that calls the appropriate function to test points against polygons.
+    It first prepares the data for the custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function.
+    It then calls the appropriate function to test the points against the polygons.
+
+    Parameters:
+    - list_of_relative_structures_containting_list_of_constant_zslices_arrays: A list of relative structures where each relative structure is a list of constant z slices arrays.
+    - points_to_test_3d_arr_or_list_of_2d_arrays: Either a list of 2d arrays or a 3d array where the first dimension (or element of the list) are constant 2 dimensional arrays assoicated with each structure to test against in the relative structures list.
+    - test_struct_to_relative_struct_1d_mapping_array: A 1d array of length the number of test objects, so either same as the number of slices of the 3d test array or same number of elements of the list of 2d arrays. Each element indicates which test structure (indicated by the index of the array itself) should be tested against which relative structure (indicated by the value stored at that index). This is used to map the test structures to test against the correct relative structure. Therefore the number of relative structures need not be the same as the number of test structures.
+    - constant_z_slice_polygons_handler_option: Note that for the test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function that this function feeds, all polygons must be closed. The option for handling the constant z slice polygons. The default is 'auto-close-if-open' which closes the polygons if they are not closed. The other options are 'close-all' which closes every single polygon, and None which makes no changes to the polygons.
+    - remove_consecutive_duplicate_points_in_polygons: If True, then consecutive duplicate points in the polygons are removed.
+    - log_sub_dirs_list: A list of sub directories to create in the logs directory.
+    - log_file_name: The name of the log file to write the logs to.
+    - include_edges_in_log: If True, then the edges that were checked are logged in the log file.
+    - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized".
+
+    Returns:
+    - result_cp_arr: A CuPy array of the results of the test. Each element indicates whether the point is inside the polygon or not.
+    - prepper_output_tuple: The output of the prepper function that prepares the data for the test function.
+    """
+    
 
     prepper_output_tuple = test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
                                                           points_to_test_3d_arr_or_list_of_2d_arrays,
@@ -2386,9 +2407,12 @@ def test_points_against_polygons_cupy_2d_arr_version(nearest_zslice_index_and_va
 
 
 
-def create_containment_results_dataframe(patientUID, biopsy_structure_info, structure_info, 
+def create_containment_results_dataframe(patientUID, 
+                                         biopsy_structure_info, 
+                                         structure_info, 
                                          grand_all_dilations_sp_trial_nearest_interpolated_zslice_index_and_zval_array, 
-                                         test_points_array, result_cp_arr):
+                                         test_points_array, 
+                                         result_cp_arr):
     """
     Create a DataFrame to keep track of the containment results.
     
@@ -2441,6 +2465,102 @@ def create_containment_results_dataframe(patientUID, biopsy_structure_info, stru
     }
     
     containment_results_df = pd.DataFrame(results_dictionary)
+    return containment_results_df
+
+
+
+def create_containment_results_dataframe_type_II(patientUID, 
+                                         biopsy_structure_info, 
+                                        structure_info, 
+                                         nearest_zslice_index_and_values_3d_arr, 
+                                         test_points_array, 
+                                         result_cp_arr,
+                                         test_struct_to_relative_struct_1d_mapping_array,
+                                         convert_to_categorical_and_downcast = True,
+                                         do_not_convert_column_names_to_categorical = [],
+                                         float_dtype = np.float32,
+                                         int_dtype = np.int32,
+                                         df_type = None):
+    """
+    Create a DataFrame to keep track of the containment results. This one is meant to handle two 3d array inputs.
+    
+    Parameters:
+    - structure_info: List containing relative structure information.
+    - nearest_zslice_index_and_values_3d_arr: 3d array of the nearest z values and their indices for each biopsy point.
+    - test_points_array: 3d array of test points.
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
+    - float_dtype: The float data type to use for the DataFrame.
+    - int_dtype: The integer data type to use for the DataFrame.
+    
+    Returns:
+    - containment_results_df: DataFrame containing the containment results.
+    """
+    
+    # Flatten the input arrays for easier processing
+    flat_nearest_zslices_vals_arr = nearest_zslice_index_and_values_3d_arr[:, :, 2].flatten()
+    flat_nearest_zslices_indices_arr = nearest_zslice_index_and_values_3d_arr[:, :, 1].flatten()
+    flat_test_points_array = test_points_array.reshape(-1, 3)
+    flat_result_cp_arr = result_cp_arr.get().flatten()
+
+    num_test_pts_per_test_struct = test_points_array.shape[1]
+    num_test_structures = test_points_array.shape[0]
+    
+    # Create RGB color arrays based on the containment results
+    pt_clr_r = np.where(flat_result_cp_arr, 0., 1.)  # Red for false
+    pt_clr_g = np.where(flat_result_cp_arr, 1., 0.)  # Green for true
+    pt_clr_b = np.zeros_like(pt_clr_r)  # Blue is always 0
+    
+    # Create a dictionary to store the results
+    if df_type == 'mc containment simulator':
+        results_dictionary = {
+            "Patient ID": [patientUID] * len(flat_result_cp_arr),
+            "Bx ID": [biopsy_structure_info["Structure ID"]] * len(flat_result_cp_arr),
+            "Bx index": [biopsy_structure_info["Index number"]] * len(flat_result_cp_arr),
+            "Relative structure ROI": [structure_info['Structure ID']] * len(flat_result_cp_arr),
+            "Relative structure type": [structure_info['Struct ref type']] * len(flat_result_cp_arr),
+            "Relative structure index": np.full(len(flat_result_cp_arr), [structure_info['Index number']]).astype(int_dtype),
+            "Original pt index": np.tile(np.arange(0, num_test_pts_per_test_struct), num_test_structures),
+            "Pt contained bool": flat_result_cp_arr,
+            "Nearest zslice zval": flat_nearest_zslices_vals_arr.astype(float_dtype),
+            "Nearest zslice index": flat_nearest_zslices_indices_arr.astype(int_dtype),
+            "Pt clr R": pt_clr_r.astype(float_dtype),
+            "Pt clr G": pt_clr_g.astype(float_dtype),
+            "Pt clr B": pt_clr_b.astype(float_dtype),
+            "Test pt X": flat_test_points_array[:, 0].astype(float_dtype),
+            "Test pt Y": flat_test_points_array[:, 1].astype(float_dtype),
+            "Test pt Z": flat_test_points_array[:, 2].astype(float_dtype),
+            "Trial num": np.repeat(np.arange(0, num_test_structures), num_test_pts_per_test_struct),
+            "Relative struct input index": np.repeat(test_struct_to_relative_struct_1d_mapping_array, num_test_pts_per_test_struct) # Note that this column should be equivalent Trial num if a one to one basic mapping is used (ie. mapping_arr [0,1,2,3,etc])
+        }
+    else:
+        results_dictionary = {
+            "Patient ID": [patientUID] * len(flat_result_cp_arr),
+            "Bx ID": [biopsy_structure_info["Structure ID"]] * len(flat_result_cp_arr),
+            "Bx index": [biopsy_structure_info["Index number"]] * len(flat_result_cp_arr),
+            "Relative structure ROI": [structure_info['Structure ID']] * len(flat_result_cp_arr),
+            "Relative structure type": [structure_info['Struct ref type']] * len(flat_result_cp_arr),
+            "Relative structure index": np.full(len(flat_result_cp_arr), [structure_info['Index number']]).astype(int_dtype),
+            "Pt contained bool": flat_result_cp_arr,
+            "Nearest zslice zval": flat_nearest_zslices_vals_arr.astype(float_dtype),
+            "Nearest zslice index": flat_nearest_zslices_indices_arr.astype(int_dtype),
+            "Pt clr R": pt_clr_r.astype(float_dtype),
+            "Pt clr G": pt_clr_g.astype(float_dtype),
+            "Pt clr B": pt_clr_b.astype(float_dtype),
+            "Test pt X": flat_test_points_array[:, 0].astype(float_dtype),
+            "Test pt Y": flat_test_points_array[:, 1].astype(float_dtype),
+            "Test pt Z": flat_test_points_array[:, 2].astype(float_dtype),
+            "Test struct input index": np.repeat(np.arange(0, num_test_structures), num_test_pts_per_test_struct),
+            "Test struct input point index": np.tile(np.arange(0, num_test_pts_per_test_struct), num_test_structures),
+            "Relative struct input index": np.repeat(test_struct_to_relative_struct_1d_mapping_array, num_test_pts_per_test_struct)
+        }
+    
+    containment_results_df = pd.DataFrame(results_dictionary)
+
+    if convert_to_categorical_and_downcast:
+        containment_results_df = dataframe_builders.convert_columns_to_categorical_and_downcast(containment_results_df, 
+                                                                                            threshold=0.25, 
+                                                                                            do_not_convert_column_names_to_categorical = do_not_convert_column_names_to_categorical)
+
     return containment_results_df
 
 

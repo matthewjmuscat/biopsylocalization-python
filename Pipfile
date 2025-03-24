@@ -48,6 +48,8 @@ simpleitk = "*"
 alphashape = "*"
 pymeshfix = "*"
 line-profiler = "*"
+cuml-cu12 = { index = "pypinvidia", version = "*" }
+kaleido = "*"
 
 [dev-packages]
 ipykernel = "*"
