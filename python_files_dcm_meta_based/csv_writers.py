@@ -2,6 +2,7 @@ import numpy as np
 import csv
 import math_funcs as mf
 
+# this whole package is pretty much deprecated
 
 def csv_writer_containment(live_display,
                            layout_groups,

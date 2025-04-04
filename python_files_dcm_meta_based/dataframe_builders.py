@@ -12,6 +12,7 @@ import copy
 from scipy.interpolate import interp1d
 from scipy.stats import skew, kurtosis
 import cupy as cp
+import warnings
 
 
 def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
@@ -192,7 +193,7 @@ def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_d
 
     return cohort_all_structure_shifts_pandas_data_frame
 
-
+# deprecated
 def tissue_probability_dataframe_builder_by_bx_pt(patientUID,
                                                   specific_bx_structure,
                                                   specific_bx_structure_index,
@@ -428,7 +429,7 @@ def cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(ma
         
         multi_structure_mc_tissue_class_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_tissue_class_pt_wise_results_dataframe, threshold=0.25)
         
-        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Pt wise structure specific results"] = multi_structure_mc_tissue_class_pt_wise_results_dataframe
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Pt wise mutual tissue class results"] = multi_structure_mc_tissue_class_pt_wise_results_dataframe
 
         cohort_mc_tissue_class_pt_wise_results_dataframe = pandas.concat([cohort_mc_tissue_class_pt_wise_results_dataframe,multi_structure_mc_tissue_class_pt_wise_results_dataframe]).reset_index(drop = True)
 
@@ -722,7 +723,7 @@ def tissue_length_by_threshold_all_patients_dataframe_builder(all_patient_sub_di
 
 
 
-
+# deprecated
 def tissue_length_threshold_dataframe_builder_NEW(master_structure_reference_dict,
                                                   bx_ref,
                                                   all_ref_key):
@@ -781,7 +782,7 @@ def tissue_volume_threshold_dataframe_builder_NEW(master_structure_reference_dic
             
             cohort_tissue_volume_above_threshold_dataframe = pandas.concat([cohort_tissue_volume_above_threshold_dataframe,sp_bx_all_thresholds_volume_of_tissue_above_threshold_dataframe], ignore_index = True)
 
-            del specific_bx_structure["Output data frames"]["Tissue volume above threshold"]
+            #del specific_bx_structure["Output data frames"]["Tissue volume above threshold"]
 
     cohort_tissue_volume_above_threshold_dataframe = convert_columns_to_categorical_and_downcast(cohort_tissue_volume_above_threshold_dataframe, threshold=0.25)
 
@@ -884,18 +885,24 @@ def cohort_relative_structure_distances_dataframe_builder(master_structure_refer
 def cohort_containment_results_and_distances_dataframe_builder_light(master_structure_reference_dict,
                                                                      bx_ref,
                                                                      all_ref_key):
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
         multi_structure_mc_containment_and_distances_light_results_dataframe = pandas.DataFrame()
 
         for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
 
-            containment_info_grand_all_structures_pandas_dataframe_light = specific_bx_structure["MC data: MC sim containment and distance all trials dataframe (light)"]
+            containment_info_grand_all_structures_pandas_dataframe_light = specific_bx_structure.get("MC data: MC sim containment and distance all trials dataframe (light)")
 
-            multi_structure_mc_containment_and_distances_light_results_dataframe = pandas.concat([multi_structure_mc_containment_and_distances_light_results_dataframe,containment_info_grand_all_structures_pandas_dataframe_light]).reset_index(drop = True)
+            if containment_info_grand_all_structures_pandas_dataframe_light is not None:
+                multi_structure_mc_containment_and_distances_light_results_dataframe = pandas.concat(
+                    [multi_structure_mc_containment_and_distances_light_results_dataframe,
+                     containment_info_grand_all_structures_pandas_dataframe_light]
+                ).reset_index(drop=True)
 
-            multi_structure_mc_containment_and_distances_light_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_containment_and_distances_light_results_dataframe, threshold=0.25)
+        multi_structure_mc_containment_and_distances_light_results_dataframe = convert_columns_to_categorical_and_downcast(
+            multi_structure_mc_containment_and_distances_light_results_dataframe, threshold=0.25
+        )
 
-            pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - containment and distances (light) results"] = multi_structure_mc_containment_and_distances_light_results_dataframe
+        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - containment and distances (light) results"] = multi_structure_mc_containment_and_distances_light_results_dataframe
 
 
 
@@ -1703,9 +1710,12 @@ def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
 
             pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry statistics"] = sp_patient_all_biopsies_global_dosimetry
 
-    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index = True)
+    if len(cohort_global_dosimetry_dataframe_list) == 0:
+        cohort_global_dosimetry_dataframe = pandas.DataFrame()
+    else:
+        cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index = True)
 
-    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
+        cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
 
@@ -2402,8 +2412,11 @@ def global_dosimetry_by_voxel_values_dataframe_builder_v3_generalized(master_str
 
 
     # Final concatenation for all patients
-    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
-    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
+    if len(cohort_global_dosimetry_dataframe_list) == 0:
+        cohort_global_dosimetry_dataframe =  pandas.DataFrame()
+    else:
+        cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+        cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(cohort_global_dosimetry_dataframe, threshold=0.25)
 
     return cohort_global_dosimetry_dataframe
 
@@ -2577,12 +2590,15 @@ def global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df(master_struct
             # Store back to the original dictionary
             pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Dosimetry - Global dosimetry (NEW)"] = sp_patient_all_biopsies_global_dosimetry
 
-    cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
-    # Downcast dataframe after concatenation
-    cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(
-        cohort_global_dosimetry_dataframe, 
-        threshold=0.25
-    )
+    if len(cohort_global_dosimetry_dataframe_list) == 0:
+        cohort_global_dosimetry_dataframe = pandas.DataFrame()
+    else:
+        cohort_global_dosimetry_dataframe = pandas.concat(cohort_global_dosimetry_dataframe_list, ignore_index=True)
+        # Downcast dataframe after concatenation
+        cohort_global_dosimetry_dataframe = convert_columns_to_categorical_and_downcast(
+            cohort_global_dosimetry_dataframe, 
+            threshold=0.25
+        )
     return cohort_global_dosimetry_dataframe
 
 
@@ -3531,8 +3547,12 @@ def dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_referen
             final_stats_df = convert_columns_to_categorical_and_downcast(final_stats_df, threshold=0.25)
             pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["DVH metrics (Dx, Vx) statistics"] = final_stats_df
 
-    cohort_dataframe = pandas.concat(cohort_dataframe_list, ignore_index = True)
-    cohort_dataframe = convert_columns_to_categorical_and_downcast(cohort_dataframe, threshold=0.25)
+    if len(cohort_dataframe_list) == 0:
+        return pandas.DataFrame()
+    # Concatenate all DataFrames into one
+    else:
+        cohort_dataframe = pandas.concat(cohort_dataframe_list, ignore_index = True)
+        cohort_dataframe = convert_columns_to_categorical_and_downcast(cohort_dataframe, threshold=0.25)
 
     return cohort_dataframe
 

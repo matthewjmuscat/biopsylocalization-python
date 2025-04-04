@@ -783,7 +783,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
     long long int n = nearest_zslice_index_for_every_point_cp[i]; // n is the slice index
                                                                                                        
     if (m < 0 || m >= num_structures) {
-        printf("Thread %lld | ❌ Error: Structure index out of bounds (m = %lld)\n", i, m);
+        //printf("Thread %lld | ❌ Error: Structure index out of bounds (m = %lld)\n", i, m);
         results[i] = 0;
         return;
     }
@@ -794,7 +794,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
     long long int slice_indices_end   = all_rel_structure__indicesarr_structure_indices_end_ind_4[m];
 
     if (slice_indices_start + n >= slice_indices_end) {
-        printf("Thread: %lld | ❌ Error: Slice index out of bounds\n", i);
+        //printf("Thread: %lld | ❌ Error: Slice index out of bounds\n", i);
         results[i] = 0;
         
         // Only log if log_buffer[0] != -1
@@ -809,7 +809,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
 
     long long int num_slices = slice_indices_end - slice_indices_start;
     if (n < 0 || n >= num_slices) {
-        printf("Thread %lld | ❌ Error: Slice index out of bounds (n = %lld)\n", i, n);
+        //printf("Thread %lld | ❌ Error: Slice index out of bounds (n = %lld)\n", i, n);
         results[i] = 0;
 
         // Only log if log_buffer[0] != -1
@@ -978,7 +978,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
                     double cross = (x - xj) * (yk - yj) - (y - yj) * (xk - xj);
                                                     
                     if (fabs(cross) < EPSILON_BOUNDARY) {
-                        printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
+                        //printf("❓ Point potentially on polygon boundary | Checking... (Thread: %lld)\n", i);
                         
                         double dot1 = (x - xj) * (xk - xj) + (y - yj) * (yk - yj);
                         double dot2 = (x - xk) * (xj - xk) + (y - yk) * (yj - yk);
@@ -988,10 +988,10 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
                             intersection_type = 2;
                             point_on_boundary = true;
                             inside = true;
-                            printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
+                            //printf("🔥 Point on polygon boundary | Setting to inside (Thread: %lld)\n", i);
                         }
                         else {
-                            printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
+                            //printf("🖤 Point not on polygon boundary | Continuing... (Thread: %lld)\n", i);
                         }
                     }
                 }
@@ -1033,13 +1033,13 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
 
             if (d < EPSILON_VERTEX) {
                 too_close_to_vertex = true;
-                printf("Ray too close to a vertex, setting bool (Thread: %lld)\n", i);
+                //printf("Ray too close to a vertex, setting bool (Thread: %lld)\n", i);
                 break;
             }
         }
 
         if (too_close_to_vertex) {
-            printf("Ray too close to a vertex, regenerating (Thread: %lld)\n", i);
+            //printf("Ray too close to a vertex, regenerating (Thread: %lld)\n", i);
             attempt++;
             angle = fmod(angle + (2*M_PI / max_attempts), 2*M_PI);
             dx = cos(angle);
@@ -1113,7 +1113,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
                         }
                     }
                 } else {
-                    printf("Denom is zero, and reparameterization methods invalid on attempt: %d, (Thread: %lld)\n", attempt, i);
+                    //printf("Denom is zero, and reparameterization methods invalid on attempt: %d, (Thread: %lld)\n", attempt, i);
                     valid_ray = false;
                     break;
                 }
@@ -1129,7 +1129,7 @@ void one_to_one_pip(const double* px, const double* py, const double* pz,
                         t_edge = ((x - xj) * (-dy) + (y - yj) * dx) / denom;
                         s_ray  = ((xk - xj) * (y - yj) - (yk - yj) * (x - xj)) / denom;
                     } else {
-                        printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
+                        //printf("Denom is zero on attempt: %d, (Thread: %lld)\n", attempt, i);
                         valid_ray = false;
                         break;
                     }

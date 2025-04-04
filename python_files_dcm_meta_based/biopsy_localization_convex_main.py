@@ -131,13 +131,16 @@ def main():
     ###
 
 
-
+    # NOTE: DONT THINK WE WANT TO INCLUDE PATIENT 198 (F1), DOES NOT HAVE ANY BIOPSIES!
 
 
     # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
     # specify the patient IDs and the list of biopsy names to remove from the dataset
     data_removals_dict_bx = {"189 (F2)": ["Bx_Tr LM1 blood"],
-                            "192 (F2)": ["Bx_trk LM blood"]
+                            "192 (F2)": ["Bx_trk LM blood"],
+                            "200 (F1)": ["Bx_LTapex_air"],
+                            "201 (F2)": ["Bx_LTpost_air"],
+                            "203 (F1)": ["Bx_LTapex_air"],
                             }
     
     data_removals_dict_dil = {"194 (F1)": ["DIL 2"],
@@ -150,8 +153,20 @@ def main():
                             }
     
     data_removals_dict_prostate = {"194 (F1)": ["Prostate pre"],
-                            "195 (F1)": ["Prostate bx"],
-                            "195 (F2)": ["Prostate pre"]
+                            "194 (F2)": ["Prostate_pre"],
+                            "195 (F1)": ["Prostate biop"],
+                            "195 (F2)": ["Prostate pre"],
+                            "196 (F1)": ["Prostate_pre"],
+                            "196 (F2)": ["Prostate_pre"],
+                            "199 (F1)": ["Prostate_pre"],
+                            "199 (F2)": ["Prostate_pre"],
+                            "198 (F2)": ["Prostate_pre", "Prostate_biop"],
+                            "200 (F1)": ["Prostate_pre"],
+                            "200 (F2)": ["Prostate_pre"],
+                            "201 (F1)": ["Prostate_pre"],
+                            "201 (F2)": ["Prostate pre"],
+                            "203 (F1)": ["Prostate_pre"],
+                            "203 (F2)": ["Prostate-pre"]
                             }
     
     data_removals_dict_urethra = {"194 (F1)": ["Opti Urethra"],
@@ -161,7 +176,14 @@ def main():
                             "196 (F1)": ["Opti Urethra"],
                             "196 (F2)": ["Opti Urethra"],
                             "199 (F1)": ["Opti Urethra"],
-                            "199 (F2)": ["Opti Urethra"]
+                            "199 (F2)": ["Opti Urethra"],
+                            "198 (F2)": ["Opti Urethra"],
+                            "200 (F1)": ["Opti Urethra"],
+                            "200 (F2)": ["Opti Urethra"],
+                            "201 (F1)": ["Opti Urethra"],
+                            "201 (F2)": ["Opti Urethra"],
+                            "203 (F1)": ["Opti Urethra"],
+                            "203 (F2)": ["Opti Urethra"]
                             }
     
     data_removals_dict_rectum = {}
@@ -209,22 +231,22 @@ def main():
     # "Comparison of prostate volume, shape, and contouring variability determined from preimplant magnetic resonance and transrectal ultrasound images" - Liu et al.
     # Took half of the length width height values from FIG 3.
     # Translations
-    oar_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    oar_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
-    oar_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    oar_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    oar_default_sigma_Y_list = [2.5] # default sigma in mm
+    oar_default_sigma_Z_list = [2.5] # default sigma in mm
     oar_default_mu_X_list = [0]
     oar_default_mu_Y_list = [0]
     oar_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    oar_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    oar_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    oar_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    oar_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
     oar_dilations_default_mu_XY_list = [0]
     oar_dilations_default_mu_Z_list = [0]
     # rotations
-    oar_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
-    oar_rotations_default_sigma_Y_list = [np.pi/36]
-    oar_rotations_default_sigma_Z_list = [np.pi/36]
+    oar_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
+    oar_rotations_default_sigma_Y_list = [0]
+    oar_rotations_default_sigma_Z_list = [0]
     oar_rotations_default_mu_X_list = [0]
     oar_rotations_default_mu_Y_list = [0]
     oar_rotations_default_mu_Z_list = [0]
@@ -244,9 +266,9 @@ def main():
     biopsy_dilations_default_mu_XY_list = [0]
     biopsy_dilations_default_mu_Z_list = [0]
     # rotations
-    biopsy_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
-    biopsy_rotations_default_sigma_Y_list = [np.pi/36]
-    biopsy_rotations_default_sigma_Z_list = [np.pi/36]
+    biopsy_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
+    biopsy_rotations_default_sigma_Y_list = [0]
+    biopsy_rotations_default_sigma_Z_list = [0]
     biopsy_rotations_default_mu_X_list = [0]
     biopsy_rotations_default_mu_Y_list = [0]
     biopsy_rotations_default_mu_Z_list = [0]
@@ -255,22 +277,22 @@ def main():
     # DILs
     # CALCULATE FROM MEAN MDA BETWEEN MRI/US
     # Translations
-    dil_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    dil_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
-    dil_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    dil_default_sigma_X_list = [2.5,2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    dil_default_sigma_Y_list = [2.5,2.5,2.5] # default sigma in mm
+    dil_default_sigma_Z_list = [2.5,2.5,2.5] # default sigma in mm
     dil_default_mu_X_list = [0]
     dil_default_mu_Y_list = [0]
     dil_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    dil_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    dil_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    dil_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    dil_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
     dil_dilations_default_mu_XY_list = [0]
     dil_dilations_default_mu_Z_list = [0]
     # rotations
-    dil_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
-    dil_rotations_default_sigma_Y_list = [np.pi/36]
-    dil_rotations_default_sigma_Z_list = [np.pi/36]
+    dil_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
+    dil_rotations_default_sigma_Y_list = [0]
+    dil_rotations_default_sigma_Z_list = [0]
     dil_rotations_default_mu_X_list = [0]
     dil_rotations_default_mu_Y_list = [0]
     dil_rotations_default_mu_Z_list = [0]
@@ -278,22 +300,22 @@ def main():
 
     # Urethras
     # Translations
-    urethra_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    urethra_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
-    urethra_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    urethra_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    urethra_default_sigma_Y_list = [2.5] # default sigma in mm
+    urethra_default_sigma_Z_list = [2.5] # default sigma in mm
     urethra_default_mu_X_list = [0]
     urethra_default_mu_Y_list = [0]
     urethra_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    urethra_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    urethra_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    urethra_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    urethra_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
     urethra_dilations_default_mu_XY_list = [0]
     urethra_dilations_default_mu_Z_list = [0]
     # rotations
-    urethra_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
-    urethra_rotations_default_sigma_Y_list = [np.pi/36]
-    urethra_rotations_default_sigma_Z_list = [np.pi/36]
+    urethra_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
+    urethra_rotations_default_sigma_Y_list = [0]
+    urethra_rotations_default_sigma_Z_list = [0]
     urethra_rotations_default_mu_X_list = [0]
     urethra_rotations_default_mu_Y_list = [0]
     urethra_rotations_default_mu_Z_list = [0]
@@ -302,22 +324,22 @@ def main():
 
     # Rectums
     # Translations
-    rectum_default_sigma_X_list = [2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    rectum_default_sigma_Y_list = [2.5,2.5] # default sigma in mm
-    rectum_default_sigma_Z_list = [2.5,2.5] # default sigma in mm
+    rectum_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
+    rectum_default_sigma_Y_list = [2.5] # default sigma in mm
+    rectum_default_sigma_Z_list = [2.5] # default sigma in mm
     rectum_default_mu_X_list = [0]
     rectum_default_mu_Y_list = [0]
     rectum_default_mu_Z_list = [0]
     # dilations
     # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    rectum_dilations_default_sigma_XY_list = [1] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    rectum_dilations_default_sigma_Z_list = [1] # these are distances in mm that the points will shift towards and away from the oar centroid
+    rectum_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
+    rectum_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
     rectum_dilations_default_mu_XY_list = [0]
     rectum_dilations_default_mu_Z_list = [0]
     # rotations
-    rectum_rotations_default_sigma_X_list = [np.pi/36] # pi/36 = 5 deg
-    rectum_rotations_default_sigma_Y_list = [np.pi/36]
-    rectum_rotations_default_sigma_Z_list = [np.pi/36]
+    rectum_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
+    rectum_rotations_default_sigma_Y_list = [0]
+    rectum_rotations_default_sigma_Z_list = [0]
     rectum_rotations_default_mu_X_list = [0]
     rectum_rotations_default_mu_Y_list = [0]
     rectum_rotations_default_mu_Z_list = [0]
@@ -391,9 +413,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 100
+    num_MC_containment_simulations_input = 10000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 100
+    num_MC_dose_simulations_input = 10
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -463,12 +485,12 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_optimal_dil'}
                             }
@@ -689,7 +711,7 @@ def main():
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_colorwash'
                                              },
                                         "Cohort - Dosimetry boxplots all biopsies": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, # deprecated: since no longer building dataframe produced by dataframe_builders.global_dosimetry_values_dataframe_builder, consider investigating dataframe produced by dataframe_builders.global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df
                                              "Plot name": 'Cohort all biopsies global dosimetry boxplot'
                                              },
                                         "Tissue classification scatter and regression probabilities all trials plot": \
@@ -697,7 +719,7 @@ def main():
                                              "Plot name": ' - tissue_class-regression-probabilities'
                                              },
                                         "Tissue classification mutual probabilities plot": \
-                                            {"Plot bool": False, #
+                                            {"Plot bool": False, # deprecated
                                              "Plot name": ' - tissue_class_mutual-regression-probabilities',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
@@ -743,7 +765,7 @@ def main():
                                              "Plot name": ' - 2d_gaussian_sagittal_accuracy'
                                              },
                                         "Cohort - Tissue class global score by biopsy type": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, # deprecated since no longer using mutual tissue scores (succeeded by sum to one scores) 
                                              "Plot name": ' cohort - tissue_class_global_by_bx_type',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
@@ -764,7 +786,7 @@ def main():
                                              "Plot name": ' cohort - tissue_class_sum-to-one_all_biopsy_voxels_histogram_by_tissue_class'
                                              },
                                         "Cohort - Tissue volume by biopsy type": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, # deprecated, plan to implement in data analysis pipeline afterwards with proper singifnaice testing and effect size
                                              "Plot name": ' cohort - tissue_volume_threshold_by_bx_type',
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
@@ -857,6 +879,19 @@ def main():
     cancer_tissue_label = 'DIL'
     miss_structure_complement_label = structure_miss_probability_roi + ' complement'
     default_exterior_tissue = 'Periprostatic' # For tissue class stuff! Basically dictates what to call tissue that doesnt lie in any defined structure!
+    prostate_tissue_label = 'Prostatic'
+    rectal_tissue_label = 'Rectal'
+    urethral_tissue_label = 'Urethral'
+
+    # Tissue volume threshold operator dictionary
+    # This is a dictionary that contains the operator to use for the volume thresholding.
+    tissue_volume_operator_dictionary = {cancer_tissue_label: 'greater',
+                                         prostate_tissue_label: 'greater',
+                                         rectal_tissue_label: 'less',
+                                         urethral_tissue_label: 'less',
+                                         default_exterior_tissue: 'less'
+                                         }
+
 
     # non-user changeable variables, but need to be initiatied:
     
@@ -902,7 +937,7 @@ def main():
                                           "Rotations sigma Z": oar_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 3,
-                                          'Tissue class name': 'Prostatic', 
+                                          'Tissue class name': prostate_tissue_label, 
                                           'PCD color': np.array([0.86, 0.08, 0.24]) # crimson
                                           }, 
                                 dil_ref: {"Contour names": dil_contour_names,
@@ -946,7 +981,7 @@ def main():
                                           "Rotations sigma Z": rectum_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 2,
-                                          'Tissue class name': 'Rectal',
+                                          'Tissue class name': rectal_tissue_label,
                                           'PCD color': np.array([1.0, 0.84, 0.0]) # gold
                                           },
                                 urethra_ref_key: {"Contour names": urethra_contour_names,
@@ -968,7 +1003,7 @@ def main():
                                           "Rotations sigma Z": urethra_rotations_default_sigma_Z_list,
                                           'Test tissue class': True,
                                           'Tissue heirarchy': 1,
-                                          'Tissue class name': 'Urethral',
+                                          'Tissue class name': urethral_tissue_label,
                                           'PCD color': np.array([0.0, 0.75, 1.0]) # sky blue
                                           } 
                                 }
@@ -1041,11 +1076,11 @@ def main():
                                                                 "Cohort: structure specific mc results": None,
                                                                 "Cohort: sum-to-one mc results": None,
                                                                 "Cohort: global sum-to-one mc results": None,
-                                                                "Cohort: mutual tissue class mc results": None,
-                                                                "Cohort: tissue class global scores (tissue type)": None,
+                                                                #"Cohort: mutual tissue class mc results": None,
+                                                                #"Cohort: tissue class global scores (tissue type)": None,
                                                                 "Cohort: tissue class global scores (structure)": None,
                                                                 "Cohort: tissue volume above threshold": None,
-                                                                "Cohort: Entire point-wise binom est distribution": None,
+                                                                #"Cohort: Entire point-wise binom est distribution": None,
                                                                 "Cohort: DIL global tissue scores and DIL features": None,
                                                                 "Cohort: Entire point-wise dose distribution": None,
                                                                 "Cohort: Tissue class - distances global results": None,
@@ -2220,8 +2255,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -2647,8 +2682,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -3020,8 +3055,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -3442,8 +3477,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[structs]['PCD color']
@@ -4557,8 +4592,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[bx_ref]['PCD color dict'][sim_type]
@@ -4993,8 +5028,8 @@ def main():
                         #interpolation_information.create_fill(last_zslice, interp_dist_caps)
 
                         # new
-                        interpolation_information.create_fill_new(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
 
                         # generate point cloud of raw threeDdata
                         pcd_color = structs_referenced_dict[bx_ref]['PCD color dict'][sim_type]
@@ -6413,13 +6448,37 @@ def main():
                 completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
                 live_display.refresh()
                 
-                
+
+
+
+
+
+
+                #live_display.stop()
                 # Perform all bx only transformations
 
                 indeterminate_task_bx_only_transforms = indeterminate_progress_main.add_task("[red]Shifting BXs (bx only transforms)", total=None)
                 indeterminate_task_bx_only_transforms_completed = completed_progress.add_task("[green]Shifting BXs (bx only transforms)", visible = False, total = 1)
                 #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting BXs (bx only transforms)", total = None)
 
+                # For efficiency debugging
+                """
+                lp = LineProfiler()
+                lp.add_function(MC_prepper_funcs.biopsy_only_transformer)
+                lp_wrapper = lp(MC_prepper_funcs.biopsy_only_transformer)
+
+                lp_wrapper(master_structure_reference_dict,
+                                                        bx_ref,
+                                                        max_simulations,
+                                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                                        inspect_self_biopsy_dilate_bool,
+                                                        inspect_self_biopsy_dilate_and_rotate_bool,
+                                                        inspect_self_biopsy_dilate_and_rotate_and_translate_bool)
+
+                lp.print_stats()
+
+                input("Press Enter to continue...")
+                """
                 MC_prepper_funcs.biopsy_only_transformer(master_structure_reference_dict,
                                                         bx_ref,
                                                         max_simulations,
@@ -6431,6 +6490,7 @@ def main():
                 #indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 indeterminate_progress_main.update(indeterminate_task_bx_only_transforms, visible = False, refresh = True)
                 completed_progress.update(indeterminate_task_bx_only_transforms_completed, advance = 1, visible = True, refresh = True)
+                
 
                 # Shift anatomy OLD
                 """
@@ -6451,7 +6511,24 @@ def main():
                 indeterminate_task_bx_rel_transforms = indeterminate_progress_main.add_task("[red]Shifting BXs (rel structs transforms)", total=None)
                 indeterminate_task_bx_rel_transforms_completed = completed_progress.add_task("[green]Shifting BXs (rel structs transforms)", visible = False, total = 1)
                 #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Shifting BXs (rel structs transforms)", total = None)
+                
+                # For efficiency debugging
+                """
+                lp = LineProfiler()
+                lp.add_function(MC_prepper_funcs.biopsy_transformer_to_relative_structures)
+                lp_wrapper = lp(MC_prepper_funcs.biopsy_transformer_to_relative_structures)
 
+                lp_wrapper(master_structure_reference_dict,
+                                 structs_referenced_list,
+                                 bx_ref,
+                                 num_MC_containment_simulations_input,
+                                 inspect_relative_structure_rotate_and_shift_number)
+
+                lp.print_stats()
+
+                input("Press Enter to continue...")
+                """
+                
                 MC_prepper_funcs.biopsy_transformer_to_relative_structures(master_structure_reference_dict,
                                  structs_referenced_list,
                                  bx_ref,
@@ -6470,6 +6547,83 @@ def main():
                 #live_display.stop()
                 # Run MC simulation
                 if perform_MC_sim == True:
+                    
+                    """
+                    lp = LineProfiler()
+                    lp.add_function(MC_simulator_convex.simulator_parallel)
+                    lp_wrapper = lp(MC_simulator_convex.simulator_parallel)
+
+
+                    result = lp_wrapper(parallel_pool, 
+                                        live_display,
+                                        stopwatch, 
+                                        layout_groups, 
+                                        master_structure_reference_dict, 
+                                        structs_referenced_list,
+                                        structs_referenced_dict,
+                                        bx_ref,
+                                        oar_ref,
+                                        dil_ref,
+                                        rectum_ref_key,
+                                        urethra_ref_key, 
+                                        dose_ref,
+                                        plan_ref,
+                                        all_ref_key, 
+                                        master_structure_info_dict, 
+                                        biopsy_z_voxel_length, 
+                                        num_dose_calc_NN, 
+                                        num_dose_NN_to_show_for_animation_plotting,
+                                        dose_views_jsons_paths_list,
+                                        containment_views_jsons_paths_list,
+                                        show_NN_dose_demonstration_plots,
+                                        show_NN_dose_demonstration_plots_all_trials_at_once,
+                                        show_num_containment_demonstration_plots,
+                                        containment_results_structure_types_to_show_per_trial,
+                                        show_num_nearest_neighbour_surface_boundary_demonstration,
+                                        show_num_relative_structure_centroid_demonstration,
+                                        biopsy_needle_compartment_length,
+                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                        plot_uniform_shifts_to_check_plotly,
+                                        differential_dvh_resolution,
+                                        cumulative_dvh_resolution,
+                                        v_percent_DVH_to_calc_list,
+                                        volume_DVH_quantiles_to_calculate,
+                                        plot_translation_vectors_pointclouds,
+                                        plot_cupy_containment_distribution_results,
+                                        plot_shifted_biopsies,
+                                        structure_miss_probability_roi,
+                                        cancer_tissue_label,
+                                        default_exterior_tissue,
+                                        miss_structure_complement_label,
+                                        tissue_length_above_probability_threshold_list,
+                                        n_bootstraps_for_tissue_length_above_threshold,
+                                        perform_mc_containment_sim,
+                                        perform_mc_dose_sim,
+                                        spinner_type,
+                                        cupy_array_upper_limit_NxN_size_input,
+                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                        idw_power,
+                                        raw_data_mc_dosimetry_dump_bool, 
+                                        raw_data_mc_containment_dump_bool,
+                                        keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
+                                        show_non_bx_relative_structure_z_dilation_bool,
+                                        show_non_bx_relative_structure_xy_dilation_bool,
+                                        generate_cuda_log_files_MC_containment_sim,
+                                        custom_cuda_kernel_type,
+                                        constant_z_slice_polygons_handler_option,
+                                        remove_consecutive_duplicate_points_in_polygons,
+                                        interp_dist_caps,
+                                        cuml_NN_algo,
+                                        check_if_end_caps_filled_proper_NN_num,
+                                        nn_search_end_cap_grid_factor)
+
+                    lp.print_stats()
+
+                    input("Press Enter to continue...")
+
+                    """
+                    
+
                     master_structure_reference_dict, master_structure_info_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
                                                                                             live_display,
                                                                                             stopwatch, 
@@ -6531,7 +6685,8 @@ def main():
                                                                                             interp_dist_caps,
                                                                                             cuml_NN_algo,
                                                                                             check_if_end_caps_filled_proper_NN_num,
-                                                                                            nn_search_end_cap_grid_factor
+                                                                                            nn_search_end_cap_grid_factor,
+                                                                                            tissue_volume_operator_dictionary
                                                                                             )
 
                     if no_cohort_mr_adc_flag == False:
@@ -6891,22 +7046,24 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: global sum-to-one mc results"] = cohort_mc_sum_to_one_global_results_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                
+                """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None)
                 cohort_mc_tissue_class_pt_wise_results_dataframe = dataframe_builders.cohort_and_multi_biopsy_mc_tissue_class_pt_wise_results_dataframe_builder(master_structure_reference_dict,
                                                                                     bx_ref,
                                                                                     all_ref_key)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: mutual tissue class mc results"] = cohort_mc_tissue_class_pt_wise_results_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                """
 
-
-                # create global tissue class scores dataframes for each biopsy
+                # create global tissue class scores dataframes for each biopsy (deprecated because mutual info superceeded by sum to one)
+                """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 cohort_global_tissue_class_by_tissue_type_dataframe = dataframe_builders.global_scores_by_tissue_class_dataframe_builder(master_structure_reference_dict,
                                                                                     bx_ref,
                                                                                     all_ref_key)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue class global scores (tissue type)"] = cohort_global_tissue_class_by_tissue_type_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                """
 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 5", total = None)
                 cohort_global_tissue_class_by_structure_dataframe = dataframe_builders.global_scores_by_specific_structure_dataframe_builder(master_structure_reference_dict,
@@ -6922,13 +7079,14 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue volume above threshold"] = cohort_tissue_volume_above_threshold_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 
-                # All binom est info for cohort
+                # All binom est info for cohort (deprecated because mutual info superceeded by sum to one)
+                """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 7", total = None) 
                 cohort_all_binom_est_data_by_pt_and_voxel = dataframe_builders.cohort_creator_binom_est_by_pt_and_voxel_dataframe(master_structure_reference_dict,
-                                                       bx_ref)
-                
+                                                       bx_ref)  
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"] = cohort_all_binom_est_data_by_pt_and_voxel
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                """
 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 8", total = None) 
                 cohort_global_tissue_scores_with_target_dil_radiomic_features_df = dataframe_builders.bx_global_score_to_target_dil_3d_radiomic_features_dataframe_builder(structure_cohort_3d_radiomic_features_dataframe,
@@ -7063,6 +7221,8 @@ def main():
 
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 
+                # takes very long time to build, succeeded by dataframe_builders.global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df
+                """
                 st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3", total = None) 
                 cohort_global_dosimetry_dataframe = dataframe_builders.global_dosimetry_values_dataframe_builder(master_structure_reference_dict,
@@ -7075,7 +7235,7 @@ def main():
                 
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"] = cohort_global_dosimetry_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                
+                """
 
                 st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.1", total = None) 
@@ -7340,6 +7500,7 @@ def main():
                             dataframe_file_name = str(patientUID) +'-'+ str(dataframe_name)+ '.csv'
                             dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
                             dataframe.to_csv(dataframe_file_path)
+                            #dataframe.to_parquet(dataframe_file_path, compression='snappy')
 
                         # also append to create global dataframe
                 #         if dataframe_name in dict_of_patient_specific_dataframes:
@@ -7426,9 +7587,16 @@ def main():
                     patient_sp_csv_dir = patient_sp_output_csv_dir_dict[patientUID]
                     for dataframe_name, dataframe in pydicom_item[all_ref_key]['Multi-structure MC simulation output dataframes dict'].items():
                         if isinstance(dataframe, pandas.DataFrame):
-                            dataframe_file_name = str(patientUID) +'-'+ str(dataframe_name)+ '.csv'
-                            dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
-                            dataframe.to_csv(dataframe_file_path)
+                            if dataframe_name == "Tissue class - containment and distances (light) results":
+                                # Use .parquet extension for the Parquet file
+                                dataframe_file_name = f"{patientUID}-{dataframe_name}.parquet"
+                                dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
+                                dataframe.to_parquet(dataframe_file_path, compression='snappy')
+                            else:
+                                # Keep using .csv for other dataframes
+                                dataframe_file_name = f"{patientUID}-{dataframe_name}.csv"
+                                dataframe_file_path = patient_sp_csv_dir.joinpath(dataframe_file_name)
+                                dataframe.to_csv(dataframe_file_path)
 
                     for sp_bx in pydicom_item[bx_ref]:
                         bx_name = sp_bx["ROI"]
@@ -7440,6 +7608,7 @@ def main():
                                 dataframe_file_name = str(bx_type) +'-'+ str(bx_name)+'-'+ str(dataframe_name)+ '.csv'
                                 dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
                                 dataframe.to_csv(dataframe_file_path)
+                                #dataframe.to_parquet(dataframe_file_path, compression='snappy')
 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
@@ -7520,6 +7689,7 @@ def main():
                         dataframe_file_name = str(dataframe_name)+ '.csv'
                         dataframe_file_path = cohort_csv_output_dir.joinpath(dataframe_file_name)
                         dataframe.to_csv(dataframe_file_path)
+                        #dataframe.to_parquet(dataframe_file_path, compression='snappy')
 
     
             
@@ -7721,7 +7891,8 @@ def main():
 
                     production_plots.production_plot_cohort_double_sextant_biopsy_distribution(cohort_biopsy_basic_spatial_features_dataframe,
                                                                               general_plot_name_string,
-                                                                              cohort_output_figures_dir)
+                                                                              cohort_output_figures_dir,
+                                                                              simulated_type = 'Real')
                     
                     indeterminate_progress_main.update(main_indeterminate_task, visible = False)
                     completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
@@ -8574,7 +8745,9 @@ def main():
 
                     ridge_line_dose_and_binom_general_plot_name_string = production_plots_input_dictionary["Axial dose and tissue colored voxelized ridgeline plot"]["Plot name"]
 
-                    cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+                    # deprecated dataframe! Superceded by sum-to-one mc results dataframe
+                    #cohort_all_binom_data_by_trial_and_pt = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"]
+                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"] 
 
                     cohort_voxel_dose_dataframe_by_voxel = master_cohort_patient_data_and_dataframes['Dataframes']['Cohort: Global dosimetry by voxel']
 
@@ -8582,7 +8755,7 @@ def main():
                         if dose_ref in pydicom_item:
                         
                             #sp_patient_all_dose_data_by_trial_and_pt = pydicom_item[all_ref_key]["Dosimetry - All points and trials"]
-                            sp_patient_all_binom_data_by_trial_and_pt = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Patient ID"] == patientUID]
+                            sp_patient_sum_to_one_pt_wise_results_dataframe = cohort_mc_sum_to_one_pt_wise_results_dataframe[cohort_mc_sum_to_one_pt_wise_results_dataframe["Patient ID"] == patientUID]
 
                             for specific_bx_structure in pydicom_item[bx_ref]:
                                 bx_id = specific_bx_structure['ROI']
@@ -8604,7 +8777,7 @@ def main():
                                 ### This new function version uses the dataframe that was created describing all dose statistics globally by voxel
                                 production_plots.production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_cohort_v2(sp_bx_dose_distribution_all_trials_df,
                                                                                                                                     sp_patient_and_sp_bx_dose_dataframe_by_voxel,
-                                                                                                                                    sp_patient_all_binom_data_by_trial_and_pt,
+                                                                                                                                    sp_patient_sum_to_one_pt_wise_results_dataframe,
                                                                                                                                     svg_image_width,
                                                                                                                                     svg_image_height,
                                                                                                                                     dpi_for_seaborn_plots,
@@ -8920,9 +9093,12 @@ def main():
 
                     cohort_global_dosimetry_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Global dosimetry"]
 
-                    production_plots.cohort_all_biopsies_dosimtery_boxplot_grouped_by_patient(cohort_global_dosimetry_dataframe,
-                                   general_plot_name_string,
-                                   cohort_output_figures_dir)
+                    if cohort_global_dosimetry_dataframe.empty:
+                        pass
+                    else:
+                        production_plots.cohort_all_biopsies_dosimtery_boxplot_grouped_by_patient(cohort_global_dosimetry_dataframe,
+                                    general_plot_name_string,
+                                    cohort_output_figures_dir)
                     
                     indeterminate_progress_main.update(main_indeterminate_task, visible = False)
                     completed_progress.update(main_indeterminate_task_completed, advance = 1,visible = True)
@@ -9181,7 +9357,7 @@ def main():
                 else:
                     pass
 
-
+                
                 # perform containment probabilities plots and regressions
                 #live_display.stop()
                 if production_plots_input_dictionary["Tissue classification mutual probabilities plot"]["Plot bool"] == True:
@@ -9202,7 +9378,7 @@ def main():
                         processing_patient_production_plot_description = "Creating mutual containment probability plots [{}]...".format(patientUID)
                         patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-                        
+                        # deprecated
                         production_plots.production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
                                                     patientUID,
                                                     pydicom_item,
@@ -9794,12 +9970,12 @@ def structure_referencer(data_removals_dict_bx,
                          "MC data: MC sim containment and distance all trials dataframe (light)": None,
                          "MC data: compiled sim results dataframe": None,
                          "MC data: compiled sim sum-to-one results dataframe": None,
-                         "MC data: mutual compiled sim results dataframe": None,
+                         #"MC data: mutual compiled sim results dataframe": None,
                          "MC data: compiled sim results": None, 
                          "MC data: mutual compiled sim results": None,
-                         "MC data: tumor tissue probability": None,
-                         "MC data: miss structure tissue probability": None,
-                         "MC data: tissue length above threshold dict": None,
+                         #"MC data: tumor tissue probability": None,
+                         #"MC data: miss structure tissue probability": None,
+                         #"MC data: tissue length above threshold dict": None,
                          "MC data: voxelized containment results dict": None, 
                          "MC data: voxelized containment results dict (dict of lists)": None, 
                          "MC data: bx to dose NN search objects list": None, 
@@ -9823,7 +9999,7 @@ def structure_referencer(data_removals_dict_bx,
                                                 "Dose output voxelized": None,
                                                 "Point-wise dose output by MC trial number": None,
                                                 "Voxel-wise dose output by MC trial number": None,
-                                                "Mutual containment output by bx point": None,
+                                                #"Mutual containment output by bx point": None,
                                                 "Tissue volume above threshold": None,
                                                 "DVH metrics": None,
                                                 "Differential DVH by MC trial": None,
@@ -9928,12 +10104,12 @@ def structure_referencer(data_removals_dict_bx,
                                 "MC data: MC sim containment and distance all trials dataframe (light)": None,
                                 "MC data: compiled sim results dataframe": None,
                                 "MC data: compiled sim sum-to-one results dataframe": None,
-                                "MC data: mutual compiled sim results dataframe": None,
+                                #"MC data: mutual compiled sim results dataframe": None,
                                 "MC data: compiled sim results": None,
                                 "MC data: mutual compiled sim results": None, 
-                                "MC data: tumor tissue probability": None,
-                                "MC data: miss structure tissue probability": None,
-                                "MC data: tissue length above threshold dict": None,
+                                #"MC data: tumor tissue probability": None,
+                                #"MC data: miss structure tissue probability": None,
+                                #"MC data: tissue length above threshold dict": None,
                                 "MC data: voxelized containment results dict": None, 
                                 "MC data: voxelized containment results dict (dict of lists)": None, 
                                 "MC data: bx to dose NN search objects list": None, 
@@ -9957,7 +10133,7 @@ def structure_referencer(data_removals_dict_bx,
                                                        "Dose output voxelized": None,
                                                        "Point-wise dose output by MC trial number": None,
                                                        "Voxel-wise dose output by MC trial number": None,
-                                                       "Mutual containment output by bx point": None,
+                                                       #"Mutual containment output by bx point": None,
                                                        "Tissue volume above threshold": None,
                                                        "DVH metrics": None,
                                                        "Differential DVH by MC trial": None},
@@ -10007,6 +10183,8 @@ def structure_referencer(data_removals_dict_bx,
                                                                                  "Tissue class - distances pt-wise results": None,
                                                                                  "Tissue class - distances voxel-wise results": None,
                                                                                  "Tissue class - containment and distances (light) results": None,
+                                                                                 #"Tissue class - Pt wise mutual tissue class results": None,
+                                                                                 "Tissue class - Pt wise structure specific results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
                                                                                  "DVH metrics": None,
                                                                                  "DVH metrics (Dx, Vx) statistics": None,
@@ -10531,7 +10709,87 @@ class interpolation_information_obj:
 
 
 
- 
+    def create_fill_new_v2(self, threeDdata_zslice, maximum_point_distance, 
+                      kernel_type="one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"):
+        """
+        Fill a given z-slice using the GPU-accelerated point-in-polygon method.
+        Instead of appending points one by one, this version stores points in NumPy arrays
+        using vectorized concatenation. It now preserves previously stored non-end cap points 
+        from self.interpolated_pts_list to ensure the overall results remain identical.
+
+        Parameters:
+        threeDdata_zslice : numpy.ndarray
+            An (N, 3) array representing the points (with constant z) that form the polygon.
+        maximum_point_distance : float
+            Parameter used to determine grid spacing as maximum_point_distance/√2.
+        kernel_type : str
+            The GPU kernel type to use.
+        """
+        # Initialize storage for new fill points (end caps).
+        if not hasattr(self, "endcaps_points_np") or self.endcaps_points_np is None:
+            self.endcaps_points_np = np.empty((0, 3), dtype=float)
+        
+        # Initialize the combined storage array.
+        # If not already set, initialize it with the preexisting points from self.interpolated_pts_list.
+        if (not hasattr(self, "interpolated_pts_with_end_caps_np_arr") or 
+            self.interpolated_pts_with_end_caps_np_arr is None or 
+            self.interpolated_pts_with_end_caps_np_arr.shape[0] == 0):
+            if hasattr(self, "interpolated_pts_list") and self.interpolated_pts_list is not None and len(self.interpolated_pts_list) > 0:
+                self.interpolated_pts_with_end_caps_np_arr = np.vstack(self.interpolated_pts_list)
+            else:
+                self.interpolated_pts_with_end_caps_np_arr = np.empty((0, 3), dtype=float)
+
+        # Determine constant z value.
+        z_val = threeDdata_zslice[0, 2]
+
+        # Compute the 2D bounding box.
+        min_x, min_y = np.amin(threeDdata_zslice[:, 0:2], axis=0)
+        max_x, max_y = np.amax(threeDdata_zslice[:, 0:2], axis=0)
+
+        # Calculate grid spacing.
+        grid_spacing = maximum_point_distance / np.sqrt(2)
+
+        # Create a grid of candidate (x, y) points.
+        xx, yy = np.meshgrid(
+            np.arange(min_x - grid_spacing, max_x + grid_spacing, grid_spacing),
+            np.arange(min_y - grid_spacing, max_y + grid_spacing, grid_spacing)
+        )
+        candidate_xy = np.column_stack((xx.ravel(), yy.ravel()))
+        candidate_points = np.column_stack((candidate_xy, np.full(candidate_xy.shape[0], z_val)))
+        num_candidate_pts = candidate_points.shape[0]
+
+        # Reshape candidates to (1, num_candidate_pts, 3) for the GPU kernel.
+        candidates_all = candidate_points.reshape(1, num_candidate_pts, 3)
+
+        # Prepare the polygon as a list with a single slice.
+        all_structures_slices = [[threeDdata_zslice]]
+        mapping_array = np.array([0], dtype=np.int32)
+
+        # Run the GPU-based point-in-polygon test.
+        containment_results_cp_arr, _ = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
+            all_structures_slices,
+            candidates_all,
+            mapping_array,
+            constant_z_slice_polygons_handler_option='auto-close-if-open',
+            remove_consecutive_duplicate_points_in_polygons=True,
+            log_sub_dirs_list=[],
+            log_file_name=None,
+            include_edges_in_log=False,
+            kernel_type=kernel_type
+        )
+
+        # Fetch the boolean mask (assumed shape: (num_candidate_pts,)).
+        result_mask = containment_results_cp_arr[0].get()
+
+        # Select the candidate points that are inside the polygon.
+        valid_points = candidate_points[result_mask]
+
+        # Update the storage arrays with the new fill points.
+        self.endcaps_points_np = np.concatenate((self.endcaps_points_np, valid_points), axis=0)
+        self.interpolated_pts_with_end_caps_np_arr = np.concatenate(
+            (self.interpolated_pts_with_end_caps_np_arr, valid_points), axis=0
+        )
+
 
 
 

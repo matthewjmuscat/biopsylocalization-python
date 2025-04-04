@@ -98,7 +98,8 @@ def simulator_parallel(parallel_pool,
                         interp_dist_caps,
                         cuml_NN_algo,
                         check_if_end_caps_filled_proper_NN_num,
-                        nn_search_end_cap_grid_factor
+                        nn_search_end_cap_grid_factor,
+                        tissue_volume_operator_dictionary
                        ):
     app_header,progress_group_info_list,important_info,app_footer = layout_groups
     completed_progress, completed_sections_progress, patients_progress, structures_progress, biopsies_progress, MC_trial_progress, indeterminate_progress_main, indeterminate_progress_sub, progress_group = progress_group_info_list
@@ -373,6 +374,102 @@ def simulator_parallel(parallel_pool,
             sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
             sp_patient_total_num_non_BXs = sp_patient_total_num_structs - sp_patient_total_num_BXs
 
+
+            ### DILATE STRUCTURES HERE, DON'T NEED TO DO IT FOR EVERY BIOPSY
+            ##
+            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Dilating structures", total = None)
+            ##
+
+            sp_patient_dilated_structs_dict = {}
+            sp_patient_centroids_of_dilated_structs_dict = {}
+            sp_patient_1d_mapping_arr_dict = {}
+            for structure_info in structure_organized_for_bx_data_blank_dict.keys():
+                structure_roi = structure_info[0]
+                non_bx_structure_type = structure_info[1]
+                structure_refnum = structure_info[2]
+                structure_index = structure_info[3]
+
+                non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
+                non_bx_struct_intraslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Intra-slice interpolation information"] # This is used for NN surface distance calculation!
+                non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
+                
+                # Don't use inter slice interpolated structures for prostate, urethra or rectum it will be too slow
+                if (non_bx_structure_type == oar_ref) or (non_bx_structure_type == rectum_ref) or (non_bx_structure_type == urethra_ref):
+                    non_bx_struct_zslices_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Equal num zslice contour pts"]
+                    #non_bx_struct_org_config_zvals_list = polygon_dilation_helpers_numpy.extract_constant_z_values_single_configuration(non_bx_struct_zslices_list)
+                else: # If non prostate, urethra or rectum use the interpolated structures
+                    non_bx_struct_zslices_list = non_bx_struct_interslice_interpolation_information.interpolated_pts_list
+
+
+                ### DILATION OF RELATIVE STRUCTURE (START)
+                # Dilate the structure for every trial
+                non_bx_structure_normal_dist_dilations_samples_arr = cp.asnumpy(pydicom_item[non_bx_structure_type][structure_index]["MC data: Generated normal dist random samples dilations arr"])
+
+                # If the structure has all zero dilation values then then just use the original structure
+                if not non_bx_structure_normal_dist_dilations_samples_arr.any():
+                    # If the structure is not dilated then just use the original structure
+                    nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr = [non_bx_struct_zslices_list]
+
+                    # get nominal centroid
+                    non_bx_structure_global_centroid = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Structure global centroid"].copy()
+
+                    centroids_of_nominal_and_each_dilated_structure_2darr = np.reshape(non_bx_structure_global_centroid, (1,3))
+
+                    # generate the test_struct_to_relative_struct_1d_mapping_array
+                    # note this is used for both the custom cuda kernel, centroid distance calculation and NN boundary calculation
+                    test_struct_to_relative_struct_1d_mapping_array = np.zeros(num_MC_containment_simulations + 1, dtype=int) # testing all normal distributions against the same relative (DIL) structure  
+
+                    sp_patient_1d_mapping_arr_dict[structure_info] = test_struct_to_relative_struct_1d_mapping_array
+                    sp_patient_dilated_structs_dict[structure_info] = nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr
+                    sp_patient_centroids_of_dilated_structs_dict[structure_info] = centroids_of_nominal_and_each_dilated_structure_2darr
+
+                # If the structure has non-zero dilation values then dilate the structure
+                else:
+                    # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start and end index +1 of that slice
+                    non_bx_struct_org_config_2d_arr, non_bx_struct_org_config_indices_slices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(non_bx_struct_zslices_list)
+
+                    # Generate all trials dilated structures
+                    #st = time.time()
+                    dilated_structures_list, dilated_structures_slices_indices_list = polygon_dilation_helpers_numpy.generate_dilated_structures_parallelized(non_bx_struct_org_config_2d_arr, 
+                                                                                                                                                                non_bx_struct_org_config_indices_slices_arr, 
+                                                                                                                                                                non_bx_structure_normal_dist_dilations_samples_arr, 
+                                                                                                                                                                show_non_bx_relative_structure_z_dilation_bool, 
+                                                                                                                                                                show_non_bx_relative_structure_xy_dilation_bool, 
+                                                                                                                                                                parallel_pool)
+
+                    ### THIS IS FOR THE CUSTOM KERNEL VERSION!!!
+                    # Reconstruct the dilated structures from the 2d array to a list of constant z slice arrays, this is used for the input of the mother function of the custom CUDA kernel containment function
+                    nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr = []
+                    centroids_of_each_dilated_structure_2darr = np.empty([len(dilated_structures_list), 3])
+                    for struct_index, dilated_struct_2d_arr in enumerate(dilated_structures_list):
+                        nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr.append(polygon_dilation_helpers_numpy.reconstruct_list_from_2d_array(dilated_struct_2d_arr, dilated_structures_slices_indices_list[struct_index]))
+                        centroids_of_each_dilated_structure_2darr[struct_index,:] = np.mean(dilated_struct_2d_arr, axis=0)
+                    
+                    ### prepend nominal
+                    nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr = [non_bx_struct_zslices_list] + nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr
+                    # get nominal centroid
+                    non_bx_structure_global_centroid = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Structure global centroid"].copy()
+                    centroids_of_nominal_and_each_dilated_structure_2darr = np.vstack((non_bx_structure_global_centroid, centroids_of_each_dilated_structure_2darr))
+                    
+                    # generate the test_struct_to_relative_struct_1d_mapping_array
+                    # note this is used for both the custom cuda kernel, centroid distance calculation and NN boundary calculation
+                    test_struct_to_relative_struct_1d_mapping_array = np.arange(0, len(nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr)) # testing all normal distributions against the same relative (DIL) structure   
+
+                    sp_patient_dilated_structs_dict[structure_info] = nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr
+                    sp_patient_centroids_of_dilated_structs_dict[structure_info] = centroids_of_nominal_and_each_dilated_structure_2darr
+                    sp_patient_1d_mapping_arr_dict[structure_info] = test_struct_to_relative_struct_1d_mapping_array
+
+                    # Dont need these anymore
+                    del dilated_structures_list # free up memory
+                    del dilated_structures_slices_indices_list # free up memory
+
+
+            ###
+            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+            ###
+
+            ### END DILATION STRUCTURE METHOD
+
             patients_progress.update(testing_biopsy_containment_patient_task, description = "[red]Testing biopsy containment (CUDA) [{}]...".format(patientUID))
             testing_biopsy_containment_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total = sp_patient_total_num_BXs)           
             for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
@@ -400,12 +497,12 @@ def simulator_parallel(parallel_pool,
                 biopsy_structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure) 
                 
                 containment_info_grand_all_structures_pandas_dataframe = pandas.DataFrame()
-                for structure_info,shifted_bx_data_3darr_cp in structure_shifted_bx_data_dict.items():
+                for structure_info,shifted_bx_data_3darr_np in structure_shifted_bx_data_dict.items():
                     structure_roi = structure_info[0]
                     non_bx_structure_type = structure_info[1]
                     structure_refnum = structure_info[2]
                     structure_index = structure_info[3]
-                    shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_cp)
+                    shifted_bx_data_3darr = cp.asnumpy(shifted_bx_data_3darr_np) # it was changed to be stored as numpy array so this line is redundant now but leaving it anyways
                     structures_progress.update(testing_each_non_bx_structure_containment_task, description = "[cyan]~~For each non-BX structure [{}]...".format(structure_roi))
 
 
@@ -414,12 +511,16 @@ def simulator_parallel(parallel_pool,
                     ### NOTE: I HAVE INCLUDED Z AND RADIAL (XY) DILATIONS TO THE RELATIVE STRUCTURE ITSELF
 
 
-                    # Extract and calcualte relative structure info
+                    # Extract and calculate relative structure info
                     non_bx_struct_interslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Inter-slice interpolation information"]
                     non_bx_struct_intraslice_interpolation_information = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Intra-slice interpolation information"] # This is used for NN surface distance calculation!
                     non_bx_struct_interpolated_pts_np_arr = non_bx_struct_interslice_interpolation_information.interpolated_pts_np_arr
                     non_bx_struct_interpolated_pts_with_endcaps_np_arr = non_bx_struct_intraslice_interpolation_information.interpolated_pts_with_end_caps_np_arr # This is used for NN surface distance calculation!
                     
+
+                    # MOVED DILATION OUTSIDE OF LOOP
+
+                    """
                     # Don't use inter slice interpolated structures for prostate, it will be too slow
                     if (non_bx_structure_type == oar_ref) or (non_bx_structure_type == rectum_ref) or (non_bx_structure_type == urethra_ref):
                         non_bx_struct_zslices_list = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Equal num zslice contour pts"]
@@ -461,12 +562,12 @@ def simulator_parallel(parallel_pool,
                     # For each non dilated (original structure) z slices list, the polygons are NOT closed, ie. the last point is not the same as the first point. This needs to be corrected for the CONTAINMENT algorithm
                     # NOTE: This does not matter for the above generate_dilated_structures_parallelized function, because the generate_dilated_structures_parallelized function automatically returns closed polygons through shapely_polygon_anstance.exterior.coords method (see the polygon_dilation_helpers_numpy.dilate_polygons_xy_plane function)
                     # NOTE: Although this is performed I dont think this is strictly nercessary anymore because I added a functionality within the kernel to handle data for polygons that arent closed. Anyways everything should work fine.
-                    """
-                    non_bx_struct_zslices_list_closed_polygons = copy.deepcopy(non_bx_struct_zslices_list)
-                    for i, zslice_arr in enumerate(non_bx_struct_zslices_list):
-                        # append the first point to the end of the array
-                        non_bx_struct_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
-                    """
+                    
+                    #non_bx_struct_zslices_list_closed_polygons = copy.deepcopy(non_bx_struct_zslices_list)
+                    #for i, zslice_arr in enumerate(non_bx_struct_zslices_list):
+                    #    # append the first point to the end of the array
+                    #    non_bx_struct_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+                    
 
                     
                     # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start and end index +1 of that slice
@@ -491,14 +592,25 @@ def simulator_parallel(parallel_pool,
                     non_bx_structure_global_centroid = master_structure_reference_dict[patientUID][non_bx_structure_type][structure_index]["Structure global centroid"].copy()
                     centroids_of_nominal_and_each_dilated_structure_2darr = np.vstack((non_bx_structure_global_centroid, centroids_of_each_dilated_structure_2darr))
                     
-
                     # generate the test_struct_to_relative_struct_1d_mapping_array
                     # note this is used for both the custom cuda kernel, centroid distance calculation and NN boundary calculation
                     test_struct_to_relative_struct_1d_mapping_array = np.arange(0, len(nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr)) # testing all normal distributions against the same relative (DIL) structure   
-
+                    
                     # Dont need these anymore
                     del dilated_structures_list # free up memory
                     del dilated_structures_slices_indices_list # free up memory
+                    """
+
+                    ### RETRIEVE THE DILATED STRUCTURES FOR THIS SPECIFIC BIOPSY
+                    # Get the dilated structures for this specific biopsy
+                    nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr = sp_patient_dilated_structs_dict[structure_info]
+                    # Get the centroids of the dilated structures for this specific biopsy
+                    centroids_of_nominal_and_each_dilated_structure_2darr = sp_patient_centroids_of_dilated_structs_dict[structure_info]
+                    # Get the test_struct_to_relative_struct_1d_mapping_array for this specific biopsy
+                    test_struct_to_relative_struct_1d_mapping_array = sp_patient_1d_mapping_arr_dict[structure_info]
+
+                    
+
 
                     # Get the z values of nominal and all dilated slices for every trial
                     #non_bx_struct_nominal_and_all_dilations_zvals_list = polygon_dilation_helpers_numpy.extract_constant_z_values(nominal_and_dilated_structures_list_of_2d_arr, nominal_and_dilated_structures_slices_indices_list)
@@ -603,6 +715,10 @@ def simulator_parallel(parallel_pool,
 
                     ### BEGIN DISTANCE CALCULATION SECTION TO RELATIVE STRUCTURE CENTROID!
 
+                    ##
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing rel. struct. centroid distances", total = None)
+                    ##
+
                     # Calculate distances between sampled bx and every structure
                     ### IMPORTANT NOTICE WHEN GENERALIZING THIS IN THE FUTURE!
                     ### If you add any generalized transformations make sure that you are passing the completely transformed biopsy structure to the below distance calculation so that it accurately captures all transfoormations!
@@ -642,7 +758,7 @@ def simulator_parallel(parallel_pool,
                                       'Dist. from struct. centroid Z': non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Z})
                     """
                     
-
+                    
                     non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened, non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_X, non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Y, non_bx_structure_centroid_to_bx_points_vectors_all_trials_distances_flattened_Z, centroids_of_nominal_and_each_dilated_structure_2darr_resorted = relative_structure_centroid_calc.relative_structure_centroid_calculation_function(centroids_of_nominal_and_each_dilated_structure_2darr,
                                      test_struct_to_relative_struct_1d_mapping_array,
                                      combined_nominal_and_shifted_bx_data_3darr_num_MC_containment_sims_cutoff)
@@ -660,6 +776,8 @@ def simulator_parallel(parallel_pool,
                                    do_not_convert_column_names_to_categorical = [],
                                    float_dtype = np.float32,
                                    int_dtype = np.int32)
+                    
+                    
 
                     # Demonstrate to ensure its working?
                     if show_num_relative_structure_centroid_demonstration != 0:
@@ -677,6 +795,11 @@ def simulator_parallel(parallel_pool,
                                                                                               1, 
                                                                                               draw_lines = True,
                                                                                               other_pcds_list = [non_bx_structure_global_centroid_pcd])
+                    
+                    
+                    ###
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    ###
                     
                     ### END DISTANCE CALC SECTION
 
@@ -711,6 +834,11 @@ def simulator_parallel(parallel_pool,
 
 
                     ### BEGIN NEAREST NEIGHBOUR BOUNDARY SEARCH SECTION
+
+
+                    ##
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing NN. struct. boundary distances", total = None)
+                    ##
 
                     # We only need to test points on the nearest slice! Then we need to check against the z extent projection at each end and take the smallest value of the three
                     # Ok but we arent doing that ^ because that actually isnt even true for non-convex structures, we need to check against the entire structure
@@ -797,6 +925,7 @@ def simulator_parallel(parallel_pool,
                                                                                                                             num_MC_containment_simulations)
                     """
                     
+                    
 
                     results_distances, results_indices_relative, rel_struct_candidates_stacked, rel_struct_candidates_indices, results_indices_absolute = custom_raw_kernel_cuda_nearest_neighbour.custom_gpu_kernel_NN_search_mother_function(
                                                                                                             nominal_and_dilated_structures_list_of_lists_of_const_zslice_arr,
@@ -881,10 +1010,20 @@ def simulator_parallel(parallel_pool,
                                                                                               other_pcds_list=[non_bx_struct_fully_interpolated_with_end_caps_pts__org_config_pcd])
                     
                     
+
+                    ###
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    ###
+
                     #### END Nearest neighbour boundary search section
 
 
 
+                    ### CONTAINMENT TESTING START
+
+                    ##
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Testing pt containment (CUDA)", total = None)
+                    ##
 
 
                     """
@@ -1014,6 +1153,17 @@ def simulator_parallel(parallel_pool,
                     
 
                     
+
+                    ###
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    ###
+
+                    ### CONTAINMENT TESTING END
+
+
+
+
+                    #### DATAFRAME HANDLING
 
 
                     ### ADD NEAREST NEIGHBOUR BOUNDARY DISTANCE TO DATAFRAME
@@ -1348,7 +1498,8 @@ def simulator_parallel(parallel_pool,
                 #################
 
 
-
+                ### MUTUAL PROBABILITIES (DEPRECATED BY SUM-TO-ONE PROBABILITIES)
+                """
                 ###
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing mutual probabilities", total = None)
                 ###
@@ -1392,7 +1543,44 @@ def simulator_parallel(parallel_pool,
                     
                     del bx_mutual_containment_sp_combo_by_org_pt_dataframe
                 del containment_info_grand_all_structures_pandas_dataframe_copy
+
+                # Add x,y,z point coordinates
+                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = misc_tools.include_vector_columns_in_dataframe(bx_mutual_containment_by_org_pt_all_combos_dataframe, 
+                                                                                           bx_points_bx_coords_sys_arr, 
+                                                                                           reference_column_name = 'Original pt index', 
+                                                                                           new_column_name_x = "X (Bx frame)", 
+                                                                                           new_column_name_y = "Y (Bx frame)", 
+                                                                                           new_column_name_z = "Z (Bx frame)")
                 
+
+                # Add voxel columns
+                reference_dimension_col_name = "Z (Bx frame)"
+                bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.add_voxel_columns_helper_func(bx_mutual_containment_by_org_pt_all_combos_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
+                
+
+                # add back patient, bx id information to dataframe
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated type', bx_sim_type)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated bool', bx_sim_bool)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
+                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Patient ID', patientUID)
+                
+                #bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
+
+
+                ###
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                ###
+
+                """
+
+
+
+
+
+
 
                 ### DISTANCES TO BOUNDARY AND CENTROIDS COMPILE
 
@@ -1426,7 +1614,8 @@ def simulator_parallel(parallel_pool,
                                                                                                                               reference_dimension_col_name, 
                                                                                                                               in_place = False)
                 
-                del containment_info_grand_all_structures_pandas_dataframe_with_vector_cols
+
+
 
 
                 # Point wise
@@ -1443,9 +1632,6 @@ def simulator_parallel(parallel_pool,
                 ### End point-wise and voxel-wise
 
 
-                # Free up memory
-                del containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols
-
 
 
 
@@ -1454,6 +1640,26 @@ def simulator_parallel(parallel_pool,
                 ### Keep lighter version of entire dataframe in case we want the distance to containment relationship for every trial
                 if keep_light_containment_and_distances_to_relative_structures_dataframe_bool == True:
                     containment_info_grand_all_structures_pandas_dataframe_light = containment_info_grand_all_structures_pandas_dataframe.drop(columns=['Nearest zslice zval',  'Nearest zslice index',  'Pt clr R',  'Pt clr G',  'Pt clr B',  'Test pt X',  'Test pt Y',  'Test pt Z'])
+                    # making even lighter, comment out the below line if you need for debugging...?
+                    containment_info_grand_all_structures_pandas_dataframe_light = containment_info_grand_all_structures_pandas_dataframe_light.drop(columns=['Struct. boundary NN relative index (all pts stacked)'])
+                    
+                    
+                    ### Point-wise and voxel-wise
+                    containment_info_grand_all_structures_pandas_dataframe_light = misc_tools.include_vector_columns_in_dataframe(containment_info_grand_all_structures_pandas_dataframe_light, 
+                                                                                            bx_points_bx_coords_sys_arr, 
+                                                                                            reference_column_name = 'Original pt index', 
+                                                                                            new_column_name_x = "X (Bx frame)", 
+                                                                                            new_column_name_y = "Y (Bx frame)", 
+                                                                                            new_column_name_z = "Z (Bx frame)",
+                                                                                            in_place = False)
+                    # Add voxel columns
+                    reference_dimension_col_name = "Z (Bx frame)"
+                    containment_info_grand_all_structures_pandas_dataframe_light = dataframe_builders.add_voxel_columns_helper_func(containment_info_grand_all_structures_pandas_dataframe_light, 
+                                                                                                                                biopsy_z_voxel_length, 
+                                                                                                                                reference_dimension_col_name, 
+                                                                                                                                in_place = False)
+                    
+                    
                     containment_info_grand_all_structures_pandas_dataframe_light = dataframe_builders.convert_columns_to_categorical_and_downcast(
                     containment_info_grand_all_structures_pandas_dataframe_light, 
                     threshold=0.25
@@ -1465,37 +1671,9 @@ def simulator_parallel(parallel_pool,
             
                 # Free up memory
                 del containment_info_grand_all_structures_pandas_dataframe
-
-                # Add x,y,z point coordinates
-                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-                bx_mutual_containment_by_org_pt_all_combos_dataframe = misc_tools.include_vector_columns_in_dataframe(bx_mutual_containment_by_org_pt_all_combos_dataframe, 
-                                                                                           bx_points_bx_coords_sys_arr, 
-                                                                                           reference_column_name = 'Original pt index', 
-                                                                                           new_column_name_x = "X (Bx frame)", 
-                                                                                           new_column_name_y = "Y (Bx frame)", 
-                                                                                           new_column_name_z = "Z (Bx frame)")
+                del containment_info_grand_all_structures_pandas_dataframe_with_vector_cols
+                del containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols
                 
-
-                # Add voxel columns
-                reference_dimension_col_name = "Z (Bx frame)"
-                bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.add_voxel_columns_helper_func(bx_mutual_containment_by_org_pt_all_combos_dataframe, biopsy_z_voxel_length, reference_dimension_col_name)
-                
-
-                # add back patient, bx id information to dataframe
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated type', bx_sim_type)
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Simulated bool', bx_sim_bool)
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx index', specific_bx_structure_index)
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx refnum', str(specific_bx_structure_refnum))
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Bx ID', specific_bx_structure_roi)
-                bx_mutual_containment_by_org_pt_all_combos_dataframe.insert(0, 'Patient ID', patientUID)
-                
-                #bx_mutual_containment_by_org_pt_all_combos_dataframe = bx_mutual_containment_by_org_pt_all_combos_dataframe.reset_index(drop = True)
-
-
-                ###
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                ###
-
 
                 ###
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~This code should be phased out!", total = None)
@@ -1530,6 +1708,9 @@ def simulator_parallel(parallel_pool,
                     MC_compiled_results_for_fixed_bx_dict[structure_info] = structure_specific_results_dict
 
                 #live_display.stop()
+
+                ### MUTUAL PROBABILITIES SECTION
+                """
                 non_bx_structures_info_list = MC_compiled_results_for_fixed_bx_dict.keys()
                 structure_info_combinations_list = [com for sub in range(1,3) for com in itertools.combinations(non_bx_structures_info_list , sub + 1)] # generates combinations from the unqie roi list 
                 mutual_MC_compiled_results_for_fixed_bx_dict = {}
@@ -1553,6 +1734,7 @@ def simulator_parallel(parallel_pool,
                     combination_structure_specific_results_dict["Binomial estimator list"] = bx_containment_combination_binomial_estimator_by_org_pt_ind_list
 
                     mutual_MC_compiled_results_for_fixed_bx_dict[structure_info_combination_tuple] = combination_structure_specific_results_dict
+                """
                 #live_display.start()
                 #### EVERNTUALLY WANT TO PHASE OUT THIS CODE!
                 
@@ -1569,16 +1751,16 @@ def simulator_parallel(parallel_pool,
                 # Update the master dictionary
                 mc_compiled_results_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_for_fixed_bx_dataframe, threshold=0.25)
                 mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, threshold=0.25)
-                bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(bx_mutual_containment_by_org_pt_all_combos_dataframe, threshold=0.25)
+                #bx_mutual_containment_by_org_pt_all_combos_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(bx_mutual_containment_by_org_pt_all_combos_dataframe, threshold=0.25)
                 #live_display.start()
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
+                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
 
                 
                 ### EVENTUALLY WANT TO DELETE THIS CODE!
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
                 ### EVENTUALLY WANT TO DELETE THIS CODE!
                 
                 
@@ -1817,6 +1999,7 @@ def simulator_parallel(parallel_pool,
                     structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
                     structure_specific_results_dict["Standard error (containment) list"] = standard_err_list
 
+                """
                 mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
                 for structureID,mutual_structure_specific_results_dict in mutual_MC_compiled_results_for_fixed_bx_dict.items():
                     bx_containment_binomial_estimator_by_org_pt_ind_list = mutual_structure_specific_results_dict["Binomial estimator list"]
@@ -1828,7 +2011,7 @@ def simulator_parallel(parallel_pool,
                     standard_err_list = calculate_binomial_containment_stand_err_parallel(parallel_pool, probability_estimator_list, num_successes_list, num_trials)
                     mutual_structure_specific_results_dict["Confidence interval 95 (containment) list"] = confidence_interval_list
                     mutual_structure_specific_results_dict["Standard error (containment) list"] = standard_err_list
-
+                """
                     
                 biopsies_progress.update(calc_MC_stat_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(calc_MC_stat_each_bx_structure_containment_task)
@@ -1839,6 +2022,64 @@ def simulator_parallel(parallel_pool,
         live_display.refresh()
 
 
+
+
+
+        calc_dil_tissue_volume_task = patients_progress.add_task("[red]Calculating DIL tissue volume [{}]...".format("initializing"), total=num_patients)
+        calc_dil_tissue_volume_task_complete = completed_progress.add_task("[green]Calculating DIL tissue volume ", total=num_patients, visible = False)
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            patients_progress.update(calc_dil_tissue_volume_task, description = "[red]Calculating DIL tissue volume  [{}]...".format(patientUID))
+            
+            sp_patient_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
+            sp_patient_total_num_BXs = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+
+            sp_bx_calc_dil_tissue_volume_task = biopsies_progress.add_task("[cyan]~For each biopsy [{}]...".format("initializing"), total=sp_patient_total_num_BXs)
+            for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = specific_bx_structure["MC data: compiled sim sum-to-one results dataframe"]
+
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = misc_tools.convert_categorical_columns(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, ['Binomial estimator', 'Tissue class'], [float, str])
+
+                # calculate tissue volume above threshold 
+                bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]                
+                    
+                volume_of_tissue_above_threshold_dataframe = tissue_volume_calculator_by_tissue_class(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, 
+                                            tissue_length_above_probability_threshold_list, 
+                                            bx_sample_pts_volume_element, 
+                                            operator_dict=tissue_volume_operator_dictionary)
+                    
+                    
+                volume_of_tissue_above_threshold_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(volume_of_tissue_above_threshold_dataframe, threshold=0.25)
+                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, threshold=0.25)
+
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
+                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["Output data frames"]["Tissue volume above threshold"] = volume_of_tissue_above_threshold_dataframe 
+
+                biopsies_progress.update(sp_bx_calc_dil_tissue_volume_task, advance = 1)
+            biopsies_progress.remove_task(sp_bx_calc_dil_tissue_volume_task)
+            patients_progress.update(calc_dil_tissue_volume_task, advance = 1)
+            completed_progress.update(calc_dil_tissue_volume_task_complete, advance = 1)
+        patients_progress.update(calc_dil_tissue_volume_task, visible = False)
+        completed_progress.update(calc_dil_tissue_volume_task_complete,visible = True)
+        live_display.refresh()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        """
         specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est arr": None, 
                                             "Tumor tissue standard error arr": None, 
                                             "Tumor tissue confidence interval 95 arr": None, 
@@ -1880,7 +2121,7 @@ def simulator_parallel(parallel_pool,
                 probability_sum_of_independent_pt_wise_dil_tissue_arr = np.empty((num_sample_pts_in_bx))
                 probability_sum_of_independent_pt_wise_dil_tissue_arr.fill(0)
 
-                # create a 2d array to accumulate the standard errors of each binomial estimator  
+                # create a 2d array to accumulate the standard errors of each binomial estimator
                 mutual_MC_compiled_results_for_fixed_bx_exclusively_dils_only_dict = copy.deepcopy(mutual_MC_compiled_results_for_fixed_bx_dict)
                 for mutual_struct_combo_key in mutual_MC_compiled_results_for_fixed_bx_dict.keys():
                     for struct_key in mutual_struct_combo_key:
@@ -2014,12 +2255,12 @@ def simulator_parallel(parallel_pool,
 
 
                 # calculate tissue volume above threshold 
-                """
-                bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
                 
-                bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
-                z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
-                """
+                #bx_sample_pts_lattice_spacing = master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"]
+                
+                #bx_points_bx_coords_sys_arr = specific_bx_structure["Random uniformly sampled volume pts bx coord sys arr"]
+                #z_coords_arr = bx_points_bx_coords_sys_arr[:,2]
+                
                 #live_display.stop()
                 bx_sample_pts_volume_element = master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"]
                 all_thresholds_volume_of_tissue_above_threshold_dataframe = pandas.DataFrame()
@@ -2033,22 +2274,22 @@ def simulator_parallel(parallel_pool,
                              structure_miss_probability_roi)
                     
                     all_thresholds_volume_of_tissue_above_threshold_dataframe = pandas.concat([all_thresholds_volume_of_tissue_above_threshold_dataframe,volume_of_tissue_above_threshold_dataframe]).reset_index(drop = True)
-                    """
-                    length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
-                                                                                                                        probability_pt_wise_dil_tissue_arr,
-                                                                                                                        probabilities_standard_err_arr,
-                                                                                                                        bx_sample_pts_lattice_spacing, 
-                                                                                                                        threshold,
-                                                                                                                        n_bootstraps_for_tissue_length_above_threshold)
+                    
+                    #length_estimate_distribution_arr, length_estimate_mean, length_estimate_se = tissue_length_calculator(z_coords_arr,
+                    #                                                                                                    probability_pt_wise_dil_tissue_arr,
+                    #                                                                                                    probabilities_standard_err_arr,
+                    #                                                                                                    bx_sample_pts_lattice_spacing, 
+                    #                                                                                                    threshold,
+                    #                                                                                                    n_bootstraps_for_tissue_length_above_threshold)
                 
-                    tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
-                                                                                               "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
-                                                                                               "Length estimate mean": length_estimate_mean,
-                                                                                               "Length estimate se": length_estimate_se}
-                    """                            
-                """
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
-                """
+                    #tissue_length_by_threshold_dict[threshold] =  {"Length estimate distribution": length_estimate_distribution_arr,
+                    #                                                                           "Num bootstraps": n_bootstraps_for_tissue_length_above_threshold,
+                    #                                                                           "Length estimate mean": length_estimate_mean,
+                    #                                                                           "Length estimate se": length_estimate_se}
+                                                
+                
+                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: tissue length above threshold dict"] = tissue_length_by_threshold_dict 
+                
                 #live_display.start()
                 all_thresholds_volume_of_tissue_above_threshold_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(all_thresholds_volume_of_tissue_above_threshold_dataframe, threshold=0.25)
 
@@ -2068,10 +2309,9 @@ def simulator_parallel(parallel_pool,
         patients_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task, visible = False)
         completed_progress.update(calc_mutual_probabilities_stat_biopsy_containment_task_complete,visible = True)
         live_display.refresh()
-
+        """
 
         """
-        
         # voxelize containment results
         biopsy_voxelize_containment_task = patients_progress.add_task("[red]Voxelizing containment results [{}]...".format("initializing"), total=num_patients)
         biopsy_voxelize_containment_task_complete = completed_progress.add_task("[green]Voxelizing containment results", total=num_patients)
@@ -4335,7 +4575,7 @@ def tissue_length_calculator(z_coords_arr,
     return length_estimate_distribution, length_estimate_mean, length_estimate_se
 
 
-
+# deprecated
 def tissue_volume_calculator(patientUID,
                              specific_bx_structure,
                              cancer_tissue_label,
@@ -4380,6 +4620,92 @@ def tissue_volume_calculator(patientUID,
 
 
 
+
+def tissue_volume_calculator_by_tissue_class(df, 
+                                               probability_thresholds, 
+                                               bx_sample_pts_volume_element, 
+                                               operator_dict=None):
+    """
+    Calculate tissue volumes for each unique tissue class over a range of probability thresholds.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        A DataFrame containing biopsy data with at least the following columns:
+        ['Patient ID', 'Bx ID', 'Simulated bool', 'Simulated type', 
+         'Tissue class', 'Binomial estimator', ...]
+    probability_thresholds : list of float
+        List of probability threshold values to apply.
+    bx_sample_pts_volume_element : float
+        Volume element per voxel.
+    operator_dict : dict, optional
+        A dictionary specifying for each tissue class whether the threshold condition 
+        should be evaluated as 'greater' or 'less'. The keys are tissue class names and 
+        the values are either "greater" or "less". If a tissue class is not provided, 
+        the default is "greater" (i.e., use >=).
+    
+    Returns:
+    --------
+    pandas.DataFrame
+        A DataFrame summarizing, for each tissue class and each threshold, the computed
+        volume meeting the condition and the total tissue volume.
+    """
+    
+    # Default operator dict to an empty dict if not provided
+    if operator_dict is None:
+        operator_dict = {}
+    
+    # Extract metadata from the first row (assumes the DataFrame is for one biopsy sample)
+    patientUID = df['Patient ID'].iloc[0]
+    bx_roi = df['Bx ID'].iloc[0]
+    bx_sim_bool = df['Simulated bool'].iloc[0]
+    bx_type = df['Simulated type'].iloc[0]
+    
+    # Get all unique tissue classes from the DataFrame
+    tissue_classes = df['Tissue class'].unique()
+    
+    results = []
+    
+    # Loop through each tissue class
+    for tissue in tissue_classes:
+        # Get the operator for this tissue class; default to "greater"
+        condition_operator = operator_dict.get(tissue, "greater")
+        if condition_operator not in ("greater", "less"):
+            raise ValueError(f"Operator for tissue class '{tissue}' must be 'greater' or 'less'.")
+        
+        # Subset the DataFrame for this tissue class
+        tissue_df = df[df["Tissue class"] == tissue]
+        # Calculate total volume for this tissue class (all voxels regardless of threshold)
+        total_voxels = tissue_df.shape[0]
+        total_volume = total_voxels * bx_sample_pts_volume_element
+        
+        # Loop through each provided probability threshold
+        for threshold in probability_thresholds:
+            if condition_operator == "greater":
+                condition_mask = tissue_df["Binomial estimator"] >= threshold
+            else:  # condition_operator == "less"
+                condition_mask = tissue_df["Binomial estimator"] <= threshold
+                
+            filtered_df = tissue_df[condition_mask]
+            num_voxels = filtered_df.shape[0]
+            volume_meeting_threshold = num_voxels * bx_sample_pts_volume_element
+            
+            # Append the results for this tissue and threshold
+            results.append({
+                "Patient ID": patientUID,
+                "Bx ID": bx_roi,
+                "Simulated bool": bx_sim_bool,
+                "Simulated type": bx_type,
+                "Tissue class": tissue,
+                "Operator": condition_operator,
+                "Probability threshold": threshold,
+                "Volume meeting condition": volume_meeting_threshold,
+                "Volume (%) meeting condition": (volume_meeting_threshold / total_volume) * 100,
+                "Total tissue volume": total_volume
+            })
+            
+    # Convert results to a DataFrame and return
+    return pandas.DataFrame(results)
 
 
 

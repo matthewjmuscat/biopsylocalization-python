@@ -2313,7 +2313,7 @@ def production_plot_containment_probabilities_by_patient(patient_sp_output_figur
                 pass
 
 
-
+# deprecated
 def production_plot_mutual_containment_probabilities_by_patient(patient_sp_output_figures_dir_dict,
                                                 patientUID,
                                                 pydicom_item,
@@ -5744,7 +5744,7 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
     df_dose = misc_tools.convert_categorical_columns(df_dose, ['Voxel index', "Dose (Gy)"], [int, float])
 
     df_dose_stats_by_voxel = sp_patient_and_sp_bx_dose_dataframe_by_voxel
-    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Structure ROI"] == cancer_tissue_label]
+    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Tissue class"] == cancer_tissue_label]
 
     colors = ["green", "blue", "black"]
     cmap = LinearSegmentedColormap.from_list("GreenBlueRed", colors, N=10)
@@ -5775,7 +5775,7 @@ def production_plot_dose_ridge_plot_by_voxel_with_tissue_class_coloring_no_dose_
         tissue_voxel = df_tissue[(df_tissue['Voxel index'] == label_float) & 
                                  (df_tissue['Patient ID'] == patient_id) & 
                                  (df_tissue['Bx index'] == bx_index)]
-        binom_mean = tissue_voxel["Mean probability (binom est)"].mean()
+        binom_mean = tissue_voxel["Binomial estimator"].mean()
 
         ax = plt.gca()
         annotation_text = f'Tissue segment (mm): ({voxel_begin:.1f}, {voxel_end:.1f}) | Tumor tissue score: {binom_mean:.2f}\nMean (Gy): {mean:.2f} | SD (Gy): {std:.2f} | argmax(Density) (Gy): {max_density_dose:.2f} | Nominal (Gy): {nominal_dose:.2f}'
@@ -6200,6 +6200,16 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_t
 
 
 
+# helper func for gaussian fit transverse and sagittal plots
+def get_label_helper_func(n):
+        """Convert an integer n (0-indexed) into a multi-character label like 'a', 'b', ..., 'z', 'aa', 'ab', ..."""
+        label = ''
+        while True:
+            label = chr(97 + (n % 26)) + label
+            n = n // 26 - 1
+            if n < 0:
+                break
+        return label
 
 
 def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_tissue_score_coloring_with_table(cohort_nearest_dils_dataframe,
@@ -6354,14 +6364,16 @@ def production_plot_transverse_accuracy_with_marginals_and_gaussian_fit_global_t
     unique_patient_ids = df_filtered['Patient ID'].unique()
     patient_id_to_number = {pid: i + 1 for i, pid in enumerate(unique_patient_ids)}
 
-    unique_bx_ids = df_filtered.index
-    bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
+    #unique_bx_ids = df_filtered.index
+    #bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
 
     annotation_strings = []
     table_data = []
 
-    for i, row in df_filtered.iterrows():
-        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+    for counter, (index, row) in enumerate(df_filtered.iterrows()):
+        #annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+        letter = get_label_helper_func(counter)  # Generates a multi-character label
+        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{letter}"
         annotation_strings.append(annotation_str)
         table_data.append([
             row['Patient ID'],  # Add Patient ID column
@@ -6582,14 +6594,16 @@ def production_plot_sagittal_accuracy_with_marginals_and_gaussian_fit_global_tis
     unique_patient_ids = df_filtered['Patient ID'].unique()
     patient_id_to_number = {pid: i + 1 for i, pid in enumerate(unique_patient_ids)}
 
-    unique_bx_ids = df_filtered.index
-    bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
+    #unique_bx_ids = df_filtered.index
+    #bx_id_to_letter = {index: letter for index, letter in zip(unique_bx_ids, string.ascii_lowercase)}
 
     annotation_strings = []
     table_data = []
 
-    for i, row in df_filtered.iterrows():
-        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+    for counter, (index, row) in enumerate(df_filtered.iterrows()):
+        #annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{bx_id_to_letter[i]}"
+        letter = get_label_helper_func(counter)  # Generates a multi-character label
+        annotation_str = f"{patient_id_to_number[row['Patient ID']]}-{letter}"
         annotation_strings.append(annotation_str)
         table_data.append([
             row['Patient ID'],  # Add Patient ID column
@@ -6987,10 +7001,19 @@ def production_plot_cohort_scatter_plot_matrix_bx_centroids_real_in_dil_frame_v2
 
 def production_plot_cohort_double_sextant_biopsy_distribution(cohort_biopsy_basic_spatial_features_dataframe,
                                                               general_plot_name_string,
-                                                              cohort_output_figures_dir
+                                                              cohort_output_figures_dir,
+                                                              simulated_type = None
                                                               ):
 
-    df = cohort_biopsy_basic_spatial_features_dataframe
+    if simulated_type is not None:
+        # Filter the DataFrame based on the simulated type
+        df = cohort_biopsy_basic_spatial_features_dataframe[
+            cohort_biopsy_basic_spatial_features_dataframe['Simulated type'] == simulated_type
+        ]
+    else:
+        # Use the original DataFrame if no simulated type is provided
+        df = cohort_biopsy_basic_spatial_features_dataframe
+
     """
     # Sample DataFrame setup (replace this with your actual DataFrame)
     data = {

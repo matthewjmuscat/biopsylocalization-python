@@ -106,8 +106,16 @@ def biopsy_only_transformer(master_structure_reference_dict,
             specific_structure_normal_dist_dilations_samples_arr = specific_bx_structure["MC data: Generated normal dist random samples rotations arr"]
             specific_structure_normal_dist_dilations_samples_cp_arr = cp.array(specific_structure_normal_dist_dilations_samples_arr) # convert numpy array to cp array
 
-            randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations = biopsy_rotator_step_2(randomly_sampled_bx_pts_cp_arr_dilated_max_simulations, specific_structure_normal_dist_dilations_samples_cp_arr, bx_global_centroid_cp_arr, max_simulations)
-            
+            # SLOWER by approximately an order of magnitude
+            #randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations_looped = biopsy_rotator_step_2(randomly_sampled_bx_pts_cp_arr_dilated_max_simulations, specific_structure_normal_dist_dilations_samples_cp_arr, bx_global_centroid_cp_arr, max_simulations)
+            # FASTER vectorized version
+            randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations = biopsy_rotator_step_2_vectorized_version(randomly_sampled_bx_pts_cp_arr_dilated_max_simulations, specific_structure_normal_dist_dilations_samples_cp_arr, bx_global_centroid_cp_arr, max_simulations)
+     
+            # Confirm equivalence:
+            # equivalence was confirmed
+            #assert cp.allclose(randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations_looped, randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations, atol=1e-8), "Outputs differ for biopsy self rotations!"
+
+
             # inspect dilated+rotated biopsy points
             if inspect_self_biopsy_dilate_and_rotate_bool == True:
                 for trial_index in np.arange(max_simulations):
@@ -130,8 +138,10 @@ def biopsy_only_transformer(master_structure_reference_dict,
             if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
                 random_uniformly_sampled_bx_shifts_cp_arr = specific_bx_structure["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"]
                 
+                # SLOW loop version
                 # Need to calculate the unit vector along the major axis for every trial after other two transformations
-                all_trials_bx_unit_vecs_tip_to_handle = cp.empty((randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations.shape[0],3))
+                """
+                all_trials_bx_unit_vecs_tip_to_handle_loop = cp.empty((randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations.shape[0],3))
                 for trial_index,trial_slice in enumerate(randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations):
                     trial_centroid_line = pca.linear_fitter(trial_slice.T)
                     point_1 = trial_centroid_line[0]
@@ -145,8 +155,41 @@ def biopsy_only_transformer(master_structure_reference_dict,
                     biopsy_vec_handle_to_tip_unit = (point_sup - point_inf)/np.linalg.norm(point_sup - point_inf)
                     biopsy_vec_tip_to_handle_unit = -biopsy_vec_handle_to_tip_unit
                     biopsy_vec_tip_to_handle_unit_cp_arr = cp.array(biopsy_vec_tip_to_handle_unit)
-                    all_trials_bx_unit_vecs_tip_to_handle[trial_index] = biopsy_vec_tip_to_handle_unit_cp_arr
+                    all_trials_bx_unit_vecs_tip_to_handle_loop[trial_index] = biopsy_vec_tip_to_handle_unit_cp_arr
+                """
+                # END SLOW loop version
                 
+                # FASTER Vectorized version
+                # Get the centroid lines for all trials in one go.
+                # Assume `trials_data` has shape (num_trials, N, 3)
+                lines = pca.vectorized_linear_fitter(randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations)
+
+                # Extract endpoints: shape (num_trials, 3)
+                point1 = lines[:, 0, :]
+                point2 = lines[:, 1, :]
+
+                # Determine for each trial which endpoint has the higher z-coordinate
+                mask = point1[:, 2] > point2[:, 2]
+                # For trials where point1 has higher z, choose point1 as 'sup' and point2 as 'inf',
+                # otherwise swap.
+                point_sup = cp.where(mask[:, None], point1, point2)
+                point_inf = cp.where(mask[:, None], point2, point1)
+
+                # Compute the unit vector along the line from tip to handle (flip sign as needed)
+                vec = point_sup - point_inf
+                biopsy_vec_handle_to_tip_unit = vec / cp.linalg.norm(vec, axis=1, keepdims=True)
+                # Flip the unit vector if needed (to go from tip to handle)
+                biopsy_vec_tip_to_handle_unit = -biopsy_vec_handle_to_tip_unit
+                all_trials_bx_unit_vecs_tip_to_handle = biopsy_vec_tip_to_handle_unit
+                
+                # END FASTER Vectorized version
+                
+                # Confirm equivalence:
+                # assertion
+                # assertion confirmed!
+                #assert cp.allclose(all_trials_bx_unit_vecs_tip_to_handle_loop, all_trials_bx_unit_vecs_tip_to_handle, atol=1e-8), "Outputs differ for biopsy self tissue deficit translations!"
+
+
                 # Multiply unit vectors by shift distances 
                 bx_needle_uniform_compartment_shift_vectors_cp_array = cp.multiply(all_trials_bx_unit_vecs_tip_to_handle,random_uniformly_sampled_bx_shifts_cp_arr[...,None])
                 bx_needle_uniform_compartment_shift_vectors_np_array = cp.asnumpy(bx_needle_uniform_compartment_shift_vectors_cp_array)
@@ -197,7 +240,7 @@ def biopsy_only_transformer(master_structure_reference_dict,
             
             ### Self biopsy translate END
 
-            specific_bx_structure["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr
+            specific_bx_structure["MC data: bx only shifted 3darr"] = bx_only_shifted_randomly_sampled_bx_pts_3Darr.get()
 
     
 def biopsy_dilator_step_1_OLD(randomly_sampled_bx_pts_cp_arr, dilation_factors, structure_global_centroid_cp_arr, num_simulations):
@@ -281,6 +324,12 @@ def biopsy_dilator_step_1(randomly_sampled_bx_pts_cp_arr, dilation_factors, cent
     Returns:
     - cupy.ndarray: New coordinates of the dilated biopsy points for each simulation (num_simulations, N, 3).
     """
+
+    # Check if all dilation factors are zero; return original points if true
+    if cp.all(dilation_factors == 0):
+        return cp.tile(randomly_sampled_bx_pts_cp_arr, (num_simulations, 1, 1))
+
+
     # Calculate the perpendicular vectors from the centroid line to each point
     line_start = centroid_line[0]
     line_end = centroid_line[1]
@@ -324,6 +373,11 @@ def biopsy_rotator_step_2(dilated_biopsy_pts, rotation_angles, structure_global_
     """
     Applies variable rotation transformations to dilated biopsy points for multiple simulations.
     """
+    # Check if all rotation angles are zero; return original points if true
+    if cp.all(rotation_angles == 0):
+        return dilated_biopsy_pts
+
+
     new_positions = cp.zeros_like(dilated_biopsy_pts)
 
     rotation_angles = cp.asnumpy(rotation_angles)
@@ -356,7 +410,50 @@ def biopsy_rotator_step_2(dilated_biopsy_pts, rotation_angles, structure_global_
 
     return new_positions
 
+def biopsy_rotator_step_2_vectorized_version(dilated_biopsy_pts, rotation_angles, structure_global_centroid_cp_arr, num_simulations):
+    """
+    Applies variable rotation transformations to dilated biopsy points for multiple simulations.
+    """
+    # Check if all rotation angles are zero; return original points if true
+    if cp.all(rotation_angles == 0):
+        return dilated_biopsy_pts
 
+
+    # Assume rotation_angles is (num_simulations, 3)
+    rx, ry, rz = rotation_angles[:, 0], rotation_angles[:, 1], rotation_angles[:, 2]
+
+    cos_rx, sin_rx = cp.cos(rx), cp.sin(rx)
+    cos_ry, sin_ry = cp.cos(ry), cp.sin(ry)
+    cos_rz, sin_rz = cp.cos(rz), cp.sin(rz)
+
+    # Shape: (num_simulations, 3, 3)
+    Rx = cp.stack([
+        cp.stack([cp.ones_like(rx), cp.zeros_like(rx), cp.zeros_like(rx)], axis=-1),
+        cp.stack([cp.zeros_like(rx), cos_rx, -sin_rx], axis=-1),
+        cp.stack([cp.zeros_like(rx), sin_rx, cos_rx], axis=-1)
+    ], axis=-2)
+
+    Ry = cp.stack([
+        cp.stack([cos_ry, cp.zeros_like(ry), sin_ry], axis=-1),
+        cp.stack([cp.zeros_like(ry), cp.ones_like(ry), cp.zeros_like(ry)], axis=-1),
+        cp.stack([-sin_ry, cp.zeros_like(ry), cos_ry], axis=-1)
+    ], axis=-2)
+
+    Rz = cp.stack([
+        cp.stack([cos_rz, -sin_rz, cp.zeros_like(rz)], axis=-1),
+        cp.stack([sin_rz, cos_rz, cp.zeros_like(rz)], axis=-1),
+        cp.stack([cp.zeros_like(rz), cp.zeros_like(rz), cp.ones_like(rz)], axis=-1)
+    ], axis=-2)
+
+    # Combined rotation matrices (num_simulations, 3, 3)
+    R = cp.matmul(Rz, cp.matmul(Ry, Rx))
+
+    # Rotate points in batch
+    shifted_points = dilated_biopsy_pts - structure_global_centroid_cp_arr
+    new_positions = cp.einsum('ijk,ilk->ilj', R, shifted_points) + structure_global_centroid_cp_arr
+
+
+    return new_positions
 
 
 def biopsy_translator_step_3(rotated_biopsy_pts, translation_vectors):
@@ -371,6 +468,10 @@ def biopsy_translator_step_3(rotated_biopsy_pts, translation_vectors):
     Returns:
     - cupy.ndarray: New coordinates of the translated biopsy points for each simulation (num_simulations, N, 3).
     """
+    # Check if all translation vectors are zero; return original points immediately if true
+    if cp.all(translation_vectors == 0):
+        return rotated_biopsy_pts
+
     # Apply translation using broadcasting
     translated_positions = rotated_biopsy_pts + translation_vectors[:, None, :]
 
@@ -407,7 +508,7 @@ def biopsy_transformer_to_relative_structures(master_structure_reference_dict,
 
             
             # Note that the initial position of the biopsy is AFTER all bx only transformations
-            bx_only_shifted_randomly_sampled_bx_pts_3Darr = specific_bx_structure["MC data: bx only shifted 3darr"]
+            bx_only_shifted_randomly_sampled_bx_pts_3Darr = cp.asarray(specific_bx_structure["MC data: bx only shifted 3darr"])
 
             for non_bx_struct_type in structs_referenced_list[1:]:
                 for specific_non_bx_struct_index,specific_non_bx_struct in enumerate(pydicom_item[non_bx_struct_type]):
@@ -459,18 +560,30 @@ def biopsy_transformer_to_relative_structures(master_structure_reference_dict,
                         bx_shifted_relative_oar = translate_biopsy_points(bx_rotated_relative_oar, relative_structure_normal_dist_translations_samples_arr)
                     """
 
+                    # SLOW loop version (APPROXIMATELY 3 ORDERS OF MAGNITUDE SLOWER)
                     # Rotate biopsy in opposite direction about relative structure centroid
-                    bx_rotated_relative_structure = rotate_biopsy_to_relative_structure_points(bx_only_shifted_randomly_sampled_bx_pts_3Darr, 
+                    """
+                    bx_rotated_relative_structure_looped = rotate_biopsy_to_relative_structure_points(bx_only_shifted_randomly_sampled_bx_pts_3Darr, 
                                                                                                relative_structure_normal_dist_rotations_samples_arr, 
                                                                                                relative_structure_global_centroid, 
                                                                                                num_MC_containment_simulations)
+                    """
+                    # FASTER vectorized version
+                    bx_rotated_relative_structure = rotate_biopsy_to_relative_structure_points_vectorized(bx_only_shifted_randomly_sampled_bx_pts_3Darr, 
+                                                                                               relative_structure_normal_dist_rotations_samples_arr, 
+                                                                                               relative_structure_global_centroid, 
+                                                                                               num_MC_containment_simulations)
+
+                    # Confirm equivalence:
+                    # equivalence confirmed!
+                    #assert cp.allclose(bx_rotated_relative_structure_looped, bx_rotated_relative_structure, atol=1e-8), "Outputs differ for relative structure biopsy rotations!"
             
                     # Translate biopsy in opposite direction of relative structure motion
                     bx_rotated_and_translated_relative_structure = translate_biopsy_to_relative_structure_points(bx_rotated_relative_structure, 
                                                                                                                  relative_structure_normal_dist_translations_samples_arr,
                                                                                                                  num_MC_containment_simulations)
             
-                    structure_shifted_bx_data_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_struct_index] = bx_rotated_and_translated_relative_structure
+                    structure_shifted_bx_data_dict[specific_non_bx_struct_roi,non_bx_struct_type,specific_non_bx_struct_refnum,specific_non_bx_struct_index] = bx_rotated_and_translated_relative_structure.get()
 
                     # inspect dilated+rotated+translated (ie. total SELF transformations) biopsy points
                     for trial_index in np.arange(inspect_relative_structure_rotate_and_shift_number):
@@ -545,6 +658,11 @@ def rotate_biopsy_to_relative_structure_points(bx_only_shifted_randomly_sampled_
     Returns:
     - cupy.ndarray: New coordinates of the rotated biopsy points for each simulation (num_simulations, N, 3).
     """
+    # Early exit if all rotation angles are zero
+    if cp.all(specific_structure_normal_dist_rotations_samples_arr == 0):
+        return bx_only_shifted_randomly_sampled_bx_pts_3Darr
+
+
     new_positions = cp.zeros_like(bx_only_shifted_randomly_sampled_bx_pts_3Darr[0:num_simulations])
 
     # Convert rotation angles to NumPy array
@@ -581,6 +699,69 @@ def rotate_biopsy_to_relative_structure_points(bx_only_shifted_randomly_sampled_
     return new_positions
 
 
+def rotate_biopsy_to_relative_structure_points_vectorized(bx_only_shifted_randomly_sampled_bx_pts_3Darr,
+                                                           specific_structure_normal_dist_rotations_samples_arr,
+                                                           relative_structure_global_centroid,
+                                                           num_simulations):
+    """
+    Vectorized version of rotate_biopsy_to_relative_structure_points.
+    Rotates all simulations in a single batched operation.
+    """
+    # Early exit if all rotation angles are zero
+    if cp.all(specific_structure_normal_dist_rotations_samples_arr == 0):
+        return bx_only_shifted_randomly_sampled_bx_pts_3Darr
+
+
+    # Ensure relative_structure_global_centroid is a cupy array and has shape (1, 3) for broadcasting.
+    centroid = cp.array(relative_structure_global_centroid).reshape(1, 3)
+
+    # Extract and flip the Euler angles for each simulation: (num_simulations, 3)
+    rx = -specific_structure_normal_dist_rotations_samples_arr[:, 0]
+    ry = -specific_structure_normal_dist_rotations_samples_arr[:, 1]
+    rz = -specific_structure_normal_dist_rotations_samples_arr[:, 2]
+
+    # Compute trigonometric functions for each angle (each is shape (num_simulations,))
+    cos_rx, sin_rx = cp.cos(rx), cp.sin(rx)
+    cos_ry, sin_ry = cp.cos(ry), cp.sin(ry)
+    cos_rz, sin_rz = cp.cos(rz), cp.sin(rz)
+
+    # Build batched rotation matrices for each simulation.
+    # Rx: (num_simulations, 3, 3)
+    Rx = cp.stack([
+        cp.stack([cp.ones_like(rx),      cp.zeros_like(rx),    cp.zeros_like(rx)], axis=-1),
+        cp.stack([cp.zeros_like(rx),     cos_rx,               -sin_rx], axis=-1),
+        cp.stack([cp.zeros_like(rx),     sin_rx,               cos_rx], axis=-1)
+    ], axis=-2)
+
+    # Ry: (num_simulations, 3, 3)
+    Ry = cp.stack([
+        cp.stack([cos_ry,                cp.zeros_like(ry),    sin_ry], axis=-1),
+        cp.stack([cp.zeros_like(ry),     cp.ones_like(ry),     cp.zeros_like(ry)], axis=-1),
+        cp.stack([-sin_ry,               cp.zeros_like(ry),    cos_ry], axis=-1)
+    ], axis=-2)
+
+    # Rz: (num_simulations, 3, 3)
+    Rz = cp.stack([
+        cp.stack([cos_rz,               -sin_rz,              cp.zeros_like(rz)], axis=-1),
+        cp.stack([sin_rz,               cos_rz,               cp.zeros_like(rz)], axis=-1),
+        cp.stack([cp.zeros_like(rz),     cp.zeros_like(rz),     cp.ones_like(rz)], axis=-1)
+    ], axis=-2)
+
+    # Combined rotation matrices (num_simulations, 3, 3)
+    R = cp.matmul(Rz, cp.matmul(Ry, Rx))
+
+    # Subtract the centroid from each simulation's points: broadcast centroid over points
+    shifted_points = bx_only_shifted_randomly_sampled_bx_pts_3Darr - centroid
+
+    # Apply rotation to each simulation using batched matrix multiplication.
+    # Note: The original code applies the transpose of R.
+    rotated_points = cp.matmul(shifted_points, R.transpose(0, 2, 1))
+
+    # Add the centroid back to get the final rotated positions
+    new_positions = rotated_points + centroid
+
+    return new_positions
+
 
 
 
@@ -597,6 +778,11 @@ def translate_biopsy_to_relative_structure_points(bx_only_shifted_randomly_sampl
     Returns:
     - cupy.ndarray: New coordinates of the translated biopsy points for each simulation (num_simulations, N, 3).
     """
+    # Early exit if all translation vectors are zero; return original points
+    if np.all(relative_structure_normal_dist_translations_samples_arr[0:num_simulations] == 0):
+        return bx_only_shifted_randomly_sampled_bx_pts_3Darr[0:num_simulations]
+
+
     # Apply translation using broadcasting, also flip the sign since this is supposed to shift the biopsy structure not the relative structure
     translated_positions = bx_only_shifted_randomly_sampled_bx_pts_3Darr[0:num_simulations] - cp.array(relative_structure_normal_dist_translations_samples_arr[0:num_simulations])[:, None, :]
 

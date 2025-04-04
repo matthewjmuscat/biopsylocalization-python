@@ -49,7 +49,7 @@ alphashape = "*"
 pymeshfix = "*"
 line-profiler = "*"
 cuml-cu12 = { index = "pypinvidia", version = "*" }
-kaleido = "*"
+kaleido = "==0.2.1"
 
 [dev-packages]
 ipykernel = "*"
