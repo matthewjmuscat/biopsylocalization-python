@@ -7182,14 +7182,13 @@ def production_plot_cohort_double_sextant_dil_distribution(cohort_dil_spatial_fe
 
 
 
-def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_item,
-                                                                                 patientUID,
-                                                                                 bx_ref,
-                                                                                 all_ref_key,
-                                                                                 structs_referenced_dict,
-                                                                                 default_exterior_tissue,
-                                                                                 patient_sp_output_figures_dir_dict,
-                                                                                 general_plot_name_string):
+def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(multi_structure_mc_sum_to_one_pt_wise_results_dataframe,
+                                                                        specific_bx_structure_index,
+                                                                        patientUID,
+                                                                        structs_referenced_dict,
+                                                                        default_exterior_tissue,
+                                                                        patient_sp_output_figures_dir_dict,
+                                                                        general_plot_name_string):
 
 
     def stacked_area_plot_with_confidence_intervals(patientUID,
@@ -7241,11 +7240,26 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
             y_cumulative += y_kr
 
         # Final plot adjustments
-        ax.set_title(str(patientUID) + str(bx_struct_roi) + 'Stacked Binomial Estimator with Confidence Intervals by Tissue Class')
-        ax.set_xlabel('Biopsy axial dimension (mm)')
-        ax.set_ylabel('Binomial Estimator')
+        ax.set_title(f'{patientUID} - {bx_struct_roi} - Stacked Binomial Estimator with Confidence Intervals by Tissue Class',
+             fontsize=16,      # Increase the title font size
+             #fontname='Arial' # Set the title font family
+        )
+
+        ax.set_xlabel("Biopsy Axial Dimension (mm)",
+              fontsize=16,    # sets the font size
+              #fontname='Arial' # sets the font family
+              )   
+
+        ax.set_ylabel("Multinomial Estimator (stacked)",
+                    fontsize=16,
+                    #fontname='Arial'
+                    )
+
         ax.legend(loc='best', facecolor='white')
         ax.grid(True, which='major', linestyle='--', linewidth=0.5)
+
+        ax.tick_params(axis='both', which='major', labelsize=16)  # Increase the tick label size for both x and y axes
+
         plt.tight_layout()
 
         return fig
@@ -7258,42 +7272,37 @@ def production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_
                                        append_default_exterior_tissue = True,
                                        default_exterior_tissue = default_exterior_tissue
                                        )
-
-    multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"]
-
-
-    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-        bx_struct_roi = specific_bx_structure["ROI"]
         
-        sp_structure_mc_sum_to_one_pt_wise_results_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
+    sp_structure_mc_sum_to_one_pt_wise_results_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
+    #extract bx_struct_roi
+    bx_struct_roi = sp_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx ID"].values[0]
 
-        fig = stacked_area_plot_with_confidence_intervals(patientUID,
-                                                    bx_struct_roi,
-                                                    sp_structure_mc_sum_to_one_pt_wise_results_dataframe, 
-                                                    tissue_heirarchy_list)
+    fig = stacked_area_plot_with_confidence_intervals(patientUID,
+                                                bx_struct_roi,
+                                                sp_structure_mc_sum_to_one_pt_wise_results_dataframe, 
+                                                tissue_heirarchy_list)
 
-        svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+    svg_dose_fig_name = bx_struct_roi + general_plot_name_string+'.svg'
+    svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
 
-        fig.savefig(svg_dose_fig_file_path, format='svg')
+    fig.savefig(svg_dose_fig_file_path, format='svg')
 
-        # clean up for memory
-        plt.close(fig)
-
-
-
-
+    # clean up for memory
+    plt.close(fig)
 
 
-def production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_figures_dir_dict,
+
+
+
+
+def production_plot_sum_to_one_tissue_class_nominal_plotly(multi_structure_mc_sum_to_one_pt_wise_results_dataframe,
                                                 patientUID,
-                                                pydicom_item,
-                                                bx_ref,
-                                                all_ref_key,
+                                                specific_bx_structure_index,
                                                 svg_image_scale,
                                                 svg_image_width,
                                                 svg_image_height,
-                                                general_plot_name_string
+                                                general_plot_name_string,
+                                                patient_sp_output_figures_dir_dict
                                                 ):
 
     def tissue_class_sum_to_one_nominal_plot(df, y_axis_order, patientID, bx_struct_roi):
@@ -7364,7 +7373,10 @@ def production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_fig
         )
 
         fig = plotting_funcs.fix_plotly_grid_lines(fig, y_axis = True, x_axis = True)
-
+        fig.update_layout(
+        paper_bgcolor='white',  # Background of the entire figure
+        plot_bgcolor='white'    # Background of the plot area
+        )
 
         return fig 
 
@@ -7375,26 +7387,23 @@ def production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_fig
     # Define the specific order for the y-axis categories
     y_axis_order = ['DIL', 'Urethral', 'Rectal', 'Prostatic', 'Periprostatic']
 
-    multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] 
+    mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
 
     
     # Plotting loop
-    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-        bx_struct_roi = specific_bx_structure["ROI"]
-        
-        mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = multi_structure_mc_sum_to_one_pt_wise_results_dataframe[multi_structure_mc_sum_to_one_pt_wise_results_dataframe["Bx index"] == specific_bx_structure_index]
+    bx_struct_roi = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe["Bx ID"].values[0]
+    
+    fig = tissue_class_sum_to_one_nominal_plot(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, y_axis_order, patientUID, bx_struct_roi)
 
-        fig = tissue_class_sum_to_one_nominal_plot(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, y_axis_order, patientUID, bx_struct_roi)
+    bx_sp_plot_name_string = f"{bx_struct_roi} - " + general_plot_name_string
 
-        bx_sp_plot_name_string = f"{bx_struct_roi} - " + general_plot_name_string
+    svg_dose_fig_name = bx_sp_plot_name_string+'.svg'
+    svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
+    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height/3) # added /3 here to make the y axis categories closer together, ie to make the plot flatter so that it can fit beneath the sum-to-one spatial regression plots.
 
-        svg_dose_fig_name = bx_sp_plot_name_string+'.svg'
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height/3) # added /3 here to make the y axis categories closer together, ie to make the plot flatter so that it can fit beneath the sum-to-one spatial regression plots.
-
-        html_dose_fig_name = bx_sp_plot_name_string+'.html'
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        fig.write_html(html_dose_fig_file_path) 
+    html_dose_fig_name = bx_sp_plot_name_string+'.html'
+    html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
+    fig.write_html(html_dose_fig_file_path) 
 
 
 

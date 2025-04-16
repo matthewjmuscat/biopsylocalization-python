@@ -12,7 +12,7 @@ import point_containment_tools
 import copy
 import plotly.graph_objects as go
 import misc_tools
-
+from typing import List, Optional
 
 def threeD_scatter_plotter(x,y,z):
     fig=plt.figure()
@@ -877,6 +877,118 @@ def plotly_3dscatter_arbitrary_number_of_arrays(arrays_to_plot_list, colors_for_
         )    
     
     fig.show()
+
+
+
+
+
+def plotly_3dscatter_arbitrary_number_of_arrays_generalized(
+        arrays_to_plot_list: List[np.ndarray],
+        colors_for_arrays_list: Optional[List[str]] = None,
+        legend_labels: Optional[List[str]] = None,
+        aspect_mode_input: str = 'data',
+        title_text: str = '',
+        xaxis_title: str = "X Axis (units)",
+        yaxis_title: str = "Y Axis (units)",
+        zaxis_title: str = "Z Axis (units)",
+        marker_size: int = 2,
+        bg_color: str = "rgb(245,245,245)") -> None:
+    """
+    Plots an arbitrary number of 3D scatter datasets with axis labels, a legend, and optional custom legend labels.
+    
+    Parameters:
+    - arrays_to_plot_list: List of NumPy arrays, each with shape (n, 3) representing x, y, and z coordinates.
+    - colors_for_arrays_list: Optional list of color strings. If not provided (or the length is not equal
+                              to the number of arrays), a default color palette will be used.
+    - legend_labels: Optional list of strings to label each dataset in the legend.
+                     If not provided or if the length doesn't match the number of arrays,
+                     default labels "Dataset 1", "Dataset 2", ... will be used.
+    - aspect_mode_input: Aspect ratio mode for the plot (e.g., "auto", "cube", "data", "manual").
+    - title_text: Title for the plot.
+    - xaxis_title: Label for the x-axis (include units as needed).
+    - yaxis_title: Label for the y-axis (include units as needed).
+    - zaxis_title: Label for the z-axis (include units as needed).
+    - marker_size: Size of the markers in the scatter plot.
+    - bg_color: Background color of the plot. Default is a light lavender color.
+    """
+    
+    fig = go.Figure()
+    
+    if colors_for_arrays_list is None:
+        colors_for_arrays_list = []
+    
+    # Define a default color palette.
+    default_colors = ['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
+                      'rgb(44, 160, 44)', 'rgb(214, 39, 40)',
+                      'rgb(148, 103, 189)', 'rgb(140, 86, 75)']
+    
+    for array_index, pts_array in enumerate(arrays_to_plot_list):
+        # Validate that the array has at least 3 columns.
+        if pts_array.shape[1] < 3:
+            raise ValueError(f"Array at index {array_index} does not have at least 3 columns.")
+        
+        # Determine the trace color.
+        if len(colors_for_arrays_list) == len(arrays_to_plot_list):
+            color_elem = colors_for_arrays_list[array_index]
+        else:
+            if array_index < len(default_colors):
+                color_elem = default_colors[array_index]
+            else:
+                color_elem = 'rgb' + str(tuple(np.random.randint(low=0, high=255, size=3)))
+        
+        # Determine the legend label.
+        if legend_labels is not None and len(legend_labels) == len(arrays_to_plot_list):
+            trace_name = legend_labels[array_index]
+        else:
+            trace_name = f'Dataset {array_index + 1}'
+        
+        # Add the trace.
+        fig.add_trace(go.Scatter3d(
+            x=pts_array[:, 0],
+            y=pts_array[:, 1],
+            z=pts_array[:, 2],
+            mode='markers',
+            marker=dict(color=color_elem, size=marker_size),
+            name=trace_name
+        ))
+    
+    # Update the layout with axis labels, overall title, and a legend title.
+    fig.update_layout(
+        title=dict(text=title_text),
+        paper_bgcolor="white",
+        scene=dict(
+            bgcolor="white",  
+            aspectmode=aspect_mode_input,
+            xaxis=dict(title=xaxis_title, backgroundcolor=bg_color,
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black"),  
+            yaxis=dict(title=yaxis_title, backgroundcolor=bg_color,
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black"), 
+            zaxis=dict(title=zaxis_title, backgroundcolor=bg_color,
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black")  
+        ),
+        legend=dict(title="Data Series")
+    )
+    
+    fig.show()
+
+def rgb_array_to_string(rgb_array):
+    """
+    Convert an array or list of three floats (values between 0 and 1) into an RGB string.
+    
+    Parameters:
+    - rgb_array: array-like with 3 float values.
+    
+    Returns:
+    - A string in the form "rgb(R, G, B)" where R, G, and B are integers between 0 and 255.
+    """
+    r, g, b = (np.array(rgb_array) * 255).astype(int)
+    return f"rgb({r}, {g}, {b})"
 
 
 

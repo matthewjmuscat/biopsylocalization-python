@@ -582,7 +582,7 @@ def main():
     
     # Combined
     show_processed_3d_datasets_renderings = False
-    show_processed_3d_datasets_renderings_plotly = False
+    show_processed_3d_datasets_renderings_plotly = True
 
     # Misc
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
@@ -5968,16 +5968,38 @@ def main():
             if show_processed_3d_datasets_renderings_plotly == True:
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     arr_list = []
+                    arr_names = []
+                    arr_colors = []
                     for structs in structs_referenced_list:
                         for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            if structs == bx_ref:
+                                color = structs_referenced_dict[structs]['PCD color dict'][specific_structure["Simulated type"]]
+                            else:
+                                color = structs_referenced_dict[structs]['PCD color']
+                            rgb_color = plotting_funcs.rgb_array_to_string(color)
+
+                            arr_names.append(specific_structure["ROI"])
+                            arr_colors.append(rgb_color)
                             if structs == bx_ref: 
                                 structure_arr = specific_structure["Reconstructed structure pts arr"]
                             else: 
                                 # structure_arr = specific_structure["Raw contour pts"]
                                 structure_arr = specific_structure["Intra-slice interpolation information"].interpolated_pts_np_arr
                             arr_list.append(structure_arr)
-                    plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
+                    #plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
 
+                    # Call the function with test data and custom legend labels.
+                    plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized(
+                        arrays_to_plot_list=arr_list,
+                        colors_for_arrays_list=arr_colors,
+                        legend_labels=arr_names,
+                        title_text=f"Processed 3D structure set for {patientUID}",
+                        xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                        yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                        zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                        marker_size=0.7,
+                        bg_color = "rgb(245,245,245)"
+                    )
                 
             
 
@@ -9145,18 +9167,25 @@ def main():
 
 
                     for patientUID,pydicom_item in master_structure_reference_dict.items():
+
+                        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"]
                         
                         processing_patient_production_plot_description = "Creating tissue class sum-to-one plots [{}]...".format(patientUID)
                         patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-                        production_plots.production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(pydicom_item,
-                                                                                 patientUID,
-                                                                                 bx_ref,
-                                                                                 all_ref_key,
-                                                                                 structs_referenced_dict,
-                                                                                 default_exterior_tissue,
-                                                                                 patient_sp_output_figures_dir_dict,
-                                                                                 general_plot_name_string)
+                        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                            specific_bx_structure_index_stored = specific_bx_structure["Index number"]
+                            if specific_bx_structure_index != specific_bx_structure_index_stored:
+                                raise ValueError("The index number of the biopsy structure in the master structure reference dictionary does not match the index number of the biopsy structure in the pydicom item. Please check the code.")
+
+                            production_plots.production_plot_sum_to_one_tissue_class_binom_regression_matplotlib(multi_structure_mc_sum_to_one_pt_wise_results_dataframe,
+                                                                                    specific_bx_structure_index,
+                                                                                    patientUID,
+                                                                                    structs_referenced_dict,
+                                                                                    default_exterior_tissue,
+                                                                                    patient_sp_output_figures_dir_dict,
+                                                                                    general_plot_name_string)
+
                         
                         patients_progress.update(processing_patients_task, advance = 1)
                         completed_progress.update(processing_patients_completed_task, advance = 1)
@@ -9185,16 +9214,23 @@ def main():
                         processing_patient_production_plot_description = "Creating tissue class sum-to-one nominal plots [{}]...".format(patientUID)
                         patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
 
-                        production_plots.production_plot_sum_to_one_tissue_class_nominal_plotly(patient_sp_output_figures_dir_dict,
-                                                patientUID,
-                                                pydicom_item,
-                                                bx_ref,
-                                                all_ref_key,
-                                                svg_image_scale,
-                                                svg_image_width,
-                                                svg_image_height,
-                                                general_plot_name_string
-                                                )
+                        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] 
+
+                        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
+                            specific_bx_structure_index_stored = specific_bx_structure["Index number"]
+                            if specific_bx_structure_index != specific_bx_structure_index_stored:
+                                raise ValueError("The index number of the biopsy structure in the master structure reference dictionary does not match the index number of the biopsy structure in the pydicom item. Please check the code.")
+
+
+                            production_plots.production_plot_sum_to_one_tissue_class_nominal_plotly(multi_structure_mc_sum_to_one_pt_wise_results_dataframe,
+                                                    patientUID,
+                                                    specific_bx_structure_index,
+                                                    svg_image_scale,
+                                                    svg_image_width,
+                                                    svg_image_height,
+                                                    general_plot_name_string,
+                                                    patient_sp_output_figures_dir_dict
+                                                    )
 
 
                         patients_progress.update(processing_patients_task, advance = 1)
