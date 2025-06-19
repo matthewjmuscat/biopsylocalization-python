@@ -4,3 +4,9 @@ figures
 .python-version
 .bashrc.swp
 **/cuda_containment_logs/
+# Ignore Python bytecode and cache folders
+__pycache__/
+*.pyc
+**/__pycache__/
+**/*.pyc
+
