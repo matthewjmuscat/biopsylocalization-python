@@ -892,7 +892,10 @@ def plotly_3dscatter_arbitrary_number_of_arrays_generalized(
         yaxis_title: str = "Y Axis (units)",
         zaxis_title: str = "Z Axis (units)",
         marker_size: int = 2,
-        bg_color: str = "rgb(245,245,245)") -> None:
+        bg_color: str = "rgb(245,245,245)",
+        axes_label_size: int = 18,
+        axes_tick_label_size: int = 16,
+        legend_title_size: int = 14) -> None:
     """
     Plots an arbitrary number of 3D scatter datasets with axis labels, a legend, and optional custom legend labels.
     
@@ -959,23 +962,552 @@ def plotly_3dscatter_arbitrary_number_of_arrays_generalized(
         scene=dict(
             bgcolor="white",  
             aspectmode=aspect_mode_input,
-            xaxis=dict(title=xaxis_title, backgroundcolor=bg_color,
-                gridcolor="black",
-                showbackground=True,
-                zerolinecolor="black"),  
-            yaxis=dict(title=yaxis_title, backgroundcolor=bg_color,
-                gridcolor="black",
-                showbackground=True,
-                zerolinecolor="black"), 
-            zaxis=dict(title=zaxis_title, backgroundcolor=bg_color,
-                gridcolor="black",
-                showbackground=True,
-                zerolinecolor="black")  
+            xaxis=dict(title=dict(text=xaxis_title, font=dict(size=axes_label_size)),
+                        tickfont=dict(size=axes_tick_label_size), 
+                        backgroundcolor=bg_color,
+                        gridcolor="black",
+                        showbackground=True,
+                        zerolinecolor="black"),  
+            yaxis=dict(title=dict(text=yaxis_title, font=dict(size=axes_label_size)), 
+                       tickfont=dict(size=axes_tick_label_size), 
+                       backgroundcolor=bg_color,
+                        gridcolor="black",
+                        showbackground=True,
+                        zerolinecolor="black"), 
+            zaxis=dict(title=dict(text=zaxis_title, font=dict(size=axes_label_size)), 
+                       tickfont=dict(size=axes_tick_label_size),  
+                       backgroundcolor=bg_color,
+                        gridcolor="black",
+                        showbackground=True,
+                        zerolinecolor="black")  
         ),
-        legend=dict(title="Data Series")
+        legend=dict(title="Data Series", font=dict(size=legend_title_size))
     )
     
     fig.show()
+
+
+# Note that the volume method will not work if the code removes points from the regular lattice structure, you need to mask them insteead with isomin. TLDR I fixed it!
+# NOTE: Make sure that if you are plotting contours = True, that the input arrays_to_plot_list are lists of constant zslice numpy arrays
+def plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
+        arrays_to_plot_list: List[np.ndarray],
+        colors_for_arrays_list: Optional[List[str]] = None,
+        legend_labels: Optional[List[str]] = None,
+        aspect_mode_input: str = 'data',
+        title_text: str = '',
+        xaxis_title: str = "X Axis (units)",
+        yaxis_title: str = "Y Axis (units)",
+        zaxis_title: str = "Z Axis (units)",
+        marker_size: int = 2,
+        bg_color: str = "rgb(245,245,245)",
+        plot_contours: bool = False,   # new argument
+        # Dosimetric lattice parameters:
+        phys_space_dose_map_and_gradient_map_3d_arr: Optional[np.ndarray] = None,
+        dose_threshold: Optional[float] = None,
+        log_scale_colors: bool = False,
+        dose_marker_size: Optional[int] = None,
+        colorbar_title: str = "Dose (units)",
+        # Choose rendering mode: either 'scatter' or 'volume'
+        dosimetric_render_mode: str = 'scatter',
+        # Single opacity argument for both modes:
+        dosimetric_opacity: float = 0.3,
+        volume_surface_count: int = 20,
+        # Optional colorbar x-offset to move the colorbar away from the legend (default: 1.05)
+        colorbar_x_offset: float = 1.05,
+        colorbar_color: str = "RdBu",
+        reversescale: bool = True,
+        axes_label_size: int = 20,
+        axes_tick_label_size: int = 18,
+        colorbar_ticksize: int = 18,
+        legend_title_size: int = 16
+    ) -> None:
+    """
+    Plots an arbitrary number of 3D scatter datasets with axis labels, a legend, 
+    and optional custom legend labels, plus an optional dosimetric lattice.
+    
+    Standard dataset parameters:
+    - arrays_to_plot_list: List of NumPy arrays, each with shape (n, 3) representing x, y, and z coordinates. OR List of List of constant zslice numpy arrays ONLY IF YOU WANT TO PLOT CONTOUR VERSION MAKE SURE plot_contours = TRUE!!
+    - colors_for_arrays_list: Optional list of color strings. If not provided (or length doesn't match),
+      a default color palette is used.
+    - legend_labels: Optional list of legend labels. Defaults to "Dataset 1", "Dataset 2", ... if not provided.
+    - aspect_mode_input: Aspect ratio mode (e.g., "auto", "cube", "data", etc.).
+    - title_text: Plot title.
+    - xaxis_title, yaxis_title, zaxis_title: Axis labels.
+    - marker_size: Marker size for the scatter plot.
+    - bg_color: Plot background color.
+    - plot_contours: If True, plots contours instead of scatter points.
+
+    Dosimetric lattice parameters:
+    - phys_space_dose_map_and_gradient_map_3d_arr: A NumPy array with shape 
+      (num_slices, num_voxels_per_slice, 14) containing:
+          [0]  - Slice index  
+          [1]  - Row index  
+          [2]  - Column index  
+          [3]  - X-coordinate  
+          [4]  - Y-coordinate  
+          [5]  - Z-coordinate  
+          [6]  - Dose value  
+          [7]  - Gradient in X (Gx)  
+          [8]  - Gradient in Y (Gy)  
+          [9]  - Gradient in Z (Gz)  
+          [10] - Gradient norm (|G|)  
+          [11] - Normalized Gradient in X (NGx)  
+          [12] - Normalized Gradient in Y (NGy)  
+          [13] - Normalized Gradient in Z (NGz)
+    - dose_threshold: If provided, points with dose below this are removed.
+    - log_scale_colors: If True, dose values are log10-scaled (after clipping to avoid log(0)).
+    - dose_marker_size: Marker size for the dosimetric lattice; defaults to marker_size if not provided.
+    - colorbar_title: Title for the colorbar of the dosimetric data.
+    
+    Rendering mode:
+    - dosimetric_render_mode: Choose 'scatter' to render points with a translucent opacity
+      or 'volume' to render a volumetric isosurface.
+    - dosimetric_opacity: Opacity for the dosimetric data (applies to both scatter and volume modes).
+    - volume_surface_count: Number of isosurfaces for volume mode.
+    - colorbar_x_offset: Adjusts the x-position of the colorbar (default is 1.05, moving it outside the plot area).
+    """
+    
+    import plotly.graph_objects as go
+    import numpy as np
+
+    fig = go.Figure()
+    
+    if colors_for_arrays_list is None:
+        colors_for_arrays_list = []
+    
+    # Define a default color palette.
+    default_colors = ['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
+                      'rgb(44, 160, 44)', 'rgb(214, 39, 40)',
+                      'rgb(148, 103, 189)', 'rgb(140, 86, 75)']
+    
+    # Plot conventional datasets.
+    for array_index, pts_array in enumerate(arrays_to_plot_list):
+        
+        
+        # Determine trace color.
+        if len(colors_for_arrays_list) == len(arrays_to_plot_list):
+            color_elem = colors_for_arrays_list[array_index]
+        else:
+            if array_index < len(default_colors):
+                color_elem = default_colors[array_index]
+            else:
+                color_elem = 'rgb' + str(tuple(np.random.randint(low=0, high=255, size=3)))
+        
+        # Determine legend label.
+        if legend_labels is not None and len(legend_labels) == len(arrays_to_plot_list):
+            trace_name = legend_labels[array_index]
+        else:
+            trace_name = f'Dataset {array_index + 1}'
+        
+        if plot_contours:
+            for i, const_slice_arr in enumerate(pts_array):
+                # ensure the loop is closed
+                xs = np.append(const_slice_arr[:,0], const_slice_arr[0,0])
+                ys = np.append(const_slice_arr[:,1], const_slice_arr[0,1])
+                zs = np.append(const_slice_arr[:,2], const_slice_arr[0,2])
+                if i == 0:
+                    # Add the first contour with a legend entry
+                    fig.add_trace(go.Scatter3d(
+                        x=xs, y=ys, z=zs,
+                        mode='lines',
+                        line=dict(color=color_elem, width=2),
+                        name=trace_name
+                    ))
+                else:
+                    fig.add_trace(go.Scatter3d(
+                        x=xs, y=ys, z=zs,
+                        mode='lines',
+                        line=dict(color=color_elem, width=2),
+                        showlegend=False))
+        else:
+            fig.add_trace(go.Scatter3d(
+                x=pts_array[:, 0],
+                y=pts_array[:, 1],
+                z=pts_array[:, 2],
+                mode='markers',
+                marker=dict(color=color_elem, size=marker_size),
+                name=trace_name
+            ))
+    
+    # Process and add the dosimetric lattice if provided.
+    if phys_space_dose_map_and_gradient_map_3d_arr is not None:
+        # Flatten the array: shape (num_slices*num_voxels_per_slice, 14)
+        flat_arr = phys_space_dose_map_and_gradient_map_3d_arr.reshape(
+            -1, phys_space_dose_map_and_gradient_map_3d_arr.shape[-1])
+        
+        # Extract coordinates (columns 3, 4, 5) and dose (column 6)
+        x_dose = flat_arr[:, 3]
+        y_dose = flat_arr[:, 4]
+        z_dose = flat_arr[:, 5]
+        dose_vals = flat_arr[:, 6]
+        
+        # Remove points below the dose threshold, if specified.
+        if dose_threshold is not None and dosimetric_render_mode.lower() == 'scatter':
+            keep = dose_vals >= dose_threshold
+            x_dose = x_dose[keep]
+            y_dose = y_dose[keep]
+            z_dose = z_dose[keep]
+            dose_vals = dose_vals[keep]
+        
+        # Optionally log-scale the dose values.
+        # Apply log scale if requested.
+        if log_scale_colors:
+            # map into log‑space
+            if dose_threshold is not None:
+                low = np.log10(dose_threshold)
+            else:
+                low = np.log10(np.min(np.clip(dose_vals, 1e-6, None)))
+            high = np.log10(dose_vals.max())
+            color_values = np.log10(np.clip(dose_vals, 1e-6, None))
+            tick_vals = np.linspace(low, high, 5)
+            tick_text = [f"{10**v:.1f}" for v in tick_vals]
+        else:
+            low = dose_threshold if dose_threshold is not None else np.min(dose_vals)
+            high = dose_vals.max()
+            color_values = dose_vals
+            tick_vals = np.linspace(low, high, 5)
+            tick_text = [f"{v:.1f}" for v in tick_vals]
+
+        common_colorbar = dict(
+            title=colorbar_title,
+            tickmode='array',
+            tickvals=tick_vals,
+            ticktext=tick_text,
+            x=colorbar_x_offset,
+            tickfont=dict(size=colorbar_ticksize)  
+        )
+
+
+        # Choose the dosimetric rendering mode.
+        if dosimetric_render_mode.lower() == 'scatter':
+            fig.add_trace(go.Scatter3d(
+                x=x_dose,
+                y=y_dose,
+                z=z_dose,
+                mode='markers',
+                marker=dict(
+                    size=dose_marker_size if dose_marker_size is not None else marker_size,
+                    color=color_values,
+                    colorscale=colorbar_color,
+                    cmin=low, cmax=high,
+                    opacity=dosimetric_opacity,
+                    colorbar=common_colorbar,
+                    reversescale = reversescale
+                ),
+                name='Dosimetric Lattice'
+            ))
+        elif dosimetric_render_mode.lower() == 'volume':
+
+            fig.add_trace(go.Volume(
+                x=x_dose,
+                y=y_dose,
+                z=z_dose,
+                value=color_values,
+                opacity=dosimetric_opacity,
+                surface_count=volume_surface_count,
+                colorscale=colorbar_color,
+                isomin=low,
+                isomax=high,
+                cmin=low, cmax=high,
+                colorbar=common_colorbar,
+                reversescale = reversescale,
+                name='Dosimetric Lattice'
+            ))
+
+        else:
+            raise ValueError("Invalid dosimetric_render_mode. Use 'scatter' or 'volume'.")
+    
+    # Update layout with axis labels, background color, and title.
+    fig.update_layout(
+        title=dict(text=title_text),
+        paper_bgcolor="white",
+        scene=dict(
+            bgcolor="white",
+            aspectmode=aspect_mode_input,
+            xaxis=dict(title=dict(text=xaxis_title, font=dict(size=axes_label_size)),
+                        tickfont=dict(size=axes_tick_label_size), 
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black"),
+            yaxis=dict(title=dict(text=yaxis_title, font=dict(size=axes_label_size)), 
+                        tickfont=dict(size=axes_tick_label_size),
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black"),
+            zaxis=dict(title=dict(text=zaxis_title, font=dict(size=axes_label_size)), 
+                        tickfont=dict(size=axes_tick_label_size),  
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black")
+        ),
+        legend=dict(title="Data Series", font=dict(size=legend_title_size))
+    )
+    
+    fig.show()
+
+
+def plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_MR(
+        arrays_to_plot_list: List[np.ndarray],
+        colors_for_arrays_list: Optional[List[str]] = None,
+        legend_labels: Optional[List[str]] = None,
+        aspect_mode_input: str = 'data',
+        title_text: str = '',
+        xaxis_title: str = "X Axis (units)",
+        yaxis_title: str = "Y Axis (units)",
+        zaxis_title: str = "Z Axis (units)",
+        marker_size: int = 2,
+        bg_color: str = "rgb(245,245,245)",
+        plot_contours: bool = False,   # new argument
+        # Dosimetric lattice parameters:
+        phys_space_MR_arr: Optional[np.ndarray] = None,
+        mr_threshold: Optional[float] = None,
+        log_scale_colors: bool = False,
+        mr_marker_size: Optional[int] = None,
+        colorbar_title: str = "Dose (units)",
+        # Choose rendering mode: either 'scatter' or 'volume'
+        mr_render_mode: str = 'scatter',
+        # Single opacity argument for both modes:
+        mr_opacity: float = 0.3,
+        volume_surface_count: int = 20,
+        # Optional colorbar x-offset to move the colorbar away from the legend (default: 1.05)
+        colorbar_x_offset: float = 1.05,
+        colorbar_color: str = "RdBu",
+        reversescale: bool = True,
+        axes_label_size: int = 20,
+        axes_tick_label_size: int = 18,
+        colorbar_ticksize: int = 18,
+        legend_title_size: int = 16
+    ) -> None:
+    """
+    Plots an arbitrary number of 3D scatter datasets with axis labels, a legend, 
+    and optional custom legend labels, plus an optional dosimetric lattice.
+    
+    Standard dataset parameters:
+    - arrays_to_plot_list: List of NumPy arrays, each with shape (n, 3) representing x, y, and z coordinates. OR List of List of constant zslice numpy arrays ONLY IF YOU WANT TO PLOT CONTOUR VERSION MAKE SURE plot_contours = TRUE!!
+    - colors_for_arrays_list: Optional list of color strings. If not provided (or length doesn't match),
+      a default color palette is used.
+    - legend_labels: Optional list of legend labels. Defaults to "Dataset 1", "Dataset 2", ... if not provided.
+    - aspect_mode_input: Aspect ratio mode (e.g., "auto", "cube", "data", etc.).
+    - title_text: Plot title.
+    - xaxis_title, yaxis_title, zaxis_title: Axis labels.
+    - marker_size: Marker size for the scatter plot.
+    - bg_color: Plot background color.
+    - plot_contours: If True, plots contours instead of scatter points.
+
+    Dosimetric lattice parameters:
+    - phys_space_dose_map_and_gradient_map_3d_arr: A NumPy array with shape 
+      (num_slices, num_voxels_per_slice, 14) containing:
+          [0]  - Slice index  
+          [1]  - Row index  
+          [2]  - Column index  
+          [3]  - X-coordinate  
+          [4]  - Y-coordinate  
+          [5]  - Z-coordinate  
+          [6]  - Dose value  
+          [7]  - Gradient in X (Gx)  
+          [8]  - Gradient in Y (Gy)  
+          [9]  - Gradient in Z (Gz)  
+          [10] - Gradient norm (|G|)  
+          [11] - Normalized Gradient in X (NGx)  
+          [12] - Normalized Gradient in Y (NGy)  
+          [13] - Normalized Gradient in Z (NGz)
+    - dose_threshold: If provided, points with dose below this are removed.
+    - log_scale_colors: If True, dose values are log10-scaled (after clipping to avoid log(0)).
+    - dose_marker_size: Marker size for the dosimetric lattice; defaults to marker_size if not provided.
+    - colorbar_title: Title for the colorbar of the dosimetric data.
+    
+    Rendering mode:
+    - dosimetric_render_mode: Choose 'scatter' to render points with a translucent opacity
+      or 'volume' to render a volumetric isosurface.
+    - dosimetric_opacity: Opacity for the dosimetric data (applies to both scatter and volume modes).
+    - volume_surface_count: Number of isosurfaces for volume mode.
+    - colorbar_x_offset: Adjusts the x-position of the colorbar (default is 1.05, moving it outside the plot area).
+    """
+    
+    import plotly.graph_objects as go
+    import numpy as np
+
+    fig = go.Figure()
+    
+    if colors_for_arrays_list is None:
+        colors_for_arrays_list = []
+    
+    # Define a default color palette.
+    default_colors = ['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
+                      'rgb(44, 160, 44)', 'rgb(214, 39, 40)',
+                      'rgb(148, 103, 189)', 'rgb(140, 86, 75)']
+    
+    # Plot conventional datasets.
+    for array_index, pts_array in enumerate(arrays_to_plot_list):
+        
+        
+        # Determine trace color.
+        if len(colors_for_arrays_list) == len(arrays_to_plot_list):
+            color_elem = colors_for_arrays_list[array_index]
+        else:
+            if array_index < len(default_colors):
+                color_elem = default_colors[array_index]
+            else:
+                color_elem = 'rgb' + str(tuple(np.random.randint(low=0, high=255, size=3)))
+        
+        # Determine legend label.
+        if legend_labels is not None and len(legend_labels) == len(arrays_to_plot_list):
+            trace_name = legend_labels[array_index]
+        else:
+            trace_name = f'Dataset {array_index + 1}'
+        
+        if plot_contours:
+            for i, const_slice_arr in enumerate(pts_array):
+                # ensure the loop is closed
+                xs = np.append(const_slice_arr[:,0], const_slice_arr[0,0])
+                ys = np.append(const_slice_arr[:,1], const_slice_arr[0,1])
+                zs = np.append(const_slice_arr[:,2], const_slice_arr[0,2])
+                if i == 0:
+                    # Add the first contour with a legend entry
+                    fig.add_trace(go.Scatter3d(
+                        x=xs, y=ys, z=zs,
+                        mode='lines',
+                        line=dict(color=color_elem, width=2),
+                        name=trace_name
+                    ))
+                else:
+                    fig.add_trace(go.Scatter3d(
+                        x=xs, y=ys, z=zs,
+                        mode='lines',
+                        line=dict(color=color_elem, width=2),
+                        showlegend=False))
+        else:
+            fig.add_trace(go.Scatter3d(
+                x=pts_array[:, 0],
+                y=pts_array[:, 1],
+                z=pts_array[:, 2],
+                mode='markers',
+                marker=dict(color=color_elem, size=marker_size),
+                name=trace_name
+            ))
+    
+    # Process and add the dosimetric lattice if provided.
+    if phys_space_MR_arr is not None:
+        
+        
+        # Extract coordinates (columns 3, 4, 5) and dose (column 6)
+        x_dose = phys_space_MR_arr[:, 0]
+        y_dose = phys_space_MR_arr[:, 1]
+        z_dose = phys_space_MR_arr[:, 2]
+        mr_vals = phys_space_MR_arr[:, 3]
+        
+        # Remove points below the dose threshold, if specified.
+        if mr_threshold is not None and mr_render_mode.lower() == 'scatter':
+            keep = mr_vals >= mr_threshold
+            x_dose = x_dose[keep]
+            y_dose = y_dose[keep]
+            z_dose = z_dose[keep]
+            mr_vals = mr_vals[keep]
+        
+        # Optionally log-scale the mr values.
+        # Apply log scale if requested.
+        if log_scale_colors:
+            # map into log‑space
+            if mr_threshold is not None:
+                low = np.log10(mr_threshold)
+            else:
+                low = np.log10(np.min(np.clip(mr_vals, 1e-6, None)))
+            high = np.log10(mr_vals.max())
+            color_values = np.log10(np.clip(mr_vals, 1e-6, None))
+            tick_vals = np.linspace(low, high, 5)
+            tick_text = [f"{10**v:.1f}" for v in tick_vals]
+        else:
+            low = mr_threshold if mr_threshold is not None else np.min(mr_vals)
+            high = mr_vals.max()
+            color_values = mr_vals
+            tick_vals = np.linspace(low, high, 5)
+            tick_text = [f"{v:.1f}" for v in tick_vals]
+
+        common_colorbar = dict(
+            title=colorbar_title,
+            tickmode='array',
+            tickvals=tick_vals,
+            ticktext=tick_text,
+            x=colorbar_x_offset,
+            tickfont=dict(size=colorbar_ticksize)  
+        )
+
+
+        # Choose the mr rendering mode.
+        if mr_render_mode.lower() == 'scatter':
+            fig.add_trace(go.Scatter3d(
+                x=x_dose,
+                y=y_dose,
+                z=z_dose,
+                mode='markers',
+                marker=dict(
+                    size=mr_marker_size if mr_marker_size is not None else marker_size,
+                    color=color_values,
+                    colorscale=colorbar_color,
+                    cmin=low, cmax=high,
+                    opacity=mr_opacity,
+                    colorbar=common_colorbar,
+                    reversescale = reversescale
+                ),
+                name='MR Lattice'
+            ))
+        elif mr_render_mode.lower() == 'volume':
+
+            fig.add_trace(go.Volume(
+                x=x_dose,
+                y=y_dose,
+                z=z_dose,
+                value=color_values,
+                opacity=mr_opacity,
+                surface_count=volume_surface_count,
+                colorscale=colorbar_color,
+                isomin=low,
+                isomax=high,
+                cmin=low, cmax=high,
+                colorbar=common_colorbar,
+                reversescale = reversescale,
+                name='MR Lattice'
+            ))
+
+        else:
+            raise ValueError("Invalid dosimetric_render_mode. Use 'scatter' or 'volume'.")
+    
+    # Update layout with axis labels, background color, and title.
+    fig.update_layout(
+        title=dict(text=title_text),
+        paper_bgcolor="white",
+        scene=dict(
+            bgcolor="white",
+            aspectmode=aspect_mode_input,
+            xaxis=dict(title=dict(text=xaxis_title, font=dict(size=axes_label_size)),
+                        tickfont=dict(size=axes_tick_label_size), 
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black"),
+            yaxis=dict(title=dict(text=yaxis_title, font=dict(size=axes_label_size)), 
+                        tickfont=dict(size=axes_tick_label_size),
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black"),
+            zaxis=dict(title=dict(text=zaxis_title, font=dict(size=axes_label_size)), 
+                        tickfont=dict(size=axes_tick_label_size),  
+                        backgroundcolor=bg_color,
+                        gridcolor="black", 
+                        showbackground=True, 
+                        zerolinecolor="black")
+        ),
+        legend=dict(title="Data Series", font=dict(size=legend_title_size))
+    )
+    
+    fig.show()
+
+
+
 
 def rgb_array_to_string(rgb_array):
     """

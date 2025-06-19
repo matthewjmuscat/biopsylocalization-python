@@ -133,6 +133,17 @@ def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_d
             for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
                 structureID = specific_structure["ROI"]
                 structure_reference_number = specific_structure["Ref #"]
+                
+                # dilations
+                specific_structure_normal_dist_dilations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples dilations arr"]) 
+                # rotations
+                specific_structure_normal_dist_rotations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples rotations arr"])
+                # translations
+                specific_structure_structure_normal_dist_shift_samples_arr = specific_structure["MC data: Generated normal dist random samples arr"]
+
+
+                num_simulations = specific_structure_structure_normal_dist_shift_samples_arr.shape[0]
+
                 if structs == bx_ref:
                     bx_simulated_bool = specific_structure['Simulated bool']
                     bx_sim_type = specific_structure["Simulated type"]
@@ -147,16 +158,7 @@ def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_d
                     #specific_structure_normal_dist_dilations_samples_arr = np.full((num_simulations, 2), np.nan)
                     # no z needle for non-bx structures
                     specific_structure_structure_uniform_dist_shift_samples_arr = np.full(num_simulations, np.nan)
-                    
-                # dilations
-                specific_structure_normal_dist_dilations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples dilations arr"]) 
-                # rotations
-                specific_structure_normal_dist_rotations_samples_arr = cp.asnumpy(specific_structure["MC data: Generated normal dist random samples rotations arr"])
-                # translations
-                specific_structure_structure_normal_dist_shift_samples_arr = specific_structure["MC data: Generated normal dist random samples arr"]
 
-
-                num_simulations = specific_structure_structure_normal_dist_shift_samples_arr.shape[0]
 
                 sp_structure_shifts_dict_for_pandas_data_frame = {
                     "Patient ID": [patientUID]*num_simulations,
@@ -1098,45 +1100,6 @@ def dose_output_voxelized_dataframe_builder(master_structure_ref_dict,
             #specific_bx_structure["Output dicts for data frames"]["Dose output voxelized"] = dose_output_voxelized_dict_for_pandas_data_frame
 
 
-def differential_dvh_dataframe_all_mc_trials_dataframe_builder(master_structure_ref_dict,
-                                                            master_structure_info_dict,
-                                                            bx_structs):
-    
-    num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
-    num_MC_dose_simulations_plus_nominal = num_MC_dose_simulations+1
-    for patientUID,pydicom_item in master_structure_ref_dict.items():
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-            differential_dvh_dict = specific_bx_structure["MC data: Differential DVH dict"]
-            differential_dvh_histogram_percent_by_MC_trial_arr = differential_dvh_dict["Percent arr"]
-            differential_dvh_dose_vals_by_MC_trial_1darr = differential_dvh_dict["Dose bins (edges) arr (Gy)"][0]
-            differential_dvh_dose_vals_bin_centers = misc_tools.mean_of_adjacent_np(differential_dvh_dose_vals_by_MC_trial_1darr)
-            differential_dvh_dose_vals_bin_centers_list = differential_dvh_dose_vals_bin_centers.tolist()
-            differential_dvh_dose_vals_bin_widths = misc_tools.distance_between_neighbors_np(differential_dvh_dose_vals_by_MC_trial_1darr)
-            differential_dvh_dose_vals_bin_widths_list = differential_dvh_dose_vals_bin_widths.tolist()
-            differential_dvh_dose_vals_list = differential_dvh_dose_vals_by_MC_trial_1darr.tolist()
-            differential_dvh_dose_bins_categorical_list = ['['+str(round(differential_dvh_dose_vals_list[i],1))+','+str(round(differential_dvh_dose_vals_list[i+1],1))+']' for i in range(len(differential_dvh_dose_vals_by_MC_trial_1darr)-1)]
-            differential_dvh_histogram_percent_by_MC_trial_list_of_lists = differential_dvh_histogram_percent_by_MC_trial_arr.tolist()
-            differential_dvh_bin_number_list = [i for i in differential_dvh_dose_bins_categorical_list]
-            
-            percent_vals_list = []
-            dose_bins_list = differential_dvh_dose_bins_categorical_list*num_MC_dose_simulations_plus_nominal 
-            dose_bin_centers_list = differential_dvh_dose_vals_bin_centers_list*num_MC_dose_simulations_plus_nominal
-            dose_bin_widths_list = differential_dvh_dose_vals_bin_widths_list*num_MC_dose_simulations_plus_nominal
-            dose_bin_number_list = differential_dvh_bin_number_list*num_MC_dose_simulations_plus_nominal
-            mc_trial_index_list = []
-            for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
-                percent_vals_list = percent_vals_list + differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
-                mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(differential_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
-            differential_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
-                                                        "Dose bin (Gy)": dose_bins_list,
-                                                        "Dose bin center (Gy)": dose_bin_centers_list,
-                                                        "Dose bin width (Gy)": dose_bin_widths_list, 
-                                                        "Dose bin number": dose_bin_number_list,
-                                                        "MC trial": mc_trial_index_list}
-            differential_dvh_pandas_dataframe = pandas.DataFrame.from_dict(differential_dvh_dict_for_pandas_dataframe)
-
-            specific_bx_structure["Output data frames"]["Differential DVH by MC trial"] = differential_dvh_pandas_dataframe
-            #specific_bx_structure["Output dicts for data frames"]["Differential DVH by MC trial"] = differential_dvh_dict_for_pandas_dataframe
 
 
 
@@ -1173,7 +1136,11 @@ def differential_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structu
                     mc_trial_index_list.extend([mc_trial_index] * len(mc_histogram_percent))
                 
                 # Creating the DataFrame from collected data
-                differential_dvh_dict_for_pandas_dataframe = {
+                differential_dvh_dict_for_pandas_dataframe = {"Patient ID": patientUID,
+                    "Bx ID": specific_bx_structure["ROI"],
+                    "Bx index": specific_bx_structure_index,
+                    "Simulated bool": specific_bx_structure["Simulated bool"],
+                    "Simulated type": specific_bx_structure["Simulated type"],
                     "Percent volume": percent_vals_list,
                     "Dose bin edge (left) (Gy)": dose_bin_left_edges,
                     "Dose bin edge (right) (Gy)": dose_bin_right_edges,
@@ -1198,36 +1165,7 @@ def differential_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structu
 
 
 
-def cumulative_dvh_dataframe_all_mc_trials_dataframe_builder(master_structure_ref_dict,
-                                                            master_structure_info_dict,
-                                                            bx_structs):
-    num_MC_dose_simulations = master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"]
-    num_MC_dose_simulations_plus_nominal = num_MC_dose_simulations + 1
 
-    for patientUID,pydicom_item in master_structure_ref_dict.items():
-        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_structs]):
-            bx_struct_roi = specific_bx_structure["ROI"]
-            # create cumulative DVH plots
-            cumulative_dvh_dict = specific_bx_structure["MC data: Cumulative DVH dict"]
-            cumulative_dvh_histogram_percent_by_MC_trial_arr = cumulative_dvh_dict["Percent arr"]
-            cumulative_dvh_dose_vals_by_MC_trial_1darr = cumulative_dvh_dict["Dose vals arr (Gy)"]
-            cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists = cumulative_dvh_histogram_percent_by_MC_trial_arr.tolist()
-            cumulative_dvh_dose_vals_by_MC_trial_list = cumulative_dvh_dose_vals_by_MC_trial_1darr.tolist()
-            percent_vals_list = []
-            dose_vals_list = cumulative_dvh_dose_vals_by_MC_trial_list*num_MC_dose_simulations_plus_nominal 
-            mc_trial_index_list = []
-            for mc_trial_index in range(num_MC_dose_simulations_plus_nominal):
-                percent_vals_list = percent_vals_list + cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index]
-                mc_trial_index_list = mc_trial_index_list + [mc_trial_index]*len(cumulative_dvh_histogram_percent_by_MC_trial_list_of_lists[mc_trial_index])
-            cumulative_dvh_dict_for_pandas_dataframe = {"Percent volume": percent_vals_list, 
-                                                        "Dose (Gy)": dose_vals_list,
-                                                        "MC trial": mc_trial_index_list}
-            cumulative_dvh_pandas_dataframe = pandas.DataFrame.from_dict(cumulative_dvh_dict_for_pandas_dataframe)
-
-            cumulative_dvh_pandas_dataframe = convert_columns_to_categorical_and_downcast(cumulative_dvh_pandas_dataframe, threshold=0.25)
-
-            specific_bx_structure["Output data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_pandas_dataframe
-            #specific_bx_structure["Output dicts for data frames"]["Cumulative DVH by MC trial"] = cumulative_dvh_dict_for_pandas_dataframe
 
 
 
@@ -1262,7 +1200,11 @@ def cumulative_dvh_dataframe_all_mc_trials_dataframe_builder_v2(master_structure
                     start_idx = end_idx
                 
                 # Creating the DataFrame from preallocated data
-                cumulative_dvh_pandas_dataframe = pandas.DataFrame({
+                cumulative_dvh_pandas_dataframe = pandas.DataFrame({"Patient ID": patientUID,
+                    "Bx ID": specific_bx_structure["ROI"],
+                    "Bx index": specific_bx_structure_index,
+                    "Simulated bool": specific_bx_structure["Simulated bool"],
+                    "Simulated type": specific_bx_structure["Simulated type"],
                     "Percent volume": percent_vals_array,
                     "Dose (Gy)": dose_vals_array,
                     "MC trial": mc_trial_index_array

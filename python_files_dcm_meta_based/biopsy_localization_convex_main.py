@@ -138,7 +138,7 @@ def main():
     # specify the patient IDs and the list of biopsy names to remove from the dataset
     data_removals_dict_bx = {"189 (F2)": ["Bx_Tr LM1 blood"],
                             "192 (F2)": ["Bx_trk LM blood"],
-                            "200 (F1)": ["Bx_LTapex_air"],
+                            "200 (F1)": ["Bx_LTapex_needle"],#["Bx_LTapex_air"], # the air in this case is actually better, the needle structure is way too long in this one
                             "201 (F2)": ["Bx_LTpost_air"],
                             "203 (F1)": ["Bx_LTapex_air"],
                             }
@@ -413,9 +413,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10000
+    num_MC_containment_simulations_input = 10
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 10
+    num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -576,13 +576,21 @@ def main():
 
     # MRs
     show_3d_mr_adc_renderings = False
-    show_3d_mr_adc_renderings_thresholded = False
+    show_3d_mr_adc_renderings_thresholded = True
     show_NN_mr_adc_demonstration_plots = False # this shows one trial at a time!!
-    show_NN_mr_adc_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
+    show_NN_mr_adc_demonstration_plots_all_trials_at_once = True # nice because shows all trials at once
     
     # Combined
-    show_processed_3d_datasets_renderings = False
-    show_processed_3d_datasets_renderings_plotly = True
+    show_processed_3d_datasets_renderings = True
+    show_processed_3d_datasets_renderings_plotly_dict = {"Plot": False, # If false then the rest of the options are irrelevant
+                                                         "SS Scatter": True,
+                                                         "SS Contour": True,
+                                                         "Dosimetric render mode": "volume", # can be "volume" or "scatter"
+                                                         "Dosimetric dose log scale": True, # If false then its linear
+                                                         "mr render mode": "volume", # can be "volume" or "scatter"
+                                                         "mr log scale": False, # If false then its linear
+                                                         }
+
 
     # Misc
     show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
@@ -1726,7 +1734,6 @@ def main():
                 
 
 
-
                 patientUID_default = "Initializing"
                 processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
                 processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
@@ -1802,9 +1809,16 @@ def main():
 
                     gradient_vector_lattice, gradient_norm_lattice, normalized_gradient_vector_lattice = dose_lattice_helper_funcs.calculate_gradient_lattices(scaled_dose_data, dose_ref_dict["Pixel spacing"], dose_ref_dict["Grid frame offset vector"])
                     
+                    
+                    phys_space_dose_map_and_gradient_map_3d_arr = dose_lattice_helper_funcs.map_gradient_to_physical_space(
+                        phys_space_dose_map_3d_arr=phys_space_dose_map_3d_arr,
+                        gradient_vector_lattice=gradient_vector_lattice,
+                        gradient_norm_lattice=gradient_norm_lattice,
+                        normalized_gradient_vector_lattice = normalized_gradient_vector_lattice
+                    )
                     """
                     Returns:
-                        phys_space_gradient_map_3d_arr (numpy.ndarray): Updated slice-wise array with gradients and normalized gradients added.
+                        phys_space_dose_map_and_gradient_map_3d_arr (numpy.ndarray): Updated slice-wise array with gradients and normalized gradients added.
                             Shape: (num_slices, num_voxels_per_slice, 14).
                             Columns:
                                 [0]  - Slice index
@@ -1822,12 +1836,6 @@ def main():
                                 [12] - Normalized Gradient in Y (NGy)
                                 [13] - Normalized Gradient in Z (NGz)
                     """
-                    phys_space_dose_map_and_gradient_map_3d_arr = dose_lattice_helper_funcs.map_gradient_to_physical_space(
-                        phys_space_dose_map_3d_arr=phys_space_dose_map_3d_arr,
-                        gradient_vector_lattice=gradient_vector_lattice,
-                        gradient_norm_lattice=gradient_norm_lattice,
-                        normalized_gradient_vector_lattice = normalized_gradient_vector_lattice
-                    )
 
                     
                     dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
@@ -1896,7 +1904,7 @@ def main():
 
 
 
-
+                #live_display.stop()
                 patientUID_default = "Initializing"
                 processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID_default)
                 processing_patients_adc_mr_task_completed_main_description = "[green]Building ADC MR grids"
@@ -5965,9 +5973,10 @@ def main():
                 live_display.start()
 
 
-            if show_processed_3d_datasets_renderings_plotly == True:
+            if show_processed_3d_datasets_renderings_plotly_dict["Plot"] == True:
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     arr_list = []
+                    arr_const_zslice_arrs_list = []
                     arr_names = []
                     arr_colors = []
                     for structs in structs_referenced_list:
@@ -5982,30 +5991,161 @@ def main():
                             arr_colors.append(rgb_color)
                             if structs == bx_ref: 
                                 structure_arr = specific_structure["Reconstructed structure pts arr"]
+                                structure_list_of_arr = [structure_arr] # hacky way of doing it 
                             else: 
                                 # structure_arr = specific_structure["Raw contour pts"]
                                 structure_arr = specific_structure["Intra-slice interpolation information"].interpolated_pts_np_arr
+                                structure_list_of_arr = specific_structure['Equal num zslice contour pts']
                             arr_list.append(structure_arr)
+                            arr_const_zslice_arrs_list.append(structure_list_of_arr)
                     #plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
 
                     # Call the function with test data and custom legend labels.
-                    plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized(
-                        arrays_to_plot_list=arr_list,
-                        colors_for_arrays_list=arr_colors,
-                        legend_labels=arr_names,
-                        title_text=f"Processed 3D structure set for {patientUID}",
-                        xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                        yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                        zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                        marker_size=0.7,
-                        bg_color = "rgb(245,245,245)"
-                    )
-                
-            
+                    if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True:
+                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
+                            arrays_to_plot_list=arr_list,
+                            colors_for_arrays_list=arr_colors,
+                            legend_labels=arr_names,
+                            title_text=f"Processed 3D structure set for {patientUID}",
+                            xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                            yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                            zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                            marker_size=0.7,
+                            bg_color = "rgb(245,245,245)"
+                        )
+                    if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
+                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
+                                arrays_to_plot_list=arr_const_zslice_arrs_list,
+                                colors_for_arrays_list=arr_colors,
+                                legend_labels=arr_names,
+                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
+                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                                marker_size=0.7,
+                                bg_color = "rgb(245,245,245)",
+                                plot_contours = True
+                            )
+
+                    if dose_ref in pydicom_item:
+                        dose_ref_dict = pydicom_item[dose_ref]
+                        phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
+                        if lower_bound_dose_value == None:
+                            try:
+                                lower_bound_dose_value = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
+                            except Exception as e:
+                                lower_bound_dose_value = 0
+                        
+                        if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True: 
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
+                                arrays_to_plot_list=arr_list,
+                                colors_for_arrays_list=arr_colors,
+                                legend_labels=arr_names,
+                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
+                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                                marker_size=0.7,
+                                bg_color = "rgb(245,245,245)",
+                                plot_contours = False,
+                                phys_space_dose_map_and_gradient_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr,
+                                dose_threshold= lower_bound_dose_value,
+                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric dose log scale"],
+                                dose_marker_size = 1.2,
+                                colorbar_title = "Dose (Gy)",
+                                dosimetric_render_mode = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric render mode"],
+                                dosimetric_opacity = 0.05,
+                                volume_surface_count = 20,
+                                colorbar_x_offset = 0.9,
+                                colorbar_color = "Picnic",
+                                reversescale = False
+                            )
+                        if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
+                                arrays_to_plot_list=arr_const_zslice_arrs_list,
+                                colors_for_arrays_list=arr_colors,
+                                legend_labels=arr_names,
+                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
+                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                                marker_size=0.7,
+                                bg_color = "rgb(245,245,245)",
+                                plot_contours = True,
+                                phys_space_dose_map_and_gradient_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr,
+                                dose_threshold= lower_bound_dose_value,
+                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric dose log scale"],
+                                dose_marker_size = 1.2,
+                                colorbar_title = "Dose (Gy)",
+                                dosimetric_render_mode = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric render mode"],
+                                dosimetric_opacity = 0.05,
+                                volume_surface_count = 20,
+                                colorbar_x_offset = 0.9,
+                                colorbar_color = "Picnic",
+                                reversescale = False
+                            )
+                    
+                    ### The MR version of this code doesnt seem to be working, revisit this later if you want...
+                    """
+                    if mr_adc_ref in pydicom_item:
+                        live_display.stop()
+                        mr_adc_subdict = pydicom_item[mr_adc_ref]
+                        filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = False, set_negative_to_value=0)
+
+                        if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True: 
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_MR(
+                                arrays_to_plot_list=arr_list,
+                                colors_for_arrays_list=arr_colors,
+                                legend_labels=arr_names,
+                                title_text=f"Processed 3D structure set with MR ADC for {patientUID}",
+                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                                marker_size=0.7,
+                                bg_color = "rgb(245,245,245)",
+                                plot_contours = False,
+                                phys_space_MR_arr = filtered_non_negative_adc_mr_phys_space_arr,
+                                mr_threshold= lower_bound_mr_adc_value,
+                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["mr log scale"],
+                                mr_marker_size = 1.2,
+                                colorbar_title = "ADC (mm\u00B2/s)", # \u00B2 is a superscript 2!
+                                mr_render_mode = show_processed_3d_datasets_renderings_plotly_dict["mr render mode"],
+                                mr_opacity = 0.05,
+                                volume_surface_count = 20,
+                                colorbar_x_offset = 0.9,
+                                colorbar_color = "Picnic",
+                                reversescale = False
+                            )
+                        if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
+                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_MR(
+                                arrays_to_plot_list=arr_const_zslice_arrs_list,
+                                colors_for_arrays_list=arr_colors,
+                                legend_labels=arr_names,
+                                title_text=f"Processed 3D structure set with MR ADC for {patientUID}",
+                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
+                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
+                                marker_size=0.7,
+                                bg_color = "rgb(245,245,245)",
+                                plot_contours = True,
+                                phys_space_MR_arr = filtered_non_negative_adc_mr_phys_space_arr,
+                                mr_threshold= lower_bound_mr_adc_value,
+                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["mr log scale"],
+                                mr_marker_size = 1.2,
+                                colorbar_title = "ADC (mm\u00B2/s)", # \u00B2 is a superscript 2!
+                                mr_render_mode = show_processed_3d_datasets_renderings_plotly_dict["mr render mode"],
+                                mr_opacity = 0.05,
+                                volume_surface_count = 20,
+                                colorbar_x_offset = 0.9,
+                                colorbar_color = "Picnic",
+                                reversescale = False
+                            )
+                    """
 
 
             ## uniformly sample points from biopsies
             #st = time.time()
+            live_display.stop()
             args_list = []
             master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"] = bx_sample_pts_lattice_spacing
             master_structure_info_dict["Global"]["MC info"]["BX sample pt volume element (mm^3)"] = bx_sample_pts_lattice_spacing**3
@@ -7626,11 +7766,24 @@ def main():
                         bx_index_number = sp_bx["Index number"] 
                         bx_sp_csv_dir = patient_sp_bx_sp_output_csv_dir_dict[patientUID][bx_index_number]
                         for dataframe_name, dataframe in sp_bx['Output data frames'].items():
-                            if isinstance(dataframe, pandas.DataFrame): 
-                                dataframe_file_name = str(bx_type) +'-'+ str(bx_name)+'-'+ str(dataframe_name)+ '.csv'
-                                dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
-                                dataframe.to_csv(dataframe_file_path)
-                                #dataframe.to_parquet(dataframe_file_path, compression='snappy')
+                            if isinstance(dataframe, pandas.DataFrame):
+                                if (
+                                    dataframe_name == "Point-wise dose output by MC trial number"
+                                    or dataframe_name == "Point-wise MR ADC output by MC trial number"
+                                    or dataframe_name == "Voxel-wise dose output by MC trial number"
+                                    or dataframe_name == "Cumulative DVH by MC trial"
+                                    or dataframe_name == "Differential DVH by MC trial"
+                                ):
+                                    # Use .parquet extension for the Parquet file
+                                    dataframe_file_name = f"{patientUID}-{bx_type}-{bx_name}-{bx_index_number}-{dataframe_name}.parquet"
+                                    dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
+                                    dataframe.to_parquet(dataframe_file_path, compression='snappy')
+                                else:
+                                    
+                                    dataframe_file_name = f"{patientUID}-{bx_type}-{bx_name}-{bx_index_number}-{dataframe_name}.csv"
+                                    dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
+                                    dataframe.to_csv(dataframe_file_path)
+                                    #dataframe.to_parquet(dataframe_file_path, compression='snappy')
 
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
@@ -10306,7 +10459,7 @@ def structure_referencer(data_removals_dict_bx,
                              }
             master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
     
-
+    """
     ### MR ADC
     for UID, mr_adc_item_paths_list in MR_ADC_dcms_dict.items():
         mr_adc_ref_dict = {}
@@ -10314,6 +10467,9 @@ def structure_referencer(data_removals_dict_bx,
             with pydicom.dcmread(mr_adc_item_path, defer_size = '2 MB') as mr_adc_item:
                 seriesinstanceUID = mr_adc_item.SeriesInstanceUID
                 mr_adc_ID = UID + mr_adc_item.StudyDate
+                
+                
+
                 if len(mr_adc_item.RealWorldValueMappingSequence) > 1:
                     important_info.add_text_line(f"Multiple real world value mappings detected for ({UID}, {mr_adc_ID})) ", live_display)
                 if seriesinstanceUID not in mr_adc_ref_dict: 
@@ -10346,8 +10502,82 @@ def structure_referencer(data_removals_dict_bx,
 
         master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
 
+    """
 
-    
+    ### MR ADC, updated to account for missing RealWorldValueMappingSequence
+    for UID, mr_adc_item_paths_list in MR_ADC_dcms_dict.items():
+        mr_adc_ref_dict = {}
+        for mr_adc_item_path in mr_adc_item_paths_list:
+            with pydicom.dcmread(mr_adc_item_path, defer_size='2 MB') as mr_adc_item:
+                seriesinstanceUID = mr_adc_item.SeriesInstanceUID
+                mr_adc_ID = UID + mr_adc_item.StudyDate
+
+                rwvm = getattr(mr_adc_item, "RealWorldValueMappingSequence", None)
+
+                # Handle multiple RWVMs
+                if rwvm and len(rwvm) > 1:
+                    important_info.add_text_line(
+                        f"Multiple real world value mappings detected for ({UID}, {mr_adc_ID})", live_display
+                    )
+
+                # Safely extract or assign defaults
+                if rwvm and len(rwvm) > 0:
+                    rwv = rwvm[0]
+                    units = str(getattr(rwv.MeasurementUnitsCodeSequence[0], "CodeMeaning", "unknown"))
+                    slope = np.array(rwv.RealWorldValueSlope)
+                    intercept = np.array(rwv.RealWorldValueIntercept)
+                    rwv_units = getattr(rwv, "LUTLabel", "unknown")
+                else:
+                    units = "mm\u00B2/s (assumed)"
+                    slope = np.array([1e-6])  # Default slope for mm2/s
+                    intercept = np.array([0.0])
+                    rwv_units = "mm\u00B2/s (assumed)"
+                    important_info.add_text_line(
+                        f"No RealWorldValueMappingSequence found for ({UID}, {mr_adc_ID}) – using defaults.",
+                        live_display
+                    )
+
+                if seriesinstanceUID not in mr_adc_ref_dict:
+                    mr_adc_ref_subdict = {
+                        "MR ADC ID": mr_adc_ID,
+                        "Series instance UID": seriesinstanceUID,
+                        "Study date": mr_adc_item.StudyDate,
+                        "Pixel arr (all slices)": mr_adc_item.pixel_array,
+                        "Pixel spacing": np.array(mr_adc_item.PixelSpacing),
+                        "Units": units,
+                        "RWVSlope (all slices)": slope,
+                        "RWVIntercept (all slices)": intercept,
+                        "RWV Units": rwv_units,
+                        "Slice thickness": getattr(mr_adc_item, "SliceThickness", -1),
+                        "Image orientation patient": np.array(mr_adc_item.ImageOrientationPatient),
+                        "Image position patient (all slices)": np.array(mr_adc_item.ImagePositionPatient),
+                        "MR ADC phys space Nx4 arr": None,
+                        "MR ADC phys space Nx4 arr (filtered, non-negative)": None,
+                        "MR ADC grid point cloud": None,
+                        "MR ADC grid point cloud thresholded": None,
+                        "KDtree": None
+                    }
+                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
+                else:
+                    mr_adc_ref_subdict = mr_adc_ref_dict[seriesinstanceUID]
+                    mr_adc_ref_subdict["Pixel arr (all slices)"] = np.dstack(
+                        (mr_adc_ref_subdict["Pixel arr (all slices)"], mr_adc_item.pixel_array)
+                    )
+                    mr_adc_ref_subdict["RWVSlope (all slices)"] = np.hstack(
+                        (mr_adc_ref_subdict["RWVSlope (all slices)"], slope)
+                    )
+                    mr_adc_ref_subdict["RWVIntercept (all slices)"] = np.hstack(
+                        (mr_adc_ref_subdict["RWVIntercept (all slices)"], intercept)
+                    )
+                    mr_adc_ref_subdict["Image position patient (all slices)"] = np.vstack(
+                        (mr_adc_ref_subdict["Image position patient (all slices)"], np.array(mr_adc_item.ImagePositionPatient))
+                    )
+                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
+
+        master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
+
+
+
     
 
     ### Plan file

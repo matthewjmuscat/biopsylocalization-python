@@ -103,13 +103,16 @@ def reconstruct_mr_lattice_with_coordinates_from_dict(mr_adc_ref_subdict, rescal
 
 
 
-def reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_ref_subdict, filter_out_negatives = True):
+def reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_ref_subdict, filter_out_negatives = True, set_negative_to_value=None):
     """
     Reconstructs a cubic lattice of MR data from the provided mr_adc_ref_subdict and outputs it as an (N, 4) array,
     where each row contains the (x, y, z, ADC value) for each voxel.
 
     Parameters:
     mr_adc_ref_subdict (dict): Dictionary containing MR ADC data and relevant DICOM metadata.
+    filter_out_negatives (bool): If True, removes voxels with negative ADC values.
+    set_negative_to_value (float or None): If not None, sets negative ADC values to this number instead of filtering.
+
 
     Returns:
     numpy.ndarray: (N, 4) array, where each row is (x, y, z, ADC value).
@@ -173,8 +176,13 @@ def reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_ref_subdict, fil
         voxel_positions[start_idx:end_idx, 3] = pixel_arrays[:, :, i].ravel()
 
     # Filter out negative values
-    if filter_out_negatives:
+    if set_negative_to_value is not None and filter_out_negatives:
+        raise ValueError("Cannot set both 'filter_out_negatives=True' and 'set_negative_to_value'. Choose one.")
+    elif set_negative_to_value is not None:
+        voxel_positions[voxel_positions[:, 3] < 0, 3] = set_negative_to_value
+    elif filter_out_negatives:
         voxel_positions = voxel_positions[voxel_positions[:, 3] >= 0]
+
 
 
     return voxel_positions
