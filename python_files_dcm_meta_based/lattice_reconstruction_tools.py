@@ -133,7 +133,7 @@ def reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_ref_subdict, fil
     
     # Apply the real-world value mapping (ADC conversion) for each slice if not in units of mm2/s
     rescale_values = True
-    if str(pixel_values_units) == 'mm2/s':
+    if str(pixel_values_units) == 'mm2/s' or str(pixel_values_units) == 'mm²/s (assumed)' or str(pixel_values_units) == 'mm²/s' or str(pixel_values_units) == 'mm\u00B2/s (assumed)':
         rescale_values = False
 
     if rescale_values:

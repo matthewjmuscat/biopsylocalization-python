@@ -4085,11 +4085,128 @@ def global_mr_by_voxel_values_dataframe_builder_ALTERNATE(master_structure_refer
 
 
 
+def dataframe_mr_summary_statistics(
+            df,
+            target_column,
+            filter_column=None,
+            filter_value=None,
+            id_cols=("Relative structure ROI", "Relative structure type", "Relative structure index"),
+            id_values=None
+        ):
+    """
+    Produces summary statistics for a given column in a DataFrame.
+    Stats: count, mean, min, max, argmax_density, q05, q25, q50, q75, q95.
+    Identifier fields: defaults to
+        "Relative structure ROI",
+        "Relative structure type",
+        "Relative structure index"
+    You can override by passing a tuple of three column names to `id_cols`.
+    Optionally override the identifier values with `id_values` (dict or 3-sequence).
+
+    Optional row filter: if `filter_column` and `filter_value` are provided,
+    only rows where df[filter_column] == filter_value are used.
+    """
+    if target_column not in df.columns:
+        raise ValueError(f"Column '{target_column}' not found in DataFrame.")
+    if len(id_cols) != 3:
+        raise ValueError("`id_cols` must contain exactly three column names.")
+    missing = [c for c in id_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Identifier columns not in DataFrame: {missing}")
+
+    # Apply filter if specified
+    work_df = df
+    if filter_column is not None and filter_value is not None:
+        if filter_column not in df.columns:
+            raise ValueError(f"Filter column '{filter_column}' not found in DataFrame.")
+        work_df = df[df[filter_column] == filter_value]
+
+    # Determine identifier values
+    if id_values is None:
+        if len(work_df) > 0:
+            id_series = work_df.iloc[0][list(id_cols)]
+        else:
+            id_series = pandas.Series({c: np.nan for c in id_cols})
+    else:
+        if isinstance(id_values, dict):
+            id_series = pandas.Series({c: id_values.get(c, (work_df.iloc[0][c] if len(work_df) > 0 else np.nan)) for c in id_cols})
+        else:
+            if len(id_values) != 3:
+                raise ValueError("`id_values` must be a dict or a sequence of exactly three values.")
+            id_series = pandas.Series(dict(zip(id_cols, id_values)))
+
+    col_data = work_df[target_column].dropna()
+
+    # Handle empty data safely
+    if col_data.empty:
+        stats = {
+            'count': 0,
+            'mean': np.nan,
+            'min': np.nan,
+            'max': np.nan,
+            'argmax_density': np.nan,
+            'q05': np.nan,
+            'q25': np.nan,
+            'q50': np.nan,
+            'q75': np.nan,
+            'q95': np.nan
+        }
+    else:
+        stats = {
+            'count': int(col_data.count()),
+            'mean': col_data.mean(),
+            'min': col_data.min(),
+            'max': col_data.max(),
+            'argmax_density': math_funcs.find_max_kde_dose(col_data, num_eval_pts=1000),
+            'q05': col_data.quantile(0.05),
+            'q25': col_data.quantile(0.25),
+            'q50': col_data.quantile(0.50),
+            'q75': col_data.quantile(0.75),
+            'q95': col_data.quantile(0.95)
+        }
+
+    # Combine identifiers + stats into one-row DataFrame
+    result_df = pandas.DataFrame([{**id_series.to_dict(), **stats}])
+    return result_df
 
 
+def drop_rows_where_b_is_true(
+        df_a: pandas.DataFrame,
+        df_b: pandas.DataFrame,
+        index_col: str = "Test pt index",
+        flag_col: str = "Pt contained bool",
+        keep_unmatched: bool = True,
+    ) -> pandas.DataFrame:
+    """
+    Return a copy of df_a with rows dropped where df_b has flag_col == True
+    for the same index_col value.
 
+    - If df_b has duplicates per index_col, any(True) is used.
+    - If an index in df_a is not present in df_b:
+        * keep_unmatched=True  -> keep those rows (default)
+        * keep_unmatched=False -> drop those rows
+    """
+    if index_col not in df_a.columns or index_col not in df_b.columns:
+        raise ValueError(f"'{index_col}' must exist in both dataframes.")
+    if flag_col not in df_b.columns:
+        raise ValueError(f"'{flag_col}' must exist in df_b.")
 
+    # Reduce df_b to a mapping: index_col -> any True
+    b_true_map = (
+        df_b.groupby(index_col, dropna=False)[flag_col]
+            .any()  # True if any row for that index is True
+    )
 
+    # Map df_a's indices to the boolean; rows not in b become NaN
+    mapped = df_a[index_col].map(b_true_map)
+
+    if keep_unmatched:
+        mapped = mapped.fillna(False)  # treat missing as not flagged
+    else:
+        mapped = mapped.fillna(True)   # treat missing as flagged (so dropped)
+
+    # Keep rows where B is NOT True
+    return df_a[~mapped].copy()
 
 
 

@@ -470,6 +470,336 @@ def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver4(relative_st
     return nearest_zslice_index_and_values_3d_arr
 
 
+
+
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver5(
+    relative_structures_list_of_zvals_1d_arrays_or_lists,
+    points_to_test_3d_arr,
+    test_struct_to_relative_struct_1d_mapping_array):
+    """
+    Find the nearest z values and associated indices for all biopsy points across all trials.
+    Returns a float32 array shaped (num_test_structures, num_points_per_trial, 4) with:
+      [:, :, 0] = relative_structure_index
+      [:, :, 1] = nearest z-slice index (float32-encoded)
+      [:, :, 2] = nearest z value
+      [:, :, 3] = out-of-bounds flag (1 if point z < min(zvals) or > max(zvals), else 0)
+    """
+
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
+
+    # results: [rel_struct_idx, nearest_idx, nearest_val, oob_flag]
+    nearest_zslice_index_and_values_3d_arr = np.empty(
+        (num_test_structures, num_points_per_trial, 4), dtype=np.float32
+    )
+
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        # Host arrays (ensure float32 to reduce device memory traffic)
+        zvals_array = np.asarray(
+            relative_structures_list_of_zvals_1d_arrays_or_lists[relative_structure_index],
+            dtype=np.float32
+        )
+        pts_to_test_z_coords = np.asarray(
+            points_to_test_3d_arr[test_structure_index, :, 2],
+            dtype=np.float32
+        )
+
+        # Device copies
+        zvals_cp = cp.asarray(zvals_array)           # (S,)
+        pts_cp   = cp.asarray(pts_to_test_z_coords)  # (P,)
+
+        # If z-values may be unsorted, sort once and map back
+        # (If you know they are sorted ascending, you can skip this block and use the fast path below.)
+        is_sorted = (
+            zvals_array.size < 2 or
+            bool(np.all(zvals_array[1:] >= zvals_array[:-1]))
+        )
+
+        if not is_sorted:
+            order = cp.argsort(zvals_cp)               # (S,)
+            z_sorted = zvals_cp[order]                 # (S,)
+
+            idx_insert = cp.searchsorted(z_sorted, pts_cp, side='left')        # (P,)
+            idx0 = cp.clip(idx_insert - 1, 0, z_sorted.size - 1)
+            idx1 = cp.clip(idx_insert,       0, z_sorted.size - 1)
+
+            # choose the closer neighbor
+            choose_right = cp.abs(z_sorted[idx1] - pts_cp) < cp.abs(pts_cp - z_sorted[idx0])
+            nearest_sorted_idx = cp.where(choose_right, idx1, idx0)            # (P,)
+            nearest_idx_cp = order[nearest_sorted_idx]                          # map back to original indexing
+        else:
+            # Fast path when zvals are already sorted ascending
+            idx_insert = cp.searchsorted(zvals_cp, pts_cp, side='left')        # (P,)
+            idx0 = cp.clip(idx_insert - 1, 0, zvals_cp.size - 1)
+            idx1 = cp.clip(idx_insert,       0, zvals_cp.size - 1)
+            choose_right = cp.abs(zvals_cp[idx1] - pts_cp) < cp.abs(pts_cp - zvals_cp[idx0])
+            nearest_idx_cp = cp.where(choose_right, idx1, idx0)                 # (P,)
+
+        nearest_vals_cp = zvals_cp[nearest_idx_cp]                               # (P,)
+
+        # Bring back to host once
+        nearest_zslice_indices = cp.asnumpy(nearest_idx_cp)                      # int64 on host
+        nearest_zslice_vals    = cp.asnumpy(nearest_vals_cp).astype(np.float32)  # float32
+
+        # Out-of-bounds flag on host (same logic as original)
+        min_zval = float(np.min(zvals_array))
+        max_zval = float(np.max(zvals_array))
+        outside_min_mask = pts_to_test_z_coords < min_zval
+        outside_max_mask = pts_to_test_z_coords > max_zval
+        out_of_bounds_flag = np.where(outside_min_mask | outside_max_mask, 1, 0).astype(np.float32)
+
+        # Store results (indices are stored as float32 in your original output array)
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 0] = np.float32(relative_structure_index)
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 1] = nearest_zslice_indices.astype(np.float32)
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 2] = nearest_zslice_vals
+        nearest_zslice_index_and_values_3d_arr[test_structure_index, :, 3] = out_of_bounds_flag
+
+    return nearest_zslice_index_and_values_3d_arr
+
+
+
+
+
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver6(
+    relative_structures_list_of_zvals_1d_arrays_or_lists,
+    points_to_test_3d_arr,
+    test_struct_to_relative_struct_1d_mapping_array,
+    prefer_searchsorted_over=0.75,   # if estimated temp > this fraction of free VRAM -> use searchsorted
+    vram_safety=0.6,                 # when chunking, use only this fraction of free VRAM
+    dtype=np.float32
+):
+    """
+    Hybrid method: chooses between broadcast+argmin (chunked) and searchsorted.
+    Returns the same (N_test_struct, N_points, 4) float32 array as ver4/ver5:
+      [:,:,0] = relative_structure_index
+      [:,:,1] = nearest z-slice INDEX (stored as float32)
+      [:,:,2] = nearest z VALUE
+      [:,:,3] = out-of-bounds flag (1/0)
+    """
+
+
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
+    out = np.empty((num_test_structures, num_points_per_trial, 4), dtype=np.float32)
+
+    # helper: chunked broadcast+argmin for a single (S,P)
+    def _broadcast_chunked(zvals_cp, pts_cp):
+        S = zvals_cp.size
+        P = pts_cp.size
+        free_mem, total_mem = cp.cuda.runtime.memGetInfo()
+        free_mem = int(free_mem * vram_safety)
+
+        # temp per chunk ≈ S*chunk*sizeof(float32) for z_diffs + a little overhead
+        bytes_per_elem = 4  # float32
+        max_chunk = max(1, int(free_mem // max(bytes_per_elem * max(S, 1), 1)))
+        max_chunk = min(P, max_chunk)
+
+        parts_idx = []
+        for start in range(0, P, max_chunk):
+            end = min(P, start + max_chunk)
+            z_diffs = cp.abs(zvals_cp[:, None] - pts_cp[None, start:end])  # (S, chunk)
+            parts_idx.append(cp.argmin(z_diffs, axis=0))
+            del z_diffs
+        idx_cp = cp.concatenate(parts_idx, axis=0)
+        vals_cp = zvals_cp[idx_cp]
+        return idx_cp, vals_cp
+
+    # helper: searchsorted method
+    def _searchsorted(zvals_cp, pts_cp, zvals_sorted_known=True):
+        if zvals_sorted_known:
+            idx_insert = cp.searchsorted(zvals_cp, pts_cp, side='left')
+            i0 = cp.clip(idx_insert - 1, 0, zvals_cp.size - 1)
+            i1 = cp.clip(idx_insert,       0, zvals_cp.size - 1)
+            choose_right = cp.abs(zvals_cp[i1] - pts_cp) < cp.abs(pts_cp - zvals_cp[i0])
+            idx_cp = cp.where(choose_right, i1, i0)
+            vals_cp = zvals_cp[idx_cp]
+            return idx_cp, vals_cp
+        else:
+            order = cp.argsort(zvals_cp)
+            zs = zvals_cp[order]
+            idx_insert = cp.searchsorted(zs, pts_cp, side='left')
+            i0 = cp.clip(idx_insert - 1, 0, zs.size - 1)
+            i1 = cp.clip(idx_insert,       0, zs.size - 1)
+            choose_right = cp.abs(zs[i1] - pts_cp) < cp.abs(pts_cp - zs[i0])
+            nearest_sorted = cp.where(choose_right, i1, i0)
+            idx_cp = order[nearest_sorted]
+            vals_cp = zvals_cp[idx_cp]
+            return idx_cp, vals_cp
+
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        zvals = np.asarray(
+            relative_structures_list_of_zvals_1d_arrays_or_lists[relative_structure_index],
+            dtype=dtype
+        )
+        pts_z = np.asarray(points_to_test_3d_arr[test_structure_index, :, 2], dtype=dtype)
+        S = zvals.size
+        P = pts_z.size
+
+        # device
+        zvals_cp = cp.asarray(zvals)
+        pts_cp   = cp.asarray(pts_z)
+
+        # decide path
+        # Estimate temp for full broadcast: S*P*4 bytes (float32), then be conservative ×1.2
+        full_temp = int(S) * int(P) * 4
+        free_mem, total_mem = cp.cuda.runtime.memGetInfo()
+        use_searchsorted = (full_temp > prefer_searchsorted_over * free_mem)
+
+        # If zvals are sorted ascending, we can use the faster path in searchsorted
+        z_sorted_known = bool(np.all(zvals[1:] >= zvals[:-1])) if S > 1 else True
+
+        if use_searchsorted:
+            idx_cp, vals_cp = _searchsorted(zvals_cp, pts_cp, z_sorted_known)
+        else:
+            # still use chunking so we never OOM
+            idx_cp, vals_cp = _broadcast_chunked(zvals_cp, pts_cp)
+
+        # back to host
+        nearest_idx = cp.asnumpy(idx_cp).astype(np.float32)
+        nearest_val = cp.asnumpy(vals_cp).astype(np.float32)
+
+        # OOB flags on host (same as your logic)
+        mn = float(np.min(zvals)) if S else np.inf
+        mx = float(np.max(zvals)) if S else -np.inf
+        oob = ((pts_z < mn) | (pts_z > mx)).astype(np.float32)
+
+        out[test_structure_index, :, 0] = np.float32(relative_structure_index)
+        out[test_structure_index, :, 1] = nearest_idx
+        out[test_structure_index, :, 2] = nearest_val
+        out[test_structure_index, :, 3] = oob
+
+    return out
+
+
+
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver7(
+    relative_structures_list_of_zvals_1d_arrays_or_lists,
+    points_to_test_3d_arr,
+    test_struct_to_relative_struct_1d_mapping_array,
+    prefer_searchsorted_over=0.75,   # if estimated temp > this fraction of free VRAM -> use searchsorted
+    vram_safety=0.6,                 # when chunking, use only this fraction of free VRAM
+    dtype=np.float32,
+    use_method="auto"                # "auto" | "broadcast" | "searchsorted"
+):
+    """
+    Hybrid method with override:
+      - use_method="auto"        -> pick per-structure using VRAM heuristic
+      - use_method="broadcast"   -> force broadcast+argmin (chunked safely)
+      - use_method="searchsorted"-> force searchsorted+neighbors
+
+    Returns:
+      out: float32 array (N_test_structures, N_points, 4)
+           [:,:,0] = relative_structure_index
+           [:,:,1] = nearest z-slice INDEX (stored as float32)
+           [:,:,2] = nearest z VALUE
+           [:,:,3] = out-of-bounds flag (1/0)
+      methods_used: list[str] of length N_test_structures with "broadcast" or "searchsorted"
+    """
+    import numpy as np
+    import cupy as cp
+
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
+    out = np.empty((num_test_structures, num_points_per_trial, 4), dtype=np.float32)
+    methods_used = []
+
+    # helper: chunked broadcast+argmin for a single (S,P)
+    def _broadcast_chunked(zvals_cp, pts_cp):
+        S = zvals_cp.size
+        P = pts_cp.size
+        free_mem, _ = cp.cuda.runtime.memGetInfo()
+        free_mem = int(free_mem * vram_safety)
+
+        # temp per chunk ≈ S*chunk*sizeof(float32)
+        bytes_per_elem = 4  # float32
+        denom = max(bytes_per_elem * max(S, 1), 1)
+        max_chunk = max(1, int(free_mem // denom))
+        max_chunk = min(P, max_chunk)
+
+        parts_idx = []
+        for start in range(0, P, max_chunk):
+            end = min(P, start + max_chunk)
+            z_diffs = cp.abs(zvals_cp[:, None] - pts_cp[None, start:end])  # (S, chunk)
+            parts_idx.append(cp.argmin(z_diffs, axis=0))
+            del z_diffs
+        idx_cp = cp.concatenate(parts_idx, axis=0)
+        vals_cp = zvals_cp[idx_cp]
+        return idx_cp, vals_cp
+
+    # helper: searchsorted method
+    def _searchsorted(zvals_cp, pts_cp, zvals_sorted_known=True):
+        if zvals_sorted_known:
+            idx_insert = cp.searchsorted(zvals_cp, pts_cp, side='left')
+            i0 = cp.clip(idx_insert - 1, 0, zvals_cp.size - 1)
+            i1 = cp.clip(idx_insert,       0, zvals_cp.size - 1)
+            choose_right = cp.abs(zvals_cp[i1] - pts_cp) < cp.abs(pts_cp - zvals_cp[i0])
+            idx_cp = cp.where(choose_right, i1, i0)
+            vals_cp = zvals_cp[idx_cp]
+            return idx_cp, vals_cp
+        else:
+            order = cp.argsort(zvals_cp)
+            zs = zvals_cp[order]
+            idx_insert = cp.searchsorted(zs, pts_cp, side='left')
+            i0 = cp.clip(idx_insert - 1, 0, zs.size - 1)
+            i1 = cp.clip(idx_insert,       0, zs.size - 1)
+            choose_right = cp.abs(zs[i1] - pts_cp) < cp.abs(pts_cp - zs[i0])
+            nearest_sorted = cp.where(choose_right, i1, i0)
+            idx_cp = order[nearest_sorted]
+            vals_cp = zvals_cp[idx_cp]
+            return idx_cp, vals_cp
+
+    for test_structure_index, relative_structure_index in enumerate(test_struct_to_relative_struct_1d_mapping_array):
+        zvals = np.asarray(
+            relative_structures_list_of_zvals_1d_arrays_or_lists[relative_structure_index],
+            dtype=dtype
+        )
+        pts_z = np.asarray(points_to_test_3d_arr[test_structure_index, :, 2], dtype=dtype)
+        S = zvals.size
+        P = pts_z.size
+
+        # device
+        zvals_cp = cp.asarray(zvals)
+        pts_cp   = cp.asarray(pts_z)
+
+        # determine method
+        if use_method == "broadcast":
+            method = "broadcast"
+        elif use_method == "searchsorted":
+            method = "searchsorted"
+        else:  # auto
+            # Estimate temp for full broadcast: S*P*4 bytes (float32), conservative ×1.2 in threshold
+            full_temp = int(S) * int(P) * 4
+            free_mem, _ = cp.cuda.runtime.memGetInfo()
+            method = "searchsorted" if (full_temp > prefer_searchsorted_over * free_mem) else "broadcast"
+
+        # choose path
+        if method == "broadcast":
+            idx_cp, vals_cp = _broadcast_chunked(zvals_cp, pts_cp)
+        else:
+            z_sorted_known = bool(np.all(zvals[1:] >= zvals[:-1])) if S > 1 else True
+            idx_cp, vals_cp = _searchsorted(zvals_cp, pts_cp, z_sorted_known)
+
+        # back to host
+        nearest_idx = cp.asnumpy(idx_cp).astype(np.float32)
+        nearest_val = cp.asnumpy(vals_cp).astype(np.float32)
+
+        # OOB flags on host (same as before)
+        mn = float(np.min(zvals)) if S else np.inf
+        mx = float(np.max(zvals)) if S else -np.inf
+        oob = ((pts_z < mn) | (pts_z > mx)).astype(np.float32)
+
+        out[test_structure_index, :, 0] = np.float32(relative_structure_index)
+        out[test_structure_index, :, 1] = nearest_idx
+        out[test_structure_index, :, 2] = nearest_val
+        out[test_structure_index, :, 3] = oob
+
+        methods_used.append(method)
+
+    return out, methods_used
+
+
+
+
 ## Also very slow compared to nearest_zslice_vals_and_indices_all_structures_3d_point_arr for large arrays points_to_test_3d_arr.shape = (1750,10000,3)
 def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver3(
     relative_structures_list_of_zvals_1d_arrays, 

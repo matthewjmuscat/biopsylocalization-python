@@ -7874,7 +7874,8 @@ def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplot
                                                                                  patient_sp_output_figures_dir_dict,
                                                                                  general_plot_name_string,
                                                                                  col_name_str_prefix,
-                                                                                 output_dataframe_str):
+                                                                                 output_dataframe_str,
+                                                                                 max_background_gray_sims=100):
     # plotting function
     def plot_quantile_regression_and_more_corrected(df, col_name_str, patientUID, bx_id):
         plt.ioff()
@@ -7929,9 +7930,11 @@ def production_plot_axial_mr_distribution_quantile_regression_by_patient_matplot
         perform_and_plot_kernel_regression(z_vals, mean_doses, x_range, 'Mean', 'orange')
 
         num_mc_trials_plus_nom = df['MC trial num'].nunique()
+        # take smaller of max_background_gray_sims and num_mc_trials_plus_nom
+        num_trials_to_plot = min(max_background_gray_sims, num_mc_trials_plus_nom)
 
         # Line plot for each trial
-        for trial in range(1,num_mc_trials_plus_nom):
+        for trial in range(1,num_trials_to_plot):
             df_sp_trial = df[df["MC trial num"] == trial].sort_values(by='Z (Bx frame)') # sorting is to make sure that the lines are drawn properly
             df_z_simple = df_sp_trial.drop_duplicates(subset=['Z (Bx frame)'], keep='first') # remove points that have the same z value so that the line plots look better
             plt.plot(df_z_simple['Z (Bx frame)'], df_z_simple[col_name_str], color='grey', alpha=0.1, linewidth=1, zorder = 0.9)  # 'linewidth' controls the thickness of the line, zorder puts these lines below the fill betweens!

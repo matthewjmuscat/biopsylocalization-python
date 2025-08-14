@@ -2173,9 +2173,58 @@ def test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_struc
     else:
         # Step 5: Find the nearest z slices for every point (3d array input)   
         #nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
+        """
+        st = time.time()
         nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver4(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
+        et= time.time()
+        print(f"ver4 took {et-st:.2f}")
+        """
+        #st = time.time()
+        nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver5(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
+        #et= time.time()
+        #print(f"ver5 took {et-st:.2f}")
+        """
+        # exact match (only works if no float rounding differences)
+        exact_equal = np.array_equal(nearest_zslice_index_and_values_3d_arr,
+                                    nearest_zslice_index_and_values_3d_arr_alt)
+
+        # tolerant match (recommended for float comparisons)
+        tolerant_equal = np.allclose(nearest_zslice_index_and_values_3d_arr,
+                                    nearest_zslice_index_and_values_3d_arr_alt,
+                                    rtol=1e-5, atol=1e-8, equal_nan=True)
+
+
+        st = time.time()
+        nearest_zslice_index_and_values_3d_arr_alt_alt, methods_used = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver7(
+                relative_structures_list_of_zvals_1d_arrays,
+                points_to_test_3d_arr_or_list_of_2d_arrays,
+                test_struct_to_relative_struct_1d_mapping_array,
+                prefer_searchsorted_over=0.75,   # if estimated temp > this fraction of free VRAM -> use searchsorted
+                vram_safety=0.6,                 # when chunking, use only this fraction of free VRAM
+                dtype=np.float32,
+                use_method="auto"                # "auto" | "broadcast" | "searchsorted"
+            )
         
-        
+        et= time.time()
+        print(f"ver7 took {et-st:.2f}")
+
+        # exact match (only works if no float rounding differences)
+        exact_equal = np.array_equal(nearest_zslice_index_and_values_3d_arr,
+                                    nearest_zslice_index_and_values_3d_arr_alt_alt)
+
+        # tolerant match (recommended for float comparisons)
+        tolerant_equal = np.allclose(nearest_zslice_index_and_values_3d_arr,
+                                    nearest_zslice_index_and_values_3d_arr_alt_alt,
+                                    rtol=1e-5, atol=1e-8, equal_nan=True)
+
+        print(f"Exact equal: {exact_equal}")
+        print(f"Tolerant equal: {tolerant_equal}")
+
+        print(f"Methods used in ver7: {methods_used}")
+
+        print('test')
+        """
+
         return nearest_zslice_index_and_values_3d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, stacked_structures_stacked_slices_2d_arr_1, stacked_structures_stacked_slices_indices_2d_arr_2, stacked_structures_stacked_slices_indices_2d_arr_3, stacked_structures_stacked_slices_indices_indices_2d_arr_4
     
 
@@ -2699,7 +2748,72 @@ def create_containment_results_dataframe_type_2II(structure_info,
 
 
 
+def create_containment_results_dataframe_type_2III(structure_info, 
+                                         nearest_zslice_index_and_values_3d_arr, 
+                                         test_points_array, 
+                                         result_cp_arr,
+                                         convert_to_categorical_and_downcast = True,
+                                         do_not_convert_column_names_to_categorical = [],
+                                         float_dtype = np.float32,
+                                         int_dtype = np.int32,
+                                         associated_value_str="MR ADC value",
+                                         minimalize_dataframe = True):
+    """
+    Create a DataFrame to keep track of the containment results. This one is meant to handle two 3d array inputs.
+    
+    Parameters:
+    - structure_info: List containing relative structure information.
+    - nearest_zslice_index_and_values_3d_arr: 3d array of the nearest z values and their indices for each biopsy point.
+    - test_points_array: 3d array of test points.
+    - result_cp_arr: Array indicating whether each point is inside the corresponding polygon.
+    - float_dtype: The float data type to use for the DataFrame.
+    - int_dtype: The integer data type to use for the DataFrame.
+    
+    Returns:
+    - containment_results_df: DataFrame containing the containment results.
+    """
+    
+    # Flatten the input arrays for easier processing
+    if not minimalize_dataframe:
+        flat_nearest_zslices_vals_arr = nearest_zslice_index_and_values_3d_arr[:, :, 2].flatten()
+        flat_nearest_zslices_indices_arr = nearest_zslice_index_and_values_3d_arr[:, :, 1].flatten()
+    flat_test_points_array = test_points_array.reshape(-1, 4)
+    flat_result_cp_arr = result_cp_arr.get().flatten()
+    
+    # Create RGB color arrays based on the containment results
+    pt_clr_r = np.where(flat_result_cp_arr, 0., 1.)  # Red for false
+    pt_clr_g = np.where(flat_result_cp_arr, 1., 0.)  # Green for true
+    pt_clr_b = np.zeros_like(pt_clr_r)  # Blue is always 0
+    
+    # Create a dictionary to store the results
+    results_dictionary = {
+        "Relative structure ROI": [structure_info['Structure ID']] * len(flat_result_cp_arr),
+        "Relative structure type": [structure_info['Struct ref type']] * len(flat_result_cp_arr),
+        "Relative structure index": np.full(len(flat_result_cp_arr), [structure_info['Index number']]).astype(int_dtype),
+        "Pt contained bool": flat_result_cp_arr,
+        "Pt clr R": pt_clr_r.astype(float_dtype),
+        "Pt clr G": pt_clr_g.astype(float_dtype),
+        "Pt clr B": pt_clr_b.astype(float_dtype),
+        "Test pt X": flat_test_points_array[:, 0].astype(float_dtype),
+        "Test pt Y": flat_test_points_array[:, 1].astype(float_dtype),
+        "Test pt Z": flat_test_points_array[:, 2].astype(float_dtype),
+        "Test pt index": np.tile(np.arange(test_points_array.shape[1]), test_points_array.shape[0]),
+        associated_value_str: flat_test_points_array[:, 3].astype(float_dtype)  # Assuming the 4th column contains the associated value
+    }
 
+    # Add optional columns only if minimalize_dataframe is False
+    if not minimalize_dataframe:
+        results_dictionary["Nearest zslice zval"] = flat_nearest_zslices_vals_arr.astype(float_dtype)
+        results_dictionary["Nearest zslice index"] = flat_nearest_zslices_indices_arr.astype(int_dtype)
+    
+    containment_results_df = pd.DataFrame(results_dictionary)
+
+    if convert_to_categorical_and_downcast:
+        containment_results_df = dataframe_builders.convert_columns_to_categorical_and_downcast(containment_results_df, 
+                                                                                            threshold=0.25, 
+                                                                                            do_not_convert_column_names_to_categorical = do_not_convert_column_names_to_categorical)
+
+    return containment_results_df
 
 
 

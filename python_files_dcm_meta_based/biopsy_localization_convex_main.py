@@ -95,7 +95,7 @@ import cProfile
 import pstats
 import io
 from line_profiler import LineProfiler
-
+import mr_localizers
 
 def main():
     
@@ -576,12 +576,14 @@ def main():
 
     # MRs
     show_3d_mr_adc_renderings = False
-    show_3d_mr_adc_renderings_thresholded = True
+    show_3d_mr_adc_renderings_thresholded = False
     show_NN_mr_adc_demonstration_plots = False # this shows one trial at a time!!
-    show_NN_mr_adc_demonstration_plots_all_trials_at_once = True # nice because shows all trials at once
+    show_NN_mr_adc_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
+    demonstrate_mr_adc_pcd_containment_correctness_bool = False # This shows the containment results for the MR ADC point cloud within prostate, which is generated from the MR ADC image
+    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool = False # This shows the containment results for the MR ADC point cloud within prostate ONLY, ie urethra , DIL and rectum points have been removed
     
     # Combined
-    show_processed_3d_datasets_renderings = True
+    show_processed_3d_datasets_renderings = False
     show_processed_3d_datasets_renderings_plotly_dict = {"Plot": False, # If false then the rest of the options are irrelevant
                                                          "SS Scatter": True,
                                                          "SS Contour": True,
@@ -1529,7 +1531,7 @@ def main():
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num cases"])+" patients.", live_display)  
                 live_display.refresh()
 
-
+                #live_display.stop()
                 ### Check if there are more than one ADC MRs for each patient:
                 mr_adc_units = None 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
@@ -1948,6 +1950,7 @@ def main():
                         patients_progress.stop_task(processing_patients_dose_task)
                         completed_progress.stop_task(processing_patients_dose_task_completed)
                         stopwatch.stop()
+                        print(f"MR ADC render: {patientUID}")
                         plotting_funcs.plot_geometries(mr_adc_point_cloud)
                         stopwatch.start()
                         patients_progress.start_task(processing_patients_dose_task)
@@ -1960,6 +1963,7 @@ def main():
                         patients_progress.stop_task(processing_patients_dose_task)
                         completed_progress.stop_task(processing_patients_dose_task_completed)
                         stopwatch.stop()
+                        print(f"MR ADC render (tresholded): {patientUID}")
                         plotting_funcs.plot_geometries(thresholded_mr_adc_point_cloud)
                         stopwatch.start()
                         patients_progress.start_task(processing_patients_dose_task)
@@ -1990,7 +1994,7 @@ def main():
                 """
 
 
-
+                #live_display.stop()
                 patientUID_default = "Initializing"
                 pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
                 pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
@@ -2165,8 +2169,6 @@ def main():
                 ### PREPROCESSING OARs
 
 
-                live_display.start()
-
                 patientUID_default = "Initializing"
                 processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID_default)
                 processing_patients_task_completed_main_description = "[green]Processing patient prostates"
@@ -2319,10 +2321,92 @@ def main():
                         ###### END INTERPOLATE STRUCTURE
 
 
+                        
+
+                        ### COMPUTE MR STATISTICS
+                        
+                        if mr_adc_ref in pydicom_item:
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            ###
+
+                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                mr_adc_ref,
+                                filter_out_negatives = True)
+
+                            # Prepare data
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            mr_adc_value_column_name_str = "MR ADC value"
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                zslices_list,
+                                                                structure_info,
+                                                                constant_z_slice_polygons_handler_option, 
+                                                                remove_consecutive_duplicate_points_in_polygons,
+                                                                custom_cuda_kernel_type,
+                                                                associated_value_str = mr_adc_value_column_name_str)
 
 
+                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                    "Test pt X", 
+                                                    "Test pt Y", 
+                                                    "Test pt Z",
+                                                    "Pt clr R",
+                                                    "Pt clr G",
+                                                    "Pt clr B",
+                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
 
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            ###
 
+                            # Create a summary statistics dataframe of the column 
+                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                                                                                                    mr_adc_value_column_name_str,
+                                                                                                                                    filter_column="Pt contained bool", 
+                                                                                                                                    filter_value=True)
+                            
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                            ###
+
+                            # Keep track and store onky the points that are contained within the prostate (stored at end of loop)
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true = containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True]                                                                                                        
+                            
+                            # Store it in the master dict 
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true
+                            
+                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
+                            
+                            # if the following dataframe already exists, then merge the above with it by appending rows
+                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                            
+                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                    mr_adc_value_summary_statistics_specific_structure],
+                                                                                                    ignore_index = True)
+                                # Store the dataframe
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                            
+                            # if the following dataframe does not exist, then store the above dataframe
+                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                # Store the dataframe if it does not exist
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                        
+                        ###### END COMPUTE MR STATISTICS
 
 
                         ### CALCULATE THE STRUCTURES VOLUME
@@ -2740,14 +2824,110 @@ def main():
                         
 
 
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                        ### COMPUTE MR STATISTICS
+                        
+                        if mr_adc_ref in pydicom_item:
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            ###
+
+                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                mr_adc_ref,
+                                filter_out_negatives = True)
+
+                            # Prepare data
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            mr_adc_value_column_name_str = "MR ADC value"
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                zslices_list,
+                                                                structure_info,
+                                                                constant_z_slice_polygons_handler_option, 
+                                                                remove_consecutive_duplicate_points_in_polygons,
+                                                                custom_cuda_kernel_type,
+                                                                associated_value_str = mr_adc_value_column_name_str)
+
+
+                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                    "Test pt X", 
+                                                    "Test pt Y", 
+                                                    "Test pt Z",
+                                                    "Pt clr R",
+                                                    "Pt clr G",
+                                                    "Pt clr B",
+                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            ###
+
+                            # Create a summary statistics dataframe of the column 
+                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                                                                                                    mr_adc_value_column_name_str,
+                                                                                                                                    filter_column="Pt contained bool", 
+                                                                                                                                    filter_value=True)
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                            ###
+                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                            # Retrieve
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                                      
+                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                index_col= "Test pt index",
+                                                flag_col= "Pt contained bool",
+                                                keep_unmatched = True
+                                            )
+                            
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+
+                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
+                            
+                            # if the following dataframe already exists, then merge the above with it by appending rows
+                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                            
+                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                    mr_adc_value_summary_statistics_specific_structure],
+                                                                                                    ignore_index = True)
+                                # Store the dataframe
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                            
+                            # if the following dataframe does not exist, then store the above dataframe
+                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                # Store the dataframe if it does not exist
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                        
+                        ###### END COMPUTE MR STATISTICS
+
+
+
+
 
                         ### CALCULATE THE STRUCTURES VOLUME
                         ###
                         indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
                         ###
                                 
-                        
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+  
                         interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
                         interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
                         zslices_list = interslice_interpolation_information.interpolated_pts_list
@@ -3113,13 +3293,110 @@ def main():
                         
 
 
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+
+
+                        ### COMPUTE MR STATISTICS
+                        
+                        if mr_adc_ref in pydicom_item:
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            ###
+
+                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                mr_adc_ref,
+                                filter_out_negatives = True)
+
+                            # Prepare data
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            mr_adc_value_column_name_str = "MR ADC value"
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                zslices_list,
+                                                                structure_info,
+                                                                constant_z_slice_polygons_handler_option, 
+                                                                remove_consecutive_duplicate_points_in_polygons,
+                                                                custom_cuda_kernel_type,
+                                                                associated_value_str = mr_adc_value_column_name_str)
+
+
+                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                    "Test pt X", 
+                                                    "Test pt Y", 
+                                                    "Test pt Z",
+                                                    "Pt clr R",
+                                                    "Pt clr G",
+                                                    "Pt clr B",
+                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            ###
+
+                            # Create a summary statistics dataframe of the column 
+                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                                                                                                    mr_adc_value_column_name_str,
+                                                                                                                                    filter_column="Pt contained bool", 
+                                                                                                                                    filter_value=True)
+                            
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                            ###
+                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                            # Retrieve
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                                      
+                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                index_col= "Test pt index",
+                                                flag_col= "Pt contained bool",
+                                                keep_unmatched = True
+                                            )
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
+                            
+                            # if the following dataframe already exists, then merge the above with it by appending rows
+                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                            
+                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                    mr_adc_value_summary_statistics_specific_structure],
+                                                                                                    ignore_index = True)
+                                # Store the dataframe
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                            
+                            # if the following dataframe does not exist, then store the above dataframe
+                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                # Store the dataframe if it does not exist
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                        
+                        ###### END COMPUTE MR STATISTICS
+
+
+
+                        
 
                         ### CALCULATE THE STRUCTURES VOLUME
                         ###
                         indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
                         ###
-                                
+
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)  
                         
                         interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
                         interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
@@ -3340,6 +3617,7 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
+                        
 
 
                         structures_progress.update(processing_structures_task, advance=1)
@@ -3536,14 +3814,120 @@ def main():
                         
 
 
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
+
+
+                        ### COMPUTE MR STATISTICS
+                        
+                        if mr_adc_ref in pydicom_item:
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            ###
+
+                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                mr_adc_ref,
+                                filter_out_negatives = True)
+
+                            # Prepare data
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            mr_adc_value_column_name_str = "MR ADC value"
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                zslices_list,
+                                                                structure_info,
+                                                                constant_z_slice_polygons_handler_option, 
+                                                                remove_consecutive_duplicate_points_in_polygons,
+                                                                custom_cuda_kernel_type,
+                                                                associated_value_str = mr_adc_value_column_name_str)
+
+
+                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                    "Test pt X", 
+                                                    "Test pt Y", 
+                                                    "Test pt Z",
+                                                    "Pt clr R",
+                                                    "Pt clr G",
+                                                    "Pt clr B",
+                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            ###
+
+                            # Create a summary statistics dataframe of the column 
+                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                                                                                                    mr_adc_value_column_name_str,
+                                                                                                                                    filter_column="Pt contained bool", 
+                                                                                                                                    filter_value=True)
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                            ###
+                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                            # Retrieve
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                              
+                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                index_col= "Test pt index",
+                                                flag_col= "Pt contained bool",
+                                                keep_unmatched = True
+                                            )
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only                                                                                              
+
+                            
+                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
+                            
+                            # if the following dataframe already exists, then merge the above with it by appending rows
+                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                            
+                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                    mr_adc_value_summary_statistics_specific_structure],
+                                                                                                    ignore_index = True)
+                                # Store the dataframe
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                            
+                            # if the following dataframe does not exist, then store the above dataframe
+                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                # Store the dataframe if it does not exist
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                        
+                        ###### END COMPUTE MR STATISTICS
+
+
+
+
+
+
+
+
+
+
+                        
 
 
                         ### CALCULATE THE STRUCTURES VOLUME
                         ###
                         indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
                         ###
-                                
+                        
+
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
                         
                         interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
                         interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
@@ -3799,6 +4183,8 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
+
+
                         structures_progress.update(processing_structures_task, advance=1)
 
                     structures_progress.remove_task(processing_structures_task)
@@ -3806,6 +4192,145 @@ def main():
                     completed_progress.update(processing_patients_task_completed, advance=1)
                 patients_progress.update(processing_patients_task, visible=False)
                 completed_progress.update(processing_patients_task_completed,  visible=True)    
+
+
+                ### END DIL STRUCTURE PROCESSING
+
+                
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                ### CALCULATE PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
+
+                #live_display.stop()
+
+                patientUID_default = "Initializing"
+                processing_patients_task_main_description = "[red]Computing Prostate Only MR Values [{}]...".format(patientUID_default)
+                processing_patients_task_completed_main_description = "[green]Computing Prostate Only MR Values "
+                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+
+                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                    processing_patients_task_main_description = "[red]Computing Prostate Only MR Values  [{}]...".format(patientUID)
+                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                    
+                    structureID_default = "Initializing"
+                    
+                    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
+
+
+                    # include all selected structures (except dils)
+                    list_of_additional_pcds = []
+                    for _, row in sp_patient_selected_structure_info_dataframe.iterrows():
+                        struct_type = row["Struct ref type"]
+                        struct_found_bool = row["Struct found bool"]
+                        if struct_found_bool == True:
+                            struct_index = row["Index number"]
+                            interpolated_pcd_dict = pydicom_item[struct_type][struct_index]["Interpolated structure point cloud dict"]
+                            list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
+
+                    # Include the dils pointclouds as well
+                    for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
+                        interpolated_pcd_dict = specific_dil_structure["Interpolated structure point cloud dict"]
+                        list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
+
+                    ###
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Demonstrating prostate only correctness", total = None)
+                    ###
+
+                    containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+
+
+
+                    if demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool == True:
+                        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
+                                            "Test pt X", 
+                                            "Test pt Y", 
+                                            "Test pt Z",
+                                            "Pt clr R",
+                                            "Pt clr G",
+                                            "Pt clr B",
+                                            additional_point_clouds=list_of_additional_pcds)
+
+                    ###
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    ###
+                    ###
+                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR ADC statistics (Prostate - UDR)", total = None)
+                    ###
+
+                    # Create a summary statistics dataframe of the column 
+                    mr_adc_value_summary_statistics_prostate_only_excluding_UDR = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
+                                                                                                                            mr_adc_value_column_name_str,
+                                                                                                                            filter_column="Pt contained bool", 
+                                                                                                                            filter_value=True,
+                                                                                                                            id_cols=("Relative structure ROI", "Relative structure type", "Relative structure index"),
+                                                                                                                            id_values=("Prostate_excluding_UDR", "custom_P-UDR", 0))
+
+                    
+
+                    # if the following dataframe already exists, then merge the above with it by appending rows
+                    if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                    
+                        mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                        mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                            mr_adc_value_summary_statistics_prostate_only_excluding_UDR],
+                                                                                            ignore_index = True)
+                        # Store the dataframe
+                        master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                    
+                    # if the following dataframe does not exist, then store the above dataframe
+                    elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                        # Store the dataframe if it does not exist
+                        master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_prostate_only_excluding_UDR
+
+
+                    ###
+                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    ###
+
+                    patients_progress.update(processing_patients_task, advance=1)
+                    completed_progress.update(processing_patients_task_completed, advance=1)
+                patients_progress.update(processing_patients_task, visible=False)
+                completed_progress.update(processing_patients_task_completed,  visible=True)   
+
+                ### END CALCULATING PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
+
+
+
+
+
+                
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4509,6 +5034,28 @@ def main():
                 #    del pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe"]
 
                 #####DONE##### PERFORM BIOPSY DIL OPTIMIZATION
+
+                
+
+
+
+
+                
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
                 #live_display.stop()
@@ -10362,7 +10909,9 @@ def structure_referencer(data_removals_dict_bx,
                                                                                   "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": None,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": None,
-                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None},    
+                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None,
+                                                                                  "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
+                                                                                  "MR - ADC - summary statistics by structure dataframe": None},    
                         "Multi-structure MC simulation output dataframes dict": {"All MC structure transformation values": None,
                                                                                  "Tissue class - Global tissue class statistics": None,
                                                                                  "Tissue class - Global tissue by structure statistics": None,
@@ -10573,6 +11122,9 @@ def structure_referencer(data_removals_dict_bx,
                         (mr_adc_ref_subdict["Image position patient (all slices)"], np.array(mr_adc_item.ImagePositionPatient))
                     )
                     mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
+
+                pass
+        pass
 
         master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
 
