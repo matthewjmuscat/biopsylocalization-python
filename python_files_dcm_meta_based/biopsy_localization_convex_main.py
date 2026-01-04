@@ -412,8 +412,8 @@ def main():
     # MC parameters
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
-    bx_sample_pts_lattice_spacing = 0.5
-    num_MC_containment_simulations_input = 10
+    bx_sample_pts_lattice_spacing = 1
+    num_MC_containment_simulations_input = 10000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
     num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
@@ -485,16 +485,19 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_optimal_dil'}
                             }
-    simulated_biopsy_length_method = 'real normal' # can be 'full' (ie. 19mm), 'real normal' (samples from a normal distribution with mu=real_mean, std = real_std) or 'real mean' (all sim biopsy lengths are equal to real_mean)
+    simulated_biopsy_length_method = 'match real'   # can be 'full' (ie. 19mm), 
+                                                    #'real normal' (samples from a normal distribution with mu=real_mean, std = real_std), 
+                                                    # 'real mean' (all sim biopsy lengths are equal to real_mean),
+                                                    # 'match real' (each sim biopsy length is equal to the real biopsy length for the same DIL the real biopsy was targetting, if there is more than one real biopsy targetting that dil it takes the mean of them for the simulated biopsy, and if no real biopsy targetted that dil it takes the mean of all biopsies)
     color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)'}
     biopsy_pcd_colors_dict = {'Real': np.array([0.5, 0.0, 0.5]), centroid_dil_sim_key: np.array([1.0, 0.55, 0.0]), optimal_dil_sim_key: np.array([0.0, 0.8, 0.6])} # real: purple, centroid: deep orange, optimal: light teal
 
@@ -585,7 +588,7 @@ def main():
     # Combined
     show_processed_3d_datasets_renderings = False
     show_processed_3d_datasets_renderings_plotly_dict = {"Plot": False, # If false then the rest of the options are irrelevant
-                                                         "SS Scatter": True,
+                                                         "SS Scatter": False,
                                                          "SS Contour": True,
                                                          "Dosimetric render mode": "volume", # can be "volume" or "scatter"
                                                          "Dosimetric dose log scale": True, # If false then its linear
@@ -1096,6 +1099,8 @@ def main():
                                                                 "Cohort: Tissue class - distances global results": None,
                                                                 "Cohort: Tissue class - distances pt-wise results": None,
                                                                 "Cohort: Tissue class - distances voxel-wise results": None,
+                                                                "Cohort: Per sample point prostate double sextant classification": None,
+                                                                "Cohort: Per voxel prostate double sextant classification": None,
                                                                 "Cohort: Bx DVH metrics": None,
                                                                 "Cohort: Bx DVH metrics (generalized)": None,
                                                                 "Cohort: Bx global info dataframe": None,
@@ -2620,6 +2625,7 @@ def main():
                         # Create dataframe of the 3d shape features
                         shape_features_3d_dictionary = {"Patient ID": [patientUID],
                                                         "Structure ID": [structureID],
+                                                        "Structure index": [specific_structure_index],
                                                         "Structure type": [structs],
                                                         "Structure refnum": [structure_reference_number],
                                                         "Volume": [structure_volume],
@@ -3094,6 +3100,7 @@ def main():
                         # Create dataframe of the 3d shape features
                         shape_features_3d_dictionary = {"Patient ID": [patientUID],
                                                         "Structure ID": [structureID],
+                                                        "Structure index": [specific_structure_index],
                                                         "Structure type": [structs],
                                                         "Structure refnum": [structure_reference_number],
                                                         "Volume": [structure_volume],
@@ -3564,6 +3571,7 @@ def main():
                         # Create dataframe of the 3d shape features
                         shape_features_3d_dictionary = {"Patient ID": [patientUID],
                                                         "Structure ID": [structureID],
+                                                        "Structure index": [specific_structure_index],
                                                         "Structure type": [structs],
                                                         "Structure refnum": [structure_reference_number],
                                                         "Volume": [structure_volume],
@@ -4122,6 +4130,7 @@ def main():
                         # Create dataframe of the 3d shape features
                         shape_features_3d_dictionary = {"Patient ID": [patientUID],
                                                         "Structure ID": [structureID],
+                                                        "Structure index": [specific_structure_index],
                                                         "Structure type": [structs],
                                                         "Structure refnum": [structure_reference_number],
                                                         "Volume": [structure_volume],
@@ -4231,79 +4240,86 @@ def main():
                     patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
                     
                     structureID_default = "Initializing"
+
+                    if mr_adc_ref in pydicom_item:
                     
-                    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
+                        sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
 
 
-                    # include all selected structures (except dils)
-                    list_of_additional_pcds = []
-                    for _, row in sp_patient_selected_structure_info_dataframe.iterrows():
-                        struct_type = row["Struct ref type"]
-                        struct_found_bool = row["Struct found bool"]
-                        if struct_found_bool == True:
-                            struct_index = row["Index number"]
-                            interpolated_pcd_dict = pydicom_item[struct_type][struct_index]["Interpolated structure point cloud dict"]
+                        # include all selected structures (except dils)
+                        list_of_additional_pcds = []
+                        for _, row in sp_patient_selected_structure_info_dataframe.iterrows():
+                            struct_type = row["Struct ref type"]
+                            struct_found_bool = row["Struct found bool"]
+                            if struct_found_bool == True:
+                                struct_index = row["Index number"]
+                                interpolated_pcd_dict = pydicom_item[struct_type][struct_index]["Interpolated structure point cloud dict"]
+                                list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
+
+                        # Include the dils pointclouds as well
+                        for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
+                            interpolated_pcd_dict = specific_dil_structure["Interpolated structure point cloud dict"]
                             list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
 
-                    # Include the dils pointclouds as well
-                    for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                        interpolated_pcd_dict = specific_dil_structure["Interpolated structure point cloud dict"]
-                        list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Demonstrating prostate only correctness", total = None)
+                        ###
 
-                    ###
-                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Demonstrating prostate only correctness", total = None)
-                    ###
-
-                    containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+                        containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
 
 
 
-                    if demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool == True:
-                        plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
-                                            "Test pt X", 
-                                            "Test pt Y", 
-                                            "Test pt Z",
-                                            "Pt clr R",
-                                            "Pt clr G",
-                                            "Pt clr B",
-                                            additional_point_clouds=list_of_additional_pcds)
+                        if demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool == True:
+                            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
+                                                "Test pt X", 
+                                                "Test pt Y", 
+                                                "Test pt Z",
+                                                "Pt clr R",
+                                                "Pt clr G",
+                                                "Pt clr B",
+                                                additional_point_clouds=list_of_additional_pcds)
 
-                    ###
-                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                    ###
-                    ###
-                    indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR ADC statistics (Prostate - UDR)", total = None)
-                    ###
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR ADC statistics (Prostate - UDR)", total = None)
+                        ###
 
-                    # Create a summary statistics dataframe of the column 
-                    mr_adc_value_summary_statistics_prostate_only_excluding_UDR = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
-                                                                                                                            mr_adc_value_column_name_str,
-                                                                                                                            filter_column="Pt contained bool", 
-                                                                                                                            filter_value=True,
-                                                                                                                            id_cols=("Relative structure ROI", "Relative structure type", "Relative structure index"),
-                                                                                                                            id_values=("Prostate_excluding_UDR", "custom_P-UDR", 0))
+                        # Create a summary statistics dataframe of the column 
+                        mr_adc_value_summary_statistics_prostate_only_excluding_UDR = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
+                                                                                                                                mr_adc_value_column_name_str,
+                                                                                                                                filter_column="Pt contained bool", 
+                                                                                                                                filter_value=True,
+                                                                                                                                id_cols=("Relative structure ROI", "Relative structure type", "Relative structure index"),
+                                                                                                                                id_values=("Prostate_excluding_UDR", "custom_P-UDR", 0))
 
-                    
+                        
 
-                    # if the following dataframe already exists, then merge the above with it by appending rows
-                    if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                    
-                        mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                        mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                            mr_adc_value_summary_statistics_prostate_only_excluding_UDR],
-                                                                                            ignore_index = True)
-                        # Store the dataframe
-                        master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                    
-                    # if the following dataframe does not exist, then store the above dataframe
-                    elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                        # Store the dataframe if it does not exist
-                        master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_prostate_only_excluding_UDR
+                        # if the following dataframe already exists, then merge the above with it by appending rows
+                        if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                        
+                            mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                            mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                mr_adc_value_summary_statistics_prostate_only_excluding_UDR],
+                                                                                                ignore_index = True)
+                            # Store the dataframe
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                        
+                        # if the following dataframe does not exist, then store the above dataframe
+                        elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                            # Store the dataframe if it does not exist
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_prostate_only_excluding_UDR
 
 
-                    ###
-                    indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                    ###
+
+                        # Free up memory
+                        del containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+                        del pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+                        
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
 
                     patients_progress.update(processing_patients_task, advance=1)
                     completed_progress.update(processing_patients_task_completed, advance=1)
@@ -5420,6 +5436,12 @@ def main():
                 processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
 
                 real_biopsy_lengths_list = []
+
+
+                # NEW: real lengths per patient, per DIL Ref #
+                # real_bx_lengths_by_dil[patientUID][dil_refnum] = [len1, len2, ...]
+                real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
+
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
                     patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
@@ -5428,13 +5450,44 @@ def main():
                     num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
                     processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
                     processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_bx_structs_patient_specific)
+
+
+                    # Pre-compute DIL centroids for this patient (keyed by DIL Ref #)
+                    dil_centroids_by_ref = {}
+                    if dil_ref in pydicom_item:
+                        for specific_dil_structure in pydicom_item[dil_ref]:
+                            dil_refnum = specific_dil_structure["Ref #"]
+                            dil_centroid = np.array(
+                                specific_dil_structure["Structure global centroid"]
+                            ).reshape(3)
+                            dil_centroids_by_ref[dil_refnum] = dil_centroid
+
+
                     
                     for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
                         simulated_bool = specific_structure["Simulated bool"]
-                        if simulated_bool == True:
-                            pass
-                        else:
-                            real_biopsy_lengths_list.append(specific_structure["Reconstructed biopsy cylinder length (from contour data)"])
+                        if not simulated_bool:
+                            # length of this real core
+                            length = specific_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                            real_biopsy_lengths_list.append(length)
+
+                            # If there are any DILs, assign this core to the nearest DIL (by centroid)
+                            if dil_centroids_by_ref:
+                                bx_centroid = np.array(
+                                    specific_structure["Structure global centroid"]
+                                ).reshape(3)
+
+                                best_refnum = None
+                                best_dist2 = None
+                                for dil_refnum, dil_centroid in dil_centroids_by_ref.items():
+                                    d2 = np.sum((bx_centroid - dil_centroid) ** 2)
+                                    if best_dist2 is None or d2 < best_dist2:
+                                        best_dist2 = d2
+                                        best_refnum = dil_refnum
+
+                                if best_refnum is not None:
+                                    real_bx_lengths_by_dil[patientUID][best_refnum].append(length)
+                        
                         
                         structures_progress.update(processing_structures_task, advance=1)
 
@@ -5507,6 +5560,22 @@ def main():
                             centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
                         elif simulated_biopsy_length_method == 'real mean':
                             centroid_sep_sim_dist = mean_of_real_biopsy_lengths/(num_centroids_for_sim_bxs-1)
+
+                        elif simulated_biopsy_length_method == 'match real':
+                            # start with global mean as a fallback
+                            biopsy_needle_sim_sampled_length = mean_of_real_biopsy_lengths
+
+                            # If this sim is relative to a DIL, try to match that DIL's real-core lengths
+                            rel_type = specific_structure["Relative structure type"]
+                            rel_refnum = specific_structure["Relative structure ref #"]
+
+                            # dil_ref is the DIL type
+                            if rel_type == dil_ref:
+                                lengths_for_this_dil = real_bx_lengths_by_dil.get(patientUID, {}).get(rel_refnum, [])
+                                if lengths_for_this_dil:
+                                    biopsy_needle_sim_sampled_length = float(np.mean(lengths_for_this_dil))
+
+                            centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1)
                         
                         threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_sim_list,
                                                                                                                 centroid_first_pos_sim_list,
@@ -6743,12 +6812,25 @@ def main():
             
             
             #st = time.time()
-        
+
+            # DEBUGGING
+            """
+            for arg in args_list:
+                _ = MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel(*arg)  # dry run to avoid pickling overhead in the parallel run
+                _ = MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired(*arg)
+            """
+
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
             sampling_points_task_indeterminate_completed = completed_progress.add_task("[green]Sampling points from all patient biopsies (parallel)", visible = False, total = master_structure_info_dict["Global"]["Num cases"])
             #parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_from_global_delaunay_convex_structure_parallel, args_list)
-            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel, args_list)
+            
+            # This function doesnt put a central line along the biopsy major axis, nor does it align with the beginning of the biopsy structure!
+            #parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel, args_list)
+
+            # This one fixes the above issues and samples nicely
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired, args_list)
+
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)
             completed_progress.update(sampling_points_task_indeterminate_completed, advance = master_structure_info_dict["Global"]["Num cases"], visible = True, refresh = True)
@@ -6789,7 +6871,6 @@ def main():
                 axis_aligned_bounding_box.color = bounding_box_color_arr
 
                 # update master dict 
-                
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts arr"] = sampled_bx_pts_arr
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Random uniformly sampled volume pts pcd"] = sampled_bx_points_from_global_delaunay_point_cloud
                 master_structure_reference_dict[temp_patient_UID][temp_structure_type][temp_specific_structure_index]["Bounding box for random uniformly sampled volume pts"] = axis_aligned_bounding_box
@@ -6815,6 +6896,7 @@ def main():
             live_display.refresh()
 
 
+            #live_display.stop()
             patientUID_default = "Initializing"
             processing_patient_rotating_bx_main_description = "Creating biopsy oriented coordinate system [{}]...".format(patientUID_default)
             processing_patients_task = patients_progress.add_task("[red]"+processing_patient_rotating_bx_main_description, total = master_structure_info_dict["Global"]["Num cases"])
@@ -6938,6 +7020,117 @@ def main():
 
 
 
+            live_display.stop()
+
+
+            ### DETERMINE THE DOUBLE SEXTANT POSITION OF EVERY VOXEL IN EACH BIOPSY WITHIN RESPECTIVE PROSTATE
+
+            all_biopsies_per_sample_point_double_sextant_prostate_location_df = pandas.DataFrame()
+            for patientUID,pydicom_item in master_structure_reference_dict.items():
+                for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
+                    simulated_type = specific_structure["Simulated type"]
+                    simulated_bool = specific_structure["Simulated bool"]
+                    bx_refnum = specific_structure["Ref #"]
+
+                    specific_bx_structure_roi = specific_structure["ROI"]
+                    sampled_bx_points_arr = specific_structure["Random uniformly sampled volume pts arr"]
+                    bx_points_bx_coords_sys_arr = specific_structure["Random uniformly sampled volume pts bx coord sys arr"] 
+
+                    n_pts = len(sampled_bx_points_arr)
+
+                    biopsy_per_voxel_double_sextant_df = pandas.DataFrame({
+                        "Patient ID": [patientUID] * n_pts,
+                        "Structure type": [bx_ref] * n_pts,
+                        "Bx index": [specific_structure_index] * n_pts,
+                        "Bx ID": [specific_bx_structure_roi] * n_pts,
+                        "Simulated type": [simulated_type] * n_pts,
+                        "Simulated bool": [simulated_bool] * n_pts,
+                        "Bx refnum": [bx_refnum] * n_pts,
+                        "Original pt index": list(range(n_pts)),
+                        "X (global)": [pt[0] for pt in sampled_bx_points_arr],
+                        "Y (global)": [pt[1] for pt in sampled_bx_points_arr],
+                        "Z (global)": [pt[2] for pt in sampled_bx_points_arr],
+                    })
+
+
+                    biopsy_per_voxel_double_sextant_with_bx_frame_coords_df = misc_tools.include_vector_columns_in_dataframe(biopsy_per_voxel_double_sextant_df, 
+                                                                                            bx_points_bx_coords_sys_arr, 
+                                                                                            reference_column_name = 'Original pt index', 
+                                                                                            new_column_name_x = "X (Bx frame)", 
+                                                                                            new_column_name_y = "Y (Bx frame)", 
+                                                                                            new_column_name_z = "Z (Bx frame)",
+                                                                                            in_place = False)
+
+                    reference_dimension_col_name = "Z (Bx frame)"
+                    biopsy_per_voxel_double_sextant_with_bx_frame_coords_and_voxel_index_df = dataframe_builders.add_voxel_columns_helper_func(biopsy_per_voxel_double_sextant_with_bx_frame_coords_df, 
+                                                                                                                                biopsy_z_voxel_length, 
+                                                                                                                                reference_dimension_col_name, 
+                                                                                                                                in_place = False)
+
+
+
+
+                    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
+
+                    specific_prostate_info_df = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref]
+                    selected_prostate_info = specific_prostate_info_df.to_dict('records')[0]
+
+                    prostate_found_bool = selected_prostate_info["Struct found bool"]
+
+                    if prostate_found_bool:
+                        prostate_structure_index = selected_prostate_info["Index number"]
+                        prostate_structure = pydicom_item[oar_ref][prostate_structure_index]
+
+                        biopsy_per_voxel_double_sextant_with_sextants_df = misc_tools.classify_voxels_in_prostate_frame_sextant(
+                            biopsy_per_voxel_double_sextant_with_bx_frame_coords_and_voxel_index_df,
+                            prostate_structure=prostate_structure,
+                            global_coord_cols=("X (global)", "Y (global)", "Z (global)"),
+                            lr_col="Bx voxel prostate sextant (LR)",
+                            ap_col="Bx voxel prostate sextant (AP)",
+                            si_col="Bx voxel prostate sextant (SI)",
+                        ) 
+
+                        
+                    else:
+                        # no prostate found – fill sextants with None
+                        biopsy_per_voxel_double_sextant_with_sextants_df = (
+                            biopsy_per_voxel_double_sextant_with_bx_frame_coords_and_voxel_index_df.copy()
+                        )
+                        biopsy_per_voxel_double_sextant_with_sextants_df["Bx voxel prostate sextant (LR)"] = None
+                        biopsy_per_voxel_double_sextant_with_sextants_df["Bx voxel prostate sextant (AP)"] = None
+                        biopsy_per_voxel_double_sextant_with_sextants_df["Bx voxel prostate sextant (SI)"] = None
+                        
+
+
+                    all_biopsies_per_sample_point_double_sextant_prostate_location_df = pandas.concat(
+                        [
+                            all_biopsies_per_sample_point_double_sextant_prostate_location_df,
+                            biopsy_per_voxel_double_sextant_with_sextants_df,
+                        ],
+                        ignore_index=True,
+                    )
+
+
+            all_biopsies_per_voxel_double_sextant_prostate_location_df = (
+                all_biopsies_per_sample_point_double_sextant_prostate_location_df
+                .groupby(
+                    ["Patient ID", "Bx ID", "Bx index", "Voxel index", "Simulated type", "Simulated bool", "Bx refnum"],  # add Bx refnum if needed
+                    as_index=False
+                )
+                .agg({
+                    "Bx voxel prostate sextant (LR)": misc_tools.majority_with_random_tie,
+                    "Bx voxel prostate sextant (AP)": misc_tools.majority_with_random_tie,
+                    "Bx voxel prostate sextant (SI)": misc_tools.majority_with_random_tie,
+                })
+            )
+            
+            master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Per sample point prostate double sextant classification"] = all_biopsies_per_sample_point_double_sextant_prostate_location_df
+            master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Per voxel prostate double sextant classification"] = all_biopsies_per_voxel_double_sextant_prostate_location_df
+
+
+
+
+            live_display.start()
 
 
             ### UNCERTAINTIES 
@@ -8003,6 +8196,7 @@ def main():
 
                 
                 # DVH metrics new and improved!
+                ### WARNING I THINK THESE DVH METRIC CALCULATIONS ARE INCORRECT! LETS JUST NOT CALC THEM IN THIS ALGO AT ALL!
                 st = time.time()
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 7", total = None)
                 cohort_all_bx_dvh_metric_generalized_dataframe = dataframe_builders.dvh_metrics_calculator_and_dataframe_builder_cohort(master_structure_reference_dict,

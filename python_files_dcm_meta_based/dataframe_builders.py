@@ -1,5 +1,6 @@
 import numpy as np
 import pandas 
+import pandas as pd
 import csv
 import math
 import math_funcs as mf
@@ -1523,7 +1524,7 @@ def dose_NxD_array_to_dataframe_helper_function_generalized_v2(dose_arr,dose_gra
     return df
 
 ### THIS FUNCTION HELPS THE ABOVE DOSE DSITRIBUTION CREATOR DF BY ADDING VOXEL COLUMNS TO THE DATAFRAME!
-def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension_col_name, in_place=False):
+def add_voxel_columns_helper_func_old(df, biopsy_z_voxel_length, reference_dimension_col_name, in_place=False):
     """
     Adds voxel-related columns to a DataFrame based on a reference dimension column.
     
@@ -1555,6 +1556,50 @@ def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension
     df.loc[df['Voxel end (Z)'] > max_z, 'Voxel end (Z)'] = max_z
 
     return df
+
+
+
+
+def add_voxel_columns_helper_func(df, biopsy_z_voxel_length, reference_dimension_col_name, in_place=False, tol=None):
+    out = df if in_place else df.copy()
+
+    if reference_dimension_col_name not in out.columns:
+        raise ValueError(f"Column {reference_dimension_col_name} does not exist in the DataFrame.")
+
+    L = float(biopsy_z_voxel_length)
+    if L <= 0:
+        raise ValueError("biopsy_z_voxel_length must be > 0")
+
+    z = pd.to_numeric(out[reference_dimension_col_name], errors="raise").to_numpy(dtype=float)
+
+    if tol is None:
+        tol = L * 1e-6
+
+    # Optional but recommended: snap to grid since your sampler intends exact 1mm planes
+    z_snap = np.round(z / L) * L
+
+    # Boundary-goes-up rule, robustly:
+    # nextafter pushes exact boundaries upward by 1 ulp, so z=5.0 bins as just above 5.0
+    z_eff = np.nextafter(z_snap, np.inf)
+
+    k = np.floor(z_eff / L).astype(np.int64)  # 0-based bin index
+    k = np.maximum(k, 0)  # guard tiny negative zeros
+
+    out["Voxel index"] = k + 1  # 1-based like you currently use
+    out["Voxel begin (Z)"] = (k * L).astype(float)
+    out["Voxel end (Z)"] = ((k + 1) * L).astype(float)
+
+    # If you really want the last voxel end clipped for reporting, do it safely:
+    max_z = float(z_snap.max())
+    on_boundary = abs((max_z / L) - round(max_z / L)) <= (tol / L)
+    if not on_boundary:
+        k_max = int(k.max())
+        out.loc[k == k_max, "Voxel end (Z)"] = max_z
+
+    return out
+
+
+
 
 
 def global_dosimetry_values_dataframe_builder(master_structure_reference_dict,

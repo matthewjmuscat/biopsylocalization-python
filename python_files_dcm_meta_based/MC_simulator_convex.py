@@ -1615,7 +1615,7 @@ def simulator_parallel(parallel_pool,
                                                                                                                               in_place = False)
                 
 
-
+                #live_display.stop()
 
 
                 # Point wise
@@ -4454,6 +4454,215 @@ def grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel(gr
     bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(bx_samples_arr_within_bx, bx_samples_arr_point_cloud_color)
     
     return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, num_bx_sample_pts_after_exclusions, {"Patient UID": patientUID, "Structure type": structure_type, "Specific structure index": specific_structure_index}
+
+
+
+
+
+def grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired_old(
+        grid_separation_distance,
+        delaunay_global_convex_structure_tri,
+        reconstructed_bx_arr,
+        patientUID,
+        structure_type,
+        specific_structure_index,
+        z_axis_to_centroid_vec_rotation_matrix
+):
+    """
+    Sample a cubic lattice around the biopsy structure, aligned with its axis.
+
+    Assumes:
+        - z_axis_to_centroid_vec_rotation_matrix (R) maps local z-axis to the
+          biopsy axis in global coordinates (i.e. local -> global rotation).
+    """
+
+    # --- 1. Biopsy point cloud & AABB (for return/debug) ----------------------
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    reconstructed_bx_point_cloud.paint_uniform_color(np.array([0.0, 0.0, 1.0]))
+
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+    axis_aligned_bounding_box.color = np.array([0.0, 0.0, 0.0], dtype=float)
+
+    # --- 2. Go to local "biopsy frame" ----------------------------------------
+    # R: local -> global. For global -> local we use R.T (orthonormal rotation).
+    R = z_axis_to_centroid_vec_rotation_matrix
+    bx_centroid = reconstructed_bx_point_cloud.get_center()
+
+    # Shift to centroid then rotate into local frame
+    reconstructed_bx_local = (R.T @ (reconstructed_bx_arr - bx_centroid).T).T  # (N, 3)
+
+    # --- 3. Define radial (x,y) extents in local coords ----------------------
+    # Radius in the transverse plane (local x-y) plus one grid step margin.
+    radial_r = np.sqrt(reconstructed_bx_local[:, 0]**2 + reconstructed_bx_local[:, 1]**2).max()
+    radial_r += grid_separation_distance
+
+    # We want an ODD number of samples in x and y so that x=0, y=0 is included.
+    half_nx = int(np.ceil(radial_r / grid_separation_distance))
+    half_ny = int(np.ceil(radial_r / grid_separation_distance))
+
+    num_x = 2 * half_nx + 1  # guaranteed odd
+    num_y = 2 * half_ny + 1  # guaranteed odd
+
+    xs = np.arange(-half_nx, half_nx + 1, dtype=float) * grid_separation_distance
+    ys = np.arange(-half_ny, half_ny + 1, dtype=float) * grid_separation_distance
+
+    # --- 4. Axial (z) extents in local coords --------------------------------
+    # Cover the whole biopsy along its axis, with a margin.
+    min_z = reconstructed_bx_local[:, 2].min() - grid_separation_distance
+    max_z = reconstructed_bx_local[:, 2].max() + grid_separation_distance
+    length_z = max_z - min_z
+
+    num_z = int(np.ceil(length_z / grid_separation_distance)) + 1
+    # Optional: also enforce odd number of z-planes so there is a central plane.
+    if num_z % 2 == 0:
+        num_z += 1
+
+    zs = min_z + np.arange(num_z, dtype=float) * grid_separation_distance
+
+    # --- 5. Build full 3D cubic lattice in local coords ----------------------
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    bx_samples_arr_unrotated = np.column_stack(
+        (X.ravel(), Y.ravel(), Z.ravel())
+    )  # (N_samples, 3) in LOCAL frame
+
+    # --- 6. Rotate lattice back to GLOBAL coords -----------------------------
+    # bx_samples_arr_rotated == final grid in global frame
+    bx_samples_arr = (R @ bx_samples_arr_unrotated.T).T + bx_centroid
+
+    # --- 7. Debug point clouds (optional) ------------------------------------
+    grid_sample_final_pcd = point_containment_tools.create_point_cloud(bx_samples_arr)
+    grid_sample_final_pcd.paint_uniform_color(np.array([1.0, 0.0, 1.0]))
+
+    grid_sample_nonrotated_pcd = point_containment_tools.create_point_cloud(bx_samples_arr_unrotated)
+    grid_sample_nonrotated_pcd.paint_uniform_color(np.array([0.0, 1.0, 0.0]))
+
+    # If you want to visualize:
+    # plotting_funcs.plot_geometries(
+    #     grid_sample_final_pcd,
+    #     reconstructed_bx_point_cloud,
+    # )
+
+    # --- 8. Containment test in GLOBAL frame ---------------------------------
+    passed_indices = []
+    for idx, pt in enumerate(bx_samples_arr):
+        if point_containment_tools.convex_bx_structure_global_test_point_containment(
+            delaunay_global_convex_structure_tri, pt
+        ):
+            passed_indices.append(idx)
+
+    passed_indices = np.asarray(passed_indices, dtype=int)
+
+    if passed_indices.size > 0:
+        bx_samples_arr_within_bx = bx_samples_arr[passed_indices]
+    else:
+        bx_samples_arr_within_bx = np.empty((0, 3), dtype=float)
+
+    num_bx_sample_pts_after_exclusions = bx_samples_arr_within_bx.shape[0]
+
+    # Optional: point cloud of contained samples
+    if num_bx_sample_pts_after_exclusions > 0:
+        bx_samples_arr_point_cloud_color = np.random.uniform(0.0, 0.7, size=3)
+        bx_samples_arr_point_cloud = point_containment_tools.create_point_cloud(
+            bx_samples_arr_within_bx, bx_samples_arr_point_cloud_color
+        )
+    else:
+        bx_samples_arr_point_cloud = None  # not used in return, just for debugging
+
+    metadata = {
+        "Patient UID": patientUID,
+        "Structure type": structure_type,
+        "Specific structure index": specific_structure_index,
+    }
+
+    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, num_bx_sample_pts_after_exclusions, metadata
+
+
+
+
+
+def grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired(
+        grid_separation_distance,
+        delaunay_global_convex_structure_tri,
+        reconstructed_bx_arr,
+        patientUID,
+        structure_type,
+        specific_structure_index,
+        z_axis_to_centroid_vec_rotation_matrix
+):
+    # --- Setup
+    step = grid_separation_distance
+    R = z_axis_to_centroid_vec_rotation_matrix
+
+    reconstructed_bx_point_cloud = point_containment_tools.create_point_cloud(reconstructed_bx_arr)
+    bx_centroid = reconstructed_bx_point_cloud.get_center()
+
+    axis_aligned_bounding_box = reconstructed_bx_point_cloud.get_axis_aligned_bounding_box()
+    axis_aligned_bounding_box_points_arr = np.asarray(axis_aligned_bounding_box.get_box_points())
+
+    # Axis direction in global coords (local +z mapped to global)
+    u = R[:, 2].astype(float)
+    u /= np.linalg.norm(u)
+
+    # --- Compute apex ON the axis line (through centroid)
+    t = reconstructed_bx_arr @ u
+    t_min = float(t.min())
+    origin_on_axis = bx_centroid + u * (t_min - float(bx_centroid @ u))
+
+    # --- Local coords relative to axis-apex origin
+    reconstructed_bx_local = (R.T @ (reconstructed_bx_arr - origin_on_axis).T).T
+
+    # --- Radial extents in local x/y
+    radial_r = np.sqrt(reconstructed_bx_local[:, 0]**2 + reconstructed_bx_local[:, 1]**2).max() + step
+    half_nx = int(np.ceil(radial_r / step))
+    half_ny = int(np.ceil(radial_r / step))
+
+    xs = (np.arange(-half_nx, half_nx + 1, dtype=np.int64) * step).astype(float)
+    ys = (np.arange(-half_ny, half_ny + 1, dtype=np.int64) * step).astype(float)
+
+    # --- Axial z planes starting at 0 (apex plane) using integer indexing
+    z_max = reconstructed_bx_local[:, 2].max() + step
+    k_max = int(np.ceil(z_max / step))
+    zs = (np.arange(0, k_max + 1, dtype=np.int64) * step).astype(float)
+
+    # --- Lattice in local coords
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    bx_samples_local = np.column_stack((X.ravel(), Y.ravel(), Z.ravel()))
+
+    # --- Transform back to global using origin_on_axis
+    bx_samples_global = (R @ bx_samples_local.T).T + origin_on_axis
+
+    # --- Containment test (optional nudge to avoid boundary exclusion)
+    eps = 1e-4  # mm (set to 0.0 if you don't want it)
+    passed = []
+    for idx, pt in enumerate(bx_samples_global):
+        pt_test = pt + eps * u
+        if point_containment_tools.convex_bx_structure_global_test_point_containment(
+            delaunay_global_convex_structure_tri, pt_test
+        ):
+            passed.append(idx)
+
+    passed = np.asarray(passed, dtype=int)
+    bx_samples_arr_within_bx = bx_samples_global[passed] if passed.size else np.empty((0, 3), dtype=float)
+
+    metadata = {
+        "Patient UID": patientUID,
+        "Structure type": structure_type,
+        "Specific structure index": specific_structure_index,
+    }
+
+    return bx_samples_arr_within_bx, axis_aligned_bounding_box_points_arr, bx_samples_arr_within_bx.shape[0], metadata
+
+
+
+
+
+
+
+
+
+
+
 
 
 def generate_cubic_lattice(distance, sizex,sizey,sizez,origin):

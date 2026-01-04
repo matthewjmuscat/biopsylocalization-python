@@ -22,6 +22,8 @@ import re
 import copy
 import gc
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+import pandas as pd 
+
 
 def checkdirs(live_display, important_info, *paths):
     created_a_dir = False
@@ -688,6 +690,116 @@ def bx_position_classifier_in_prostate_frame_sextant(bx_vec_in_prostate_frame,
 
 
 
+
+
+def classify_voxels_in_prostate_frame_sextant(
+        voxel_df: pd.DataFrame,
+        prostate_structure: dict,
+        global_coord_cols: tuple[str, str, str] = ("X (global)", "Y (global)", "Z (global)"),
+        lr_col: str = "Voxel sextant LR",
+        ap_col: str = "Voxel sextant AP",
+        si_col: str = "Voxel sextant SI",
+    ) -> pd.DataFrame:
+    """
+    Classify each voxel in a biopsy into prostate double sextant based on
+    its global position relative to the prostate centroid.
+
+    Parameters
+    ----------
+    voxel_df
+        DataFrame with at least X/Y/Z global coordinate columns for each
+        sampled point or voxel of the biopsy.
+    prostate_structure
+        The prostate structure dict from `pydicom_item[oar_ref][index]`,
+        expected to contain:
+          - 'Structure global centroid' (3-vector)
+          - 'Structure dimension at centroid dict' with key
+            'Z dimension length at centroid'.
+    global_coord_cols
+        Names of the columns in `voxel_df` that contain the global
+        coordinates (X, Y, Z).
+    lr_col, ap_col, si_col
+        Names of the new columns to create for Left/Right,
+        Anterior/Posterior, and Superior/Inferior sextant labels.
+
+    Returns
+    -------
+    out_df : pd.DataFrame
+        Copy of `voxel_df` with three additional columns:
+          - lr_col
+          - ap_col
+          - si_col
+    """
+
+    # Pull prostate centroid and Z length
+    prostate_centroid = np.asarray(
+        prostate_structure["Structure global centroid"]
+    ).reshape(3)
+
+    dim_dict = prostate_structure["Structure dimension at centroid dict"]
+    z_len = float(dim_dict["Z dimension length at centroid"])
+
+    # distance_to_midgland_threshold is one sixth of the total z length
+    distance_to_midgland_threshold = abs(z_len / 6.0)
+
+    # Extract voxel global coordinates
+    x_col, y_col, z_col = global_coord_cols
+    coords = voxel_df[[x_col, y_col, z_col]].to_numpy()
+
+    # Vector from prostate centroid to voxel in prostate frame
+    rel = coords - prostate_centroid[None, :]
+    vx = rel[:, 0]
+    vy = rel[:, 1]
+    vz = rel[:, 2]
+
+    # Left / Right
+    lr = np.where(vx >= 0, "Left", "Right")
+
+    # Anterior / Posterior
+    ap = np.where(vy >= 0, "Posterior", "Anterior")
+
+    # Superior / Inferior (Apex/Mid/Base)
+    si = np.empty_like(vz, dtype=object)
+    si[vz > distance_to_midgland_threshold] = "Base (Superior)"
+    mid_mask = (vz >= -distance_to_midgland_threshold) & (vz <= distance_to_midgland_threshold)
+    si[mid_mask] = "Mid"
+    si[vz < -distance_to_midgland_threshold] = "Apex (Inferior)"
+
+    out = voxel_df.copy()
+    out[lr_col] = lr
+    out[ap_col] = ap
+    out[si_col] = si
+
+    return out
+
+
+
+def majority_with_random_tie(s: pd.Series):
+    """
+    Majority vote with random tie-breaking.
+
+    - Ignores NaNs.
+    - Returns the value with the highest frequency.
+    - If multiple values share the highest frequency, choose one at random.
+    - Returns None if all values are NaN.
+    """
+    s = s.dropna()
+    if s.empty:
+        return None
+
+    counts = s.value_counts()
+    max_count = counts.max()
+
+    # All labels that reach the maximum frequency
+    top_labels = counts[counts == max_count].index.to_numpy()
+
+    if len(top_labels) == 1:
+        # unique majority
+        return top_labels[0]
+    else:
+        # tie: pick one of the modes at random
+        return np.random.choice(top_labels)
+
 def specific_structure_selector(pydicom_item,
                       ref_type,
                       contour_name_string_list):
@@ -1182,7 +1294,7 @@ def include_vector_columns_in_dataframe(df,
     """
     
     if not in_place:
-        df = copy.deepcopy(df)  # Make a copy of the DataFrame if not modifying in place
+        df = copy.copy(df)  # Make a copy of the DataFrame if not modifying in place
 
     # Check if the reference column is in the DataFrame
     if reference_column_name not in df.columns:
