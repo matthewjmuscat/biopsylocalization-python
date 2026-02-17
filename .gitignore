@@ -1,15 +1,21 @@
 # .vscode was initially created for the json file that is used for debugging
-.vscode
+.vscode/
 .VSCodeCounter/
+python_files_data_structure_based/
+open3d_views_jsons/
+my-lib/
+Junk/
+cuda_containment_logs/
+__pycache__/
 figures
 .python-version
 .bashrc.swp
-**/cuda_containment_logs/
 # Ignore Python bytecode and cache folders
-__pycache__/
 *.pyc
-**/__pycache__/
-**/*.pyc
 *.png
 *.json
 *.gif
+
+
+
+

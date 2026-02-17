@@ -1,8 +1,0 @@
-To generate a JSON to use a preset view angle and location within open3d visualizer. 
-
-This is done for instance to capture screenshots of various generations of similar images in order to create an animation (gif) from a consistent position in space.
-
-1. Open up a particular image you want to capture in an open3d visualizer window
-2. Use the mouse controls in the visualizer to position the camera where you want to capture images from
-3. Press the 'p' key, this will capture a screenshot as well as the JSON file used to position the camera in that position
-4. Put the JSON file in the appropriate folder and change the input code to specify that particular JSON to read for the viewing angle.
