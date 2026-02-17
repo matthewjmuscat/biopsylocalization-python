@@ -4756,10 +4756,94 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                             svg_image_scale,
                                             svg_image_width,
                                             svg_image_height,
-                                            general_plot_name_string
+                                            general_plot_name_string,
+                                            biopsy_needle_tip_length,
+                                            save_formats=None,
+                                            axis_title_font_size=None,
+                                            axis_tick_font_size=None,
+                                            legend_font_size=None,
+                                            annotation_font_size=None,
+                                            distance_annotation_font_size=None,
+                                            fire_annotation_font_size=None,
+                                            colorbar_tick_font_size=None,
+                                            template_label_font_size=None,
+                                            colorbar_title_font_size=None,
+                                            fire_annotation_style="hockey",
+                                            fire_table_position="auto",
+                                            draw_orientation_diagram=True,
+                                            show_titles=True,
                                             ):
     
     
+    if save_formats is None:
+        save_formats = ["svg", "html"]
+
+    # Slightly larger default fonts (overrideable via args)
+    axis_title_font_size = axis_title_font_size or 16
+    axis_tick_font_size = axis_tick_font_size or 14
+    legend_font_size = legend_font_size or 14
+    annotation_font_size = annotation_font_size or 14
+    distance_annotation_font_size = distance_annotation_font_size or 14
+    fire_annotation_font_size = fire_annotation_font_size or 16
+    colorbar_tick_font_size = colorbar_tick_font_size or 14
+    template_label_font_size = template_label_font_size or 12
+    colorbar_title_font_size = colorbar_title_font_size or 12
+
+    def _apply_font_sizes(fig):
+        # Axes
+        fig.update_layout(
+            xaxis_title_font=dict(size=axis_title_font_size),
+            yaxis_title_font=dict(size=axis_title_font_size),
+            legend=dict(font=dict(size=legend_font_size),
+                        bordercolor="black",
+                        borderwidth=1,
+                        bgcolor="rgba(255,255,255,0.8)")
+        )
+        fig.update_xaxes(tickfont=dict(size=axis_tick_font_size))
+        fig.update_yaxes(tickfont=dict(size=axis_tick_font_size))
+
+        # Colorbars
+        for trace in fig.data:
+            if hasattr(trace, "colorbar") and trace.colorbar:
+                trace.update(colorbar=dict(tickfont=dict(size=colorbar_tick_font_size)))
+            if getattr(trace, "type", None) == "table":
+                header_height = max(30, fire_annotation_font_size + 12)
+                cell_height = max(26, fire_annotation_font_size + 10)
+                trace.update(
+                    header=dict(font=dict(size=fire_annotation_font_size, color="black"), height=header_height),
+                    cells=dict(font=dict(size=max(8, fire_annotation_font_size - 1), color="black"), height=cell_height)
+                )
+
+        # Annotations
+        if fig.layout.annotations:
+            for ann in fig.layout.annotations:
+                text = ann.text or ""
+                if "Fire pos" in text:
+                    ann.update(font=dict(size=fire_annotation_font_size))
+                elif ("Prostate base" in text) or ("Prostate apex" in text) or ("distance" in text) or ("Distance" in text):
+                    ann.update(font=dict(size=distance_annotation_font_size))
+                elif "Containment proportion" in text:
+                    ann.update(font=dict(size=colorbar_title_font_size))
+                else:
+                    ann.update(font=dict(size=annotation_font_size))
+
+    # Shared saver to avoid duplicated format-handling logic between planes
+    def _save_contour_plot(contour_plot, dil_id, suffix):
+        if not show_titles:
+            contour_plot.update_layout(title=None)
+        _apply_font_sizes(contour_plot)
+        base_name = f"{dil_id} - {general_plot_name_string} - {suffix}"
+        for fmt in save_formats:
+            fmt_lower = fmt.lower()
+            if fmt_lower in ["svg", "pdf", "png", "jpg", "jpeg", "webp"]:
+                file_path = patient_sp_output_figures_dir.joinpath(f"{base_name}.{fmt_lower}")
+                contour_plot.write_image(file_path, scale=svg_image_scale, width=svg_image_width, height=svg_image_height)
+            elif fmt_lower == "html":
+                file_path = patient_sp_output_figures_dir.joinpath(f"{base_name}.html")
+                contour_plot.write_html(file_path)
+            else:
+                warnings.warn(f"Unsupported save format '{fmt}' requested; skipping.")
+
     trus_plane_sagittal_contour_plot_list_of_dicts, transverse_contour_plot_list_of_dicts = advanced_guidance_map_creator.create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot(patientUID,
                                                                                     pydicom_item,
                                                                                     dil_ref,
@@ -4776,31 +4860,23 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                                                                     max_nn_for_normals_estimation,
                                                                                     important_info,
                                                                                     live_display,
-                                                                                    transducer_plane_grid_spacing = 2)
+                                                                                    biopsy_needle_tip_length,
+                                                                                    transducer_plane_grid_spacing = 2,
+                                                                                    template_label_font_size = template_label_font_size,
+                                                                                    draw_orientation_diagram = draw_orientation_diagram,
+                                                                                    colorbar_title_font_size = colorbar_title_font_size,
+                                                                                    fire_annotation_style = fire_annotation_style,
+                                                                                    fire_table_position = fire_table_position)
     
     for contour_plot_dict in trus_plane_sagittal_contour_plot_list_of_dicts:
         dil_id = contour_plot_dict["DIL ID"]
         contour_plot = contour_plot_dict["Contour plot"]
-        
-        svg_dose_fig_name = f"{dil_id} - {general_plot_name_string} - TRUS plane MAX sagittal.svg"
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        contour_plot.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
-
-        html_dose_fig_name = f"{dil_id} - {general_plot_name_string} - TRUS plane MAX sagittal.html"
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        contour_plot.write_html(html_dose_fig_file_path)
+        _save_contour_plot(contour_plot, dil_id, "TRUS plane MAX sagittal")
 
     for contour_plot_dict in transverse_contour_plot_list_of_dicts:
         dil_id = contour_plot_dict["DIL ID"]
         contour_plot = contour_plot_dict["Contour plot"]
-        
-        svg_dose_fig_name = f"{dil_id} - {general_plot_name_string} - Transverse plane MAX.svg"
-        svg_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(svg_dose_fig_name)
-        contour_plot.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height)
-
-        html_dose_fig_name = f"{dil_id} - {general_plot_name_string} - Transverse plane MAX.html"
-        html_dose_fig_file_path = patient_sp_output_figures_dir.joinpath(html_dose_fig_name)
-        contour_plot.write_html(html_dose_fig_file_path)
+        _save_contour_plot(contour_plot, dil_id, "Transverse plane MAX")
 
 
 

@@ -1579,7 +1579,7 @@ def simulator_parallel(parallel_pool,
 
 
 
-
+                #live_display.stop()
 
 
                 ### DISTANCES TO BOUNDARY AND CENTROIDS COMPILE
@@ -1619,13 +1619,13 @@ def simulator_parallel(parallel_pool,
 
 
                 # Point wise
-                distances_point_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Bx index', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Original pt index',"X (Bx frame)","Y (Bx frame)","Z (Bx frame)", 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
+                distances_point_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Bx index', 'Simulated bool', 'Simulated type', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Original pt index',"X (Bx frame)","Y (Bx frame)","Z (Bx frame)", 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
                 distances_point_wise_grand_all_structures_pandas_dataframe.reset_index(inplace=True)
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim compiled distances point-wise dataframe"] = distances_point_wise_grand_all_structures_pandas_dataframe
                 
                 # Voxel wise
-                distances_voxel_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Bx index', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
+                distances_voxel_wise_grand_all_structures_pandas_dataframe = containment_info_grand_all_structures_pandas_dataframe_with_vector_and_voxel_cols.groupby(['Patient ID', 'Bx ID', 'Bx index', 'Simulated bool', 'Simulated type', 'Relative structure ROI', 'Relative structure type', 'Relative structure index', 'Voxel index', 'Voxel begin (Z)', 'Voxel end (Z)'])[['Struct. boundary NN dist.', 'Dist. from struct. centroid', 'Dist. from struct. centroid X', 'Dist. from struct. centroid Y', 'Dist. from struct. centroid Z']].describe(percentiles=[0.05,0.25,0.5,0.75,0.95])
                 distances_voxel_wise_grand_all_structures_pandas_dataframe.reset_index(inplace=True)
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: MC sim compiled distances voxel-wise dataframe"] = distances_voxel_wise_grand_all_structures_pandas_dataframe

@@ -1,5 +1,6 @@
 # .vscode was initially created for the json file that is used for debugging
-.vscode 
+.vscode
+.VSCodeCounter/
 figures
 .python-version
 .bashrc.swp
@@ -10,3 +11,4 @@ __pycache__/
 **/__pycache__/
 **/*.pyc
 *.png
+*.json

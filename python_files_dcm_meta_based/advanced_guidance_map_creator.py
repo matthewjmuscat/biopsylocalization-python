@@ -15,7 +15,8 @@ import point_containment_tools
 import plotting_funcs
 import copy
 import misc_tools
-
+import math
+import warnings
 
 def normal_vector(p1, p2, p3):
     v1 = p2 - p1
@@ -289,7 +290,7 @@ def transform_grid_and_point_for_plotting(grid_df, normal, sp_dil_optimal_coordi
     return grid_df, transformed_optimal_point, rotation_matrix
 
 
-def plot_transformed_contour(df):
+def plot_transformed_contour(df, colorbar_title="Containment proportion", colorbar_title_font_size=12):
     # Create contour plot
     fig = go.Figure()
     fig.add_trace(go.Contour(
@@ -305,13 +306,13 @@ def plot_transformed_contour(df):
                     autocontour = False,
                     contours = go.contour.Contours(type = 'levels', showlines = True, coloring = 'heatmap', showlabels = False, size = 0.1),
                     connectgaps = False, 
-                    colorbar = go.contour.ColorBar(len = 0.5)
+                    colorbar = go.contour.ColorBar(len = 0.5, title=dict(text=colorbar_title, font=dict(size=colorbar_title_font_size)))
                 ))
     fig.update_layout(title='TRUS plane',
-                      xaxis_title='Craniocaudal axis (Sup/Inf) [mm]', yaxis_title='Frontal/Anteroposterior axis (Post/Ant) [mm]')
+                      xaxis_title='Craniocaudal axis Z\' (Sup/Inf) [mm]', yaxis_title='Frontal/Anteroposterior axis Y\' (Post/Ant) [mm]')
     return fig
 
-def plot_transverse_contour(fig_input, df):
+def plot_transverse_contour(fig_input, df, colorbar_title="Containment proportion", colorbar_title_font_size=12):
     # Create contour plot
     fig = fig_input
     fig.add_trace(go.Contour(
@@ -327,10 +328,10 @@ def plot_transverse_contour(fig_input, df):
                     autocontour = False,
                     contours = go.contour.Contours(type = 'levels', showlines = True, coloring = 'heatmap', showlabels = False, size = 0.1),
                     connectgaps = False, 
-                    colorbar = go.contour.ColorBar(len = 0.5)
+                    colorbar = go.contour.ColorBar(len = 0.5, title=dict(text=colorbar_title, font=dict(size=colorbar_title_font_size)))
                 ))
     fig.update_layout(title='Transverse (Max) plane',
-                      xaxis_title='Frontal axis (Right/Left) [mm]', yaxis_title='Anteroposterior axis (Post/Ant) [mm]')
+                      xaxis_title='Frontal axis X (Right/Left) [mm]', yaxis_title='Anteroposterior axis Y (Post/Ant) [mm]')
     return fig
 
 def add_points_to_plot(fig, points_arr, legend_name = 'Data', color = "orange", size = 10):
@@ -361,7 +362,9 @@ def add_points_to_plot_v2(fig,
                           text_box_border_color = "rgba(255, 255, 255, 0.2)",
                           font_size = 12,
                           legend_name = "Data",
-                          color_index = None):
+                          color_index = None,
+                          annotation_x_offset = 0.0,
+                          annotation_direction = "up"):
     """Add transformed base point to the plot with an appropriate label, including a 'hockey stick line'."""
     colors = ['#333333', '#FF7F50', '#008080']  # Dark charcoal gray, coral, teal
 
@@ -375,13 +378,19 @@ def add_points_to_plot_v2(fig,
     # Check if the y-axis has a defined range; if not, assume a default range
     y_axis_range = fig.layout.yaxis.range if fig.layout.yaxis.range else [0, 1]
     x_axis_range = fig.layout.xaxis.range if fig.layout.xaxis.range else [0, 1]
-    top_y = y_axis_range[1]  # Use the maximum y-value for placing text
+    top_y = y_axis_range[1]
     bottom_y = y_axis_range[0]
-    left_x = y_axis_range[0]  # Use the maximum y-value for placing text
+    left_x = y_axis_range[0]
     right_x = y_axis_range[1]
     annotation_tick_height = (top_y - bottom_y)*0.05
-    vert_line_end = top_y - (top_y - bottom_y)*0.2
-    stick_end_y = top_y-annotation_tick_height+custom_height
+    if annotation_direction == "down":
+        vert_line_end = bottom_y + (top_y - bottom_y)*0.2
+        stick_end_y = bottom_y + annotation_tick_height + custom_height
+        yanchor = 'top'
+    else:
+        vert_line_end = top_y - (top_y - bottom_y)*0.2
+        stick_end_y = top_y - annotation_tick_height + custom_height
+        yanchor = 'bottom'
     slope = abs((top_y - bottom_y)/(left_x-right_x))
 
     # Add points to the plot
@@ -397,14 +406,15 @@ def add_points_to_plot_v2(fig,
     # Loop through each point to add labels and lines
     for point in points_arr:
         x, y = point[0], point[1]
+        x_ann = x + annotation_x_offset
         #label_y = top_y + 0.02 * (top_y - y_axis_range[0])  # Offset text slightly above the top
         # Add annotation at the top
         fig.add_annotation(
-            x=(stick_end_y-(vert_line_end-slope*x))/slope, y=stick_end_y,
+            x=(stick_end_y-(vert_line_end-slope*x_ann))/slope, y=stick_end_y,
             text=text,
             showarrow=False,
             xanchor='left',  # Anchoring text to the left of the point
-            yanchor='bottom',
+            yanchor=yanchor,
             align='left',
             font=dict(
             family="Courier New, monospace",
@@ -421,8 +431,519 @@ def add_points_to_plot_v2(fig,
                       x0=x, y0=y, x1=x, y1=vert_line_end,  # Vertical line segment
                       line=dict(color=color, width=2))
         fig.add_shape(type="line",
-                      x0=x, y1=stick_end_y, x1=(stick_end_y-(vert_line_end-slope*x))/slope, y0=vert_line_end,  # Horizontal line segment
+                      x0=x, y1=stick_end_y, x1=(stick_end_y-(vert_line_end-slope*x_ann))/slope, y0=vert_line_end,  # Horizontal line segment
                       line=dict(color=color, width=2))
+
+    return fig
+
+def add_compact_fire_positions_table(fig,
+                                     fire_rows,
+                                     position='auto',
+                                     frame_label="Transducer plane frame (Z', Y')",
+                                     optimal_row=None):
+    """
+    Add a compact fire-position summary table as a single annotation.
+    If position is "auto", choose the least-crowded corner in paper space.
+    Optionally include optimal-point information in the same table.
+    """
+    if len(fire_rows) == 0:
+        return fig
+
+    def _strip_markup(text):
+        text_str = str(text)
+        for token in ["<b>", "</b>", "<br>", "<br/>", "<br />"]:
+            text_str = text_str.replace(token, "\n" if "br" in token else "")
+        return text_str
+
+    def _estimate_text_box_size(lines, font_size):
+        line_count = max(1, len(lines))
+        max_chars = max(len(line) for line in lines) if lines else 1
+        width = min(0.52, 0.08 + max_chars * font_size * 0.00075)
+        height = min(0.52, 0.03 + line_count * font_size * 0.0038)
+        return width, height
+
+    def _bbox_from_anchor(x, y, width, height, xanchor, yanchor):
+        if xanchor == "right":
+            xmin, xmax = x - width, x
+        elif xanchor == "center":
+            xmin, xmax = x - width / 2, x + width / 2
+        else:
+            xmin, xmax = x, x + width
+
+        if yanchor == "top":
+            ymin, ymax = y - height, y
+        elif yanchor == "middle":
+            ymin, ymax = y - height / 2, y + height / 2
+        else:
+            ymin, ymax = y, y + height
+        return np.array([xmin, xmax, ymin, ymax], dtype=float)
+
+    def _intersection_area(box_a, box_b):
+        x_overlap = max(0.0, min(box_a[1], box_b[1]) - max(box_a[0], box_b[0]))
+        y_overlap = max(0.0, min(box_a[3], box_b[3]) - max(box_a[2], box_b[2]))
+        return x_overlap * y_overlap
+
+    def _bbox_edge_distance(box_a, box_b):
+        dx = max(0.0, max(box_b[0] - box_a[1], box_a[0] - box_b[1]))
+        dy = max(0.0, max(box_b[2] - box_a[3], box_a[2] - box_b[3]))
+        return math.sqrt(dx * dx + dy * dy)
+
+    def _axis_name_from_ref(axis_ref, axis_letter):
+        suffix = axis_ref[1:]
+        return f"{axis_letter}axis{suffix}" if suffix else f"{axis_letter}axis"
+
+    def _axis_domain(axis_ref, axis_letter):
+        axis_obj = getattr(fig.layout, _axis_name_from_ref(axis_ref, axis_letter), None)
+        if axis_obj is not None and getattr(axis_obj, "domain", None) is not None:
+            domain = axis_obj.domain
+            return float(domain[0]), float(domain[1])
+        primary_axis = getattr(fig.layout, f"{axis_letter}axis", None)
+        if primary_axis is not None and getattr(primary_axis, "domain", None) is not None:
+            domain = primary_axis.domain
+            return float(domain[0]), float(domain[1])
+        return 0.0, 1.0
+
+    def _axis_range(axis_ref, axis_letter):
+        axis_obj = getattr(fig.layout, _axis_name_from_ref(axis_ref, axis_letter), None)
+        if axis_obj is not None and getattr(axis_obj, "range", None) is not None:
+            range_vals = axis_obj.range
+            if len(range_vals) >= 2:
+                return float(range_vals[0]), float(range_vals[1])
+
+        values = []
+        trace_axis_key = f"{axis_letter}axis"
+        trace_data_key = axis_letter
+        for tr in fig.data:
+            tr_axis_ref = getattr(tr, trace_axis_key, None) or axis_letter
+            if tr_axis_ref != axis_ref:
+                continue
+            tr_vals = getattr(tr, trace_data_key, None)
+            if tr_vals is None:
+                continue
+            tr_arr = np.asarray(tr_vals).ravel()
+            if tr_arr.size == 0:
+                continue
+            try:
+                tr_numeric = tr_arr.astype(float, copy=False)
+            except (TypeError, ValueError):
+                continue
+            numeric_vals = tr_numeric[np.isfinite(tr_numeric)]
+            if numeric_vals.size > 0:
+                values.append(numeric_vals)
+        if values:
+            merged = np.concatenate(values)
+            return float(np.min(merged)), float(np.max(merged))
+        return None
+
+    def _data_to_paper(value, axis_ref, axis_letter):
+        axis_range = _axis_range(axis_ref, axis_letter)
+        if axis_range is None:
+            return None
+        r0, r1 = axis_range
+        if abs(r1 - r0) < 1e-9:
+            rel = 0.5
+        else:
+            rel = (float(value) - r0) / (r1 - r0)
+        d0, d1 = _axis_domain(axis_ref, axis_letter)
+        return d0 + rel * (d1 - d0)
+
+    def _annotation_bbox(annotation):
+        ann_text = annotation.text or ""
+        ann_lines = _strip_markup(ann_text).split("\n")
+        ann_font_size = getattr(annotation.font, "size", None) or 12
+        ann_w, ann_h = _estimate_text_box_size(ann_lines, ann_font_size)
+
+        ann_xref = getattr(annotation, "xref", None) or "x"
+        ann_yref = getattr(annotation, "yref", None) or "y"
+        ann_x = getattr(annotation, "x", None)
+        ann_y = getattr(annotation, "y", None)
+        if ann_x is None or ann_y is None:
+            return None
+
+        if ann_xref == "paper":
+            x_paper = float(ann_x)
+        elif isinstance(ann_xref, str) and ann_xref.startswith("x"):
+            x_paper = _data_to_paper(float(ann_x), ann_xref, "x")
+        else:
+            return None
+        if ann_yref == "paper":
+            y_paper = float(ann_y)
+        elif isinstance(ann_yref, str) and ann_yref.startswith("y"):
+            y_paper = _data_to_paper(float(ann_y), ann_yref, "y")
+        else:
+            return None
+        if x_paper is None or y_paper is None:
+            return None
+
+        xanchor = getattr(annotation, "xanchor", None) or "center"
+        yanchor = getattr(annotation, "yanchor", None) or "middle"
+        if xanchor == "auto":
+            xanchor = "center"
+        if yanchor == "auto":
+            yanchor = "middle"
+        return _bbox_from_anchor(x_paper, y_paper, ann_w, ann_h, xanchor, yanchor)
+
+    def _colorbar_bbox(colorbar):
+        orientation = getattr(colorbar, "orientation", None) or "v"
+        x = float(getattr(colorbar, "x", None) if getattr(colorbar, "x", None) is not None else 1.02)
+        y = float(getattr(colorbar, "y", None) if getattr(colorbar, "y", None) is not None else 0.5)
+        bar_len = float(getattr(colorbar, "len", None) if getattr(colorbar, "len", None) is not None else 1.0)
+
+        thickness_mode = getattr(colorbar, "thicknessmode", None) or "pixels"
+        thickness_val = getattr(colorbar, "thickness", None)
+        if thickness_mode == "fraction" and thickness_val is not None:
+            thickness = float(thickness_val)
+        else:
+            thickness = 0.06
+
+        if orientation == "h":
+            width = max(0.12, min(1.0, bar_len))
+            height = max(0.03, min(0.14, thickness))
+            xanchor = getattr(colorbar, "xanchor", None) or "center"
+            yanchor = getattr(colorbar, "yanchor", None) or "middle"
+        else:
+            width = max(0.03, min(0.14, thickness))
+            height = max(0.12, min(1.0, bar_len))
+            xanchor = getattr(colorbar, "xanchor", None) or "left"
+            yanchor = getattr(colorbar, "yanchor", None) or "middle"
+        return _bbox_from_anchor(x, y, width, height, xanchor, yanchor)
+
+    def _legend_bbox():
+        if fig.layout.showlegend is False:
+            return None
+        legend = getattr(fig.layout, "legend", None)
+        if legend is None:
+            return None
+
+        x = float(getattr(legend, "x", None) if getattr(legend, "x", None) is not None else 1.02)
+        y = float(getattr(legend, "y", None) if getattr(legend, "y", None) is not None else 1.0)
+        xanchor = getattr(legend, "xanchor", None) or ("left" if x >= 0.5 else "right")
+        yanchor = getattr(legend, "yanchor", None) or ("top" if y >= 0.5 else "bottom")
+        if yanchor == "auto":
+            yanchor = "top" if y >= 0.5 else "bottom"
+
+        legend_labels = []
+        for tr in fig.data:
+            if getattr(tr, "showlegend", None) is False:
+                continue
+            trace_name = getattr(tr, "name", None)
+            if trace_name:
+                legend_labels.append(str(trace_name))
+        if not legend_labels:
+            return None
+
+        n_labels = len(legend_labels)
+        max_chars = max(len(label) for label in legend_labels)
+        legend_width = min(0.45, 0.10 + max_chars * 0.0065)
+        legend_height = min(0.75, 0.06 + n_labels * 0.035)
+        return _bbox_from_anchor(x, y, legend_width, legend_height, xanchor, yanchor)
+
+    def _collect_obstacle_bboxes():
+        obstacles = []
+        if fig.layout.annotations:
+            for ann in fig.layout.annotations:
+                ann_bbox = _annotation_bbox(ann)
+                if ann_bbox is not None:
+                    obstacles.append(ann_bbox)
+
+        legend_box = _legend_bbox()
+        if legend_box is not None:
+            obstacles.append(legend_box)
+
+        for tr in fig.data:
+            if hasattr(tr, "colorbar") and tr.colorbar:
+                obstacles.append(_colorbar_bbox(tr.colorbar))
+        return obstacles
+
+    def _collect_trace_points(max_points_per_trace=250):
+        points = []
+        for tr in fig.data:
+            x_vals = getattr(tr, "x", None)
+            y_vals = getattr(tr, "y", None)
+            if x_vals is None or y_vals is None:
+                continue
+            x_arr = np.asarray(x_vals).ravel()
+            y_arr = np.asarray(y_vals).ravel()
+            n = min(x_arr.size, y_arr.size)
+            if n == 0:
+                continue
+
+            x_ref = getattr(tr, "xaxis", None) or "x"
+            y_ref = getattr(tr, "yaxis", None) or "y"
+            stride = max(1, n // max_points_per_trace)
+            for i in range(0, n, stride):
+                x_val = x_arr[i]
+                y_val = y_arr[i]
+                try:
+                    x_paper = _data_to_paper(float(x_val), x_ref, "x")
+                    y_paper = _data_to_paper(float(y_val), y_ref, "y")
+                except (TypeError, ValueError):
+                    continue
+                if x_paper is None or y_paper is None:
+                    continue
+                if np.isfinite(x_paper) and np.isfinite(y_paper):
+                    points.append((float(x_paper), float(y_paper)))
+        return points
+
+    def _score_candidate(candidate_bbox, obstacles, points):
+        score = 0.0
+        xmin, xmax, ymin, ymax = candidate_bbox
+
+        out_of_bounds = (
+            max(0.0, -xmin) + max(0.0, xmax - 1.0) +
+            max(0.0, -ymin) + max(0.0, ymax - 1.0)
+        )
+        score += out_of_bounds * 1000.0
+
+        for obstacle in obstacles:
+            overlap = _intersection_area(candidate_bbox, obstacle)
+            if overlap > 0:
+                score += 1000.0 + overlap * 25000.0
+            else:
+                gap = _bbox_edge_distance(candidate_bbox, obstacle)
+                if gap < 0.04:
+                    score += (0.04 - gap) * 220.0
+
+        expanded = np.array([xmin - 0.01, xmax + 0.01, ymin - 0.01, ymax + 0.01], dtype=float)
+        for px, py in points:
+            if expanded[0] <= px <= expanded[1] and expanded[2] <= py <= expanded[3]:
+                score += 4.0
+
+        return score
+
+    position_settings = {
+        "top right": {"x": 0.99, "y": 0.99, "xanchor": "right", "yanchor": "top"},
+        "top left": {"x": 0.01, "y": 0.99, "xanchor": "left", "yanchor": "top"},
+        "bottom right": {"x": 0.99, "y": 0.01, "xanchor": "right", "yanchor": "bottom"},
+        "bottom left": {"x": 0.01, "y": 0.01, "xanchor": "left", "yanchor": "bottom"},
+        "middle right": {"x": 0.99, "y": 0.5, "xanchor": "right", "yanchor": "middle"},
+        "middle left": {"x": 0.01, "y": 0.5, "xanchor": "left", "yanchor": "middle"},
+        "middle top": {"x": 0.5, "y": 0.99, "xanchor": "center", "yanchor": "top"},
+        "middle bottom": {"x": 0.5, "y": 0.01, "xanchor": "center", "yanchor": "bottom"},
+    }
+    position_normalized = (position or "auto").lower()
+
+    def _fmt_or_dash(value, decimals=2):
+        try:
+            val = float(value)
+        except (TypeError, ValueError):
+            return "-"
+        if not np.isfinite(val):
+            return "-"
+        return f"{val:.{decimals}f}"
+
+    def _text_or_dash(value):
+        if value is None:
+            return "-"
+        text_val = str(value).strip()
+        return text_val if text_val else "-"
+
+    column_headers = [
+        "Type",
+        "Optimal hole",
+        "Depth (mm)",
+        "Z' (mm)",
+        "Y' (mm)",
+        "Defl (mm)",
+        "From apex (mm)",
+    ]
+
+    table_rows = []
+    for fire_index, fire_row in enumerate(fire_rows):
+        table_rows.append({
+            "Type": f"Depth setting {fire_index + 1}",
+            "Optimal hole": _text_or_dash(fire_row.get("optimal_hole")),
+            "Depth (mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
+            "Z' (mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
+            "Y' (mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
+            "Defl (mm)": _fmt_or_dash(fire_row.get("deflection"), decimals=1),
+            "From apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
+        })
+
+    if optimal_row is not None:
+        table_rows.append({
+            "Type": str(optimal_row.get("label") or "Optimal template hole"),
+            "Optimal hole": _text_or_dash(optimal_row.get("optimal_hole")),
+            "Depth (mm)": "-",
+            "Z' (mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
+            "Y' (mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
+            "Defl (mm)": "-",
+            "From apex (mm)": "-",
+        })
+
+    max_chars_per_col = []
+    for col_header in column_headers:
+        max_chars = len(col_header)
+        for row in table_rows:
+            max_chars = max(max_chars, len(str(row[col_header])))
+        max_chars_per_col.append(max_chars)
+
+    approx_char_count = sum(max_chars_per_col)
+    column_width_weights = []
+    for col_header, max_chars in zip(column_headers, max_chars_per_col):
+        width_weight = float(max(6, max_chars))
+        if col_header == "Type":
+            width_weight *= 1.35
+        elif col_header == "Optimal hole":
+            width_weight *= 1.2
+        column_width_weights.append(width_weight)
+    plot_x_min, plot_x_max = _axis_domain("x", "x")
+    plot_domain_width = max(0.01, float(plot_x_max - plot_x_min))
+    table_width = max(0.56, 0.0085 * approx_char_count)
+    table_width = min(table_width, plot_domain_width)
+    table_height = min(0.84, max(0.18, 0.10 + 0.042 * len(table_rows)))
+    if frame_label:
+        title_min_width = 0.12 + 0.0068 * len(str(frame_label))
+        table_width = max(table_width, title_min_width)
+        table_width = min(table_width, plot_domain_width)
+
+    # Reserve title band above table and include it in placement/scoring.
+    title_gap = 0.006 if frame_label else 0.0
+    title_band_height = 0.045 if frame_label else 0.0
+    total_block_height = table_height + title_gap + title_band_height
+
+    if position_normalized == "outside top center":
+        # Reserve a top band outside the plotting area and center the table in that band.
+        domain_pad = 0.01
+        domain_left = float(plot_x_min + domain_pad)
+        domain_right = float(plot_x_max - domain_pad)
+        if domain_right <= domain_left:
+            domain_left = float(plot_x_min)
+            domain_right = float(plot_x_max)
+
+        max_width_for_domain = max(0.01, domain_right - domain_left)
+        # Use the full available plot-domain width in this mode.
+        table_width = max_width_for_domain
+
+        x_center = 0.5 * (plot_x_min + plot_x_max)
+        xmin = x_center - table_width / 2.0
+        xmax = x_center + table_width / 2.0
+        if xmin < domain_left:
+            xmax += (domain_left - xmin)
+            xmin = domain_left
+        if xmax > domain_right:
+            xmin -= (xmax - domain_right)
+            xmax = domain_right
+        xmin = float(np.clip(xmin, domain_left, max(domain_left, domain_right - 0.01)))
+        xmax = float(np.clip(xmax, xmin + 0.01, domain_right))
+
+        ymax = 0.99
+        ymin = max(0.01, ymax - total_block_height)
+
+        plot_domain_top = float(np.clip(ymin - 0.01, 0.35, 0.95))
+        fig.update_layout(
+            yaxis=dict(domain=[0, plot_domain_top]),
+            yaxis2=dict(domain=[0, plot_domain_top],
+                        overlaying="y",
+                        side="right",
+                        matches="y")
+        )
+    else:
+        if position_normalized == "auto":
+            obstacles = _collect_obstacle_bboxes()
+            trace_points = _collect_trace_points()
+            candidate_names = [
+                "top left",
+                "top right",
+                "bottom left",
+                "bottom right",
+                "middle left",
+                "middle right",
+                "middle top",
+                "middle bottom",
+            ]
+            candidate_scores = []
+            for candidate_name in candidate_names:
+                candidate_settings = position_settings[candidate_name]
+                candidate_bbox = _bbox_from_anchor(candidate_settings["x"],
+                                                   candidate_settings["y"],
+                                                   table_width,
+                                                   total_block_height,
+                                                   candidate_settings["xanchor"],
+                                                   candidate_settings["yanchor"])
+                candidate_scores.append((_score_candidate(candidate_bbox, obstacles, trace_points), candidate_name))
+            candidate_scores.sort(key=lambda item: item[0])
+            pos_settings = position_settings[candidate_scores[0][1]]
+        else:
+            pos_settings = position_settings.get(position_normalized, position_settings["top left"])
+
+        block_bbox = _bbox_from_anchor(pos_settings["x"],
+                                       pos_settings["y"],
+                                       table_width,
+                                       total_block_height,
+                                       pos_settings["xanchor"],
+                                       pos_settings["yanchor"])
+        xmin, xmax, ymin, ymax = block_bbox
+        dx = 0.0
+        dy = 0.0
+        if xmin < 0.01:
+            dx = 0.01 - xmin
+        elif xmax > 0.99:
+            dx = 0.99 - xmax
+        if ymin < 0.01:
+            dy = 0.01 - ymin
+        elif ymax > 0.99:
+            dy = 0.99 - ymax
+        xmin += dx
+        xmax += dx
+        ymin += dy
+        ymax += dy
+
+        xmin = float(np.clip(xmin, 0.01, 0.98))
+        xmax = float(np.clip(xmax, xmin + 0.01, 0.99))
+        ymin = float(np.clip(ymin, 0.01, 0.98))
+        ymax = float(np.clip(ymax, ymin + 0.01, 0.99))
+
+    table_ymin = ymin
+    table_ymax = ymax - (title_gap + title_band_height)
+    table_ymax = float(np.clip(table_ymax, table_ymin + 0.01, 0.99))
+
+    table_cells_by_col = [[row[col_header] for row in table_rows] for col_header in column_headers]
+    row_fill_colors = ["rgba(255,255,255,1)" for _ in table_rows]
+    if optimal_row is not None and len(row_fill_colors) > 0:
+        row_fill_colors[-1] = "rgba(238,238,238,1)"
+    fill_colors_by_col = [row_fill_colors[:] for _ in column_headers]
+
+    # Slightly taller rows so larger publication fonts remain legible without clipping.
+    header_height = 30
+    cell_height = 26
+
+    fig.add_trace(go.Table(
+        domain=dict(x=[xmin, xmax], y=[table_ymin, table_ymax]),
+        header=dict(
+            values=[f"<b>{col_header}</b>" for col_header in column_headers],
+            align="center",
+            fill_color="rgba(255,255,255,1)",
+            line_color="black",
+            font=dict(size=11, color="black"),
+            height=header_height
+        ),
+        cells=dict(
+            values=table_cells_by_col,
+            align=["left", "center", "center", "center", "center", "center", "center"],
+            fill_color=fill_colors_by_col,
+            line_color="black",
+            font=dict(size=10, color="black"),
+            height=cell_height
+        ),
+        columnwidth=column_width_weights
+    ))
+
+    if frame_label:
+        fig.add_annotation(
+            x=(xmin + xmax) / 2.0,
+            y=(table_ymax + ymax) / 2.0,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            text=f"<b>{frame_label}</b>",
+            font=dict(size=11, color="black"),
+            xanchor="center",
+            yanchor="middle",
+            bgcolor="rgba(255,255,255,1)",
+            bordercolor="rgba(0,0,0,1)",
+            borderpad=2
+        )
 
     return fig
 
@@ -750,15 +1271,20 @@ def adjust_plot_area_and_reverse_axes(fig, points, margin=5, reverse_x = False, 
 
 def add_x_bounds_with_annotations(fig, 
                                   points, 
-                                  y_position = -0.05, 
+                                  y_position = -0.05,
+                                  x_offset = -3, 
+                                  label_yanchor = "bottom",
                                   max_x_label="Max", 
                                   min_x_label="Min", 
                                   line_color_max='black', 
                                   line_color_min='black', 
-                                  line_style_max='dash',
+                                  line_style_max='solid',
                                   line_style_min='solid', 
                                   line_width=3, 
-                                  font_color='black'):
+                                  font_color='black',
+                                  label_bg_color="rgba(255, 255, 255, 1)",
+                                  label_border_color="rgba(0, 0, 0, 1)",
+                                  label_border_pad=3):
     """
     Adds vertical lines and annotations for the minimum and maximum x-values of given points, with annotations placed below the x-axis.
 
@@ -774,48 +1300,57 @@ def add_x_bounds_with_annotations(fig,
     else:
         y_range = [0, 1]
   
-    y_min, y_max = y_range
-
     # Calculate minimum and maximum x-values
     min_x = np.min(points[:, 0])
     max_x = np.max(points[:, 0])
 
-    # Add vertical lines for min and max x-values
-    fig.add_trace(go.Scatter(
-        x=[min_x, min_x],
-        y=[y_min, y_max],
-        mode='lines',
-        line=dict(color=line_color_min, width=line_width, dash=line_style_min),
-        name=min_x_label
-    ))
-    fig.add_trace(go.Scatter(
-        x=[max_x, max_x],
-        y=[y_min, y_max],
-        mode='lines',
-        line=dict(color=line_color_max, width=line_width, dash=line_style_max),
-        name=max_x_label
-    ))
+    # Draw full-height vertical lines in axis-domain coordinates so they always span
+    # bottom-to-top of the visible plot area even if ranges/aspect are changed later.
+    fig.add_shape(
+        type="line",
+        x0=min_x, x1=min_x,
+        y0=0, y1=1,
+        xref="x", yref="y domain",
+        line=dict(color=line_color_min, width=line_width, dash=line_style_min)
+    )
+    fig.add_shape(
+        type="line",
+        x0=max_x, x1=max_x,
+        y0=0, y1=1,
+        xref="x", yref="y domain",
+        line=dict(color=line_color_max, width=line_width, dash=line_style_max)
+    )
 
-    # Add annotations for min and max x-values
+    # Label y-location as a normalized offset from the visual bottom of the axis.
+    # 0.0 is at the bottom axis boundary; negative values move below the plot area.
+    y_label = y_range[0] + y_position * (y_range[1] - y_range[0])
     fig.add_annotation(
-        x=min_x, y=y_position,
-        text=f"{min_x_label}: {min_x:.2f} mm",
+        x=min_x + x_offset, y=y_label,
+        text=f"{min_x_label}",
         showarrow=False,
-        yshift=0,  # Shift text downwards
+        xanchor="left",
+        yanchor=label_yanchor,
         xref="x",
-        yref="paper",  # Use 'paper' reference to place relative to the plot area
+        yref="y",
         textangle=0,
-        font=dict(color=font_color, size = 16)
+        font=dict(color=font_color, size = 16),
+        bgcolor=label_bg_color,
+        bordercolor=label_border_color,
+        borderpad=label_border_pad
     )
     fig.add_annotation(
-        x=max_x, y=y_position,
-        text=f"{max_x_label}: {max_x:.2f} mm",
+        x=max_x + x_offset, y=y_label,
+        text=f"{max_x_label}",
         showarrow=False,
-        yshift=0,  # Shift text downwards
+        xanchor="left",
+        yanchor=label_yanchor,
         xref="x",
-        yref="paper",  # Use 'paper' reference to place relative to the plot area
+        yref="y",
         textangle=0,
-        font=dict(color=font_color, size = 16)
+        font=dict(color=font_color, size = 16),
+        bgcolor=label_bg_color,
+        bordercolor=label_border_color,
+        borderpad=label_border_pad
     )
 
     return fig
@@ -970,7 +1505,15 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
         
 
     # Formatting the Euler angles text
-    euler_text = f"Euler Angles:<br>{euler_convention_str}<br>X: {euler_angles[0]:.1f}°<br>Y: {euler_angles[1]:.1f}°<br>Z: {euler_angles[2]:.1f}°"
+    z_angle = euler_angles[2]
+    z_dir = "CW" if z_angle > 0 else ("CCW" if z_angle < 0 else "0")
+    z_abs = abs(z_angle)
+    euler_text = (
+        f"Euler Angles:<br>{euler_convention_str}"
+        f"<br>X: {euler_angles[0]:.1f}°"
+        f"<br>Y: {euler_angles[1]:.1f}°"
+        f"<br>Z: {z_angle:.1f}° ({z_abs:.1f}° {z_dir})"
+    )
 
     # Add the text annotation to the plot
     fig.add_annotation(dict(
@@ -981,11 +1524,11 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
         font=dict(
             family="Courier New, monospace",
             size=12,
-            color="#ffffff"
+            color="black"
         ),
         align="left",
-        bgcolor="rgba(50, 50, 50, 0.8)",
-        bordercolor="rgba(255, 255, 255, 0.2)",
+        bgcolor="rgba(255, 255, 255, 1)",
+        bordercolor="rgba(0, 0, 0, 1)",
         borderpad=4,
         xanchor=pos_settings['xanchor'], yanchor=pos_settings['yanchor']
     ))
@@ -1096,7 +1639,16 @@ def add_distance_annotation(fig,
                             font_size=12,
                             padding=0.05, 
                             text_box_bg_color = "rgba(50, 50, 50, 0.8)", 
-                            text_box_border_color = "rgba(255, 255, 255, 0.2)"):
+                            text_box_border_color = "rgba(255, 255, 255, 0.2)",
+                            x_offset=0.0,
+                            start_point=None,
+                            end_point=None,
+                            segment_offset=(0.0, 0.0),
+                            line_width=2,
+                            line_dash='solid',
+                            show_text=True,
+                            show_legend=False,
+                            legend_name=None):
     """
     Adds a horizontal arrow annotated with the distance between the minimum and maximum x-values of given points.
     
@@ -1108,9 +1660,54 @@ def add_distance_annotation(fig,
         text_color (str): Color of the text.
         font_size (int): Font size of the text annotation.
     """
+    # Optional mode: draw arrow along arbitrary segment (start_point -> end_point)
+    if start_point is not None and end_point is not None:
+        p0 = np.array(start_point, dtype=float) + np.array(segment_offset, dtype=float)
+        p1 = np.array(end_point, dtype=float) + np.array(segment_offset, dtype=float)
+        dx, dy = p1 - p0
+        distance = math.hypot(dx, dy)
+
+        # Main line
+        fig.add_trace(go.Scatter(
+            x=[p0[0], p1[0]],
+            y=[p0[1], p1[1]],
+            mode='lines',
+            line=dict(color=arrow_color, width=line_width, dash=line_dash),
+            showlegend=show_legend,
+            name=legend_name if legend_name else None,
+            hoverinfo='skip'
+        ))
+
+        # Perpendicular end caps at both ends (flat caps)
+        if distance > 1e-6:
+            ux, uy = dx / distance, dy / distance
+            # make caps visibly wide: at least 1.5 mm or 3% of segment length
+            perp_scale = max(0.75, 0.03 * distance)
+            px, py = -uy * perp_scale, ux * perp_scale
+            for (x_base, y_base) in (p0, p1):
+                fig.add_shape(type="line",
+                              x0=x_base - px, y0=y_base - py,
+                              x1=x_base + px, y1=y_base + py,
+                              line=dict(color=arrow_color, width=line_width),
+                              xref="x", yref="y")
+
+        if show_text and distance is not None:
+            mid = 0.5 * (p0 + p1)
+            fig.add_annotation(x=mid[0], y=mid[1],
+                               text=f"{distance:.1f} mm",
+                               showarrow=False,
+                               xanchor="center", yanchor="bottom",
+                               font=dict(family="Courier New, monospace",
+                                         size=font_size,
+                                         color=text_color),
+                               bgcolor=text_box_bg_color,
+                               bordercolor=text_box_border_color,
+                               borderpad=4)
+        return fig
+
     # Calculate minimum and maximum x-values
-    min_x = np.min(points[:, 0])
-    max_x = np.max(points[:, 0])
+    min_x = np.min(points[:, 0]) + x_offset
+    max_x = np.max(points[:, 0]) + x_offset
     distance = max_x - min_x
     
     # Determine the y position at the bottom with padding
@@ -1336,7 +1933,7 @@ def project_and_transform_lines(points, normal, point_on_plane, rotation_matrix,
 
 
 
-def add_lines_to_contour_plot(fig, lines, line_color='fuchsia', text_position='top center'):
+def add_lines_to_contour_plot(fig, lines, line_color='fuchsia', text_position='top center', annotation_x_offset=1.5, annotation_y_shift=12):
     """
     Add lines and annotations to an existing contour plot.
 
@@ -1352,11 +1949,25 @@ def add_lines_to_contour_plot(fig, lines, line_color='fuchsia', text_position='t
     for line in lines:
         # Extract start and end points for the line
         start, end, label = line['start'], line['end'], line['label']
+
+        start_xy = np.array([float(start[2]), float(start[1])], dtype=float)
+        end_xy = np.array([float(end[2]), float(end[1])], dtype=float)
+        direction = end_xy - start_xy
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm > 1e-9:
+            direction_unit = direction / direction_norm
+            # Draw a very long segment; axis clipping makes it appear edge-to-edge.
+            extension = 1e4
+            draw_start = start_xy - direction_unit * extension
+            draw_end = start_xy + direction_unit * extension
+        else:
+            draw_start = start_xy
+            draw_end = end_xy
         
         # Add line trace
         fig.add_trace(go.Scatter(
-            x=[start[2], end[2]],  # Assuming Z is the horizontal axis in the contour plot
-            y=[start[1], end[1]],  # Assuming Y is the vertical axis in the contour plot
+            x=[draw_start[0], draw_end[0]],  # Axis clipping makes this span the visible plot bounds
+            y=[draw_start[1], draw_end[1]],
             mode='lines',
             line=dict(color=line_color, width=4),
             name=label
@@ -1364,20 +1975,21 @@ def add_lines_to_contour_plot(fig, lines, line_color='fuchsia', text_position='t
 
         # Add annotation for the line
         fig.add_annotation(
-            x=start[2],
+            x=start[2] + annotation_x_offset,
             y=start[1],
             text=label,
             showarrow=False,
             xanchor="left",
-            yanchor="middle",
+            yanchor="bottom",
+            yshift=annotation_y_shift,
             font=dict(
                 family="Courier New, monospace",
                 size=12,
-                color="#ffffff"
+                color="black"
             ),
             align="left",
-            bgcolor="rgba(50, 50, 50, 0.8)",
-            bordercolor="rgba(255, 255, 255, 0.2)",
+            bgcolor="rgba(255, 255, 255, 1)",
+            bordercolor="rgba(0, 0, 0, 1)",
             borderpad=4
         )
 
@@ -1606,7 +2218,14 @@ def add_perineal_template_lattice_to_transverse_contour_plot(contour_plot, latti
 
 
 
-def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_only(contour_plot, lattice_dataframe, optimal_points, marker_color='fuchsia', optimal_marker_accent_color='cyan'):
+def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_only(contour_plot,
+                                                                                    lattice_dataframe,
+                                                                                    optimal_points,
+                                                                                    marker_color='fuchsia',
+                                                                                    optimal_marker_accent_color='black',
+                                                                                    template_label_font_size=12,
+                                                                                    optimal_marker_size=18,
+                                                                                    optimal_marker_line_width=3):
     """
     Add elements to a transverse contour plot for better visualization, including labeled lattice points
     and an emphasized optimal point.
@@ -1643,6 +2262,7 @@ def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_o
             trace_args['mode'] = 'markers+text'
             trace_args['text'] = [label.strip()]
             trace_args['textposition'] = 'middle left'
+            trace_args['textfont'] = dict(size=template_label_font_size, color='black')
             contour_plot.add_trace(go.Scatter(**trace_args))
 
         if x == max_x:
@@ -1650,6 +2270,7 @@ def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_o
             trace_args['mode'] = 'markers+text'
             trace_args['text'] = [label.strip()]
             trace_args['textposition'] = 'middle right'
+            trace_args['textfont'] = dict(size=template_label_font_size, color='black')
             contour_plot.add_trace(go.Scatter(**trace_args))
 
         if y == max_y:
@@ -1657,6 +2278,7 @@ def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_o
             trace_args['mode'] = 'markers+text'
             trace_args['text'] = [label.strip()]
             trace_args['textposition'] = 'bottom center'
+            trace_args['textfont'] = dict(size=template_label_font_size, color='black')
             contour_plot.add_trace(go.Scatter(**trace_args))
         
         if y == min_y:
@@ -1664,6 +2286,7 @@ def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_o
             trace_args['mode'] = 'markers+text'
             trace_args['text'] = [label.strip()]
             trace_args['textposition'] = 'top center'
+            trace_args['textfont'] = dict(size=template_label_font_size, color='black')
             contour_plot.add_trace(go.Scatter(**trace_args))
 
         
@@ -1673,7 +2296,11 @@ def add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_o
         contour_plot.add_trace(go.Scatter(
             x=[optimal_point[0]], y=[optimal_point[1]],
             mode='markers',
-            marker=dict(size=15, color=optimal_marker_accent_color, symbol='circle-open'),
+            marker=dict(size=optimal_marker_size,
+                        color=optimal_marker_accent_color,
+                        symbol='circle-open',
+                        line=dict(color=optimal_marker_accent_color,
+                                  width=optimal_marker_line_width)),
             name='Optimal template hole'
         ))
 
@@ -2047,8 +2674,8 @@ def create_advanced_guidance_map_contour_plot(patientUID,
                                         min_x_label="Prostate apex", 
                                         line_color_max='black', 
                                         line_color_min='black', 
-                                        line_style_max='solid',
-                                        line_style_min='dash', 
+                                        line_style_max='dot',
+                                        line_style_min='dot', 
                                         line_width=3 
                                         )
 
@@ -2090,6 +2717,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             max_nn_for_normals_estimation,
                                             important_info,
                                             live_display,
+                                            biopsy_needle_tip_length,
                                             transducer_plane_grid_spacing = 2,
                                             prostate_template_spacing = 5, # hole spacing on prostate template
                                             range_x = 13,  # Total points along the first vector
@@ -2098,8 +2726,152 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             label2 = '1.5',    # Corresponding to the second dimension, row to align with y-shift above max prostate posterior
                                             y_shift_for_1_5_coord_from_prostate_max_post = - 3, # y-shift above max prostate posterior
                                             simple_angle_display_option_bool = False,
-                                            use_natural_TRUS_origin_for_transducer_sagittal_plane = True # if False, will use rectum structure centroids
+                                            use_natural_TRUS_origin_for_transducer_sagittal_plane = True, # if False, will use rectum structure centroids
+                                            template_label_font_size = 12,
+                                            draw_orientation_diagram = True,
+                                            colorbar_title_font_size = 12,
+                                            fire_annotation_style = "hockey",
+                                            fire_table_position = "auto"
                                             ):
+
+    def _anchor_colorbars_bottom_right(fig):
+        """Place contour colorbars bottom-right outside plot area with left-side vertical labels."""
+        colorbar_x = 1.13
+        colorbar_len = 0.5
+        colorbar_y = 0.0
+        label_x_offset = 0.012
+        for tr in fig.data:
+            if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
+                title_text = ""
+                title_font_size = 12
+                if getattr(tr.colorbar, "title", None) is not None:
+                    if getattr(tr.colorbar.title, "text", None):
+                        title_text = tr.colorbar.title.text
+                    if getattr(tr.colorbar.title, "font", None) is not None and getattr(tr.colorbar.title.font, "size", None):
+                        title_font_size = tr.colorbar.title.font.size
+
+                tr.update(colorbar=dict(
+                    x=colorbar_x,
+                    xanchor="left",
+                    y=colorbar_y,
+                    yanchor="bottom",
+                    lenmode="fraction",
+                    len=colorbar_len,
+                    orientation="v",
+                    title=dict(text="")
+                ))
+
+                if title_text:
+                    fig.add_annotation(
+                        x=colorbar_x - label_x_offset,
+                        y=colorbar_y + 0.5 * colorbar_len,
+                        xref="paper",
+                        yref="paper",
+                        text=title_text,
+                        textangle=-90,
+                        showarrow=False,
+                        xanchor="center",
+                        yanchor="middle",
+                        font=dict(size=title_font_size, color="black")
+                    )
+
+    if fire_annotation_style not in ["hockey", "compact_table"]:
+        warnings.warn(f"Unsupported fire_annotation_style '{fire_annotation_style}'. Falling back to 'hockey'.")
+        fire_annotation_style = "hockey"
+
+    valid_fire_table_positions = [
+        "auto",
+        "outside top center",
+        "top left",
+        "top right",
+        "bottom left",
+        "bottom right",
+        "middle left",
+        "middle right",
+        "middle top",
+        "middle bottom",
+    ]
+    fire_table_position = (fire_table_position or "auto").lower()
+    if fire_table_position not in valid_fire_table_positions:
+        warnings.warn(f"Unsupported fire_table_position '{fire_table_position}'. Falling back to 'auto'.")
+        fire_table_position = "auto"
+
+    def _show_all_axis_lines(fig):
+        """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
+        def _ensure_overlay_axis_anchor():
+            has_overlay_trace = any(
+                (getattr(trace, "xaxis", None) == "x2" and getattr(trace, "yaxis", None) == "y2")
+                for trace in fig.data
+            )
+            if has_overlay_trace:
+                return
+
+            x_range = fig.layout.xaxis.range if getattr(fig.layout, "xaxis", None) and fig.layout.xaxis.range else [0, 1]
+            y_range = fig.layout.yaxis.range if getattr(fig.layout, "yaxis", None) and fig.layout.yaxis.range else [0, 1]
+            x_mid = 0.5 * (x_range[0] + x_range[1])
+            y_mid = 0.5 * (y_range[0] + y_range[1])
+            fig.add_trace(go.Scatter(
+                x=[x_mid],
+                y=[y_mid],
+                xaxis="x2",
+                yaxis="y2",
+                mode="markers",
+                marker=dict(size=1, color="rgba(0,0,0,0)"),
+                showlegend=False,
+                hoverinfo="skip",
+                name="_overlay_axis_anchor"
+            ))
+
+        minor_axis = dict(
+            ticks="inside",
+            ticklen=4,
+            tickcolor="black",
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.08)",
+            gridwidth=0.5
+        )
+        common_axis = dict(
+            showline=True,
+            ticks="inside",
+            showticklabels=True,
+            automargin=True,
+            linewidth=2,
+            linecolor="black",
+            tickcolor="black",
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.15)",
+            gridwidth=1,
+            zeroline=True,
+            zerolinecolor="rgba(55,55,55,1)",
+            zerolinewidth=2,
+            minor=minor_axis
+        )
+        fig.update_layout(
+            xaxis=dict(common_axis, side="bottom", ticklabelposition="outside", mirror="allticks"),
+            yaxis=dict(common_axis, side="left", ticklabelposition="outside", mirror="allticks"),
+            xaxis2=dict(common_axis,
+                        overlaying="x",
+                        anchor="y",
+                        position=1,
+                        side="top",
+                        matches="x",
+                        showticklabels=True,
+                        ticklabelposition="outside",
+                        showspikes=False),
+            yaxis2=dict(common_axis,
+                        overlaying="y",
+                        anchor="x",
+                        position=1,
+                        side="right",
+                        matches="y",
+                        showticklabels=True,
+                        ticklabelposition="outside",
+                        showspikes=False)
+        )
+        # Re-apply to all axes to ensure top/bottom and left/right all render minor ticks.
+        fig.update_xaxes(minor=minor_axis, ticks="inside", showline=True, showticklabels=True)
+        fig.update_yaxes(minor=minor_axis, ticks="inside", showline=True, showticklabels=True)
+        _ensure_overlay_axis_anchor()
 
 
     sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]
@@ -2122,7 +2894,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
     non_dil_list_of_pcds = []
 
-    biopsy_needle_tip_length = 6
 
     #relative_dil_index = 2
     #patient_uid = '181_F2 ()'
@@ -2352,6 +3123,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             sp_dil_optimal_coordinate, 
                                             rotation_matrix, 
                                             prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices])
+        optimal_template_hole_label = "-"
+        if len(nearest_prostate_template_lines_list_of_dicts) > 0:
+            optimal_template_hole_label = str(nearest_prostate_template_lines_list_of_dicts[0].get("label", "-"))
 
 
         line_pts_list = [np.array([item['start'],item['end']]) for item in nearest_prostate_template_lines_list_of_dicts]
@@ -2441,41 +3215,140 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         #contour_plot = reverse_plot_axes(contour_plot, reverse_x=True, reverse_y=True)
 
         contour_plot = adjust_plot_area_and_reverse_axes(contour_plot, rectum_plus_prostate_pts_contour_plot_coords, margin=5, reverse_x=True, reverse_y=True)
+        _show_all_axis_lines(contour_plot)
 
         transformed_optimal_point_contour_coord_sys = transformed_optimal_point[[2,1]]
-        contour_plot = add_points_to_plot_v2(contour_plot, 
-                                     transformed_optimal_point_contour_coord_sys, 
-                                     f"Optimal ({sp_dil_id}) | [{transformed_optimal_point_contour_coord_sys[0]:.2f}, {transformed_optimal_point_contour_coord_sys[1]:.2f}] mm", 
-                                     legend_name = f"Optimal ({sp_dil_id})")
+        transformed_optimal_point_xprime = float(transformed_optimal_point[0])
+        optimal_row_sagittal = {
+            "label": f"Optimal ({sp_dil_id})",
+            "optimal_hole": optimal_template_hole_label,
+            "xprime": transformed_optimal_point_xprime,
+            "zprime": transformed_optimal_point_contour_coord_sys[0],
+            "yprime": transformed_optimal_point_contour_coord_sys[1]
+        }
+        if fire_annotation_style == "hockey":
+            contour_plot = add_points_to_plot_v2(contour_plot,
+                                         transformed_optimal_point_contour_coord_sys,
+                                         f"Optimal ({sp_dil_id}) | [{transformed_optimal_point_contour_coord_sys[0]:.2f}, {transformed_optimal_point_contour_coord_sys[1]:.2f}] mm",
+                                         legend_name = f"Optimal ({sp_dil_id})",
+                                         size = 12,
+                                         annotation_direction = "down",
+                                         text_box_bg_color="rgba(255, 255, 255, 1)",
+                                         text_box_border_color="rgba(0, 0, 0, 1)",
+                                         text_color="black")
+        elif fire_annotation_style == "compact_table":
+            contour_plot = add_points_to_plot(contour_plot,
+                                     transformed_optimal_point_contour_coord_sys,
+                                     legend_name = f"Optimal ({sp_dil_id})",
+                                     color = "orange",
+                                     size = 12)
 
+        fire_rows = []
         custom_height = 0
-        custom_height_step = 2 
+        custom_height_step = 4
         for index,penetration_depth in enumerate(biopsy_fire_travel_distances):
             custom_height = custom_height + custom_height_step*(index+1)
             needle_tip_position_before_firing = copy.deepcopy(transformed_optimal_point_contour_coord_sys)
             needle_tip_position_before_firing[0] = needle_tip_position_before_firing[0] - penetration_depth + (biopsy_needle_tip_length + biopsy_needle_compartment_length/2)
-            contour_plot = add_points_to_plot_v2(contour_plot, 
-                                                needle_tip_position_before_firing, 
-                                                f"Nx tip fire position (Pene. dep.: {penetration_depth:.1f} mm) | [{needle_tip_position_before_firing[0]:.2f}, {needle_tip_position_before_firing[1]:.2f}] mm", 
-                                                color = 'red', 
-                                                symbol = 'arrow-bar-left', 
-                                                custom_height = custom_height, 
-                                                legend_name = "Fire pos. ("+str(penetration_depth)+" mm)",
-                                                color_index = index)
 
+            # Compute deflection distance from optimal template hole trajectory (pink line)
+            def _point_to_segment_distance(pt, start, end):
+                """Euclidean distance from point to line segment in 2D."""
+                seg = end - start
+                seg_len_sq = np.dot(seg, seg)
+                if seg_len_sq == 0:
+                    return float(np.linalg.norm(pt - start)), start
+                t = np.dot(pt - start, seg) / seg_len_sq
+                t_clamped = np.clip(t, 0.0, 1.0)
+                projection = start + t_clamped * seg
+                return float(np.linalg.norm(pt - projection)), projection
+
+            deflection_dist = float("nan")
+            projection_point = None
+            if len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) > 0:
+                line_coords = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
+                # Convert to contour frame (Z', Y')
+                line_start = np.array([line_coords['start'][2], line_coords['start'][1]])
+                line_end = np.array([line_coords['end'][2], line_coords['end'][1]])
+                deflection_dist, projection_point = _point_to_segment_distance(needle_tip_position_before_firing, line_start, line_end)
+
+            # Visual deflection line (projection to template line)
+            if projection_point is not None:
+                double_arrow_deflection_line_offset = 1  # mm offset to avoid overlap with needle tip line and align annotation
+                p0 = np.array([needle_tip_position_before_firing[0], needle_tip_position_before_firing[1]])
+                p1 = np.array([projection_point[0], projection_point[1]])
+                # reuse generic distance arrow helper in segment mode
+                contour_plot = add_distance_annotation(contour_plot,
+                                                       np.vstack([p0, p1]),
+                                                       start_point=p0,
+                                                       end_point=p1,
+                                                       segment_offset=(double_arrow_deflection_line_offset, 0.0),
+                                                       arrow_color='black',
+                                                       line_width=3,
+                                                       line_dash='solid',
+                                                       show_text=False,
+                                                       show_legend=True,
+                                                       legend_name="Deflection line")
+
+            # Explicit axis/frame labeling (transducer-plane contour frame; origin at prostate centroid)
+            prostate_apex_zprime = float(np.min(prostate_mesh_slice_pts_transformed_contour_plot_coords[:,0]))
+            depth_from_apex = needle_tip_position_before_firing[0] - prostate_apex_zprime
+            fire_label = (
+                f"Tip before fire | Penetration depth {penetration_depth:.1f} mm<br>"
+                f"[Z'={needle_tip_position_before_firing[0]:.2f} mm, "
+                f"Y'={needle_tip_position_before_firing[1]:.2f} mm] (transducer-plane frame)<br>"
+                f"Deflection from template line: {deflection_dist:.2f} mm<br>"
+                f"Tip depth from apex: {depth_from_apex:.2f} mm"
+            )
+            legend_label = f"Fire pos. ({penetration_depth:.1f} mm)"
+            line_offset = 1  # mm offset for the line to avoid overlap with the point
+            fire_rows.append({
+                "penetration_depth": penetration_depth,
+                "optimal_hole": optimal_template_hole_label,
+                "xprime": transformed_optimal_point_xprime,
+                "zprime": needle_tip_position_before_firing[0],
+                "yprime": needle_tip_position_before_firing[1],
+                "deflection": deflection_dist,
+                "depth_from_apex": depth_from_apex
+            })
+
+            if fire_annotation_style == "hockey":
+                contour_plot = add_points_to_plot_v2(contour_plot, 
+                                                    needle_tip_position_before_firing, 
+                                                    fire_label, 
+                                                    color = 'red', 
+                                                    symbol = 'arrow-bar-left', 
+                                                    custom_height = custom_height, 
+                                                    legend_name = legend_label,
+                                                    color_index = index,
+                                                    annotation_x_offset = line_offset,
+                                                    text_box_bg_color="rgba(255, 255, 255, 1)",
+                                                    text_box_border_color="rgba(0, 0, 0, 1)",
+                                                    text_color="black")
+            elif fire_annotation_style == "compact_table":
+                marker_colors = ['#333333', '#FF7F50', '#008080']
+                contour_plot.add_trace(go.Scatter(
+                    x=[needle_tip_position_before_firing[0]],
+                    y=[needle_tip_position_before_firing[1]],
+                    mode='markers',
+                    marker=dict(color=marker_colors[index % len(marker_colors)], size=10, symbol='arrow-bar-left'),
+                    name=legend_label
+                ))
 
         contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
 
 
         contour_plot = add_x_bounds_with_annotations(contour_plot, 
                                         prostate_mesh_slice_pts_transformed_contour_plot_coords, 
-                                        y_position = -0.075, 
-                                        max_x_label="Prostate base", 
-                                        min_x_label="Prostate apex", 
+                                        y_position = 1.0,
+                                        x_offset = -1.5,  
+                                        label_yanchor = "top",
+                                        max_x_label="Base", 
+                                        min_x_label="Apex", 
                                         line_color_max='black', 
                                         line_color_min='black', 
-                                        line_style_max='solid',
-                                        line_style_min='dash', 
+                                        line_style_max='dot',
+                                        line_style_min='dot', 
                                         line_width=3 
                                         )
 
@@ -2483,7 +3356,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         contour_plot = add_distance_annotation(contour_plot, 
                                                prostate_mesh_slice_pts_transformed_contour_plot_coords, 
                                                y_position=-0.075, 
-                                               arrow_color='black')
+                                               arrow_color='black',
+                                               x_offset=0,
+                                               text_box_bg_color="rgba(255, 255, 255, 1)",
+                                               text_box_border_color="rgba(0, 0, 0, 1)",
+                                               text_color="black")
 
         if simple_angle_display_option_bool == False:
             contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
@@ -2498,8 +3375,17 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         
         z_angle = euler_angles[2]  # Assuming euler_angles is accessible and index 2 is Z
 
+        _anchor_colorbars_bottom_right(contour_plot)
 
         contour_plot = set_square_aspect_ratio(contour_plot)
+        
+
+        if fire_annotation_style == "compact_table":
+            contour_plot = add_compact_fire_positions_table(contour_plot,
+                                                            fire_rows,
+                                                            position=fire_table_position,
+                                                            frame_label="Transducer plane frame (Z', Y')",
+                                                            optimal_row=optimal_row_sagittal)
 
         sp_dil_contour_plot_dict = {"DIL ID": dil_id_from_pydicom,
                                     "Contour plot": contour_plot}
@@ -2533,10 +3419,25 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         contour_plot_transverse = go.Figure()
 
         sp_dil_optimal_coordinate_transverse_contour_plot_coords = sp_dil_optimal_coordinate[[0,1]]
-        contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse, 
-                                     sp_dil_optimal_coordinate_transverse_contour_plot_coords, 
-                                     f"Optimal ({sp_dil_id}) | [{sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]:.2f}, {sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]:.2f}] mm", 
-                                     legend_name = f"Optimal ({sp_dil_id})")
+        optimal_row_transverse = {
+            "label": f"Optimal ({sp_dil_id})",
+            "optimal_hole": optimal_template_hole_label,
+            "xprime": transformed_optimal_point_xprime,
+            "zprime": transformed_optimal_point_contour_coord_sys[0],
+            "yprime": transformed_optimal_point_contour_coord_sys[1]
+        }
+        if fire_annotation_style == "hockey":
+            contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
+                                         sp_dil_optimal_coordinate_transverse_contour_plot_coords,
+                                         f"Optimal ({sp_dil_id}) | [{sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]:.2f}, {sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]:.2f}] mm",
+                                         legend_name = f"Optimal ({sp_dil_id})",
+                                         size = 12)
+        elif fire_annotation_style == "compact_table":
+            contour_plot_transverse = add_points_to_plot(contour_plot_transverse,
+                                         sp_dil_optimal_coordinate_transverse_contour_plot_coords,
+                                         legend_name = f"Optimal ({sp_dil_id})",
+                                         color = "orange",
+                                         size = 12)
 
         origin = np.array([0,0]) 
         contour_plot_transverse = add_points_to_plot(contour_plot_transverse, 
@@ -2613,7 +3514,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         # Add contour plot of the values of the max plane of the optimization
 
         contour_plot_transverse = plot_transverse_contour(contour_plot_transverse,
-                                                          plane_specific_guidance_map_max_planes_dataframe
+                                                          plane_specific_guidance_map_max_planes_dataframe,
+                                                          colorbar_title="Containment proportion",
+                                                          colorbar_title_font_size=colorbar_title_font_size
                                                           )
         
 
@@ -2622,6 +3525,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     text=f"Transverse (Max) plane - {patientUID} - {sp_dil_id}"
                 )
             )
+        _anchor_colorbars_bottom_right(contour_plot_transverse)
 
 
         # Example data preparation
@@ -2637,7 +3541,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         
         contour_plot_transverse = add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_only(contour_plot_transverse, 
                                                                                            prostate_grid_template_lattice_XYZ_aligned_dataframe, 
-                                                                                           nearest_template_points)
+                                                                                           nearest_template_points,
+                                                                                           template_label_font_size=template_label_font_size)
 
         
 
@@ -2658,16 +3563,28 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY = prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr[:, [0,1]]  # Extract only the XY coordinates
         rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords = np.vstack([rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame,prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY])
+        bounds_points_xy = rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords[:, :2]
 
         contour_plot_transverse = adjust_plot_area_and_reverse_axes(contour_plot_transverse, 
-                                                                    rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords, 
+                                                                    bounds_points_xy, 
                                                                     margin=5, 
                                                                     reverse_x = False, 
                                                                     reverse_y = True)
+        _show_all_axis_lines(contour_plot_transverse)
 
-        contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
+        if draw_orientation_diagram:
+            contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
 
         contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
+
+        
+
+        if fire_annotation_style == "compact_table":
+            contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
+                                                                       fire_rows,
+                                                                       position=fire_table_position,
+                                                                       frame_label="Transducer plane frame (Z', Y')",
+                                                                       optimal_row=optimal_row_transverse)
 
         sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_id_from_pydicom,
                                     "Contour plot": contour_plot_transverse}
@@ -2676,11 +3593,3 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
 
     return trus_plane_sagittal_contour_plot_list_of_dicts, transverse_contour_plot_list_of_dicts
-
-
-
-
-
-
-
-

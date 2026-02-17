@@ -895,7 +895,10 @@ def specific_structure_info_dict_creator(create_type,
                                         structid = '', 
                                         sruct_ref_num = None, 
                                         struct_ref_type = None, 
-                                        struct_index_num = None 
+                                        struct_index_num = None,
+                                        simulated_bool = None,
+                                        simulated_type = None,
+                                        default_bx_ref_str = 'Bx ref',
                                         ):
     
     # create_type can be "given", "custom" or "null"
@@ -907,6 +910,9 @@ def specific_structure_info_dict_creator(create_type,
         struct_type_entry = specific_structure["Struct type"]
         structure_reference_number_entry = specific_structure["Ref #"]
         structure_index_number_entry = specific_structure["Index number"]
+        if struct_type_entry == default_bx_ref_str:
+            simulated_bool = specific_structure["Simulated bool"]
+            simulated_type = specific_structure["Simulated type"]
 
     # creates a blank one
     elif create_type == "null":
@@ -921,14 +927,23 @@ def specific_structure_info_dict_creator(create_type,
         struct_type_entry = struct_ref_type
         structure_reference_number_entry = sruct_ref_num
         structure_index_number_entry = struct_index_num
+        simulated_bool = simulated_bool
+        simulated_type = simulated_type
 
-        
-
-    structure_info = {"Structure ID": structureID_entry,
-                    "Struct ref type": struct_type_entry,
-                    "Dicom ref num": structure_reference_number_entry,
-                    "Index number": structure_index_number_entry
-                }
+    if struct_type_entry == default_bx_ref_str:
+        structure_info = {"Structure ID": structureID_entry,
+                        "Struct ref type": struct_type_entry,
+                        "Dicom ref num": structure_reference_number_entry,
+                        "Index number": structure_index_number_entry,
+                        "Simulated bool": simulated_bool,
+                        "Simulated type": simulated_type
+                    }
+    else:
+        structure_info = {"Structure ID": structureID_entry,
+                        "Struct ref type": struct_type_entry,
+                        "Dicom ref num": structure_reference_number_entry,
+                        "Index number": structure_index_number_entry,
+                    }
     
     return structure_info
 

@@ -413,7 +413,7 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 1
-    num_MC_containment_simulations_input = 10000
+    num_MC_containment_simulations_input = 1000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
     num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
@@ -485,12 +485,12 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": True,
+                              {"Create": False,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_optimal_dil'}
                             }
@@ -636,12 +636,12 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
                                         "Guidance maps":\
-                                            {"Plot bool": False, 
+                                            {"Plot bool": True, 
                                              "Plot name": "guidance maps",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Guidance maps with actual cores":\
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, # nothing behind this codewise yet, but would be nice
                                              "Plot name": "guidance maps with actual cores",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },      
@@ -8238,6 +8238,7 @@ def main():
 
                 ####
                 if mc_mr_sim_complete == True:
+                    print("MC, MR simulation complete")
                     csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, MR)...', total=None)
                     csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, MR)', total=1, visible = False)
 
@@ -8245,6 +8246,7 @@ def main():
                     output_mr_adc_dataframe_str = "Point-wise MR ADC output by MC trial number"
                     mr_adc_col_name_str_prefix = "MR ADC"
 
+                    st = time.time()
                     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
                     dataframe_builders.all_mr_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(master_structure_reference_dict, 
                                                                             bx_ref, 
@@ -8254,6 +8256,9 @@ def main():
                                                                             mr_adc_col_name_str_prefix,
                                                                             output_mr_adc_dataframe_str)
                     indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                    et = time.time()
+                    duration = et-st
+                    print(f"MR DF1: {duration}")
 
                     st = time.time()
                     indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2", total = None)
@@ -8314,6 +8319,7 @@ def main():
 
             #live_display.stop()
             # create global csv output folder
+            print("Creating CSV output directories...")
             if any([write_preprocessing_data_to_file, write_containment_to_file_ans, write_dose_to_file_ans, write_sobol_containment_data_to_file, write_sobol_dose_data_to_file, write_cohort_data_to_file]):
                 csv_output_folder_name = 'Output CSVs'
                 csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
@@ -8782,9 +8788,24 @@ def main():
                                             important_info,
                                             live_display,
                                             svg_image_scale,
-                                            svg_image_width,
-                                            svg_image_height,
-                                            general_plot_name_string
+                                            1300,
+                                            1300, # am making these plots square
+                                            general_plot_name_string,
+                                            biopsy_needle_tip_length,
+                                            save_formats=["svg", "pdf", "html"],
+                                            axis_title_font_size=24,
+                                            axis_tick_font_size=20,
+                                            legend_font_size=20,
+                                            annotation_font_size=20,
+                                            distance_annotation_font_size=20,
+                                            fire_annotation_font_size=20,
+                                            colorbar_tick_font_size=20,
+                                            template_label_font_size=20,
+                                            colorbar_title_font_size=20,
+                                            fire_annotation_style="compact_table",
+                                            fire_table_position="outside top center",
+                                            draw_orientation_diagram=False,
+                                            show_titles=False
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)
