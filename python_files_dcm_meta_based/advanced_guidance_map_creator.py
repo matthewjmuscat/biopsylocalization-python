@@ -1756,6 +1756,685 @@ def add_distance_annotation(fig,
 
     return fig
 
+def _point_to_segment_distance_2d(point_2d, start_2d, end_2d):
+    """Euclidean distance from a 2D point to a 2D line segment."""
+    point_2d = np.asarray(point_2d, dtype=float)
+    start_2d = np.asarray(start_2d, dtype=float)
+    end_2d = np.asarray(end_2d, dtype=float)
+
+    segment = end_2d - start_2d
+    segment_len_sq = float(np.dot(segment, segment))
+    if segment_len_sq == 0.0:
+        return float(np.linalg.norm(point_2d - start_2d)), start_2d.copy()
+
+    t = float(np.dot(point_2d - start_2d, segment) / segment_len_sq)
+    t_clamped = float(np.clip(t, 0.0, 1.0))
+    projection = start_2d + t_clamped * segment
+    distance = float(np.linalg.norm(point_2d - projection))
+    return distance, projection
+
+
+def _point_to_segment_projection_2d(point_2d, start_2d, end_2d):
+    """
+    Euclidean distance + closest-point projection from point to segment in 2D.
+
+    Returns:
+        distance (float), projection (np.ndarray shape (2,)), t_clamped (float in [0,1])
+    """
+    point_2d = np.asarray(point_2d, dtype=float)
+    start_2d = np.asarray(start_2d, dtype=float)
+    end_2d = np.asarray(end_2d, dtype=float)
+
+    segment = end_2d - start_2d
+    segment_len_sq = float(np.dot(segment, segment))
+    if segment_len_sq == 0.0:
+        projection = start_2d.copy()
+        return float(np.linalg.norm(point_2d - projection)), projection, 0.0
+
+    t = float(np.dot(point_2d - start_2d, segment) / segment_len_sq)
+    t_clamped = float(np.clip(t, 0.0, 1.0))
+    projection = start_2d + t_clamped * segment
+    distance = float(np.linalg.norm(point_2d - projection))
+    return distance, projection, t_clamped
+
+
+def _as_xyz(array_like, field_name):
+    arr = np.asarray(array_like, dtype=float).reshape(-1)
+    if arr.size < 3:
+        raise ValueError(f"{field_name} must contain 3 coordinates [X, Y, Z].")
+    return np.array([float(arr[0]), float(arr[1]), float(arr[2])], dtype=float)
+
+
+def _transform_primed_to_prostate(point_prime_xyz, rotation_matrix_unprimed_to_primed, primed_frame_origin_prostate_xyz):
+    """
+    Invert transform used by transform_grid_and_point_for_plotting:
+      p' = (p - c) * R^T + c  =>  p = (p' - c) * R + c
+    """
+    p_prime = _as_xyz(point_prime_xyz, "point_prime_xyz")
+    R = np.asarray(rotation_matrix_unprimed_to_primed, dtype=float)
+    c = _as_xyz(primed_frame_origin_prostate_xyz, "primed_frame_origin_prostate_xyz")
+    return np.dot(p_prime - c, R) + c
+
+
+def _angle_direction_label(angle_deg):
+    """Map signed angle to display direction label used in guidance outputs."""
+    if angle_deg is None:
+        return "-"
+    angle_val = float(angle_deg)
+    if np.isnan(angle_val):
+        return "-"
+    if angle_val > 0:
+        return "CW"
+    if angle_val < 0:
+        return "CCW"
+    return "None"
+
+
+def build_guidance_map_geometry_context(patient_id,
+                                        relative_structure_id,
+                                        relative_struct_type,
+                                        relative_struct_index,
+                                        optimal_template_hole_label,
+                                        optimal_sampling_point_prostate_xyz,
+                                        optimal_sampling_point_primed_xyz,
+                                        projected_axis_line_prostate,
+                                        projected_axis_line_primed,
+                                        unprojected_axis_line_prostate=None,
+                                        transducer_plane_df=None,
+                                        prostate_slice_pts_primed_zy=None,
+                                        rotation_matrix_unprimed_to_primed=None,
+                                        euler_angles_deg=None,
+                                        euler_convention=None,
+                                        additional_run_metadata=None):
+    """Normalize and package per-DIL geometry inputs used by guidance-map firing calculations."""
+    if projected_axis_line_prostate is None or "start" not in projected_axis_line_prostate or "end" not in projected_axis_line_prostate:
+        raise ValueError("projected_axis_line_prostate must contain 'start' and 'end'.")
+    if projected_axis_line_primed is None or "start" not in projected_axis_line_primed or "end" not in projected_axis_line_primed:
+        raise ValueError("projected_axis_line_primed must contain 'start' and 'end'.")
+
+    projected_axis_prostate_start_xyz = _as_xyz(projected_axis_line_prostate["start"], "projected_axis_line_prostate['start']")
+    projected_axis_prostate_end_xyz = _as_xyz(projected_axis_line_prostate["end"], "projected_axis_line_prostate['end']")
+    projected_axis_prime_start_xyz = _as_xyz(projected_axis_line_primed["start"], "projected_axis_line_primed['start']")
+    projected_axis_prime_end_xyz = _as_xyz(projected_axis_line_primed["end"], "projected_axis_line_primed['end']")
+
+    unprojected_axis_prostate_start_xyz = None
+    unprojected_axis_prostate_end_xyz = None
+    if unprojected_axis_line_prostate is not None:
+        if "start" in unprojected_axis_line_prostate:
+            unprojected_axis_prostate_start_xyz = _as_xyz(
+                unprojected_axis_line_prostate["start"],
+                "unprojected_axis_line_prostate['start']"
+            )
+        if "end" in unprojected_axis_line_prostate:
+            unprojected_axis_prostate_end_xyz = _as_xyz(
+                unprojected_axis_line_prostate["end"],
+                "unprojected_axis_line_prostate['end']"
+            )
+
+    primed_frame_origin_prostate_xyz = None
+    if transducer_plane_df is not None:
+        transducer_cols = [
+            "Transducer plane point (X)",
+            "Transducer plane point (Y)",
+            "Transducer plane point (Z)",
+        ]
+        if all(col in transducer_plane_df.columns for col in transducer_cols):
+            primed_frame_origin_prostate_xyz = transducer_plane_df[transducer_cols].mean().to_numpy(dtype=float)
+
+    prostate_apex_primed_z = None
+    prostate_base_primed_z = None
+    if prostate_slice_pts_primed_zy is not None:
+        prostate_slice_arr = np.asarray(prostate_slice_pts_primed_zy, dtype=float)
+        if prostate_slice_arr.ndim == 2 and prostate_slice_arr.shape[0] > 0 and prostate_slice_arr.shape[1] >= 1:
+            # Input is expected in contour coordinates [Z', Y']; use first column for Z'.
+            prostate_apex_primed_z = float(np.min(prostate_slice_arr[:, 0]))
+            prostate_base_primed_z = float(np.max(prostate_slice_arr[:, 0]))
+
+    euler_x_deg = float("nan")
+    euler_y_deg = float("nan")
+    euler_z_deg = float("nan")
+    if euler_angles_deg is not None:
+        euler_arr = np.asarray(euler_angles_deg, dtype=float).reshape(-1)
+        if euler_arr.size >= 3:
+            euler_x_deg = float(euler_arr[0])
+            euler_y_deg = float(euler_arr[1])
+            euler_z_deg = float(euler_arr[2])
+
+    return {
+        "Patient ID": patient_id,
+        "Relative structure ID": relative_structure_id,
+        "Relative struct type": relative_struct_type,
+        "Relative struct index": relative_struct_index,
+        "Optimal template hole": str(optimal_template_hole_label) if optimal_template_hole_label is not None else "-",
+        "Optimal sampling point (Prostate centroid frame) (XYZ array)": _as_xyz(
+            optimal_sampling_point_prostate_xyz,
+            "optimal_sampling_point_prostate_xyz"
+        ),
+        "Optimal sampling point (Transducer primed frame) (XYZ array)": _as_xyz(
+            optimal_sampling_point_primed_xyz,
+            "optimal_sampling_point_primed_xyz"
+        ),
+        "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)": projected_axis_prostate_start_xyz,
+        "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)": projected_axis_prostate_end_xyz,
+        "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)": projected_axis_prime_start_xyz,
+        "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)": projected_axis_prime_end_xyz,
+        "Unprojected axis from optimal template hole (Prostate centroid frame) start (XYZ array)": unprojected_axis_prostate_start_xyz,
+        "Unprojected axis from optimal template hole (Prostate centroid frame) end (XYZ array)": unprojected_axis_prostate_end_xyz,
+        "Rotation matrix (unprimed to primed)": (
+            None if rotation_matrix_unprimed_to_primed is None else np.asarray(rotation_matrix_unprimed_to_primed, dtype=float)
+        ),
+        "Primed frame origin (Prostate centroid frame) (XYZ array)": primed_frame_origin_prostate_xyz,
+        "Prostate apex (Transducer primed frame) (Z')": prostate_apex_primed_z,
+        "Prostate base (Transducer primed frame) (Z')": prostate_base_primed_z,
+        "Euler angle X (deg)": euler_x_deg,
+        "Euler angle Y (deg)": euler_y_deg,
+        "Euler angle Z (deg)": euler_z_deg,
+        "Euler convention": euler_convention,
+        "Additional run metadata": additional_run_metadata,
+    }
+
+
+def build_guidance_map_firing_depths_dataframe_from_context(geometry_context,
+                                                            biopsy_fire_travel_distances,
+                                                            biopsy_needle_tip_length,
+                                                            biopsy_needle_compartment_length,
+                                                            additional_run_metadata=None):
+    """Wrapper for building firing-depth dataframe from a pre-computed geometry-context dict."""
+    required_keys = [
+        "Patient ID",
+        "Relative structure ID",
+        "Relative struct type",
+        "Relative struct index",
+        "Optimal template hole",
+        "Optimal sampling point (Prostate centroid frame) (XYZ array)",
+        "Optimal sampling point (Transducer primed frame) (XYZ array)",
+        "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)",
+        "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)",
+        "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)",
+        "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)",
+        "Euler angle X (deg)",
+        "Euler angle Y (deg)",
+        "Euler angle Z (deg)",
+        "Euler convention",
+    ]
+    missing = [key for key in required_keys if key not in geometry_context]
+    if missing:
+        raise ValueError(f"geometry_context missing required keys: {missing}")
+
+    merged_metadata = {}
+    context_metadata = geometry_context.get("Additional run metadata")
+    if context_metadata:
+        merged_metadata.update(context_metadata)
+    if additional_run_metadata:
+        merged_metadata.update(additional_run_metadata)
+    if not merged_metadata:
+        merged_metadata = None
+
+    return build_guidance_map_firing_depths_dataframe(
+        patient_id=geometry_context["Patient ID"],
+        relative_structure_id=geometry_context["Relative structure ID"],
+        relative_struct_type=geometry_context["Relative struct type"],
+        relative_struct_index=geometry_context["Relative struct index"],
+        biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+        biopsy_needle_tip_length=biopsy_needle_tip_length,
+        biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+        optimal_template_hole_label=geometry_context["Optimal template hole"],
+        optimal_sampling_point_prostate_xyz=geometry_context["Optimal sampling point (Prostate centroid frame) (XYZ array)"],
+        optimal_sampling_point_primed_xyz=geometry_context["Optimal sampling point (Transducer primed frame) (XYZ array)"],
+        projected_axis_from_optimal_hole_prostate_start_xyz=geometry_context["Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)"],
+        projected_axis_from_optimal_hole_prostate_end_xyz=geometry_context["Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)"],
+        projected_axis_from_optimal_hole_primed_start_xyz=geometry_context["Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)"],
+        projected_axis_from_optimal_hole_primed_end_xyz=geometry_context["Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)"],
+        unprojected_axis_from_optimal_hole_prostate_start_xyz=geometry_context.get("Unprojected axis from optimal template hole (Prostate centroid frame) start (XYZ array)"),
+        unprojected_axis_from_optimal_hole_prostate_end_xyz=geometry_context.get("Unprojected axis from optimal template hole (Prostate centroid frame) end (XYZ array)"),
+        rotation_matrix_unprimed_to_primed=geometry_context.get("Rotation matrix (unprimed to primed)"),
+        primed_frame_origin_prostate_xyz=geometry_context.get("Primed frame origin (Prostate centroid frame) (XYZ array)"),
+        prostate_apex_primed_z=geometry_context.get("Prostate apex (Transducer primed frame) (Z')"),
+        prostate_base_primed_z=geometry_context.get("Prostate base (Transducer primed frame) (Z')"),
+        euler_angle_x_deg=geometry_context.get("Euler angle X (deg)"),
+        euler_angle_y_deg=geometry_context.get("Euler angle Y (deg)"),
+        euler_angle_z_deg=geometry_context.get("Euler angle Z (deg)"),
+        euler_convention=geometry_context.get("Euler convention"),
+        additional_run_metadata=merged_metadata,
+    )
+
+
+def build_guidance_map_firing_depths_dataframe(patient_id,
+                                               relative_structure_id,
+                                               relative_struct_type,
+                                               relative_struct_index,
+                                               biopsy_fire_travel_distances,
+                                               biopsy_needle_tip_length,
+                                               biopsy_needle_compartment_length,
+                                               optimal_template_hole_label,
+                                               optimal_sampling_point_prostate_xyz,
+                                               optimal_sampling_point_primed_xyz,
+                                               projected_axis_from_optimal_hole_prostate_start_xyz,
+                                               projected_axis_from_optimal_hole_prostate_end_xyz,
+                                               projected_axis_from_optimal_hole_primed_start_xyz,
+                                               projected_axis_from_optimal_hole_primed_end_xyz,
+                                               unprojected_axis_from_optimal_hole_prostate_start_xyz=None,
+                                               unprojected_axis_from_optimal_hole_prostate_end_xyz=None,
+                                               rotation_matrix_unprimed_to_primed=None,
+                                               primed_frame_origin_prostate_xyz=None,
+                                               prostate_apex_primed_z=None,
+                                               prostate_base_primed_z=None,
+                                               euler_angle_x_deg=None,
+                                               euler_angle_y_deg=None,
+                                               euler_angle_z_deg=None,
+                                               euler_convention=None,
+                                               additional_run_metadata=None):
+    """
+    Build a per-depth firing-recommendation dataframe for a single target structure.
+
+    Coordinate naming is explicit by frame:
+      - Prostate centroid frame: (X, Y, Z)
+      - Transducer primed frame: (X', Y', Z')
+
+    Deflection metrics included:
+      1) Out-of-plane axis offset: unprojected optimal-hole axis -> projected axis to TRUS sagittal plane
+      2) In-plane offset: pre-fire needle tip -> projected axis from optimal template hole (in Z'/Y')
+    """
+    optimal_prostate_xyz = _as_xyz(optimal_sampling_point_prostate_xyz, "optimal_sampling_point_prostate_xyz")
+    optimal_prime_xyz = _as_xyz(optimal_sampling_point_primed_xyz, "optimal_sampling_point_primed_xyz")
+    projected_axis_prostate_start_xyz = _as_xyz(
+        projected_axis_from_optimal_hole_prostate_start_xyz,
+        "projected_axis_from_optimal_hole_prostate_start_xyz"
+    )
+    projected_axis_prostate_end_xyz = _as_xyz(
+        projected_axis_from_optimal_hole_prostate_end_xyz,
+        "projected_axis_from_optimal_hole_prostate_end_xyz"
+    )
+    projected_axis_prime_start_xyz = _as_xyz(
+        projected_axis_from_optimal_hole_primed_start_xyz,
+        "projected_axis_from_optimal_hole_primed_start_xyz"
+    )
+    projected_axis_prime_end_xyz = _as_xyz(
+        projected_axis_from_optimal_hole_primed_end_xyz,
+        "projected_axis_from_optimal_hole_primed_end_xyz"
+    )
+
+    unprojected_axis_prostate_start_xyz = None
+    unprojected_axis_prostate_end_xyz = None
+    if unprojected_axis_from_optimal_hole_prostate_start_xyz is not None:
+        unprojected_axis_prostate_start_xyz = _as_xyz(
+            unprojected_axis_from_optimal_hole_prostate_start_xyz,
+            "unprojected_axis_from_optimal_hole_prostate_start_xyz"
+        )
+    if unprojected_axis_from_optimal_hole_prostate_end_xyz is not None:
+        unprojected_axis_prostate_end_xyz = _as_xyz(
+            unprojected_axis_from_optimal_hole_prostate_end_xyz,
+            "unprojected_axis_from_optimal_hole_prostate_end_xyz"
+        )
+
+    depth_values = np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1)
+    if depth_values.size == 0:
+        return pandas.DataFrame()
+
+    tip_shift_constant = float(biopsy_needle_tip_length) + float(biopsy_needle_compartment_length) / 2.0
+
+    # Out-of-plane axis-offset metric (3D vector + distance) from optimal-hole axis to its TRUS-plane projected counterpart.
+    out_plane_vec_xyz = np.array([np.nan, np.nan, np.nan], dtype=float)
+    out_plane_dist_mm = float("nan")
+    if unprojected_axis_prostate_start_xyz is not None:
+        out_plane_vec_xyz = projected_axis_prostate_start_xyz - unprojected_axis_prostate_start_xyz
+        out_plane_dist_mm = float(np.linalg.norm(out_plane_vec_xyz))
+
+    can_back_transform = (
+        rotation_matrix_unprimed_to_primed is not None and
+        primed_frame_origin_prostate_xyz is not None
+    )
+
+    axis_start_zy = np.array([projected_axis_prime_start_xyz[2], projected_axis_prime_start_xyz[1]], dtype=float)
+    axis_end_zy = np.array([projected_axis_prime_end_xyz[2], projected_axis_prime_end_xyz[1]], dtype=float)
+
+    euler_x_deg = float(euler_angle_x_deg) if euler_angle_x_deg is not None else float("nan")
+    euler_y_deg = float(euler_angle_y_deg) if euler_angle_y_deg is not None else float("nan")
+    euler_z_deg = float(euler_angle_z_deg) if euler_angle_z_deg is not None else float("nan")
+
+    euler_x_abs_deg = float(abs(euler_x_deg)) if not np.isnan(euler_x_deg) else float("nan")
+    euler_y_abs_deg = float(abs(euler_y_deg)) if not np.isnan(euler_y_deg) else float("nan")
+    euler_z_abs_deg = float(abs(euler_z_deg)) if not np.isnan(euler_z_deg) else float("nan")
+
+    euler_x_direction = _angle_direction_label(euler_x_deg)
+    euler_y_direction = _angle_direction_label(euler_y_deg)
+    euler_z_direction = _angle_direction_label(euler_z_deg)
+
+    rows = []
+    for depth_row_index, depth_mm in enumerate(depth_values):
+        # Pre-fire tip is shifted along Z' from optimal sampling point by penetration-depth logic.
+        tip_prime_xyz = np.array([
+            float(optimal_prime_xyz[0]),
+            float(optimal_prime_xyz[1]),
+            float(optimal_prime_xyz[2] - float(depth_mm) + tip_shift_constant),
+        ], dtype=float)
+
+        tip_point_zy = np.array([tip_prime_xyz[2], tip_prime_xyz[1]], dtype=float)
+        in_plane_dist_mm, projection_zy, t_param = _point_to_segment_projection_2d(tip_point_zy, axis_start_zy, axis_end_zy)
+
+        # Keep in-plane projection constrained to the same sagittal (X') plane as pre-fire tip.
+        projected_tip_on_axis_prime_xyz = np.array([
+            float(tip_prime_xyz[0]),
+            float(projection_zy[1]),
+            float(projection_zy[0]),
+        ], dtype=float)
+        in_plane_vec_prime_xyz = projected_tip_on_axis_prime_xyz - tip_prime_xyz
+        in_plane_vec_prime_xyz[0] = 0.0  # explicitly in-plane for sagittal Z'/Y'
+
+        depth_from_apex_mm = float("nan")
+        if prostate_apex_primed_z is not None:
+            depth_from_apex_mm = float(tip_prime_xyz[2] - float(prostate_apex_primed_z))
+
+        tip_prostate_xyz = np.array([np.nan, np.nan, np.nan], dtype=float)
+        projected_tip_on_axis_prostate_xyz = np.array([np.nan, np.nan, np.nan], dtype=float)
+        if can_back_transform:
+            tip_prostate_xyz = _transform_primed_to_prostate(
+                tip_prime_xyz, rotation_matrix_unprimed_to_primed, primed_frame_origin_prostate_xyz
+            )
+            projected_tip_on_axis_prostate_xyz = _transform_primed_to_prostate(
+                projected_tip_on_axis_prime_xyz, rotation_matrix_unprimed_to_primed, primed_frame_origin_prostate_xyz
+            )
+
+        row = {
+            "Patient ID": patient_id,
+            "Relative structure ID": relative_structure_id,
+            "Relative struct type": relative_struct_type,
+            "Relative struct index": relative_struct_index,
+            "Firing depth row index (per structure)": int(depth_row_index),
+            "Firing depth row UID": (
+                f"{patient_id}|{relative_struct_type}|{relative_struct_index}|{relative_structure_id}|"
+                f"row={depth_row_index}|depth_mm={float(depth_mm):.6f}"
+            ),
+            "Penetration depth (mm)": float(depth_mm),
+            "Optimal template hole": str(optimal_template_hole_label) if optimal_template_hole_label is not None else "-",
+
+            "Biopsy needle tip length (mm)": float(biopsy_needle_tip_length),
+            "Biopsy needle compartment length (mm)": float(biopsy_needle_compartment_length),
+            "Needle pre-fire tip shift constant (mm)": tip_shift_constant,
+            "Euler angle X (deg)": euler_x_deg,
+            "Euler angle Y (deg)": euler_y_deg,
+            "Euler angle Z (deg)": euler_z_deg,
+            "Euler angle X abs (deg)": euler_x_abs_deg,
+            "Euler angle Y abs (deg)": euler_y_abs_deg,
+            "Euler angle Z abs (deg)": euler_z_abs_deg,
+            "Euler angle X direction": euler_x_direction,
+            "Euler angle Y direction": euler_y_direction,
+            "Euler angle Z direction": euler_z_direction,
+            "Euler convention": euler_convention if euler_convention is not None else "-",
+
+            "Optimal sampling point (Prostate centroid frame) (X)": float(optimal_prostate_xyz[0]),
+            "Optimal sampling point (Prostate centroid frame) (Y)": float(optimal_prostate_xyz[1]),
+            "Optimal sampling point (Prostate centroid frame) (Z)": float(optimal_prostate_xyz[2]),
+            "Optimal sampling point (Transducer primed frame) (X')": float(optimal_prime_xyz[0]),
+            "Optimal sampling point (Transducer primed frame) (Y')": float(optimal_prime_xyz[1]),
+            "Optimal sampling point (Transducer primed frame) (Z')": float(optimal_prime_xyz[2]),
+
+            "Pre-fire needle tip (Prostate centroid frame) (X)": float(tip_prostate_xyz[0]),
+            "Pre-fire needle tip (Prostate centroid frame) (Y)": float(tip_prostate_xyz[1]),
+            "Pre-fire needle tip (Prostate centroid frame) (Z)": float(tip_prostate_xyz[2]),
+            "Pre-fire needle tip (Transducer primed frame) (X')": float(tip_prime_xyz[0]),
+            "Pre-fire needle tip (Transducer primed frame) (Y')": float(tip_prime_xyz[1]),
+            "Pre-fire needle tip (Transducer primed frame) (Z')": float(tip_prime_xyz[2]),
+
+            "Projected axis from optimal template hole (Prostate centroid frame) start (X)": float(projected_axis_prostate_start_xyz[0]),
+            "Projected axis from optimal template hole (Prostate centroid frame) start (Y)": float(projected_axis_prostate_start_xyz[1]),
+            "Projected axis from optimal template hole (Prostate centroid frame) start (Z)": float(projected_axis_prostate_start_xyz[2]),
+            "Projected axis from optimal template hole (Prostate centroid frame) end (X)": float(projected_axis_prostate_end_xyz[0]),
+            "Projected axis from optimal template hole (Prostate centroid frame) end (Y)": float(projected_axis_prostate_end_xyz[1]),
+            "Projected axis from optimal template hole (Prostate centroid frame) end (Z)": float(projected_axis_prostate_end_xyz[2]),
+
+            "Projected axis from optimal template hole (Transducer primed frame) start (X')": float(projected_axis_prime_start_xyz[0]),
+            "Projected axis from optimal template hole (Transducer primed frame) start (Y')": float(projected_axis_prime_start_xyz[1]),
+            "Projected axis from optimal template hole (Transducer primed frame) start (Z')": float(projected_axis_prime_start_xyz[2]),
+            "Projected axis from optimal template hole (Transducer primed frame) end (X')": float(projected_axis_prime_end_xyz[0]),
+            "Projected axis from optimal template hole (Transducer primed frame) end (Y')": float(projected_axis_prime_end_xyz[1]),
+            "Projected axis from optimal template hole (Transducer primed frame) end (Z')": float(projected_axis_prime_end_xyz[2]),
+
+            "Unprojected axis from optimal template hole (Prostate centroid frame) start (X)": float(unprojected_axis_prostate_start_xyz[0]) if unprojected_axis_prostate_start_xyz is not None else float("nan"),
+            "Unprojected axis from optimal template hole (Prostate centroid frame) start (Y)": float(unprojected_axis_prostate_start_xyz[1]) if unprojected_axis_prostate_start_xyz is not None else float("nan"),
+            "Unprojected axis from optimal template hole (Prostate centroid frame) start (Z)": float(unprojected_axis_prostate_start_xyz[2]) if unprojected_axis_prostate_start_xyz is not None else float("nan"),
+            "Unprojected axis from optimal template hole (Prostate centroid frame) end (X)": float(unprojected_axis_prostate_end_xyz[0]) if unprojected_axis_prostate_end_xyz is not None else float("nan"),
+            "Unprojected axis from optimal template hole (Prostate centroid frame) end (Y)": float(unprojected_axis_prostate_end_xyz[1]) if unprojected_axis_prostate_end_xyz is not None else float("nan"),
+            "Unprojected axis from optimal template hole (Prostate centroid frame) end (Z)": float(unprojected_axis_prostate_end_xyz[2]) if unprojected_axis_prostate_end_xyz is not None else float("nan"),
+
+            "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (X)": float(out_plane_vec_xyz[0]),
+            "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (Y)": float(out_plane_vec_xyz[1]),
+            "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (Z)": float(out_plane_vec_xyz[2]),
+            "Out-of-plane axis offset from optimal template hole distance (mm)": out_plane_dist_mm,
+
+            "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (X)": float(projected_tip_on_axis_prostate_xyz[0]),
+            "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (Y)": float(projected_tip_on_axis_prostate_xyz[1]),
+            "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (Z)": float(projected_tip_on_axis_prostate_xyz[2]),
+            "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (X')": float(projected_tip_on_axis_prime_xyz[0]),
+            "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')": float(projected_tip_on_axis_prime_xyz[1]),
+            "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')": float(projected_tip_on_axis_prime_xyz[2]),
+
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (X')": float(in_plane_vec_prime_xyz[0]),
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (Y')": float(in_plane_vec_prime_xyz[1]),
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (Z')": float(in_plane_vec_prime_xyz[2]),
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)": float(in_plane_dist_mm),
+            "In-plane projection parameter t (0-1)": float(t_param),
+
+            "Prostate apex (Transducer primed frame) (Z')": float(prostate_apex_primed_z) if prostate_apex_primed_z is not None else float("nan"),
+            "Prostate base (Transducer primed frame) (Z')": float(prostate_base_primed_z) if prostate_base_primed_z is not None else float("nan"),
+            "Pre-fire tip depth from apex (Transducer primed frame) (mm)": depth_from_apex_mm,
+        }
+
+        if additional_run_metadata:
+            row.update(additional_run_metadata)
+
+        rows.append(row)
+
+    return pandas.DataFrame(rows)
+
+
+def precompute_guidance_map_firing_depths_for_patient(patientUID,
+                                                      pydicom_item,
+                                                      dil_ref,
+                                                      all_ref_key,
+                                                      oar_ref,
+                                                      rectum_ref,
+                                                      biopsy_fire_travel_distances,
+                                                      biopsy_needle_compartment_length,
+                                                      interp_inter_slice_dist,
+                                                      interp_intra_slice_dist,
+                                                      radius_for_normals_estimation,
+                                                      max_nn_for_normals_estimation,
+                                                      biopsy_needle_tip_length,
+                                                      transducer_plane_grid_spacing=2,
+                                                      prostate_template_spacing=5,
+                                                      range_x=13,
+                                                      range_y=13,
+                                                      label1='D',
+                                                      label2='1.5',
+                                                      y_shift_for_1_5_coord_from_prostate_max_post=-3,
+                                                      use_natural_TRUS_origin_for_transducer_sagittal_plane=True):
+    """
+    Build and store guidance-map geometry context + firing-depth dataframe per DIL for one patient.
+
+    Returns:
+        pandas.DataFrame: Patient-level concatenation of all per-DIL firing-depth rows.
+    """
+    empty_df = pandas.DataFrame()
+    selected_structures_df = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"].get("Selected structures")
+    if not isinstance(selected_structures_df, pandas.DataFrame) or selected_structures_df.empty:
+        warnings.warn(f"[Guidance precompute] {patientUID}: missing selected structures dataframe.")
+        return empty_df
+
+    prostate_rows = selected_structures_df[
+        (selected_structures_df["Struct ref type"] == oar_ref)
+        & (selected_structures_df["Struct found bool"] == True)
+    ]
+    rectum_rows = selected_structures_df[
+        (selected_structures_df["Struct ref type"] == rectum_ref)
+        & (selected_structures_df["Struct found bool"] == True)
+    ]
+    if prostate_rows.empty or rectum_rows.empty:
+        warnings.warn(f"[Guidance precompute] {patientUID}: missing required prostate/rectum structures.")
+        return empty_df
+
+    prostate_structure_index = int(prostate_rows.reset_index(drop=True).at[0, "Index number"])
+    rectum_structure_index = int(rectum_rows.reset_index(drop=True).at[0, "Index number"])
+
+    entire_lattice_df = pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"].get(
+        "Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe"
+    )
+    if not isinstance(entire_lattice_df, pandas.DataFrame) or entire_lattice_df.empty:
+        warnings.warn(f"[Guidance precompute] {patientUID}: missing entire lattice dataframe.")
+        return empty_df
+
+    prostate_centroid = pydicom_item[oar_ref][prostate_structure_index]["Structure global centroid"].reshape(3)
+    prostate_inter_slice_interp_np_arr = pydicom_item[oar_ref][prostate_structure_index][
+        'Inter-slice interpolation information'
+    ].interpolated_pts_np_arr
+    prostate_inter_slice_interp_np_arr_prostate_coords = prostate_inter_slice_interp_np_arr - prostate_centroid
+    max_y_prostate = float(np.max(prostate_inter_slice_interp_np_arr_prostate_coords[:, 1]))
+
+    rectum_points = pydicom_item[rectum_ref][rectum_structure_index]['Structure centroid pts']
+    rectum_point_sup = rectum_points[0]
+    rectum_point_inf = rectum_points[-1]
+    rectum_point_sup_z_aligned_with_rectum_point_inf = copy.deepcopy(rectum_point_sup)
+    rectum_point_sup_z_aligned_with_rectum_point_inf[0] = rectum_point_inf[0]
+    rectum_point_sup_z_aligned_with_rectum_point_inf[1] = rectum_point_inf[1]
+    rectum_point_sup_z_aligned_prostate_frame = rectum_point_sup_z_aligned_with_rectum_point_inf - prostate_centroid
+    rectum_point_inf_prostate_frame = rectum_point_inf - prostate_centroid
+
+    if use_natural_TRUS_origin_for_transducer_sagittal_plane:
+        transducer_saggital_plane_point_prostate_frame_inf = np.array([0, 0, rectum_point_inf[2]], dtype=float) - prostate_centroid
+        transducer_saggital_plane_point_prostate_frame_sup = np.array([0, 0, rectum_point_sup[2]], dtype=float) - prostate_centroid
+    else:
+        transducer_saggital_plane_point_prostate_frame_inf = rectum_point_inf_prostate_frame
+        transducer_saggital_plane_point_prostate_frame_sup = rectum_point_sup_z_aligned_prostate_frame
+
+    rectum_inter_slice_interp_np_arr = pydicom_item[rectum_ref][rectum_structure_index][
+        'Inter-slice interpolation information'
+    ].interpolated_pts_np_arr
+    rectum_inter_slice_interp_np_arr_prostate_coords = rectum_inter_slice_interp_np_arr - prostate_centroid
+    min_z_rectum = float(np.min(rectum_inter_slice_interp_np_arr_prostate_coords[:, 2]))
+
+    prostate_grid_template_lattice_dataframe = generate_prostate_template_lattice_dataframe(
+        prostate_template_spacing,
+        range_x,
+        range_y,
+        label1,
+        label2
+    )
+    coord_1_5_pos_in_prostate_coords = max_y_prostate + float(y_shift_for_1_5_coord_from_prostate_max_post)
+    grid_position_D_1_5_in_prostate_coords = np.array([0, coord_1_5_pos_in_prostate_coords, min_z_rectum], dtype=float)
+    prostate_grid_template_lattice_XYZ_aligned_dataframe = translate_lattice_based_on_labels(
+        prostate_grid_template_lattice_dataframe,
+        grid_position_D_1_5_in_prostate_coords,
+        letter_label=label1,
+        numerical_label=label2
+    )
+    prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].to_numpy()
+
+    prostate_intra_interp_info = pydicom_item[oar_ref][prostate_structure_index]["Intra-slice interpolation information"]
+    prostate_pts_with_end_caps = prostate_intra_interp_info.interpolated_pts_with_end_caps_np_arr
+    prostate_trimesh, _ = misc_tools.compute_structure_triangle_mesh(
+        interp_inter_slice_dist,
+        interp_intra_slice_dist,
+        prostate_pts_with_end_caps,
+        radius_for_normals_estimation,
+        max_nn_for_normals_estimation
+    )
+    prostate_trimesh_prostate_frame = translate_mesh(prostate_trimesh, -prostate_centroid)
+
+    patient_firing_depth_df_list = []
+    for specific_dil_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
+        specific_dil_structure["Biopsy optimization: Guidance-map geometry context"] = None
+        specific_dil_structure["Biopsy optimization: Guidance-map firing depth dataframe"] = pandas.DataFrame()
+
+        optimal_positions_df = specific_dil_structure.get("Biopsy optimization: Optimal biopsy location dataframe")
+        if not isinstance(optimal_positions_df, pandas.DataFrame) or optimal_positions_df.empty:
+            continue
+
+        sp_dil_optimal_coordinate = np.array([
+            float(optimal_positions_df.at[0, 'Test location (Prostate centroid origin) (X)']),
+            float(optimal_positions_df.at[0, 'Test location (Prostate centroid origin) (Y)']),
+            float(optimal_positions_df.at[0, 'Test location (Prostate centroid origin) (Z)'])
+        ], dtype=float)
+        if 'Relative DIL ID' in optimal_positions_df.columns:
+            sp_dil_id = str(optimal_positions_df.at[0, 'Relative DIL ID'])
+        else:
+            sp_dil_id = str(specific_dil_structure.get("ROI", f"{dil_ref}_{specific_dil_index}"))
+
+        transducer_plane_df, transducer_plane_normal, euler_angles, euler_convention_str = generate_grid_dataframe(
+            transducer_saggital_plane_point_prostate_frame_sup,
+            transducer_saggital_plane_point_prostate_frame_inf,
+            transducer_plane_grid_spacing,
+            entire_lattice_df,
+            sp_dil_optimal_coordinate
+        )
+        _, transformed_optimal_point, rotation_matrix = transform_grid_and_point_for_plotting(
+            transducer_plane_df,
+            transducer_plane_normal,
+            sp_dil_optimal_coordinate
+        )
+
+        nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
+        nearest_template_points = prostate_template_points[nearest_indices]
+        nearest_lines_contour, nearest_lines_projected, nearest_lines_unprojected = project_and_transform_lines(
+            nearest_template_points,
+            transducer_plane_normal,
+            sp_dil_optimal_coordinate,
+            rotation_matrix,
+            prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices]
+        )
+        if len(nearest_lines_projected) == 0 or len(nearest_lines_contour) == 0:
+            continue
+
+        optimal_template_hole_label = "-"
+        if len(nearest_lines_unprojected) > 0:
+            optimal_template_hole_label = str(nearest_lines_unprojected[0].get("label", "-"))
+
+        prostate_mesh_slice_pts = slice_mesh_fast_v2(prostate_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
+        prostate_mesh_slice_pts_transformed_contour_plot_coords = None
+        if len(prostate_mesh_slice_pts) != 0:
+            prostate_mesh_slice_pts_transformed = transform_points(
+                prostate_mesh_slice_pts,
+                rotation_matrix,
+                transducer_plane_df
+            )
+            prostate_mesh_slice_pts_transformed_contour_plot_coords = prostate_mesh_slice_pts_transformed[:, [2, 1]]
+
+        projected_axis_prostate = nearest_lines_projected[0]
+        projected_axis_prime = nearest_lines_contour[0]
+        unprojected_axis_prostate = nearest_lines_unprojected[0] if len(nearest_lines_unprojected) > 0 else None
+
+        geometry_context = build_guidance_map_geometry_context(
+            patient_id=patientUID,
+            relative_structure_id=sp_dil_id,
+            relative_struct_type=dil_ref,
+            relative_struct_index=specific_dil_index,
+            optimal_template_hole_label=optimal_template_hole_label,
+            optimal_sampling_point_prostate_xyz=sp_dil_optimal_coordinate,
+            optimal_sampling_point_primed_xyz=transformed_optimal_point,
+            projected_axis_line_prostate=projected_axis_prostate,
+            projected_axis_line_primed=projected_axis_prime,
+            unprojected_axis_line_prostate=unprojected_axis_prostate,
+            transducer_plane_df=transducer_plane_df,
+            prostate_slice_pts_primed_zy=prostate_mesh_slice_pts_transformed_contour_plot_coords,
+            rotation_matrix_unprimed_to_primed=rotation_matrix,
+            euler_angles_deg=euler_angles,
+            euler_convention=euler_convention_str,
+        )
+        specific_dil_structure["Biopsy optimization: Guidance-map geometry context"] = geometry_context
+
+        firing_depth_df = build_guidance_map_firing_depths_dataframe_from_context(
+            geometry_context=geometry_context,
+            biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+            biopsy_needle_tip_length=biopsy_needle_tip_length,
+            biopsy_needle_compartment_length=biopsy_needle_compartment_length
+        )
+        specific_dil_structure["Biopsy optimization: Guidance-map firing depth dataframe"] = firing_depth_df
+        if isinstance(firing_depth_df, pandas.DataFrame) and not firing_depth_df.empty:
+            patient_firing_depth_df_list.append(firing_depth_df)
+
+    if len(patient_firing_depth_df_list) == 0:
+        return empty_df
+    return pandas.concat(patient_firing_depth_df_list, ignore_index=True)
+
 import string
 
 def generate_prostate_template_lattice_dataframe(spacing, range_x, range_y, label1='D', label2='1.5', label2_step=0.5, origin=np.zeros(3), normal_vector=np.array([0,0,1]), edge_vector1=np.array([1,0,0]), edge_vector2=np.array([0,-1,0])):
@@ -2731,7 +3410,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             draw_orientation_diagram = True,
                                             colorbar_title_font_size = 12,
                                             fire_annotation_style = "hockey",
-                                            fire_table_position = "auto"
+                                            fire_table_position = "auto",
+                                            validate_firing_df_builder = False,
+                                            firing_df_validation_tolerance_mm = 1e-6
                                             ):
 
     def _anchor_colorbars_bottom_right(fig):
@@ -2795,6 +3476,275 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     if fire_table_position not in valid_fire_table_positions:
         warnings.warn(f"Unsupported fire_table_position '{fire_table_position}'. Falling back to 'auto'.")
         fire_table_position = "auto"
+
+    def _emit_validation_note(message):
+        warnings.warn(message)
+        if hasattr(important_info, "add_text_line"):
+            try:
+                important_info.add_text_line(message, live_display)
+            except Exception:
+                pass
+
+    def _compare_fire_rows_with_dataframe(legacy_fire_rows,
+                                          firing_depth_df,
+                                          dil_id,
+                                          euler_angles=None,
+                                          euler_convention=None,
+                                          relative_struct_type=None,
+                                          relative_struct_index=None):
+        if not legacy_fire_rows:
+            _emit_validation_note(f"[Guidance map validation] {patientUID} | {dil_id}: no fire rows to compare.")
+            return pandas.DataFrame()
+        if firing_depth_df is None or firing_depth_df.empty:
+            _emit_validation_note(f"[Guidance map validation] {patientUID} | {dil_id}: dataframe builder returned no rows.")
+            return pandas.DataFrame()
+
+        euler_x = float("nan")
+        euler_y = float("nan")
+        euler_z = float("nan")
+        if euler_angles is not None:
+            euler_arr = np.asarray(euler_angles, dtype=float).reshape(-1)
+            if euler_arr.size >= 3:
+                euler_x = float(euler_arr[0])
+                euler_y = float(euler_arr[1])
+                euler_z = float(euler_arr[2])
+
+        legacy_df = pandas.DataFrame(legacy_fire_rows)[[
+            "penetration_depth",
+            "optimal_hole",
+            "zprime",
+            "yprime",
+            "deflection",
+            "depth_from_apex",
+        ]].copy()
+        legacy_df["firing_row_index"] = np.arange(len(legacy_df), dtype=int)
+        legacy_df["euler_x"] = euler_x
+        legacy_df["euler_y"] = euler_y
+        legacy_df["euler_z"] = euler_z
+        legacy_df["euler_x_abs"] = float(abs(euler_x)) if not np.isnan(euler_x) else float("nan")
+        legacy_df["euler_y_abs"] = float(abs(euler_y)) if not np.isnan(euler_y) else float("nan")
+        legacy_df["euler_z_abs"] = float(abs(euler_z)) if not np.isnan(euler_z) else float("nan")
+        legacy_df["euler_x_direction"] = _angle_direction_label(euler_x)
+        legacy_df["euler_y_direction"] = _angle_direction_label(euler_y)
+        legacy_df["euler_z_direction"] = _angle_direction_label(euler_z)
+        legacy_df["euler_convention"] = euler_convention if euler_convention is not None else "-"
+        if relative_struct_type is not None and relative_struct_index is not None:
+            legacy_df["firing_row_uid"] = legacy_df.apply(
+                lambda row: (
+                    f"{patientUID}|{relative_struct_type}|{relative_struct_index}|{dil_id}|"
+                    f"row={int(row['firing_row_index'])}|depth_mm={float(row['penetration_depth']):.6f}"
+                ),
+                axis=1
+            )
+        else:
+            legacy_df["firing_row_uid"] = float("nan")
+        legacy_df["depth_row_id"] = legacy_df.groupby("penetration_depth").cumcount()
+
+        builder_expected_columns = [
+            "Penetration depth (mm)",
+            "Optimal template hole",
+            "Pre-fire needle tip (Transducer primed frame) (Z')",
+            "Pre-fire needle tip (Transducer primed frame) (Y')",
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+            "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+            "Firing depth row index (per structure)",
+            "Firing depth row UID",
+            "Euler angle X (deg)",
+            "Euler angle Y (deg)",
+            "Euler angle Z (deg)",
+            "Euler angle X abs (deg)",
+            "Euler angle Y abs (deg)",
+            "Euler angle Z abs (deg)",
+            "Euler angle X direction",
+            "Euler angle Y direction",
+            "Euler angle Z direction",
+            "Euler convention",
+        ]
+        builder_source_df = firing_depth_df.copy()
+        missing_builder_columns = [col for col in builder_expected_columns if col not in builder_source_df.columns]
+        for col in missing_builder_columns:
+            builder_source_df[col] = np.nan
+
+        builder_df = builder_source_df[builder_expected_columns].rename(columns={
+            "Penetration depth (mm)": "penetration_depth",
+            "Optimal template hole": "optimal_hole",
+            "Pre-fire needle tip (Transducer primed frame) (Z')": "zprime",
+            "Pre-fire needle tip (Transducer primed frame) (Y')": "yprime",
+            "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)": "deflection",
+            "Pre-fire tip depth from apex (Transducer primed frame) (mm)": "depth_from_apex",
+            "Firing depth row index (per structure)": "firing_row_index",
+            "Firing depth row UID": "firing_row_uid",
+            "Euler angle X (deg)": "euler_x",
+            "Euler angle Y (deg)": "euler_y",
+            "Euler angle Z (deg)": "euler_z",
+            "Euler angle X abs (deg)": "euler_x_abs",
+            "Euler angle Y abs (deg)": "euler_y_abs",
+            "Euler angle Z abs (deg)": "euler_z_abs",
+            "Euler angle X direction": "euler_x_direction",
+            "Euler angle Y direction": "euler_y_direction",
+            "Euler angle Z direction": "euler_z_direction",
+            "Euler convention": "euler_convention",
+        }).copy()
+        builder_df["depth_row_id"] = builder_df.groupby("penetration_depth").cumcount()
+
+        mismatch_messages = []
+        if missing_builder_columns:
+            mismatch_messages.append(f"builder missing columns: {missing_builder_columns}")
+
+        # Invariants for newly introduced fields with no historical legacy equivalent.
+        if not builder_df.empty:
+            builder_row_index = pandas.to_numeric(builder_df["firing_row_index"], errors="coerce").to_numpy()
+            expected_row_index = np.arange(len(builder_df), dtype=float)
+            if not np.array_equal(builder_row_index, expected_row_index):
+                mismatch_messages.append("firing_row_index sequence mismatch")
+
+            builder_uid_series = builder_df["firing_row_uid"]
+            if builder_uid_series.notna().any() and builder_uid_series.astype(str).duplicated().any():
+                mismatch_messages.append("firing_row_uid is not unique")
+
+            if relative_struct_type is not None and relative_struct_index is not None:
+                expected_uid_series = builder_df.apply(
+                    lambda row: (
+                        f"{patientUID}|{relative_struct_type}|{relative_struct_index}|{dil_id}|"
+                        f"row={int(pandas.to_numeric(row['firing_row_index'], errors='coerce'))}|"
+                        f"depth_mm={float(pandas.to_numeric(row['penetration_depth'], errors='coerce')):.6f}"
+                    )
+                    if not np.isnan(pandas.to_numeric(row["firing_row_index"], errors="coerce"))
+                    and not np.isnan(pandas.to_numeric(row["penetration_depth"], errors="coerce"))
+                    else "-"
+                    ,
+                    axis=1
+                ).to_numpy()
+                actual_uid_series = builder_df["firing_row_uid"].fillna("-").astype(str).to_numpy()
+                uid_mismatch_mask = actual_uid_series != expected_uid_series
+                if np.any(uid_mismatch_mask):
+                    mismatch_messages.append("firing_row_uid format/value mismatch")
+
+        merged = legacy_df.merge(
+            builder_df,
+            on=["penetration_depth", "depth_row_id"],
+            how="outer",
+            suffixes=("_legacy", "_builder"),
+            indicator=True,
+        )
+
+        unmatched_rows = merged[merged["_merge"] != "both"]
+        if not unmatched_rows.empty:
+            unmatched_depths = unmatched_rows["penetration_depth"].tolist()
+            mismatch_messages.append(f"depth-row mismatch at {unmatched_depths}")
+
+        both_mask = merged["_merge"] == "both"
+        numeric_fields = [
+            "zprime",
+            "yprime",
+            "deflection",
+            "depth_from_apex",
+            "firing_row_index",
+            "euler_x",
+            "euler_y",
+            "euler_z",
+            "euler_x_abs",
+            "euler_y_abs",
+            "euler_z_abs",
+        ]
+        string_fields = [
+            "optimal_hole",
+            "firing_row_uid",
+            "euler_x_direction",
+            "euler_y_direction",
+            "euler_z_direction",
+            "euler_convention",
+        ]
+        compared_match_columns = []
+
+        for field in numeric_fields:
+            legacy_field_col = f"{field}_legacy"
+            builder_field_col = f"{field}_builder"
+            if legacy_field_col not in merged.columns or builder_field_col not in merged.columns:
+                mismatch_messages.append(f"{field} comparison columns missing")
+                merged[f"{field}_match"] = False
+                compared_match_columns.append(f"{field}_match")
+                continue
+
+            legacy_vals = merged.loc[both_mask, f"{field}_legacy"].astype(float).to_numpy()
+            builder_vals = merged.loc[both_mask, f"{field}_builder"].astype(float).to_numpy()
+            same_nan = np.isnan(legacy_vals) & np.isnan(builder_vals)
+            close_vals = np.isclose(
+                legacy_vals,
+                builder_vals,
+                atol=float(firing_df_validation_tolerance_mm),
+                rtol=0.0,
+                equal_nan=False,
+            )
+            mismatch_mask = ~(same_nan | close_vals)
+            if np.any(mismatch_mask):
+                mismatch_depths = merged.loc[both_mask, "penetration_depth"].to_numpy()[mismatch_mask]
+                mismatch_messages.append(f"{field} mismatch at depths {mismatch_depths.tolist()}")
+            compared_match_columns.append(f"{field}_match")
+
+        for field in string_fields:
+            legacy_field_col = f"{field}_legacy"
+            builder_field_col = f"{field}_builder"
+            match_col = f"{field}_match"
+            if legacy_field_col not in merged.columns or builder_field_col not in merged.columns:
+                mismatch_messages.append(f"{field} comparison columns missing")
+                merged[match_col] = False
+                compared_match_columns.append(match_col)
+                continue
+
+            field_match_mask = (
+                merged.loc[both_mask, legacy_field_col].fillna("-").astype(str)
+                == merged.loc[both_mask, builder_field_col].fillna("-").astype(str)
+            )
+            merged[match_col] = False
+            merged.loc[both_mask, match_col] = field_match_mask.to_numpy()
+            if np.any(~field_match_mask.to_numpy()):
+                mismatch_depths = merged.loc[both_mask, "penetration_depth"].to_numpy()[~field_match_mask.to_numpy()]
+                mismatch_messages.append(f"{field} mismatch at depths {mismatch_depths.tolist()}")
+            compared_match_columns.append(match_col)
+
+        if mismatch_messages:
+            _emit_validation_note(
+                f"[Guidance map validation] {patientUID} | {dil_id}: " + "; ".join(mismatch_messages)
+            )
+        else:
+            _emit_validation_note(
+                f"[Guidance map validation] {patientUID} | {dil_id}: legacy fire rows and dataframe builder match."
+            )
+
+        # Build a value-for-value comparison dataframe for downstream inspection/export.
+        merged["Patient ID"] = patientUID
+        merged["Relative structure ID"] = dil_id
+        for field in numeric_fields:
+            legacy_col = f"{field}_legacy"
+            builder_col = f"{field}_builder"
+            delta_col = f"{field}_builder_minus_legacy"
+            match_col = f"{field}_match"
+            if legacy_col not in merged.columns or builder_col not in merged.columns:
+                continue
+            merged[delta_col] = merged[builder_col] - merged[legacy_col]
+            legacy_vals = merged[legacy_col].astype(float).to_numpy()
+            builder_vals = merged[builder_col].astype(float).to_numpy()
+            merged[match_col] = (
+                (np.isnan(legacy_vals) & np.isnan(builder_vals))
+                | np.isclose(
+                    legacy_vals,
+                    builder_vals,
+                    atol=float(firing_df_validation_tolerance_mm),
+                    rtol=0.0,
+                    equal_nan=False
+                )
+            )
+        merged["row_present_in_both"] = merged["_merge"] == "both"
+        if len(compared_match_columns) > 0:
+            merged["all_checked_fields_match"] = (
+                merged["row_present_in_both"]
+                & merged[compared_match_columns].all(axis=1)
+            )
+        else:
+            merged["all_checked_fields_match"] = merged["row_present_in_both"]
+
+        return merged
 
     def _show_all_axis_lines(fig):
         """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
@@ -3335,6 +4285,66 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     name=legend_label
                 ))
 
+        if validate_firing_df_builder:
+            if (
+                len(nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts) == 0
+                or len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) == 0
+            ):
+                _emit_validation_note(
+                    f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing template axis line)."
+                )
+            else:
+                projected_axis_prostate = nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts[0]
+                projected_axis_prime = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
+                unprojected_axis_prostate = (
+                    nearest_prostate_template_lines_list_of_dicts[0]
+                    if len(nearest_prostate_template_lines_list_of_dicts) > 0
+                    else None
+                )
+                geometry_context = build_guidance_map_geometry_context(
+                    patient_id=patientUID,
+                    relative_structure_id=sp_dil_id,
+                    relative_struct_type=dil_ref,
+                    relative_struct_index=specific_dil_index,
+                    optimal_template_hole_label=optimal_template_hole_label,
+                    optimal_sampling_point_prostate_xyz=sp_dil_optimal_coordinate,
+                    optimal_sampling_point_primed_xyz=transformed_optimal_point,
+                    projected_axis_line_prostate=projected_axis_prostate,
+                    projected_axis_line_primed=projected_axis_prime,
+                    unprojected_axis_line_prostate=unprojected_axis_prostate,
+                    transducer_plane_df=transducer_plane_df,
+                    prostate_slice_pts_primed_zy=prostate_mesh_slice_pts_transformed_contour_plot_coords,
+                    rotation_matrix_unprimed_to_primed=rotation_matrix,
+                    euler_angles_deg=euler_angles,
+                    euler_convention=euler_convention_str,
+                )
+                specific_dil_structure[
+                    "Biopsy optimization: Guidance-map geometry context (validation)"
+                ] = geometry_context
+
+                firing_depth_df = build_guidance_map_firing_depths_dataframe_from_context(
+                    geometry_context=geometry_context,
+                    biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+                    biopsy_needle_tip_length=biopsy_needle_tip_length,
+                    biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+                )
+                specific_dil_structure[
+                    "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
+                ] = firing_depth_df
+                comparison_df = _compare_fire_rows_with_dataframe(
+                    fire_rows,
+                    firing_depth_df,
+                    sp_dil_id,
+                    euler_angles=euler_angles,
+                    euler_convention=euler_convention_str,
+                    relative_struct_type=dil_ref,
+                    relative_struct_index=specific_dil_index,
+                )
+                if not comparison_df.empty:
+                    specific_dil_structure[
+                        "Biopsy optimization: Guidance-map firing depth comparison dataframe (validation)"
+                    ] = comparison_df
+
         contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
 
 
@@ -3590,6 +4600,5 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                     "Contour plot": contour_plot_transverse}
         transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)
         
-
 
     return trus_plane_sagittal_contour_plot_list_of_dicts, transverse_contour_plot_list_of_dicts

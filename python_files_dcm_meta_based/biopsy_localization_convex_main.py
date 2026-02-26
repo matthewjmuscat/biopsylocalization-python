@@ -413,9 +413,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 1
-    num_MC_containment_simulations_input = 1000
+    num_MC_containment_simulations_input = 10
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 10000
+    num_MC_dose_simulations_input = 10
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -7874,6 +7874,40 @@ def main():
                                        )
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
+                # guidance-map firing-depth recommendations dataframe (precomputed outside plotter)
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.5", total = None)
+                for patientUID, pydicom_item in master_structure_reference_dict.items():
+                    guidance_map_firing_depth_recommendations_df = advanced_guidance_map_creator.precompute_guidance_map_firing_depths_for_patient(
+                        patientUID=patientUID,
+                        pydicom_item=pydicom_item,
+                        dil_ref=dil_ref,
+                        all_ref_key=all_ref_key,
+                        oar_ref=oar_ref,
+                        rectum_ref=rectum_ref_key,
+                        biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+                        biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+                        interp_inter_slice_dist=interp_inter_slice_dist,
+                        interp_intra_slice_dist=interp_intra_slice_dist,
+                        radius_for_normals_estimation=radius_for_normals_estimation,
+                        max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+                        biopsy_needle_tip_length=biopsy_needle_tip_length
+                    )
+
+                    if isinstance(guidance_map_firing_depth_recommendations_df, pandas.DataFrame) and not guidance_map_firing_depth_recommendations_df.empty:
+                        guidance_map_firing_depth_recommendations_df = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                            guidance_map_firing_depth_recommendations_df,
+                            threshold=0.25,
+                            ignore_types=(np.floating,)
+                        )
+                    else:
+                        guidance_map_firing_depth_recommendations_df = pandas.DataFrame()
+
+                    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
+                        "Biopsy optimization - Guidance-map firing depth recommendations dataframe"
+                    ] = guidance_map_firing_depth_recommendations_df
+
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
                 # structure radiomic 3D segmentation features dataframe
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 structure_cohort_3d_radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(master_structure_reference_dict,
@@ -8805,7 +8839,8 @@ def main():
                                             fire_annotation_style="compact_table",
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
-                                            show_titles=False
+                                            show_titles=False,
+                                            validate_firing_df_builder=True
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)
@@ -11125,6 +11160,7 @@ def structure_referencer(data_removals_dict_bx,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None,
+                                                                                  "Biopsy optimization - Guidance-map firing depth recommendations dataframe": None,
                                                                                   "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
                                                                                   "MR - ADC - summary statistics by structure dataframe": None},    
                         "Multi-structure MC simulation output dataframes dict": {"All MC structure transformation values": None,
