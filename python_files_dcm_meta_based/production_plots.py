@@ -4777,6 +4777,7 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                             show_titles=True,
                                             validate_firing_df_builder=False,
                                             firing_df_validation_tolerance_mm=1e-6,
+                                            strict_precomputed_guidance=False,
                                             ):
     
     
@@ -4876,7 +4877,8 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                                                                     fire_annotation_style = fire_annotation_style,
                                                                                     fire_table_position = fire_table_position,
                                                                                     validate_firing_df_builder = validate_firing_df_builder,
-                                                                                    firing_df_validation_tolerance_mm = firing_df_validation_tolerance_mm)
+                                                                                    firing_df_validation_tolerance_mm = firing_df_validation_tolerance_mm,
+                                                                                    strict_precomputed_guidance = strict_precomputed_guidance)
 
     if validate_firing_df_builder:
         validation_dir = patient_sp_output_figures_dir.joinpath("Validation dataframes", "guidance_map_firing_depths")

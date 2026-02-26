@@ -3412,7 +3412,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             fire_annotation_style = "hockey",
                                             fire_table_position = "auto",
                                             validate_firing_df_builder = False,
-                                            firing_df_validation_tolerance_mm = 1e-6
+                                            firing_df_validation_tolerance_mm = 1e-6,
+                                            strict_precomputed_guidance = False
                                             ):
 
     def _anchor_colorbars_bottom_right(fig):
@@ -3783,6 +3784,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         "Euler convention",
     ]
 
+    def _handle_precomputed_issue(message):
+        if strict_precomputed_guidance:
+            raise ValueError(message)
+        _emit_validation_note(message)
+
     def _load_precomputed_guidance_inputs(specific_dil_structure,
                                           dil_id,
                                           relative_struct_index):
@@ -3794,7 +3800,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
 
         if not isinstance(geometry_context, dict):
-            _emit_validation_note(
+            _handle_precomputed_issue(
                 f"[Guidance precomputed] {patientUID} | {dil_id}: missing geometry context; using inline plotter calculations."
             )
             geometry_context = None
@@ -3803,7 +3809,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 key for key in required_precomputed_geometry_context_keys if key not in geometry_context
             ]
             if len(missing_context_keys) > 0:
-                _emit_validation_note(
+                _handle_precomputed_issue(
                     f"[Guidance precomputed] {patientUID} | {dil_id}: geometry context missing keys {missing_context_keys}; using inline plotter calculations."
                 )
                 geometry_context = None
@@ -3821,7 +3827,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 if np.isnan(context_struct_index) or int(context_struct_index) != int(relative_struct_index):
                     identity_mismatch_msgs.append("Relative struct index mismatch")
                 if len(identity_mismatch_msgs) > 0:
-                    _emit_validation_note(
+                    _handle_precomputed_issue(
                         f"[Guidance precomputed] {patientUID} | {dil_id}: " +
                         "; ".join(identity_mismatch_msgs) +
                         "; using inline plotter calculations."
@@ -3829,7 +3835,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     geometry_context = None
 
         if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
-            _emit_validation_note(
+            _handle_precomputed_issue(
                 f"[Guidance precomputed] {patientUID} | {dil_id}: missing firing-depth dataframe; using inline plotter calculations."
             )
             firing_depth_df = pandas.DataFrame()
@@ -3838,7 +3844,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 col for col in required_precomputed_firing_df_columns if col not in firing_depth_df.columns
             ]
             if len(missing_firing_columns) > 0:
-                _emit_validation_note(
+                _handle_precomputed_issue(
                     f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe missing columns {missing_firing_columns}; using inline plotter calculations."
                 )
                 firing_depth_df = pandas.DataFrame()
@@ -3846,12 +3852,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 try:
                     expected_row_count = len(np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1))
                     if len(firing_depth_df) != expected_row_count:
-                        _emit_validation_note(
+                        _handle_precomputed_issue(
                             f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe row count {len(firing_depth_df)} != expected {expected_row_count}; using inline plotter calculations."
                         )
                         firing_depth_df = pandas.DataFrame()
                 except Exception:
-                    _emit_validation_note(
+                    _handle_precomputed_issue(
                         f"[Guidance precomputed] {patientUID} | {dil_id}: unable to validate firing-depth row count; using inline plotter calculations."
                     )
                     firing_depth_df = pandas.DataFrame()
@@ -3874,7 +3880,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         identity_mismatch_msgs.append("Relative struct index mismatch")
 
                     if len(identity_mismatch_msgs) > 0:
-                        _emit_validation_note(
+                        _handle_precomputed_issue(
                             f"[Guidance precomputed] {patientUID} | {dil_id}: " +
                             "; ".join(identity_mismatch_msgs) +
                             "; using inline plotter calculations."
@@ -3882,6 +3888,112 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         firing_depth_df = pandas.DataFrame()
 
         return geometry_context, firing_depth_df
+
+    def _point_to_segment_distance(pt, start, end):
+        """Euclidean distance from point to line segment in 2D."""
+        seg = end - start
+        seg_len_sq = np.dot(seg, seg)
+        if seg_len_sq == 0:
+            return float(np.linalg.norm(pt - start)), start
+        t = np.dot(pt - start, seg) / seg_len_sq
+        t_clamped = np.clip(t, 0.0, 1.0)
+        projection = start + t_clamped * seg
+        return float(np.linalg.norm(pt - projection)), projection
+
+    def _build_legacy_fire_rows_for_sagittal(transformed_optimal_point_contour_coord_sys,
+                                             transformed_optimal_point_xprime,
+                                             optimal_template_hole_label,
+                                             nearest_prostate_template_lines_contour_plot_coords_list_of_dicts,
+                                             prostate_mesh_slice_pts_transformed_contour_plot_coords):
+        fire_rows = []
+        for penetration_depth in biopsy_fire_travel_distances:
+            needle_tip_position_before_firing = copy.deepcopy(transformed_optimal_point_contour_coord_sys)
+            needle_tip_position_before_firing[0] = (
+                needle_tip_position_before_firing[0]
+                - penetration_depth
+                + (biopsy_needle_tip_length + biopsy_needle_compartment_length / 2)
+            )
+
+            deflection_dist = float("nan")
+            projection_point = None
+            if len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) > 0:
+                line_coords = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
+                line_start = np.array([line_coords['start'][2], line_coords['start'][1]])
+                line_end = np.array([line_coords['end'][2], line_coords['end'][1]])
+                deflection_dist, projection_point = _point_to_segment_distance(
+                    needle_tip_position_before_firing,
+                    line_start,
+                    line_end
+                )
+
+            prostate_apex_zprime = float(np.min(prostate_mesh_slice_pts_transformed_contour_plot_coords[:, 0]))
+            depth_from_apex = needle_tip_position_before_firing[0] - prostate_apex_zprime
+            fire_rows.append({
+                "penetration_depth": float(penetration_depth),
+                "optimal_hole": optimal_template_hole_label,
+                "xprime": float(transformed_optimal_point_xprime),
+                "zprime": float(needle_tip_position_before_firing[0]),
+                "yprime": float(needle_tip_position_before_firing[1]),
+                "deflection": float(deflection_dist),
+                "depth_from_apex": float(depth_from_apex),
+                "projection_point": projection_point
+            })
+        return fire_rows
+
+    def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df,
+                                                  transformed_optimal_point_xprime,
+                                                  optimal_template_hole_label):
+        if not isinstance(precomputed_firing_depth_df, pandas.DataFrame) or precomputed_firing_depth_df.empty:
+            return []
+
+        ordered_df = precomputed_firing_depth_df.copy()
+        ordered_df["__firing_row_index__"] = pandas.to_numeric(
+            ordered_df["Firing depth row index (per structure)"], errors="coerce"
+        )
+        ordered_df = ordered_df.sort_values("__firing_row_index__", kind="stable").reset_index(drop=True)
+
+        fire_rows = []
+        for _, fire_row in ordered_df.iterrows():
+            projection_zprime = pandas.to_numeric(
+                fire_row["Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')"],
+                errors="coerce"
+            )
+            projection_yprime = pandas.to_numeric(
+                fire_row["Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')"],
+                errors="coerce"
+            )
+            projection_point = None
+            if not np.isnan(projection_zprime) and not np.isnan(projection_yprime):
+                projection_point = np.array([float(projection_zprime), float(projection_yprime)])
+
+            xprime_row = pandas.to_numeric(
+                fire_row.get("Optimal sampling point (Transducer primed frame) (X')", np.nan),
+                errors="coerce"
+            )
+            if np.isnan(xprime_row):
+                xprime_row = float(transformed_optimal_point_xprime)
+
+            optimal_hole_row = fire_row.get("Optimal template hole", optimal_template_hole_label)
+            if pandas.isna(optimal_hole_row):
+                optimal_hole_row = optimal_template_hole_label
+
+            fire_rows.append({
+                "penetration_depth": float(pandas.to_numeric(fire_row["Penetration depth (mm)"], errors="coerce")),
+                "optimal_hole": str(optimal_hole_row),
+                "xprime": float(xprime_row),
+                "zprime": float(pandas.to_numeric(fire_row["Pre-fire needle tip (Transducer primed frame) (Z')"], errors="coerce")),
+                "yprime": float(pandas.to_numeric(fire_row["Pre-fire needle tip (Transducer primed frame) (Y')"], errors="coerce")),
+                "deflection": float(pandas.to_numeric(
+                    fire_row["In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)"],
+                    errors="coerce"
+                )),
+                "depth_from_apex": float(pandas.to_numeric(
+                    fire_row["Pre-fire tip depth from apex (Transducer primed frame) (mm)"],
+                    errors="coerce"
+                )),
+                "projection_point": projection_point
+            })
+        return fire_rows
 
     def _show_all_axis_lines(fig):
         """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
@@ -4335,56 +4447,56 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                      color = "orange",
                                      size = 12)
 
-        fire_rows = []
+        precomputed_fire_rows = _build_precomputed_fire_rows_for_sagittal(
+            precomputed_firing_depth_df,
+            transformed_optimal_point_xprime,
+            optimal_template_hole_label
+        )
+        use_precomputed_fire_rows = len(precomputed_fire_rows) > 0
+
+        legacy_fire_rows = []
+        if validate_firing_df_builder or not use_precomputed_fire_rows:
+            legacy_fire_rows = _build_legacy_fire_rows_for_sagittal(
+                transformed_optimal_point_contour_coord_sys,
+                transformed_optimal_point_xprime,
+                optimal_template_hole_label,
+                nearest_prostate_template_lines_contour_plot_coords_list_of_dicts,
+                prostate_mesh_slice_pts_transformed_contour_plot_coords
+            )
+
+        fire_rows = precomputed_fire_rows if use_precomputed_fire_rows else legacy_fire_rows
+
         custom_height = 0
         custom_height_step = 4
-        for index,penetration_depth in enumerate(biopsy_fire_travel_distances):
-            custom_height = custom_height + custom_height_step*(index+1)
-            needle_tip_position_before_firing = copy.deepcopy(transformed_optimal_point_contour_coord_sys)
-            needle_tip_position_before_firing[0] = needle_tip_position_before_firing[0] - penetration_depth + (biopsy_needle_tip_length + biopsy_needle_compartment_length/2)
+        for index, fire_row in enumerate(fire_rows):
+            custom_height = custom_height + custom_height_step * (index + 1)
+            penetration_depth = float(fire_row["penetration_depth"])
+            needle_tip_position_before_firing = np.array([
+                float(fire_row["zprime"]),
+                float(fire_row["yprime"])
+            ], dtype=float)
 
-            # Compute deflection distance from optimal template hole trajectory (pink line)
-            def _point_to_segment_distance(pt, start, end):
-                """Euclidean distance from point to line segment in 2D."""
-                seg = end - start
-                seg_len_sq = np.dot(seg, seg)
-                if seg_len_sq == 0:
-                    return float(np.linalg.norm(pt - start)), start
-                t = np.dot(pt - start, seg) / seg_len_sq
-                t_clamped = np.clip(t, 0.0, 1.0)
-                projection = start + t_clamped * seg
-                return float(np.linalg.norm(pt - projection)), projection
-
-            deflection_dist = float("nan")
-            projection_point = None
-            if len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) > 0:
-                line_coords = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
-                # Convert to contour frame (Z', Y')
-                line_start = np.array([line_coords['start'][2], line_coords['start'][1]])
-                line_end = np.array([line_coords['end'][2], line_coords['end'][1]])
-                deflection_dist, projection_point = _point_to_segment_distance(needle_tip_position_before_firing, line_start, line_end)
-
-            # Visual deflection line (projection to template line)
+            projection_point = fire_row.get("projection_point", None)
             if projection_point is not None:
-                double_arrow_deflection_line_offset = 1  # mm offset to avoid overlap with needle tip line and align annotation
-                p0 = np.array([needle_tip_position_before_firing[0], needle_tip_position_before_firing[1]])
-                p1 = np.array([projection_point[0], projection_point[1]])
-                # reuse generic distance arrow helper in segment mode
-                contour_plot = add_distance_annotation(contour_plot,
-                                                       np.vstack([p0, p1]),
-                                                       start_point=p0,
-                                                       end_point=p1,
-                                                       segment_offset=(double_arrow_deflection_line_offset, 0.0),
-                                                       arrow_color='black',
-                                                       line_width=3,
-                                                       line_dash='solid',
-                                                       show_text=False,
-                                                       show_legend=True,
-                                                       legend_name="Deflection line")
+                projection_point = np.asarray(projection_point, dtype=float).reshape(-1)
+                if projection_point.size >= 2 and np.all(np.isfinite(projection_point[:2])):
+                    double_arrow_deflection_line_offset = 1  # mm offset to avoid overlap with needle tip line and align annotation
+                    p0 = np.array([needle_tip_position_before_firing[0], needle_tip_position_before_firing[1]], dtype=float)
+                    p1 = np.array([projection_point[0], projection_point[1]], dtype=float)
+                    contour_plot = add_distance_annotation(contour_plot,
+                                                           np.vstack([p0, p1]),
+                                                           start_point=p0,
+                                                           end_point=p1,
+                                                           segment_offset=(double_arrow_deflection_line_offset, 0.0),
+                                                           arrow_color='black',
+                                                           line_width=3,
+                                                           line_dash='solid',
+                                                           show_text=False,
+                                                           show_legend=True,
+                                                           legend_name="Deflection line")
 
-            # Explicit axis/frame labeling (transducer-plane contour frame; origin at prostate centroid)
-            prostate_apex_zprime = float(np.min(prostate_mesh_slice_pts_transformed_contour_plot_coords[:,0]))
-            depth_from_apex = needle_tip_position_before_firing[0] - prostate_apex_zprime
+            deflection_dist = float(fire_row["deflection"])
+            depth_from_apex = float(fire_row["depth_from_apex"])
             fire_label = (
                 f"Tip before fire | Penetration depth {penetration_depth:.1f} mm<br>"
                 f"[Z'={needle_tip_position_before_firing[0]:.2f} mm, "
@@ -4394,26 +4506,17 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             )
             legend_label = f"Fire pos. ({penetration_depth:.1f} mm)"
             line_offset = 1  # mm offset for the line to avoid overlap with the point
-            fire_rows.append({
-                "penetration_depth": penetration_depth,
-                "optimal_hole": optimal_template_hole_label,
-                "xprime": transformed_optimal_point_xprime,
-                "zprime": needle_tip_position_before_firing[0],
-                "yprime": needle_tip_position_before_firing[1],
-                "deflection": deflection_dist,
-                "depth_from_apex": depth_from_apex
-            })
 
             if fire_annotation_style == "hockey":
-                contour_plot = add_points_to_plot_v2(contour_plot, 
-                                                    needle_tip_position_before_firing, 
-                                                    fire_label, 
-                                                    color = 'red', 
-                                                    symbol = 'arrow-bar-left', 
-                                                    custom_height = custom_height, 
-                                                    legend_name = legend_label,
-                                                    color_index = index,
-                                                    annotation_x_offset = line_offset,
+                contour_plot = add_points_to_plot_v2(contour_plot,
+                                                    needle_tip_position_before_firing,
+                                                    fire_label,
+                                                    color='red',
+                                                    symbol='arrow-bar-left',
+                                                    custom_height=custom_height,
+                                                    legend_name=legend_label,
+                                                    color_index=index,
+                                                    annotation_x_offset=line_offset,
                                                     text_box_bg_color="rgba(255, 255, 255, 1)",
                                                     text_box_border_color="rgba(0, 0, 0, 1)",
                                                     text_color="black")
@@ -4438,7 +4541,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
                 ] = firing_depth_df
                 comparison_df = _compare_fire_rows_with_dataframe(
-                    fire_rows,
+                    legacy_fire_rows if len(legacy_fire_rows) > 0 else fire_rows,
                     firing_depth_df,
                     sp_dil_id,
                     euler_angles=euler_angles,
