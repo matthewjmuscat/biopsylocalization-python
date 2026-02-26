@@ -39,6 +39,7 @@ import math
 
 _GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT = {}
 _GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT = {}
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -4886,6 +4887,7 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
 
         patient_firing_df_list = []
         patient_comparison_df_list = []
+        patient_geometry_df_list = []
 
         for specific_dil_structure in pydicom_item[dil_ref]:
             dil_id = specific_dil_structure.get("ROI", "DIL")
@@ -4912,6 +4914,16 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                 comparison_df.to_csv(comparison_path, index=False)
                 patient_comparison_df_list.append(comparison_df.copy())
 
+            geometry_df = specific_dil_structure.get(
+                "Biopsy optimization: Guidance-map geometry context comparison dataframe (validation)"
+            )
+            if isinstance(geometry_df, pandas.DataFrame) and not geometry_df.empty:
+                geometry_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_geometry_context_comparison_validation.csv"
+                )
+                geometry_df.to_csv(geometry_path, index=False)
+                patient_geometry_df_list.append(geometry_df.copy())
+
         if len(patient_firing_df_list) > 0:
             patient_firing_df = pandas.concat(patient_firing_df_list, ignore_index=True)
             patient_firing_df.to_csv(
@@ -4927,6 +4939,14 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                 index=False
             )
             _GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT[patientUID] = patient_comparison_df
+
+        if len(patient_geometry_df_list) > 0:
+            patient_geometry_df = pandas.concat(patient_geometry_df_list, ignore_index=True)
+            patient_geometry_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_geometry_context_comparison_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT[patientUID] = patient_geometry_df
 
         global_validation_dir = patient_sp_output_figures_dir.parent.joinpath(
             "Global", "Validation dataframes", "guidance_map_firing_depths"
@@ -4948,6 +4968,15 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
             )
             cohort_comparison_df.to_csv(
                 global_validation_dir.joinpath("Cohort-guidance_map_firing_depths_comparison_validation.csv"),
+                index=False
+            )
+
+        if len(_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT) > 0:
+            cohort_geometry_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_geometry_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_geometry_context_comparison_validation.csv"),
                 index=False
             )
     

@@ -3995,6 +3995,165 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             })
         return fire_rows
 
+    def _resolve_effective_guidance_metadata(precomputed_geometry_context,
+                                             dil_id,
+                                             inline_optimal_template_hole_label,
+                                             inline_optimal_point_prime_xyz,
+                                             inline_euler_angles,
+                                             inline_euler_convention):
+        """
+        Use precomputed geometry-context values as display/plot metadata when available.
+        Optionally compare against inline-derived values for validation bookkeeping.
+        """
+        inline_optimal_point_prime_xyz = _as_xyz(
+            inline_optimal_point_prime_xyz,
+            "inline_optimal_point_prime_xyz"
+        )
+        inline_euler_angles = np.asarray(inline_euler_angles, dtype=float).reshape(-1)
+        if inline_euler_angles.size < 3:
+            inline_euler_angles = np.array([np.nan, np.nan, np.nan], dtype=float)
+        else:
+            inline_euler_angles = np.array([
+                float(inline_euler_angles[0]),
+                float(inline_euler_angles[1]),
+                float(inline_euler_angles[2])
+            ], dtype=float)
+
+        effective_optimal_template_hole_label = str(inline_optimal_template_hole_label)
+        effective_optimal_point_prime_xyz = inline_optimal_point_prime_xyz.copy()
+        effective_euler_angles = inline_euler_angles.copy()
+        effective_euler_convention = inline_euler_convention if inline_euler_convention is not None else "-"
+
+        comparison_rows = []
+        def _add_string_compare(field_name, inline_value, precomputed_value):
+            inline_str = "-" if inline_value is None else str(inline_value)
+            precomputed_str = "-" if precomputed_value is None else str(precomputed_value)
+            comparison_rows.append({
+                "Patient ID": patientUID,
+                "Relative structure ID": dil_id,
+                "Field": field_name,
+                "Inline value": inline_str,
+                "Precomputed value": precomputed_str,
+                "Absolute difference": np.nan,
+                "Tolerance": np.nan,
+                "Match": bool(inline_str == precomputed_str)
+            })
+
+        def _add_numeric_compare(field_name, inline_value, precomputed_value, tolerance):
+            inline_num = float(inline_value)
+            precomputed_num = float(precomputed_value)
+            if np.isnan(inline_num) and np.isnan(precomputed_num):
+                match = True
+                abs_diff = np.nan
+            else:
+                abs_diff = float(abs(inline_num - precomputed_num))
+                match = bool(np.isclose(inline_num, precomputed_num, atol=float(tolerance), rtol=0.0, equal_nan=True))
+            comparison_rows.append({
+                "Patient ID": patientUID,
+                "Relative structure ID": dil_id,
+                "Field": field_name,
+                "Inline value": inline_num,
+                "Precomputed value": precomputed_num,
+                "Absolute difference": abs_diff,
+                "Tolerance": float(tolerance),
+                "Match": match
+            })
+
+        if isinstance(precomputed_geometry_context, dict):
+            precomputed_optimal_hole = str(
+                precomputed_geometry_context.get("Optimal template hole", inline_optimal_template_hole_label)
+            )
+            precomputed_optimal_point_prime_xyz = _as_xyz(
+                precomputed_geometry_context.get(
+                    "Optimal sampling point (Transducer primed frame) (XYZ array)",
+                    inline_optimal_point_prime_xyz
+                ),
+                "precomputed Optimal sampling point (Transducer primed frame) (XYZ array)"
+            )
+            precomputed_euler_angles = np.array([
+                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle X (deg)"), errors="coerce")),
+                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle Y (deg)"), errors="coerce")),
+                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle Z (deg)"), errors="coerce")),
+            ], dtype=float)
+            precomputed_euler_convention = precomputed_geometry_context.get("Euler convention")
+            precomputed_euler_convention = (
+                precomputed_euler_convention if precomputed_euler_convention is not None else "-"
+            )
+
+            _add_string_compare(
+                "Optimal template hole",
+                inline_optimal_template_hole_label,
+                precomputed_optimal_hole
+            )
+            _add_numeric_compare(
+                "Optimal sampling point (Transducer primed frame) (X')",
+                inline_optimal_point_prime_xyz[0],
+                precomputed_optimal_point_prime_xyz[0],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_numeric_compare(
+                "Optimal sampling point (Transducer primed frame) (Y')",
+                inline_optimal_point_prime_xyz[1],
+                precomputed_optimal_point_prime_xyz[1],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_numeric_compare(
+                "Optimal sampling point (Transducer primed frame) (Z')",
+                inline_optimal_point_prime_xyz[2],
+                precomputed_optimal_point_prime_xyz[2],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_numeric_compare(
+                "Euler angle X (deg)",
+                inline_euler_angles[0],
+                precomputed_euler_angles[0],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_numeric_compare(
+                "Euler angle Y (deg)",
+                inline_euler_angles[1],
+                precomputed_euler_angles[1],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_numeric_compare(
+                "Euler angle Z (deg)",
+                inline_euler_angles[2],
+                precomputed_euler_angles[2],
+                tolerance=firing_df_validation_tolerance_mm
+            )
+            _add_string_compare(
+                "Euler convention",
+                inline_euler_convention,
+                precomputed_euler_convention
+            )
+
+            effective_optimal_template_hole_label = precomputed_optimal_hole
+            effective_optimal_point_prime_xyz = precomputed_optimal_point_prime_xyz
+            effective_euler_angles = precomputed_euler_angles
+            effective_euler_convention = precomputed_euler_convention
+
+        comparison_df = pandas.DataFrame(comparison_rows)
+        if not comparison_df.empty:
+            all_match = bool(comparison_df["Match"].fillna(False).all())
+            if (not all_match) and strict_precomputed_guidance:
+                mismatch_fields = comparison_df.loc[~comparison_df["Match"], "Field"].astype(str).tolist()
+                raise ValueError(
+                    f"[Guidance precomputed] {patientUID} | {dil_id}: inline vs precomputed geometry mismatch for fields {mismatch_fields}."
+                )
+            if (not all_match) and validate_firing_df_builder:
+                mismatch_fields = comparison_df.loc[~comparison_df["Match"], "Field"].astype(str).tolist()
+                _emit_validation_note(
+                    f"[Guidance map validation] {patientUID} | {dil_id}: geometry context mismatch in fields {mismatch_fields}."
+                )
+
+        return (
+            effective_optimal_template_hole_label,
+            effective_optimal_point_prime_xyz,
+            effective_euler_angles,
+            effective_euler_convention,
+            comparison_df
+        )
+
     def _show_all_axis_lines(fig):
         """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
         def _ensure_overlay_axis_anchor():
@@ -4304,6 +4463,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                                              entire_lattice_df, 
                                                                                              sp_dil_optimal_coordinate)
         transformed_grid_df, transformed_optimal_point, rotation_matrix = transform_grid_and_point_for_plotting(transducer_plane_df, transducer_plane_normal, sp_dil_optimal_coordinate)
+        inline_euler_angles = np.asarray(euler_angles, dtype=float).reshape(-1)
+        inline_euler_convention_str = euler_convention_str
 
         # pcd 
         #transducer_plane_pcd = point_containment_tools.create_point_cloud(transducer_plane_df[['Transducer plane point (X)', 'Transducer plane point (Y)', 'Transducer plane point (Z)']].to_numpy(), color = np.array([0,0,1]))
@@ -4330,6 +4491,30 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         optimal_template_hole_label = "-"
         if len(nearest_prostate_template_lines_list_of_dicts) > 0:
             optimal_template_hole_label = str(nearest_prostate_template_lines_list_of_dicts[0].get("label", "-"))
+        inline_optimal_template_hole_label = optimal_template_hole_label
+        inline_transformed_optimal_point_prime_xyz = _as_xyz(
+            transformed_optimal_point,
+            "transformed_optimal_point"
+        )
+        inline_transformed_optimal_point_contour_coord_sys = inline_transformed_optimal_point_prime_xyz[[2, 1]]
+        inline_transformed_optimal_point_xprime = float(inline_transformed_optimal_point_prime_xyz[0])
+
+        (
+            optimal_template_hole_label,
+            transformed_optimal_point_prime_xyz,
+            effective_euler_angles,
+            effective_euler_convention,
+            geometry_context_comparison_df
+        ) = _resolve_effective_guidance_metadata(
+            precomputed_geometry_context=_precomputed_geometry_context,
+            dil_id=sp_dil_id,
+            inline_optimal_template_hole_label=inline_optimal_template_hole_label,
+            inline_optimal_point_prime_xyz=inline_transformed_optimal_point_prime_xyz,
+            inline_euler_angles=inline_euler_angles,
+            inline_euler_convention=inline_euler_convention_str
+        )
+        transformed_optimal_point_contour_coord_sys = transformed_optimal_point_prime_xyz[[2, 1]]
+        transformed_optimal_point_xprime = float(transformed_optimal_point_prime_xyz[0])
 
 
         line_pts_list = [np.array([item['start'],item['end']]) for item in nearest_prostate_template_lines_list_of_dicts]
@@ -4421,8 +4606,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         contour_plot = adjust_plot_area_and_reverse_axes(contour_plot, rectum_plus_prostate_pts_contour_plot_coords, margin=5, reverse_x=True, reverse_y=True)
         _show_all_axis_lines(contour_plot)
 
-        transformed_optimal_point_contour_coord_sys = transformed_optimal_point[[2,1]]
-        transformed_optimal_point_xprime = float(transformed_optimal_point[0])
         optimal_row_sagittal = {
             "label": f"Optimal ({sp_dil_id})",
             "optimal_hole": optimal_template_hole_label,
@@ -4457,9 +4640,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         legacy_fire_rows = []
         if validate_firing_df_builder or not use_precomputed_fire_rows:
             legacy_fire_rows = _build_legacy_fire_rows_for_sagittal(
-                transformed_optimal_point_contour_coord_sys,
-                transformed_optimal_point_xprime,
-                optimal_template_hole_label,
+                inline_transformed_optimal_point_contour_coord_sys,
+                inline_transformed_optimal_point_xprime,
+                inline_optimal_template_hole_label,
                 nearest_prostate_template_lines_contour_plot_coords_list_of_dicts,
                 prostate_mesh_slice_pts_transformed_contour_plot_coords
             )
@@ -4531,6 +4714,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 ))
 
         if validate_firing_df_builder:
+            if isinstance(geometry_context_comparison_df, pandas.DataFrame) and not geometry_context_comparison_df.empty:
+                specific_dil_structure[
+                    "Biopsy optimization: Guidance-map geometry context comparison dataframe (validation)"
+                ] = geometry_context_comparison_df
+
             firing_depth_df = precomputed_firing_depth_df
             if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                 _emit_validation_note(
@@ -4544,8 +4732,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     legacy_fire_rows if len(legacy_fire_rows) > 0 else fire_rows,
                     firing_depth_df,
                     sp_dil_id,
-                    euler_angles=euler_angles,
-                    euler_convention=euler_convention_str,
+                    euler_angles=inline_euler_angles,
+                    euler_convention=inline_euler_convention_str,
                     relative_struct_type=dil_ref,
                     relative_struct_index=specific_dil_index,
                 )
@@ -4583,16 +4771,17 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         if simple_angle_display_option_bool == False:
             contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
-                                                    euler_angles,
-                                                    euler_convention_str, 
+                                                    effective_euler_angles,
+                                                    effective_euler_convention, 
                                                     position='bottom right')
         elif simple_angle_display_option_bool == True:
+            z_angle = effective_euler_angles[2]
             contour_plot = add_sagittal_angle_to_plot(contour_plot, 
                                                                  z_angle, 
                                                                  position='bottom right')
 
         
-        z_angle = euler_angles[2]  # Assuming euler_angles is accessible and index 2 is Z
+        z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
 
         _anchor_colorbars_bottom_right(contour_plot)
 
@@ -4767,13 +4956,13 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         
 
-        z_angle = euler_angles[2]  # Assuming euler_angles is accessible and index 2 is Z
+        z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
         contour_plot_transverse = add_z_angle_line_to_plot(contour_plot_transverse, transducer_saggital_plane_point_prostate_frame_sup, z_angle)
 
         if simple_angle_display_option_bool == False:
             contour_plot_transverse = add_euler_angles_to_plot_v3(contour_plot_transverse, 
-                                                    euler_angles,
-                                                    euler_convention_str, 
+                                                    effective_euler_angles,
+                                                    effective_euler_convention, 
                                                     position='bottom right')
         elif simple_angle_display_option_bool == True:
             contour_plot_transverse = add_sagittal_angle_to_plot(contour_plot_transverse, 

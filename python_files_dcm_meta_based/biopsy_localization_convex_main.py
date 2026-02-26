@@ -8854,7 +8854,8 @@ def main():
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
                                             show_titles=False,
-                                            validate_firing_df_builder=True
+                                            validate_firing_df_builder=True,
+                                            strict_precomputed_guidance=False
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)
