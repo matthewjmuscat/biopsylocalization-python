@@ -1984,6 +1984,11 @@ GUIDANCE_MAP_CANDIDATE_FIRING_DF_REQUIRED_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_D
     "3D projection parameter t on unprojected axis from optimal template hole (0-1)",
 ]
 
+GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT = "Biopsy optimization: Guidance-map geometry context"
+GUIDANCE_MAP_KEY_LEGACY_FIRING_DF = "Biopsy optimization: Guidance-map firing depth dataframe"
+GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF = "Biopsy optimization: Guidance-map candidate geometry context dataframe"
+GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF = "Biopsy optimization: Guidance-map candidate firing dataframe"
+
 
 def _missing_required_dict_keys(required_keys, input_dict):
     if not isinstance(input_dict, dict):
@@ -1995,6 +2000,73 @@ def _missing_required_dataframe_columns(required_columns, dataframe):
     if not isinstance(dataframe, pandas.DataFrame):
         return list(required_columns)
     return [col for col in required_columns if col not in dataframe.columns]
+
+
+def _build_candidate_hole_uid(patient_id,
+                              relative_struct_type,
+                              relative_struct_index,
+                              relative_structure_id,
+                              candidate_rank,
+                              candidate_hole_label):
+    return (
+        f"{patient_id}|{relative_struct_type}|{relative_struct_index}|{relative_structure_id}|"
+        f"candidate_rank={int(candidate_rank)}|hole={str(candidate_hole_label)}"
+    )
+
+
+def _rank_template_holes_by_distance(template_lattice_df,
+                                     optimal_sampling_point_prostate_xyz,
+                                     candidate_holes_k):
+    if not isinstance(template_lattice_df, pandas.DataFrame) or template_lattice_df.empty:
+        return pandas.DataFrame()
+
+    k = int(candidate_holes_k) if candidate_holes_k is not None else 1
+    if k < 1:
+        k = 1
+
+    ranked_df = template_lattice_df.reset_index(drop=True).copy()
+    candidate_coords = ranked_df[["X", "Y", "Z"]].to_numpy(dtype=float)
+    optimal_xyz = _as_xyz(optimal_sampling_point_prostate_xyz, "optimal_sampling_point_prostate_xyz")
+    candidate_distances = np.linalg.norm(candidate_coords - optimal_xyz.reshape(1, 3), axis=1)
+    candidate_labels = ranked_df.apply(
+        lambda row: f"{row['Label 1']}-{row['Label 2']}",
+        axis=1
+    )
+
+    ranked_df["Candidate hole distance to optimal sampling point (3D) (mm)"] = candidate_distances.astype(float)
+    ranked_df["Candidate hole label"] = candidate_labels.astype(str)
+    ranked_df["Template lattice row index"] = np.arange(len(ranked_df), dtype=int)
+
+    ranked_df = ranked_df.sort_values(
+        by=[
+            "Candidate hole distance to optimal sampling point (3D) (mm)",
+            "Candidate hole label",
+            "Template lattice row index",
+        ],
+        kind="stable"
+    ).head(min(k, len(ranked_df))).reset_index(drop=True)
+    ranked_df["Candidate hole rank"] = np.arange(1, len(ranked_df) + 1, dtype=int)
+    return ranked_df
+
+
+def _candidate_geometry_context_row_from_legacy_context(legacy_geometry_context,
+                                                        candidate_rank,
+                                                        candidate_hole_label,
+                                                        candidate_hole_uid,
+                                                        candidate_hole_xyz,
+                                                        candidate_hole_distance_mm):
+    row = dict(legacy_geometry_context)
+    candidate_xyz = _as_xyz(candidate_hole_xyz, "candidate_hole_xyz")
+    row.update({
+        "Candidate hole rank": int(candidate_rank),
+        "Candidate hole label": str(candidate_hole_label),
+        "Candidate hole UID": str(candidate_hole_uid),
+        "Candidate hole distance to optimal sampling point (3D) (mm)": float(candidate_hole_distance_mm),
+        "Candidate hole (Prostate centroid frame) (X)": float(candidate_xyz[0]),
+        "Candidate hole (Prostate centroid frame) (Y)": float(candidate_xyz[1]),
+        "Candidate hole (Prostate centroid frame) (Z)": float(candidate_xyz[2]),
+    })
+    return row
 
 
 def build_guidance_map_geometry_context(patient_id,
@@ -2401,9 +2473,11 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
                                                       label1='D',
                                                       label2='1.5',
                                                       y_shift_for_1_5_coord_from_prostate_max_post=-3,
-                                                      use_natural_TRUS_origin_for_transducer_sagittal_plane=True):
+                                                      use_natural_TRUS_origin_for_transducer_sagittal_plane=True,
+                                                      candidate_holes_k=1,
+                                                      candidate_axis_line_length_mm=1000):
     """
-    Build and store guidance-map geometry context + firing-depth dataframe per DIL for one patient.
+    Build and store guidance-map precomputed guidance dataframes per DIL for one patient.
 
     Returns:
         pandas.DataFrame: Patient-level concatenation of all per-DIL firing-depth rows.
@@ -2480,8 +2554,6 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
         letter_label=label1,
         numerical_label=label2
     )
-    prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].to_numpy()
-
     prostate_intra_interp_info = pydicom_item[oar_ref][prostate_structure_index]["Intra-slice interpolation information"]
     prostate_pts_with_end_caps = prostate_intra_interp_info.interpolated_pts_with_end_caps_np_arr
     prostate_trimesh, _ = misc_tools.compute_structure_triangle_mesh(
@@ -2495,8 +2567,10 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
 
     patient_firing_depth_df_list = []
     for specific_dil_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-        specific_dil_structure["Biopsy optimization: Guidance-map geometry context"] = None
-        specific_dil_structure["Biopsy optimization: Guidance-map firing depth dataframe"] = pandas.DataFrame()
+        specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT] = None
+        specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_FIRING_DF] = pandas.DataFrame()
+        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF] = pandas.DataFrame()
+        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF] = pandas.DataFrame()
 
         optimal_positions_df = specific_dil_structure.get("Biopsy optimization: Optimal biopsy location dataframe")
         if not isinstance(optimal_positions_df, pandas.DataFrame) or optimal_positions_df.empty:
@@ -2525,21 +2599,41 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
             sp_dil_optimal_coordinate
         )
 
-        nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
-        nearest_template_points = prostate_template_points[nearest_indices]
-        nearest_lines_contour, nearest_lines_projected, nearest_lines_unprojected = project_and_transform_lines(
-            nearest_template_points,
+        ranked_candidate_holes_df = _rank_template_holes_by_distance(
+            prostate_grid_template_lattice_XYZ_aligned_dataframe,
+            sp_dil_optimal_coordinate,
+            candidate_holes_k
+        )
+        if ranked_candidate_holes_df.empty:
+            continue
+
+        expected_k = max(1, int(candidate_holes_k))
+        if len(ranked_candidate_holes_df) < expected_k:
+            warnings.warn(
+                f"[Guidance precompute] {patientUID} | {sp_dil_id}: requested k={expected_k}, "
+                f"but only {len(ranked_candidate_holes_df)} candidate holes available."
+            )
+
+        candidate_template_points = ranked_candidate_holes_df[["X", "Y", "Z"]].to_numpy(dtype=float)
+        candidate_lines_contour, candidate_lines_projected, candidate_lines_unprojected = project_and_transform_lines(
+            candidate_template_points,
             transducer_plane_normal,
             sp_dil_optimal_coordinate,
             rotation_matrix,
-            prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices]
+            ranked_candidate_holes_df[["Label 1", "Label 2"]],
+            line_length=float(candidate_axis_line_length_mm)
         )
-        if len(nearest_lines_projected) == 0 or len(nearest_lines_contour) == 0:
+        if len(candidate_lines_projected) == 0 or len(candidate_lines_contour) == 0:
             continue
-
-        optimal_template_hole_label = "-"
-        if len(nearest_lines_unprojected) > 0:
-            optimal_template_hole_label = str(nearest_lines_unprojected[0].get("label", "-"))
+        if (
+            len(candidate_lines_contour) != len(ranked_candidate_holes_df)
+            or len(candidate_lines_projected) != len(ranked_candidate_holes_df)
+        ):
+            raise ValueError(
+                f"[Guidance precompute] {patientUID} | {sp_dil_id}: candidate line extraction size mismatch "
+                f"(ranked={len(ranked_candidate_holes_df)}, "
+                f"contour={len(candidate_lines_contour)}, projected={len(candidate_lines_projected)})."
+            )
 
         prostate_mesh_slice_pts = slice_mesh_fast_v2(prostate_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
         prostate_mesh_slice_pts_transformed_contour_plot_coords = None
@@ -2551,37 +2645,93 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
             )
             prostate_mesh_slice_pts_transformed_contour_plot_coords = prostate_mesh_slice_pts_transformed[:, [2, 1]]
 
-        projected_axis_prostate = nearest_lines_projected[0]
-        projected_axis_prime = nearest_lines_contour[0]
-        unprojected_axis_prostate = nearest_lines_unprojected[0] if len(nearest_lines_unprojected) > 0 else None
+        candidate_geometry_context_dicts = []
+        candidate_geometry_context_rows = []
+        for candidate_index, candidate_row in ranked_candidate_holes_df.iterrows():
+            candidate_rank = int(candidate_row["Candidate hole rank"])
+            candidate_hole_label = str(candidate_row["Candidate hole label"])
+            candidate_hole_uid = _build_candidate_hole_uid(
+                patientUID,
+                dil_ref,
+                specific_dil_index,
+                sp_dil_id,
+                candidate_rank,
+                candidate_hole_label
+            )
+            candidate_hole_xyz = np.array([
+                float(candidate_row["X"]),
+                float(candidate_row["Y"]),
+                float(candidate_row["Z"]),
+            ], dtype=float)
+            candidate_hole_distance = float(
+                pandas.to_numeric(
+                    candidate_row["Candidate hole distance to optimal sampling point (3D) (mm)"],
+                    errors="coerce"
+                )
+            )
 
-        geometry_context = build_guidance_map_geometry_context(
-            patient_id=patientUID,
-            relative_structure_id=sp_dil_id,
-            relative_struct_type=dil_ref,
-            relative_struct_index=specific_dil_index,
-            optimal_template_hole_label=optimal_template_hole_label,
-            optimal_sampling_point_prostate_xyz=sp_dil_optimal_coordinate,
-            optimal_sampling_point_primed_xyz=transformed_optimal_point,
-            projected_axis_line_prostate=projected_axis_prostate,
-            projected_axis_line_primed=projected_axis_prime,
-            unprojected_axis_line_prostate=unprojected_axis_prostate,
-            transducer_plane_df=transducer_plane_df,
-            prostate_slice_pts_primed_zy=prostate_mesh_slice_pts_transformed_contour_plot_coords,
-            rotation_matrix_unprimed_to_primed=rotation_matrix,
-            euler_angles_deg=euler_angles,
-            euler_convention=euler_convention_str,
+            projected_axis_prostate = candidate_lines_projected[candidate_index]
+            projected_axis_prime = candidate_lines_contour[candidate_index]
+            unprojected_axis_prostate = (
+                candidate_lines_unprojected[candidate_index]
+                if len(candidate_lines_unprojected) > candidate_index
+                else None
+            )
+
+            candidate_geometry_context = build_guidance_map_geometry_context(
+                patient_id=patientUID,
+                relative_structure_id=sp_dil_id,
+                relative_struct_type=dil_ref,
+                relative_struct_index=specific_dil_index,
+                optimal_template_hole_label=candidate_hole_label,
+                optimal_sampling_point_prostate_xyz=sp_dil_optimal_coordinate,
+                optimal_sampling_point_primed_xyz=transformed_optimal_point,
+                projected_axis_line_prostate=projected_axis_prostate,
+                projected_axis_line_primed=projected_axis_prime,
+                unprojected_axis_line_prostate=unprojected_axis_prostate,
+                transducer_plane_df=transducer_plane_df,
+                prostate_slice_pts_primed_zy=prostate_mesh_slice_pts_transformed_contour_plot_coords,
+                rotation_matrix_unprimed_to_primed=rotation_matrix,
+                euler_angles_deg=euler_angles,
+                euler_convention=euler_convention_str,
+            )
+            missing_geometry_context_keys = _missing_required_dict_keys(
+                GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS,
+                candidate_geometry_context
+            )
+            if len(missing_geometry_context_keys) > 0:
+                raise ValueError(
+                    f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
+                    f"candidate rank {candidate_rank} geometry context missing keys {missing_geometry_context_keys}."
+                )
+
+            candidate_geometry_context_dicts.append(candidate_geometry_context)
+            candidate_geometry_context_rows.append(
+                _candidate_geometry_context_row_from_legacy_context(
+                    candidate_geometry_context,
+                    candidate_rank,
+                    candidate_hole_label,
+                    candidate_hole_uid,
+                    candidate_hole_xyz,
+                    candidate_hole_distance
+                )
+            )
+
+        candidate_geometry_context_df = pandas.DataFrame(candidate_geometry_context_rows)
+        missing_candidate_geometry_columns = _missing_required_dataframe_columns(
+            GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_REQUIRED_COLUMNS,
+            candidate_geometry_context_df
         )
-        missing_geometry_context_keys = _missing_required_dict_keys(
-            GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS,
-            geometry_context
-        )
-        if len(missing_geometry_context_keys) > 0:
+        if len(missing_candidate_geometry_columns) > 0:
             raise ValueError(
                 f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
-                f"geometry context missing keys {missing_geometry_context_keys}."
+                f"candidate geometry dataframe missing columns {missing_candidate_geometry_columns}."
             )
-        specific_dil_structure["Biopsy optimization: Guidance-map geometry context"] = geometry_context
+        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF] = candidate_geometry_context_df
+
+        # Preserve current plotter contract: rank-1 candidate remains the active legacy guidance context.
+        geometry_context = candidate_geometry_context_dicts[0]
+        specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT] = geometry_context
 
         firing_depth_df = build_guidance_map_firing_depths_dataframe_from_context(
             geometry_context=geometry_context,
@@ -2598,7 +2748,7 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
                 f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
                 f"firing dataframe missing columns {missing_firing_columns}."
             )
-        specific_dil_structure["Biopsy optimization: Guidance-map firing depth dataframe"] = firing_depth_df
+        specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_FIRING_DF] = firing_depth_df
         if isinstance(firing_depth_df, pandas.DataFrame) and not firing_depth_df.empty:
             patient_firing_depth_df_list.append(firing_depth_df)
 

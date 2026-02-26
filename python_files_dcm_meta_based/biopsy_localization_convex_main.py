@@ -7892,7 +7892,9 @@ def main():
                         interp_intra_slice_dist=interp_intra_slice_dist,
                         radius_for_normals_estimation=radius_for_normals_estimation,
                         max_nn_for_normals_estimation=max_nn_for_normals_estimation,
-                        biopsy_needle_tip_length=biopsy_needle_tip_length
+                        biopsy_needle_tip_length=biopsy_needle_tip_length,
+                        candidate_holes_k=1,
+                        candidate_axis_line_length_mm=1000
                     )
 
                     if isinstance(guidance_map_firing_depth_recommendations_df, pandas.DataFrame) and not guidance_map_firing_depth_recommendations_df.empty:
