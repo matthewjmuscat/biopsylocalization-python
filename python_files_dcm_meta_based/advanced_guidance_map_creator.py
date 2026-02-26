@@ -3746,6 +3746,143 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         return merged
 
+    required_precomputed_geometry_context_keys = [
+        "Patient ID",
+        "Relative structure ID",
+        "Relative struct type",
+        "Relative struct index",
+        "Optimal template hole",
+        "Optimal sampling point (Prostate centroid frame) (XYZ array)",
+        "Optimal sampling point (Transducer primed frame) (XYZ array)",
+        "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)",
+        "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)",
+        "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)",
+        "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)",
+        "Euler angle X (deg)",
+        "Euler angle Y (deg)",
+        "Euler angle Z (deg)",
+        "Euler convention",
+    ]
+    required_precomputed_firing_df_columns = [
+        "Patient ID",
+        "Relative structure ID",
+        "Relative struct type",
+        "Relative struct index",
+        "Firing depth row index (per structure)",
+        "Penetration depth (mm)",
+        "Optimal template hole",
+        "Pre-fire needle tip (Transducer primed frame) (Z')",
+        "Pre-fire needle tip (Transducer primed frame) (Y')",
+        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
+        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
+        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+        "Euler angle X (deg)",
+        "Euler angle Y (deg)",
+        "Euler angle Z (deg)",
+        "Euler convention",
+    ]
+
+    def _load_precomputed_guidance_inputs(specific_dil_structure,
+                                          dil_id,
+                                          relative_struct_index):
+        """
+        Read precomputed guidance inputs early and validate schema/identity.
+        Falls back to inline plotter calculations when precomputed inputs are unavailable.
+        """
+        geometry_context = specific_dil_structure.get("Biopsy optimization: Guidance-map geometry context")
+        firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+
+        if not isinstance(geometry_context, dict):
+            _emit_validation_note(
+                f"[Guidance precomputed] {patientUID} | {dil_id}: missing geometry context; using inline plotter calculations."
+            )
+            geometry_context = None
+        else:
+            missing_context_keys = [
+                key for key in required_precomputed_geometry_context_keys if key not in geometry_context
+            ]
+            if len(missing_context_keys) > 0:
+                _emit_validation_note(
+                    f"[Guidance precomputed] {patientUID} | {dil_id}: geometry context missing keys {missing_context_keys}; using inline plotter calculations."
+                )
+                geometry_context = None
+            else:
+                identity_mismatch_msgs = []
+                if str(geometry_context.get("Patient ID")) != str(patientUID):
+                    identity_mismatch_msgs.append("Patient ID mismatch")
+                if str(geometry_context.get("Relative structure ID")) != str(dil_id):
+                    identity_mismatch_msgs.append("Relative structure ID mismatch")
+                if str(geometry_context.get("Relative struct type")) != str(dil_ref):
+                    identity_mismatch_msgs.append("Relative struct type mismatch")
+                context_struct_index = pandas.to_numeric(
+                    geometry_context.get("Relative struct index"), errors="coerce"
+                )
+                if np.isnan(context_struct_index) or int(context_struct_index) != int(relative_struct_index):
+                    identity_mismatch_msgs.append("Relative struct index mismatch")
+                if len(identity_mismatch_msgs) > 0:
+                    _emit_validation_note(
+                        f"[Guidance precomputed] {patientUID} | {dil_id}: " +
+                        "; ".join(identity_mismatch_msgs) +
+                        "; using inline plotter calculations."
+                    )
+                    geometry_context = None
+
+        if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
+            _emit_validation_note(
+                f"[Guidance precomputed] {patientUID} | {dil_id}: missing firing-depth dataframe; using inline plotter calculations."
+            )
+            firing_depth_df = pandas.DataFrame()
+        else:
+            missing_firing_columns = [
+                col for col in required_precomputed_firing_df_columns if col not in firing_depth_df.columns
+            ]
+            if len(missing_firing_columns) > 0:
+                _emit_validation_note(
+                    f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe missing columns {missing_firing_columns}; using inline plotter calculations."
+                )
+                firing_depth_df = pandas.DataFrame()
+            else:
+                try:
+                    expected_row_count = len(np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1))
+                    if len(firing_depth_df) != expected_row_count:
+                        _emit_validation_note(
+                            f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe row count {len(firing_depth_df)} != expected {expected_row_count}; using inline plotter calculations."
+                        )
+                        firing_depth_df = pandas.DataFrame()
+                except Exception:
+                    _emit_validation_note(
+                        f"[Guidance precomputed] {patientUID} | {dil_id}: unable to validate firing-depth row count; using inline plotter calculations."
+                    )
+                    firing_depth_df = pandas.DataFrame()
+
+                if not firing_depth_df.empty:
+                    identity_mismatch_msgs = []
+                    patient_values = firing_depth_df["Patient ID"].dropna().astype(str).unique().tolist()
+                    if len(patient_values) > 0 and any(val != str(patientUID) for val in patient_values):
+                        identity_mismatch_msgs.append("Patient ID mismatch")
+                    struct_id_values = firing_depth_df["Relative structure ID"].dropna().astype(str).unique().tolist()
+                    if len(struct_id_values) > 0 and any(val != str(dil_id) for val in struct_id_values):
+                        identity_mismatch_msgs.append("Relative structure ID mismatch")
+                    struct_type_values = firing_depth_df["Relative struct type"].dropna().astype(str).unique().tolist()
+                    if len(struct_type_values) > 0 and any(val != str(dil_ref) for val in struct_type_values):
+                        identity_mismatch_msgs.append("Relative struct type mismatch")
+                    struct_index_values = pandas.to_numeric(
+                        firing_depth_df["Relative struct index"], errors="coerce"
+                    ).dropna().astype(int).unique().tolist()
+                    if len(struct_index_values) > 0 and any(val != int(relative_struct_index) for val in struct_index_values):
+                        identity_mismatch_msgs.append("Relative struct index mismatch")
+
+                    if len(identity_mismatch_msgs) > 0:
+                        _emit_validation_note(
+                            f"[Guidance precomputed] {patientUID} | {dil_id}: " +
+                            "; ".join(identity_mismatch_msgs) +
+                            "; using inline plotter calculations."
+                        )
+                        firing_depth_df = pandas.DataFrame()
+
+        return geometry_context, firing_depth_df
+
     def _show_all_axis_lines(fig):
         """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
         def _ensure_overlay_axis_anchor():
@@ -4033,6 +4170,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             optimal_positions_df.at[0, 'Test location (Prostate centroid origin) (Z)']
         ])
         sp_dil_id = optimal_positions_df.at[0, 'Relative DIL ID']
+        _precomputed_geometry_context, precomputed_firing_depth_df = _load_precomputed_guidance_inputs(
+            specific_dil_structure,
+            sp_dil_id,
+            specific_dil_index
+        )
 
         dil_inter_slice_interp_np_arr = specific_dil_structure['Inter-slice interpolation information'].interpolated_pts_np_arr
         dil_inter_slice_interp_np_arr_prostate_coords = dil_inter_slice_interp_np_arr - prostate_centroid
@@ -4286,7 +4428,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 ))
 
         if validate_firing_df_builder:
-            firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+            firing_depth_df = precomputed_firing_depth_df
             if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                 _emit_validation_note(
                     f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing precomputed firing-depth dataframe)."
