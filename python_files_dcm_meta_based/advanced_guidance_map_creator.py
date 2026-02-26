@@ -1830,6 +1830,173 @@ def _angle_direction_label(angle_deg):
     return "None"
 
 
+GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS = [
+    "Patient ID",
+    "Relative structure ID",
+    "Relative struct type",
+    "Relative struct index",
+    "Optimal template hole",
+    "Optimal sampling point (Prostate centroid frame) (XYZ array)",
+    "Optimal sampling point (Transducer primed frame) (XYZ array)",
+    "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)",
+    "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)",
+    "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)",
+    "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)",
+    "Euler angle X (deg)",
+    "Euler angle Y (deg)",
+    "Euler angle Z (deg)",
+    "Euler convention",
+]
+
+GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS = [
+    "Patient ID",
+    "Relative structure ID",
+    "Relative struct type",
+    "Relative struct index",
+    "Firing depth row index (per structure)",
+    "Firing depth row UID",
+    "Penetration depth (mm)",
+    "Optimal template hole",
+    "Biopsy needle tip length (mm)",
+    "Biopsy needle compartment length (mm)",
+    "Needle pre-fire tip shift constant (mm)",
+    "Euler angle X (deg)",
+    "Euler angle Y (deg)",
+    "Euler angle Z (deg)",
+    "Euler angle X abs (deg)",
+    "Euler angle Y abs (deg)",
+    "Euler angle Z abs (deg)",
+    "Euler angle X direction",
+    "Euler angle Y direction",
+    "Euler angle Z direction",
+    "Euler convention",
+    "Optimal sampling point (Prostate centroid frame) (X)",
+    "Optimal sampling point (Prostate centroid frame) (Y)",
+    "Optimal sampling point (Prostate centroid frame) (Z)",
+    "Optimal sampling point (Transducer primed frame) (X')",
+    "Optimal sampling point (Transducer primed frame) (Y')",
+    "Optimal sampling point (Transducer primed frame) (Z')",
+    "Pre-fire needle tip (Prostate centroid frame) (X)",
+    "Pre-fire needle tip (Prostate centroid frame) (Y)",
+    "Pre-fire needle tip (Prostate centroid frame) (Z)",
+    "Pre-fire needle tip (Transducer primed frame) (X')",
+    "Pre-fire needle tip (Transducer primed frame) (Y')",
+    "Pre-fire needle tip (Transducer primed frame) (Z')",
+    "Projected axis from optimal template hole (Prostate centroid frame) start (X)",
+    "Projected axis from optimal template hole (Prostate centroid frame) start (Y)",
+    "Projected axis from optimal template hole (Prostate centroid frame) start (Z)",
+    "Projected axis from optimal template hole (Prostate centroid frame) end (X)",
+    "Projected axis from optimal template hole (Prostate centroid frame) end (Y)",
+    "Projected axis from optimal template hole (Prostate centroid frame) end (Z)",
+    "Projected axis from optimal template hole (Transducer primed frame) start (X')",
+    "Projected axis from optimal template hole (Transducer primed frame) start (Y')",
+    "Projected axis from optimal template hole (Transducer primed frame) start (Z')",
+    "Projected axis from optimal template hole (Transducer primed frame) end (X')",
+    "Projected axis from optimal template hole (Transducer primed frame) end (Y')",
+    "Projected axis from optimal template hole (Transducer primed frame) end (Z')",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) start (X)",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) start (Y)",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) start (Z)",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) end (X)",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) end (Y)",
+    "Unprojected axis from optimal template hole (Prostate centroid frame) end (Z)",
+    "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (X)",
+    "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (Y)",
+    "Out-of-plane axis offset from optimal template hole (Prostate centroid frame) (Z)",
+    "Out-of-plane axis offset from optimal template hole distance (mm)",
+    "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (X)",
+    "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (Y)",
+    "Pre-fire tip projection on projected axis from optimal template hole (Prostate centroid frame) (Z)",
+    "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (X')",
+    "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
+    "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (X')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (Y')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole (Transducer primed frame) (Z')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+    "In-plane projection parameter t (0-1)",
+    "Prostate apex (Transducer primed frame) (Z')",
+    "Prostate base (Transducer primed frame) (Z')",
+    "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+]
+
+GUIDANCE_MAP_LEGACY_FIRING_DF_NON_NULL_COLUMNS = [
+    "Penetration depth (mm)",
+    "Optimal template hole",
+    "Pre-fire needle tip (Transducer primed frame) (Z')",
+    "Pre-fire needle tip (Transducer primed frame) (Y')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+    "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+]
+
+GUIDANCE_MAP_LEGACY_FIRING_DF_IDENTITY_COLUMNS = [
+    "Patient ID",
+    "Relative structure ID",
+    "Relative struct type",
+    "Relative struct index",
+]
+
+GUIDANCE_MAP_LEGACY_FIRING_DF_NUMERIC_COLUMNS = [
+    "Relative struct index",
+    "Firing depth row index (per structure)",
+    "Penetration depth (mm)",
+    "Optimal sampling point (Transducer primed frame) (X')",
+    "Pre-fire needle tip (Transducer primed frame) (Z')",
+    "Pre-fire needle tip (Transducer primed frame) (Y')",
+    "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
+    "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
+    "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+    "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+    "Euler angle X (deg)",
+    "Euler angle Y (deg)",
+    "Euler angle Z (deg)",
+]
+
+# Phase-1 schema freeze for upcoming k>1 candidate dataframes.
+GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_REQUIRED_COLUMNS = [
+    "Patient ID",
+    "Relative structure ID",
+    "Relative struct type",
+    "Relative struct index",
+    "Candidate hole rank",
+    "Candidate hole label",
+    "Candidate hole UID",
+    "Candidate hole distance to optimal sampling point (3D) (mm)",
+]
+
+GUIDANCE_MAP_CANDIDATE_FIRING_DF_REQUIRED_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS + [
+    "Candidate hole rank",
+    "Candidate hole label",
+    "Candidate hole UID",
+    "Post-fire needle tip (Prostate centroid frame) (X)",
+    "Post-fire needle tip (Prostate centroid frame) (Y)",
+    "Post-fire needle tip (Prostate centroid frame) (Z)",
+    "Post-fire needle tip (Transducer primed frame) (X')",
+    "Post-fire needle tip (Transducer primed frame) (Y')",
+    "Post-fire needle tip (Transducer primed frame) (Z')",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (X)",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Y)",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Z)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (X)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Y)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Z)",
+    "3D distance from pre-fire tip to unprojected axis from optimal template hole (mm)",
+    "3D projection parameter t on unprojected axis from optimal template hole (0-1)",
+]
+
+
+def _missing_required_dict_keys(required_keys, input_dict):
+    if not isinstance(input_dict, dict):
+        return list(required_keys)
+    return [key for key in required_keys if key not in input_dict]
+
+
+def _missing_required_dataframe_columns(required_columns, dataframe):
+    if not isinstance(dataframe, pandas.DataFrame):
+        return list(required_columns)
+    return [col for col in required_columns if col not in dataframe.columns]
+
+
 def build_guidance_map_geometry_context(patient_id,
                                         relative_structure_id,
                                         relative_struct_type,
@@ -1940,24 +2107,10 @@ def build_guidance_map_firing_depths_dataframe_from_context(geometry_context,
                                                             biopsy_needle_compartment_length,
                                                             additional_run_metadata=None):
     """Wrapper for building firing-depth dataframe from a pre-computed geometry-context dict."""
-    required_keys = [
-        "Patient ID",
-        "Relative structure ID",
-        "Relative struct type",
-        "Relative struct index",
-        "Optimal template hole",
-        "Optimal sampling point (Prostate centroid frame) (XYZ array)",
-        "Optimal sampling point (Transducer primed frame) (XYZ array)",
-        "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)",
-        "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)",
-        "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)",
-        "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)",
-        "Euler angle X (deg)",
-        "Euler angle Y (deg)",
-        "Euler angle Z (deg)",
-        "Euler convention",
-    ]
-    missing = [key for key in required_keys if key not in geometry_context]
+    missing = _missing_required_dict_keys(
+        GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS,
+        geometry_context
+    )
     if missing:
         raise ValueError(f"geometry_context missing required keys: {missing}")
 
@@ -2419,6 +2572,15 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
             euler_angles_deg=euler_angles,
             euler_convention=euler_convention_str,
         )
+        missing_geometry_context_keys = _missing_required_dict_keys(
+            GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS,
+            geometry_context
+        )
+        if len(missing_geometry_context_keys) > 0:
+            raise ValueError(
+                f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
+                f"geometry context missing keys {missing_geometry_context_keys}."
+            )
         specific_dil_structure["Biopsy optimization: Guidance-map geometry context"] = geometry_context
 
         firing_depth_df = build_guidance_map_firing_depths_dataframe_from_context(
@@ -2427,6 +2589,15 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
             biopsy_needle_tip_length=biopsy_needle_tip_length,
             biopsy_needle_compartment_length=biopsy_needle_compartment_length
         )
+        missing_firing_columns = _missing_required_dataframe_columns(
+            GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS,
+            firing_depth_df
+        )
+        if len(missing_firing_columns) > 0:
+            raise ValueError(
+                f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
+                f"firing dataframe missing columns {missing_firing_columns}."
+            )
         specific_dil_structure["Biopsy optimization: Guidance-map firing depth dataframe"] = firing_depth_df
         if isinstance(firing_depth_df, pandas.DataFrame) and not firing_depth_df.empty:
             patient_firing_depth_df_list.append(firing_depth_df)
@@ -3485,73 +3656,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             except Exception:
                 pass
 
-    required_precomputed_geometry_context_keys = [
-        "Patient ID",
-        "Relative structure ID",
-        "Relative struct type",
-        "Relative struct index",
-        "Optimal template hole",
-        "Optimal sampling point (Prostate centroid frame) (XYZ array)",
-        "Optimal sampling point (Transducer primed frame) (XYZ array)",
-        "Projected axis from optimal template hole (Prostate centroid frame) start (XYZ array)",
-        "Projected axis from optimal template hole (Prostate centroid frame) end (XYZ array)",
-        "Projected axis from optimal template hole (Transducer primed frame) start (XYZ array)",
-        "Projected axis from optimal template hole (Transducer primed frame) end (XYZ array)",
-        "Euler angle X (deg)",
-        "Euler angle Y (deg)",
-        "Euler angle Z (deg)",
-        "Euler convention",
-    ]
-    required_precomputed_firing_df_columns = [
-        "Patient ID",
-        "Relative structure ID",
-        "Relative struct type",
-        "Relative struct index",
-        "Firing depth row index (per structure)",
-        "Firing depth row UID",
-        "Penetration depth (mm)",
-        "Optimal template hole",
-        "Optimal sampling point (Transducer primed frame) (X')",
-        "Pre-fire needle tip (Transducer primed frame) (Z')",
-        "Pre-fire needle tip (Transducer primed frame) (Y')",
-        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
-        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
-        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
-        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
-        "Euler angle X (deg)",
-        "Euler angle Y (deg)",
-        "Euler angle Z (deg)",
-        "Euler convention",
-    ]
-    required_non_null_firing_df_columns = [
-        "Penetration depth (mm)",
-        "Optimal template hole",
-        "Pre-fire needle tip (Transducer primed frame) (Z')",
-        "Pre-fire needle tip (Transducer primed frame) (Y')",
-        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
-        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
-    ]
-    required_identity_firing_df_columns = [
-        "Patient ID",
-        "Relative structure ID",
-        "Relative struct type",
-        "Relative struct index",
-    ]
-    required_numeric_firing_df_columns = [
-        "Relative struct index",
-        "Firing depth row index (per structure)",
-        "Penetration depth (mm)",
-        "Optimal sampling point (Transducer primed frame) (X')",
-        "Pre-fire needle tip (Transducer primed frame) (Z')",
-        "Pre-fire needle tip (Transducer primed frame) (Y')",
-        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
-        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
-        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
-        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
-        "Euler angle X (deg)",
-        "Euler angle Y (deg)",
-        "Euler angle Z (deg)",
-    ]
+    required_precomputed_geometry_context_keys = GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS
+    required_precomputed_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS
+    required_non_null_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_NON_NULL_COLUMNS
+    required_identity_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_IDENTITY_COLUMNS
+    required_numeric_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_NUMERIC_COLUMNS
 
     def _build_precomputed_contract_validation_dataframe(geometry_context,
                                                          firing_depth_df,
