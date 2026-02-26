@@ -1983,11 +1983,63 @@ GUIDANCE_MAP_CANDIDATE_FIRING_DF_REQUIRED_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_D
     "3D distance from pre-fire tip to unprojected axis from optimal template hole (mm)",
     "3D projection parameter t on unprojected axis from optimal template hole (0-1)",
 ]
+GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_NON_NULL_COLUMNS = [
+    "Patient ID",
+    "Relative structure ID",
+    "Relative struct type",
+    "Relative struct index",
+    "Candidate hole rank",
+    "Candidate hole label",
+    "Candidate hole UID",
+    "Candidate hole distance to optimal sampling point (3D) (mm)",
+]
+GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_NUMERIC_COLUMNS = [
+    "Relative struct index",
+    "Candidate hole rank",
+    "Candidate hole distance to optimal sampling point (3D) (mm)",
+    "Candidate hole (Prostate centroid frame) (X)",
+    "Candidate hole (Prostate centroid frame) (Y)",
+    "Candidate hole (Prostate centroid frame) (Z)",
+]
+GUIDANCE_MAP_CANDIDATE_FIRING_DF_IDENTITY_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_DF_IDENTITY_COLUMNS + [
+    "Candidate hole rank",
+    "Candidate hole label",
+    "Candidate hole UID",
+]
+GUIDANCE_MAP_CANDIDATE_FIRING_DF_NON_NULL_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_DF_NON_NULL_COLUMNS + [
+    "Candidate hole rank",
+    "Candidate hole label",
+    "Candidate hole UID",
+    "Post-fire needle tip (Transducer primed frame) (Z')",
+    "Post-fire tip depth from apex (Transducer primed frame) (mm)",
+    "3D distance from pre-fire tip to unprojected axis from optimal template hole (mm)",
+    "3D projection parameter t on unprojected axis from optimal template hole (0-1)",
+]
+GUIDANCE_MAP_CANDIDATE_FIRING_DF_NUMERIC_COLUMNS = GUIDANCE_MAP_LEGACY_FIRING_DF_NUMERIC_COLUMNS + [
+    "Candidate hole rank",
+    "Candidate hole distance to optimal sampling point (3D) (mm)",
+    "Post-fire needle tip (Prostate centroid frame) (X)",
+    "Post-fire needle tip (Prostate centroid frame) (Y)",
+    "Post-fire needle tip (Prostate centroid frame) (Z)",
+    "Post-fire needle tip (Transducer primed frame) (X')",
+    "Post-fire needle tip (Transducer primed frame) (Y')",
+    "Post-fire needle tip (Transducer primed frame) (Z')",
+    "Post-fire tip depth from apex (Transducer primed frame) (mm)",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (X)",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Y)",
+    "3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Z)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (X)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Y)",
+    "3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Z)",
+    "3D distance from pre-fire tip to unprojected axis from optimal template hole (mm)",
+    "3D projection parameter t on unprojected axis from optimal template hole (0-1)",
+]
 
 GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT = "Biopsy optimization: Guidance-map geometry context"
 GUIDANCE_MAP_KEY_LEGACY_FIRING_DF = "Biopsy optimization: Guidance-map firing depth dataframe"
 GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF = "Biopsy optimization: Guidance-map candidate geometry context dataframe"
 GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF = "Biopsy optimization: Guidance-map candidate firing dataframe"
+GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate contract dataframe (validation)"
 
 
 def _missing_required_dict_keys(required_keys, input_dict):
@@ -2000,6 +2052,30 @@ def _missing_required_dataframe_columns(required_columns, dataframe):
     if not isinstance(dataframe, pandas.DataFrame):
         return list(required_columns)
     return [col for col in required_columns if col not in dataframe.columns]
+
+
+def _point_to_segment_projection_3d(point_3d, start_3d, end_3d):
+    """
+    Euclidean distance + closest-point projection from point to segment in 3D.
+
+    Returns:
+        distance (float), projection (np.ndarray shape (3,)), t_clamped (float in [0,1])
+    """
+    point_3d = _as_xyz(point_3d, "point_3d")
+    start_3d = _as_xyz(start_3d, "start_3d")
+    end_3d = _as_xyz(end_3d, "end_3d")
+
+    segment = end_3d - start_3d
+    segment_len_sq = float(np.dot(segment, segment))
+    if segment_len_sq == 0.0:
+        projection = start_3d.copy()
+        return float(np.linalg.norm(point_3d - projection)), projection, 0.0
+
+    t = float(np.dot(point_3d - start_3d, segment) / segment_len_sq)
+    t_clamped = float(np.clip(t, 0.0, 1.0))
+    projection = start_3d + t_clamped * segment
+    distance = float(np.linalg.norm(point_3d - projection))
+    return distance, projection, t_clamped
 
 
 def _build_candidate_hole_uid(patient_id,
@@ -2067,6 +2143,149 @@ def _candidate_geometry_context_row_from_legacy_context(legacy_geometry_context,
         "Candidate hole (Prostate centroid frame) (Z)": float(candidate_xyz[2]),
     })
     return row
+
+
+def _augment_candidate_firing_dataframe_from_legacy(legacy_firing_df,
+                                                    candidate_rank,
+                                                    candidate_hole_label,
+                                                    candidate_hole_uid,
+                                                    candidate_hole_distance_mm=float("nan"),
+                                                    rotation_matrix_unprimed_to_primed=None,
+                                                    primed_frame_origin_prostate_xyz=None,
+                                                    prostate_apex_primed_z=None):
+    if not isinstance(legacy_firing_df, pandas.DataFrame) or legacy_firing_df.empty:
+        return pandas.DataFrame()
+
+    firing_df = legacy_firing_df.copy().reset_index(drop=True)
+    firing_df["Candidate hole rank"] = int(candidate_rank)
+    firing_df["Candidate hole label"] = str(candidate_hole_label)
+    firing_df["Candidate hole UID"] = str(candidate_hole_uid)
+    firing_df["Candidate hole distance to optimal sampling point (3D) (mm)"] = float(candidate_hole_distance_mm)
+
+    row_index_vals = pandas.to_numeric(
+        firing_df["Firing depth row index (per structure)"], errors="coerce"
+    ).to_numpy()
+    depth_vals = pandas.to_numeric(
+        firing_df["Penetration depth (mm)"], errors="coerce"
+    ).to_numpy()
+    firing_row_uid = []
+    for row_index, depth_mm in zip(row_index_vals, depth_vals):
+        if np.isnan(row_index) or np.isnan(depth_mm):
+            firing_row_uid.append(f"{candidate_hole_uid}|row=-1|depth_mm=nan")
+        else:
+            firing_row_uid.append(
+                f"{candidate_hole_uid}|row={int(row_index)}|depth_mm={float(depth_mm):.6f}"
+            )
+    firing_df["Firing depth row UID"] = firing_row_uid
+
+    pre_tip_xprime = pandas.to_numeric(
+        firing_df["Pre-fire needle tip (Transducer primed frame) (X')"], errors="coerce"
+    ).to_numpy()
+    pre_tip_yprime = pandas.to_numeric(
+        firing_df["Pre-fire needle tip (Transducer primed frame) (Y')"], errors="coerce"
+    ).to_numpy()
+    pre_tip_zprime = pandas.to_numeric(
+        firing_df["Pre-fire needle tip (Transducer primed frame) (Z')"], errors="coerce"
+    ).to_numpy()
+    penetration_depth_vals = pandas.to_numeric(
+        firing_df["Penetration depth (mm)"], errors="coerce"
+    ).to_numpy()
+
+    post_tip_xprime = pre_tip_xprime.copy()
+    post_tip_yprime = pre_tip_yprime.copy()
+    post_tip_zprime = pre_tip_zprime + penetration_depth_vals
+
+    firing_df["Post-fire needle tip (Transducer primed frame) (X')"] = post_tip_xprime
+    firing_df["Post-fire needle tip (Transducer primed frame) (Y')"] = post_tip_yprime
+    firing_df["Post-fire needle tip (Transducer primed frame) (Z')"] = post_tip_zprime
+
+    post_tip_depth_from_apex_mm = np.full(len(firing_df), np.nan, dtype=float)
+    if prostate_apex_primed_z is not None:
+        post_tip_depth_from_apex_mm = post_tip_zprime - float(prostate_apex_primed_z)
+    firing_df["Post-fire tip depth from apex (Transducer primed frame) (mm)"] = post_tip_depth_from_apex_mm
+
+    post_tip_prostate_xyz = np.full((len(firing_df), 3), np.nan, dtype=float)
+    if rotation_matrix_unprimed_to_primed is not None and primed_frame_origin_prostate_xyz is not None:
+        for row_idx in range(len(firing_df)):
+            candidate_post_tip_prime = np.array([
+                post_tip_xprime[row_idx],
+                post_tip_yprime[row_idx],
+                post_tip_zprime[row_idx],
+            ], dtype=float)
+            if np.all(np.isfinite(candidate_post_tip_prime)):
+                post_tip_prostate_xyz[row_idx, :] = _transform_primed_to_prostate(
+                    candidate_post_tip_prime,
+                    rotation_matrix_unprimed_to_primed,
+                    primed_frame_origin_prostate_xyz
+                )
+
+    firing_df["Post-fire needle tip (Prostate centroid frame) (X)"] = post_tip_prostate_xyz[:, 0]
+    firing_df["Post-fire needle tip (Prostate centroid frame) (Y)"] = post_tip_prostate_xyz[:, 1]
+    firing_df["Post-fire needle tip (Prostate centroid frame) (Z)"] = post_tip_prostate_xyz[:, 2]
+
+    pre_tip_prostate_xyz = np.column_stack([
+        pandas.to_numeric(
+            firing_df["Pre-fire needle tip (Prostate centroid frame) (X)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Pre-fire needle tip (Prostate centroid frame) (Y)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Pre-fire needle tip (Prostate centroid frame) (Z)"], errors="coerce"
+        ).to_numpy(),
+    ])
+    unprojected_axis_start_xyz = np.column_stack([
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) start (X)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) start (Y)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) start (Z)"], errors="coerce"
+        ).to_numpy(),
+    ])
+    unprojected_axis_end_xyz = np.column_stack([
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) end (X)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) end (Y)"], errors="coerce"
+        ).to_numpy(),
+        pandas.to_numeric(
+            firing_df["Unprojected axis from optimal template hole (Prostate centroid frame) end (Z)"], errors="coerce"
+        ).to_numpy(),
+    ])
+
+    nearest_point_on_unprojected_axis_xyz = np.full((len(firing_df), 3), np.nan, dtype=float)
+    offset_to_unprojected_axis_xyz = np.full((len(firing_df), 3), np.nan, dtype=float)
+    distance_to_unprojected_axis_mm = np.full(len(firing_df), np.nan, dtype=float)
+    projection_param_t = np.full(len(firing_df), np.nan, dtype=float)
+    for row_idx in range(len(firing_df)):
+        tip_xyz = pre_tip_prostate_xyz[row_idx, :]
+        axis_start_xyz = unprojected_axis_start_xyz[row_idx, :]
+        axis_end_xyz = unprojected_axis_end_xyz[row_idx, :]
+        if np.all(np.isfinite(tip_xyz)) and np.all(np.isfinite(axis_start_xyz)) and np.all(np.isfinite(axis_end_xyz)):
+            dist_mm, nearest_xyz, t_param = _point_to_segment_projection_3d(
+                tip_xyz,
+                axis_start_xyz,
+                axis_end_xyz
+            )
+            nearest_point_on_unprojected_axis_xyz[row_idx, :] = nearest_xyz
+            offset_to_unprojected_axis_xyz[row_idx, :] = nearest_xyz - tip_xyz
+            distance_to_unprojected_axis_mm[row_idx] = dist_mm
+            projection_param_t[row_idx] = t_param
+
+    firing_df["3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (X)"] = nearest_point_on_unprojected_axis_xyz[:, 0]
+    firing_df["3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Y)"] = nearest_point_on_unprojected_axis_xyz[:, 1]
+    firing_df["3D nearest point on unprojected axis from optimal template hole to pre-fire tip (Prostate centroid frame) (Z)"] = nearest_point_on_unprojected_axis_xyz[:, 2]
+    firing_df["3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (X)"] = offset_to_unprojected_axis_xyz[:, 0]
+    firing_df["3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Y)"] = offset_to_unprojected_axis_xyz[:, 1]
+    firing_df["3D offset from pre-fire tip to unprojected axis from optimal template hole (Prostate centroid frame) (Z)"] = offset_to_unprojected_axis_xyz[:, 2]
+    firing_df["3D distance from pre-fire tip to unprojected axis from optimal template hole (mm)"] = distance_to_unprojected_axis_mm
+    firing_df["3D projection parameter t on unprojected axis from optimal template hole (0-1)"] = projection_param_t
+
+    return firing_df
 
 
 def build_guidance_map_geometry_context(patient_id,
@@ -2647,6 +2866,7 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
 
         candidate_geometry_context_dicts = []
         candidate_geometry_context_rows = []
+        candidate_firing_df_list = []
         for candidate_index, candidate_row in ranked_candidate_holes_df.iterrows():
             candidate_rank = int(candidate_row["Candidate hole rank"])
             candidate_hole_label = str(candidate_row["Candidate hole label"])
@@ -2717,6 +2937,37 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
                 )
             )
 
+            candidate_firing_df_legacy_schema = build_guidance_map_firing_depths_dataframe_from_context(
+                geometry_context=candidate_geometry_context,
+                biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+                biopsy_needle_tip_length=biopsy_needle_tip_length,
+                biopsy_needle_compartment_length=biopsy_needle_compartment_length
+            )
+            missing_candidate_firing_legacy_columns = _missing_required_dataframe_columns(
+                GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS,
+                candidate_firing_df_legacy_schema
+            )
+            if len(missing_candidate_firing_legacy_columns) > 0:
+                raise ValueError(
+                    f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
+                    f"candidate rank {candidate_rank} firing dataframe missing legacy columns "
+                    f"{missing_candidate_firing_legacy_columns}."
+                )
+
+            candidate_firing_df = _augment_candidate_firing_dataframe_from_legacy(
+                candidate_firing_df_legacy_schema,
+                candidate_rank=candidate_rank,
+                candidate_hole_label=candidate_hole_label,
+                candidate_hole_uid=candidate_hole_uid,
+                candidate_hole_distance_mm=candidate_hole_distance,
+                rotation_matrix_unprimed_to_primed=candidate_geometry_context.get("Rotation matrix (unprimed to primed)"),
+                primed_frame_origin_prostate_xyz=candidate_geometry_context.get(
+                    "Primed frame origin (Prostate centroid frame) (XYZ array)"
+                ),
+                prostate_apex_primed_z=candidate_geometry_context.get("Prostate apex (Transducer primed frame) (Z')")
+            )
+            candidate_firing_df_list.append(candidate_firing_df)
+
         candidate_geometry_context_df = pandas.DataFrame(candidate_geometry_context_rows)
         missing_candidate_geometry_columns = _missing_required_dataframe_columns(
             GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_REQUIRED_COLUMNS,
@@ -2728,6 +2979,18 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
                 f"candidate geometry dataframe missing columns {missing_candidate_geometry_columns}."
             )
         specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF] = candidate_geometry_context_df
+
+        candidate_firing_df = pandas.concat(candidate_firing_df_list, ignore_index=True)
+        missing_candidate_firing_columns = _missing_required_dataframe_columns(
+            GUIDANCE_MAP_CANDIDATE_FIRING_DF_REQUIRED_COLUMNS,
+            candidate_firing_df
+        )
+        if len(missing_candidate_firing_columns) > 0:
+            raise ValueError(
+                f"[Guidance precompute schema] {patientUID} | {sp_dil_id}: "
+                f"candidate firing dataframe missing columns {missing_candidate_firing_columns}."
+            )
+        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF] = candidate_firing_df
 
         # Preserve current plotter contract: rank-1 candidate remains the active legacy guidance context.
         geometry_context = candidate_geometry_context_dicts[0]
@@ -3811,6 +4074,13 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     required_non_null_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_NON_NULL_COLUMNS
     required_identity_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_IDENTITY_COLUMNS
     required_numeric_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_NUMERIC_COLUMNS
+    required_candidate_geometry_df_columns = GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_REQUIRED_COLUMNS
+    required_candidate_geometry_non_null_columns = GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_NON_NULL_COLUMNS
+    required_candidate_geometry_numeric_columns = GUIDANCE_MAP_CANDIDATE_GEOMETRY_CONTEXT_NUMERIC_COLUMNS
+    required_candidate_firing_df_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_REQUIRED_COLUMNS
+    required_candidate_firing_identity_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_IDENTITY_COLUMNS
+    required_candidate_firing_non_null_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_NON_NULL_COLUMNS
+    required_candidate_firing_numeric_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_NUMERIC_COLUMNS
 
     def _build_precomputed_contract_validation_dataframe(geometry_context,
                                                          firing_depth_df,
@@ -4001,6 +4271,274 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             return None, None, contract_df
 
         return geometry_context, firing_depth_df, contract_df
+
+    def _build_candidate_contract_validation_dataframe(specific_dil_structure,
+                                                       dil_id,
+                                                       relative_struct_index):
+        rows = []
+
+        def _add_check(check_name, passed, details=""):
+            rows.append({
+                "Patient ID": patientUID,
+                "Relative structure ID": dil_id,
+                "Check": str(check_name),
+                "Check pass": bool(passed),
+                "Details": str(details),
+            })
+
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
+
+        candidate_geometry_exists = isinstance(candidate_geometry_df, pandas.DataFrame) and (not candidate_geometry_df.empty)
+        _add_check(
+            "Candidate geometry dataframe exists",
+            candidate_geometry_exists,
+            f"Expected non-empty dataframe in '{GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF}'."
+        )
+
+        if candidate_geometry_exists:
+            missing_candidate_geometry_columns = [
+                col for col in required_candidate_geometry_df_columns if col not in candidate_geometry_df.columns
+            ]
+            _add_check(
+                "Candidate geometry dataframe required columns",
+                len(missing_candidate_geometry_columns) == 0,
+                "Missing columns: " + ", ".join(missing_candidate_geometry_columns) if missing_candidate_geometry_columns else ""
+            )
+
+            geom_patient_values = candidate_geometry_df["Patient ID"].dropna().astype(str).unique().tolist() if "Patient ID" in candidate_geometry_df.columns else []
+            geom_struct_id_values = candidate_geometry_df["Relative structure ID"].dropna().astype(str).unique().tolist() if "Relative structure ID" in candidate_geometry_df.columns else []
+            geom_struct_type_values = candidate_geometry_df["Relative struct type"].dropna().astype(str).unique().tolist() if "Relative struct type" in candidate_geometry_df.columns else []
+            geom_struct_index_values = pandas.to_numeric(
+                candidate_geometry_df["Relative struct index"], errors="coerce"
+            ).dropna().astype(int).unique().tolist() if "Relative struct index" in candidate_geometry_df.columns else []
+            geom_identity_ok = (
+                (len(geom_patient_values) > 0)
+                and all(val == str(patientUID) for val in geom_patient_values)
+                and (len(geom_struct_id_values) > 0)
+                and all(val == str(dil_id) for val in geom_struct_id_values)
+                and (len(geom_struct_type_values) > 0)
+                and all(val == str(dil_ref) for val in geom_struct_type_values)
+                and (len(geom_struct_index_values) > 0)
+                and all(val == int(relative_struct_index) for val in geom_struct_index_values)
+            )
+            _add_check(
+                "Candidate geometry dataframe identity",
+                geom_identity_ok,
+                (
+                    f"Patient IDs={geom_patient_values}; Struct IDs={geom_struct_id_values}; "
+                    f"Struct types={geom_struct_type_values}; Struct indices={geom_struct_index_values}."
+                )
+            )
+
+            geometry_non_null_results = []
+            for col in required_candidate_geometry_non_null_columns:
+                if col in candidate_geometry_df.columns:
+                    geometry_non_null_results.append((col, int(candidate_geometry_df[col].isna().sum())))
+            geometry_non_null_ok = all(count == 0 for _, count in geometry_non_null_results)
+            _add_check(
+                "Candidate geometry required fields non-null",
+                geometry_non_null_ok,
+                "; ".join([f"{col}: nulls={count}" for col, count in geometry_non_null_results])
+            )
+
+            geometry_non_finite_results = []
+            for col in required_candidate_geometry_numeric_columns:
+                if col in candidate_geometry_df.columns:
+                    raw_vals = candidate_geometry_df[col]
+                    numeric_vals = pandas.to_numeric(raw_vals, errors="coerce")
+                    raw_not_null = raw_vals.notna().to_numpy()
+                    numeric_finite = np.isfinite(numeric_vals.to_numpy())
+                    invalid_count = int((raw_not_null & (~numeric_finite)).sum())
+                    geometry_non_finite_results.append((col, invalid_count))
+            geometry_finite_ok = all(count == 0 for _, count in geometry_non_finite_results)
+            _add_check(
+                "Candidate geometry required numeric fields finite",
+                geometry_finite_ok,
+                "; ".join([f"{col}: invalid/non-finite={count}" for col, count in geometry_non_finite_results])
+            )
+
+            if "Candidate hole rank" in candidate_geometry_df.columns:
+                rank_vals = pandas.to_numeric(candidate_geometry_df["Candidate hole rank"], errors="coerce").to_numpy()
+                unique_sorted_ranks = np.sort(np.unique(rank_vals[np.isfinite(rank_vals)])).astype(float)
+                expected_ranks = np.arange(1, len(candidate_geometry_df) + 1, dtype=float)
+                rank_sequence_ok = np.array_equal(unique_sorted_ranks, expected_ranks)
+            else:
+                rank_sequence_ok = False
+            _add_check(
+                "Candidate geometry rank sequence",
+                rank_sequence_ok,
+                "Expected unique contiguous candidate ranks 1..K."
+            )
+
+            if "Candidate hole UID" in candidate_geometry_df.columns:
+                candidate_uid_series = candidate_geometry_df["Candidate hole UID"].astype(str)
+                candidate_uid_ok = candidate_uid_series.nunique(dropna=False) == len(candidate_uid_series)
+            else:
+                candidate_uid_ok = False
+            _add_check(
+                "Candidate geometry hole UID uniqueness",
+                candidate_uid_ok,
+                "Expected one unique Candidate hole UID per geometry row."
+            )
+
+        candidate_firing_exists = isinstance(candidate_firing_df, pandas.DataFrame) and (not candidate_firing_df.empty)
+        _add_check(
+            "Candidate firing dataframe exists",
+            candidate_firing_exists,
+            f"Expected non-empty dataframe in '{GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF}'."
+        )
+        if candidate_firing_exists:
+            missing_candidate_firing_columns = [
+                col for col in required_candidate_firing_df_columns if col not in candidate_firing_df.columns
+            ]
+            _add_check(
+                "Candidate firing dataframe required columns",
+                len(missing_candidate_firing_columns) == 0,
+                "Missing columns: " + ", ".join(missing_candidate_firing_columns) if missing_candidate_firing_columns else ""
+            )
+
+            expected_depth_count = len(np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1))
+            expected_candidate_count = (
+                len(candidate_geometry_df)
+                if candidate_geometry_exists
+                else int(
+                    pandas.to_numeric(candidate_firing_df.get("Candidate hole rank"), errors="coerce")
+                    .dropna()
+                    .astype(int)
+                    .nunique()
+                )
+            )
+            expected_firing_row_count = int(expected_candidate_count * expected_depth_count)
+            _add_check(
+                "Candidate firing dataframe row count",
+                len(candidate_firing_df) == expected_firing_row_count,
+                f"Expected {expected_firing_row_count}, got {len(candidate_firing_df)}."
+            )
+
+            firing_patient_values = candidate_firing_df["Patient ID"].dropna().astype(str).unique().tolist() if "Patient ID" in candidate_firing_df.columns else []
+            firing_struct_id_values = candidate_firing_df["Relative structure ID"].dropna().astype(str).unique().tolist() if "Relative structure ID" in candidate_firing_df.columns else []
+            firing_struct_type_values = candidate_firing_df["Relative struct type"].dropna().astype(str).unique().tolist() if "Relative struct type" in candidate_firing_df.columns else []
+            firing_struct_index_values = pandas.to_numeric(
+                candidate_firing_df["Relative struct index"], errors="coerce"
+            ).dropna().astype(int).unique().tolist() if "Relative struct index" in candidate_firing_df.columns else []
+            firing_identity_ok = (
+                (len(firing_patient_values) > 0)
+                and all(val == str(patientUID) for val in firing_patient_values)
+                and (len(firing_struct_id_values) > 0)
+                and all(val == str(dil_id) for val in firing_struct_id_values)
+                and (len(firing_struct_type_values) > 0)
+                and all(val == str(dil_ref) for val in firing_struct_type_values)
+                and (len(firing_struct_index_values) > 0)
+                and all(val == int(relative_struct_index) for val in firing_struct_index_values)
+            )
+            _add_check(
+                "Candidate firing dataframe identity",
+                firing_identity_ok,
+                (
+                    f"Patient IDs={firing_patient_values}; Struct IDs={firing_struct_id_values}; "
+                    f"Struct types={firing_struct_type_values}; Struct indices={firing_struct_index_values}."
+                )
+            )
+
+            firing_non_null_results = []
+            for col in required_candidate_firing_non_null_columns:
+                if col in candidate_firing_df.columns:
+                    firing_non_null_results.append((col, int(candidate_firing_df[col].isna().sum())))
+            firing_non_null_ok = all(count == 0 for _, count in firing_non_null_results)
+            _add_check(
+                "Candidate firing required fields non-null",
+                firing_non_null_ok,
+                "; ".join([f"{col}: nulls={count}" for col, count in firing_non_null_results])
+            )
+
+            firing_non_finite_results = []
+            for col in required_candidate_firing_numeric_columns:
+                if col in candidate_firing_df.columns:
+                    raw_vals = candidate_firing_df[col]
+                    numeric_vals = pandas.to_numeric(raw_vals, errors="coerce")
+                    raw_not_null = raw_vals.notna().to_numpy()
+                    numeric_finite = np.isfinite(numeric_vals.to_numpy())
+                    invalid_count = int((raw_not_null & (~numeric_finite)).sum())
+                    firing_non_finite_results.append((col, invalid_count))
+            firing_finite_ok = all(count == 0 for _, count in firing_non_finite_results)
+            _add_check(
+                "Candidate firing required numeric fields finite",
+                firing_finite_ok,
+                "; ".join([f"{col}: invalid/non-finite={count}" for col, count in firing_non_finite_results])
+            )
+
+            if "Firing depth row UID" in candidate_firing_df.columns:
+                firing_uid_series = candidate_firing_df["Firing depth row UID"].astype(str)
+                firing_uid_ok = firing_uid_series.nunique(dropna=False) == len(firing_uid_series)
+            else:
+                firing_uid_ok = False
+            _add_check(
+                "Candidate firing row UID uniqueness",
+                firing_uid_ok,
+                "Expected one unique Firing depth row UID per candidate-firing row."
+            )
+
+            rank_sequence_ok = False
+            per_rank_depth_count_ok = False
+            row_index_sequence_per_rank_ok = False
+            rank_alignment_ok = False
+            if "Candidate hole rank" in candidate_firing_df.columns:
+                rank_vals = pandas.to_numeric(candidate_firing_df["Candidate hole rank"], errors="coerce")
+                unique_sorted_ranks = np.sort(rank_vals.dropna().astype(int).unique())
+                rank_sequence_ok = np.array_equal(unique_sorted_ranks, np.arange(1, len(unique_sorted_ranks) + 1, dtype=int))
+
+                if expected_depth_count > 0:
+                    per_rank_counts = candidate_firing_df.groupby("Candidate hole rank").size()
+                    per_rank_depth_count_ok = bool((per_rank_counts == expected_depth_count).all())
+
+                if "Firing depth row index (per structure)" in candidate_firing_df.columns:
+                    row_index_sequence_per_rank_ok = True
+                    for _, rank_group in candidate_firing_df.groupby("Candidate hole rank"):
+                        row_indices = np.sort(
+                            pandas.to_numeric(rank_group["Firing depth row index (per structure)"], errors="coerce")
+                            .dropna()
+                            .astype(int)
+                            .unique()
+                        )
+                        expected_row_indices = np.arange(expected_depth_count, dtype=int)
+                        if not np.array_equal(row_indices, expected_row_indices):
+                            row_index_sequence_per_rank_ok = False
+                            break
+
+                if candidate_geometry_exists and "Candidate hole rank" in candidate_geometry_df.columns:
+                    geometry_ranks = np.sort(
+                        pandas.to_numeric(candidate_geometry_df["Candidate hole rank"], errors="coerce")
+                        .dropna()
+                        .astype(int)
+                        .unique()
+                    )
+                    rank_alignment_ok = np.array_equal(unique_sorted_ranks, geometry_ranks)
+                else:
+                    rank_alignment_ok = True
+
+            _add_check(
+                "Candidate firing rank sequence",
+                rank_sequence_ok,
+                "Expected candidate ranks to be contiguous across firing rows."
+            )
+            _add_check(
+                "Candidate firing depth row count per rank",
+                per_rank_depth_count_ok,
+                f"Expected each candidate rank to have exactly {expected_depth_count} depth rows."
+            )
+            _add_check(
+                "Candidate firing row-index sequence per rank",
+                row_index_sequence_per_rank_ok,
+                "Expected row index sequence 0..N-1 within each candidate rank."
+            )
+            _add_check(
+                "Candidate firing rank alignment with candidate geometry",
+                rank_alignment_ok,
+                "Candidate ranks in firing dataframe should match candidate geometry dataframe ranks."
+            )
+
+        return pandas.DataFrame(rows)
 
     def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df):
         ordered_df = precomputed_firing_depth_df.copy()
@@ -4331,10 +4869,30 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             sp_dil_id,
             specific_dil_index
         )
+        candidate_contract_df = None
+        if validate_firing_df_builder or strict_precomputed_guidance:
+            candidate_contract_df = _build_candidate_contract_validation_dataframe(
+                specific_dil_structure,
+                sp_dil_id,
+                specific_dil_index
+            )
+            if isinstance(candidate_contract_df, pandas.DataFrame) and (not candidate_contract_df.empty):
+                failed_candidate_checks = candidate_contract_df[candidate_contract_df["Check pass"] == False]
+                if not failed_candidate_checks.empty:
+                    failed_candidate_check_names = failed_candidate_checks["Check"].astype(str).tolist()
+                    candidate_failure_message = (
+                        f"[Guidance candidate precomputed] {patientUID} | {sp_dil_id}: contract validation failed: "
+                        + ", ".join(failed_candidate_check_names)
+                    )
+                    if strict_precomputed_guidance:
+                        raise ValueError(candidate_failure_message)
+                    _emit_validation_note(candidate_failure_message)
         if validate_firing_df_builder and isinstance(precomputed_contract_df, pandas.DataFrame):
             specific_dil_structure[
                 "Biopsy optimization: Guidance-map precomputed contract dataframe (validation)"
             ] = precomputed_contract_df
+        if validate_firing_df_builder and isinstance(candidate_contract_df, pandas.DataFrame):
+            specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION] = candidate_contract_df
         if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
             continue
 
@@ -4595,6 +5153,19 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         ].astype(str).tolist()
                         _emit_validation_note(
                             f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks failed: {failed_checks}"
+                        )
+                if isinstance(candidate_contract_df, pandas.DataFrame) and not candidate_contract_df.empty:
+                    candidate_checks_pass = bool(candidate_contract_df["Check pass"].fillna(False).all())
+                    if candidate_checks_pass:
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks passed."
+                        )
+                    else:
+                        failed_candidate_checks = candidate_contract_df.loc[
+                            candidate_contract_df["Check pass"] == False, "Check"
+                        ].astype(str).tolist()
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks failed: {failed_candidate_checks}"
                         )
 
         contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
