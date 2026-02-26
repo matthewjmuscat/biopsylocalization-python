@@ -8855,7 +8855,7 @@ def main():
                                             draw_orientation_diagram=False,
                                             show_titles=False,
                                             validate_firing_df_builder=True,
-                                            strict_precomputed_guidance=False
+                                            strict_precomputed_guidance=True
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)

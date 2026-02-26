@@ -38,8 +38,7 @@ import dataframe_builders
 import math
 
 _GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT = {}
-_GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT = {}
-_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT = {}
 
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
@@ -4777,7 +4776,6 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                             draw_orientation_diagram=True,
                                             show_titles=True,
                                             validate_firing_df_builder=False,
-                                            firing_df_validation_tolerance_mm=1e-6,
                                             strict_precomputed_guidance=False,
                                             ):
     
@@ -4878,7 +4876,6 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                                                                     fire_annotation_style = fire_annotation_style,
                                                                                     fire_table_position = fire_table_position,
                                                                                     validate_firing_df_builder = validate_firing_df_builder,
-                                                                                    firing_df_validation_tolerance_mm = firing_df_validation_tolerance_mm,
                                                                                     strict_precomputed_guidance = strict_precomputed_guidance)
 
     if validate_firing_df_builder:
@@ -4886,8 +4883,7 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
         validation_dir.mkdir(parents=True, exist_ok=True)
 
         patient_firing_df_list = []
-        patient_comparison_df_list = []
-        patient_geometry_df_list = []
+        patient_contract_df_list = []
 
         for specific_dil_structure in pydicom_item[dil_ref]:
             dil_id = specific_dil_structure.get("ROI", "DIL")
@@ -4904,25 +4900,15 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                 firing_df.to_csv(firing_path, index=False)
                 patient_firing_df_list.append(firing_df.copy())
 
-            comparison_df = specific_dil_structure.get(
-                "Biopsy optimization: Guidance-map firing depth comparison dataframe (validation)"
+            contract_df = specific_dil_structure.get(
+                "Biopsy optimization: Guidance-map precomputed contract dataframe (validation)"
             )
-            if isinstance(comparison_df, pandas.DataFrame) and not comparison_df.empty:
-                comparison_path = validation_dir.joinpath(
-                    f"{safe_patient}-{safe_dil}-guidance_map_firing_depths_comparison_validation.csv"
+            if isinstance(contract_df, pandas.DataFrame) and not contract_df.empty:
+                contract_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_precomputed_contract_validation.csv"
                 )
-                comparison_df.to_csv(comparison_path, index=False)
-                patient_comparison_df_list.append(comparison_df.copy())
-
-            geometry_df = specific_dil_structure.get(
-                "Biopsy optimization: Guidance-map geometry context comparison dataframe (validation)"
-            )
-            if isinstance(geometry_df, pandas.DataFrame) and not geometry_df.empty:
-                geometry_path = validation_dir.joinpath(
-                    f"{safe_patient}-{safe_dil}-guidance_map_geometry_context_comparison_validation.csv"
-                )
-                geometry_df.to_csv(geometry_path, index=False)
-                patient_geometry_df_list.append(geometry_df.copy())
+                contract_df.to_csv(contract_path, index=False)
+                patient_contract_df_list.append(contract_df.copy())
 
         if len(patient_firing_df_list) > 0:
             patient_firing_df = pandas.concat(patient_firing_df_list, ignore_index=True)
@@ -4932,21 +4918,13 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
             )
             _GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT[patientUID] = patient_firing_df
 
-        if len(patient_comparison_df_list) > 0:
-            patient_comparison_df = pandas.concat(patient_comparison_df_list, ignore_index=True)
-            patient_comparison_df.to_csv(
-                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_firing_depths_comparison_validation.csv"),
+        if len(patient_contract_df_list) > 0:
+            patient_contract_df = pandas.concat(patient_contract_df_list, ignore_index=True)
+            patient_contract_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_precomputed_contract_validation.csv"),
                 index=False
             )
-            _GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT[patientUID] = patient_comparison_df
-
-        if len(patient_geometry_df_list) > 0:
-            patient_geometry_df = pandas.concat(patient_geometry_df_list, ignore_index=True)
-            patient_geometry_df.to_csv(
-                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_geometry_context_comparison_validation.csv"),
-                index=False
-            )
-            _GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT[patientUID] = patient_geometry_df
+            _GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT[patientUID] = patient_contract_df
 
         global_validation_dir = patient_sp_output_figures_dir.parent.joinpath(
             "Global", "Validation dataframes", "guidance_map_firing_depths"
@@ -4962,21 +4940,12 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                 index=False
             )
 
-        if len(_GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT) > 0:
-            cohort_comparison_df = pandas.concat(
-                list(_GUIDANCE_MAP_VALIDATION_COMPARISON_BY_PATIENT.values()), ignore_index=True
+        if len(_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT) > 0:
+            cohort_contract_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT.values()), ignore_index=True
             )
-            cohort_comparison_df.to_csv(
-                global_validation_dir.joinpath("Cohort-guidance_map_firing_depths_comparison_validation.csv"),
-                index=False
-            )
-
-        if len(_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT) > 0:
-            cohort_geometry_df = pandas.concat(
-                list(_GUIDANCE_MAP_VALIDATION_GEOMETRY_BY_PATIENT.values()), ignore_index=True
-            )
-            cohort_geometry_df.to_csv(
-                global_validation_dir.joinpath("Cohort-guidance_map_geometry_context_comparison_validation.csv"),
+            cohort_contract_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_precomputed_contract_validation.csv"),
                 index=False
             )
     

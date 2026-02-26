@@ -3412,7 +3412,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             fire_annotation_style = "hockey",
                                             fire_table_position = "auto",
                                             validate_firing_df_builder = False,
-                                            firing_df_validation_tolerance_mm = 1e-6,
                                             strict_precomputed_guidance = False
                                             ):
 
@@ -3486,267 +3485,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             except Exception:
                 pass
 
-    def _compare_fire_rows_with_dataframe(legacy_fire_rows,
-                                          firing_depth_df,
-                                          dil_id,
-                                          euler_angles=None,
-                                          euler_convention=None,
-                                          relative_struct_type=None,
-                                          relative_struct_index=None):
-        if not legacy_fire_rows:
-            _emit_validation_note(f"[Guidance map validation] {patientUID} | {dil_id}: no fire rows to compare.")
-            return pandas.DataFrame()
-        if firing_depth_df is None or firing_depth_df.empty:
-            _emit_validation_note(f"[Guidance map validation] {patientUID} | {dil_id}: dataframe builder returned no rows.")
-            return pandas.DataFrame()
-
-        euler_x = float("nan")
-        euler_y = float("nan")
-        euler_z = float("nan")
-        if euler_angles is not None:
-            euler_arr = np.asarray(euler_angles, dtype=float).reshape(-1)
-            if euler_arr.size >= 3:
-                euler_x = float(euler_arr[0])
-                euler_y = float(euler_arr[1])
-                euler_z = float(euler_arr[2])
-
-        legacy_df = pandas.DataFrame(legacy_fire_rows)[[
-            "penetration_depth",
-            "optimal_hole",
-            "zprime",
-            "yprime",
-            "deflection",
-            "depth_from_apex",
-        ]].copy()
-        legacy_df["firing_row_index"] = np.arange(len(legacy_df), dtype=int)
-        legacy_df["euler_x"] = euler_x
-        legacy_df["euler_y"] = euler_y
-        legacy_df["euler_z"] = euler_z
-        legacy_df["euler_x_abs"] = float(abs(euler_x)) if not np.isnan(euler_x) else float("nan")
-        legacy_df["euler_y_abs"] = float(abs(euler_y)) if not np.isnan(euler_y) else float("nan")
-        legacy_df["euler_z_abs"] = float(abs(euler_z)) if not np.isnan(euler_z) else float("nan")
-        legacy_df["euler_x_direction"] = _angle_direction_label(euler_x)
-        legacy_df["euler_y_direction"] = _angle_direction_label(euler_y)
-        legacy_df["euler_z_direction"] = _angle_direction_label(euler_z)
-        legacy_df["euler_convention"] = euler_convention if euler_convention is not None else "-"
-        if relative_struct_type is not None and relative_struct_index is not None:
-            legacy_df["firing_row_uid"] = legacy_df.apply(
-                lambda row: (
-                    f"{patientUID}|{relative_struct_type}|{relative_struct_index}|{dil_id}|"
-                    f"row={int(row['firing_row_index'])}|depth_mm={float(row['penetration_depth']):.6f}"
-                ),
-                axis=1
-            )
-        else:
-            legacy_df["firing_row_uid"] = float("nan")
-        legacy_df["depth_row_id"] = legacy_df.groupby("penetration_depth").cumcount()
-
-        builder_expected_columns = [
-            "Penetration depth (mm)",
-            "Optimal template hole",
-            "Pre-fire needle tip (Transducer primed frame) (Z')",
-            "Pre-fire needle tip (Transducer primed frame) (Y')",
-            "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
-            "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
-            "Firing depth row index (per structure)",
-            "Firing depth row UID",
-            "Euler angle X (deg)",
-            "Euler angle Y (deg)",
-            "Euler angle Z (deg)",
-            "Euler angle X abs (deg)",
-            "Euler angle Y abs (deg)",
-            "Euler angle Z abs (deg)",
-            "Euler angle X direction",
-            "Euler angle Y direction",
-            "Euler angle Z direction",
-            "Euler convention",
-        ]
-        builder_source_df = firing_depth_df.copy()
-        missing_builder_columns = [col for col in builder_expected_columns if col not in builder_source_df.columns]
-        for col in missing_builder_columns:
-            builder_source_df[col] = np.nan
-
-        builder_df = builder_source_df[builder_expected_columns].rename(columns={
-            "Penetration depth (mm)": "penetration_depth",
-            "Optimal template hole": "optimal_hole",
-            "Pre-fire needle tip (Transducer primed frame) (Z')": "zprime",
-            "Pre-fire needle tip (Transducer primed frame) (Y')": "yprime",
-            "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)": "deflection",
-            "Pre-fire tip depth from apex (Transducer primed frame) (mm)": "depth_from_apex",
-            "Firing depth row index (per structure)": "firing_row_index",
-            "Firing depth row UID": "firing_row_uid",
-            "Euler angle X (deg)": "euler_x",
-            "Euler angle Y (deg)": "euler_y",
-            "Euler angle Z (deg)": "euler_z",
-            "Euler angle X abs (deg)": "euler_x_abs",
-            "Euler angle Y abs (deg)": "euler_y_abs",
-            "Euler angle Z abs (deg)": "euler_z_abs",
-            "Euler angle X direction": "euler_x_direction",
-            "Euler angle Y direction": "euler_y_direction",
-            "Euler angle Z direction": "euler_z_direction",
-            "Euler convention": "euler_convention",
-        }).copy()
-        builder_df["depth_row_id"] = builder_df.groupby("penetration_depth").cumcount()
-
-        mismatch_messages = []
-        if missing_builder_columns:
-            mismatch_messages.append(f"builder missing columns: {missing_builder_columns}")
-
-        # Invariants for newly introduced fields with no historical legacy equivalent.
-        if not builder_df.empty:
-            builder_row_index = pandas.to_numeric(builder_df["firing_row_index"], errors="coerce").to_numpy()
-            expected_row_index = np.arange(len(builder_df), dtype=float)
-            if not np.array_equal(builder_row_index, expected_row_index):
-                mismatch_messages.append("firing_row_index sequence mismatch")
-
-            builder_uid_series = builder_df["firing_row_uid"]
-            if builder_uid_series.notna().any() and builder_uid_series.astype(str).duplicated().any():
-                mismatch_messages.append("firing_row_uid is not unique")
-
-            if relative_struct_type is not None and relative_struct_index is not None:
-                expected_uid_series = builder_df.apply(
-                    lambda row: (
-                        f"{patientUID}|{relative_struct_type}|{relative_struct_index}|{dil_id}|"
-                        f"row={int(pandas.to_numeric(row['firing_row_index'], errors='coerce'))}|"
-                        f"depth_mm={float(pandas.to_numeric(row['penetration_depth'], errors='coerce')):.6f}"
-                    )
-                    if not np.isnan(pandas.to_numeric(row["firing_row_index"], errors="coerce"))
-                    and not np.isnan(pandas.to_numeric(row["penetration_depth"], errors="coerce"))
-                    else "-"
-                    ,
-                    axis=1
-                ).to_numpy()
-                actual_uid_series = builder_df["firing_row_uid"].fillna("-").astype(str).to_numpy()
-                uid_mismatch_mask = actual_uid_series != expected_uid_series
-                if np.any(uid_mismatch_mask):
-                    mismatch_messages.append("firing_row_uid format/value mismatch")
-
-        merged = legacy_df.merge(
-            builder_df,
-            on=["penetration_depth", "depth_row_id"],
-            how="outer",
-            suffixes=("_legacy", "_builder"),
-            indicator=True,
-        )
-
-        unmatched_rows = merged[merged["_merge"] != "both"]
-        if not unmatched_rows.empty:
-            unmatched_depths = unmatched_rows["penetration_depth"].tolist()
-            mismatch_messages.append(f"depth-row mismatch at {unmatched_depths}")
-
-        both_mask = merged["_merge"] == "both"
-        numeric_fields = [
-            "zprime",
-            "yprime",
-            "deflection",
-            "depth_from_apex",
-            "firing_row_index",
-            "euler_x",
-            "euler_y",
-            "euler_z",
-            "euler_x_abs",
-            "euler_y_abs",
-            "euler_z_abs",
-        ]
-        string_fields = [
-            "optimal_hole",
-            "firing_row_uid",
-            "euler_x_direction",
-            "euler_y_direction",
-            "euler_z_direction",
-            "euler_convention",
-        ]
-        compared_match_columns = []
-
-        for field in numeric_fields:
-            legacy_field_col = f"{field}_legacy"
-            builder_field_col = f"{field}_builder"
-            if legacy_field_col not in merged.columns or builder_field_col not in merged.columns:
-                mismatch_messages.append(f"{field} comparison columns missing")
-                merged[f"{field}_match"] = False
-                compared_match_columns.append(f"{field}_match")
-                continue
-
-            legacy_vals = merged.loc[both_mask, f"{field}_legacy"].astype(float).to_numpy()
-            builder_vals = merged.loc[both_mask, f"{field}_builder"].astype(float).to_numpy()
-            same_nan = np.isnan(legacy_vals) & np.isnan(builder_vals)
-            close_vals = np.isclose(
-                legacy_vals,
-                builder_vals,
-                atol=float(firing_df_validation_tolerance_mm),
-                rtol=0.0,
-                equal_nan=False,
-            )
-            mismatch_mask = ~(same_nan | close_vals)
-            if np.any(mismatch_mask):
-                mismatch_depths = merged.loc[both_mask, "penetration_depth"].to_numpy()[mismatch_mask]
-                mismatch_messages.append(f"{field} mismatch at depths {mismatch_depths.tolist()}")
-            compared_match_columns.append(f"{field}_match")
-
-        for field in string_fields:
-            legacy_field_col = f"{field}_legacy"
-            builder_field_col = f"{field}_builder"
-            match_col = f"{field}_match"
-            if legacy_field_col not in merged.columns or builder_field_col not in merged.columns:
-                mismatch_messages.append(f"{field} comparison columns missing")
-                merged[match_col] = False
-                compared_match_columns.append(match_col)
-                continue
-
-            field_match_mask = (
-                merged.loc[both_mask, legacy_field_col].fillna("-").astype(str)
-                == merged.loc[both_mask, builder_field_col].fillna("-").astype(str)
-            )
-            merged[match_col] = False
-            merged.loc[both_mask, match_col] = field_match_mask.to_numpy()
-            if np.any(~field_match_mask.to_numpy()):
-                mismatch_depths = merged.loc[both_mask, "penetration_depth"].to_numpy()[~field_match_mask.to_numpy()]
-                mismatch_messages.append(f"{field} mismatch at depths {mismatch_depths.tolist()}")
-            compared_match_columns.append(match_col)
-
-        if mismatch_messages:
-            _emit_validation_note(
-                f"[Guidance map validation] {patientUID} | {dil_id}: " + "; ".join(mismatch_messages)
-            )
-        else:
-            _emit_validation_note(
-                f"[Guidance map validation] {patientUID} | {dil_id}: legacy fire rows and dataframe builder match."
-            )
-
-        # Build a value-for-value comparison dataframe for downstream inspection/export.
-        merged["Patient ID"] = patientUID
-        merged["Relative structure ID"] = dil_id
-        for field in numeric_fields:
-            legacy_col = f"{field}_legacy"
-            builder_col = f"{field}_builder"
-            delta_col = f"{field}_builder_minus_legacy"
-            match_col = f"{field}_match"
-            if legacy_col not in merged.columns or builder_col not in merged.columns:
-                continue
-            merged[delta_col] = merged[builder_col] - merged[legacy_col]
-            legacy_vals = merged[legacy_col].astype(float).to_numpy()
-            builder_vals = merged[builder_col].astype(float).to_numpy()
-            merged[match_col] = (
-                (np.isnan(legacy_vals) & np.isnan(builder_vals))
-                | np.isclose(
-                    legacy_vals,
-                    builder_vals,
-                    atol=float(firing_df_validation_tolerance_mm),
-                    rtol=0.0,
-                    equal_nan=False
-                )
-            )
-        merged["row_present_in_both"] = merged["_merge"] == "both"
-        if len(compared_match_columns) > 0:
-            merged["all_checked_fields_match"] = (
-                merged["row_present_in_both"]
-                & merged[compared_match_columns].all(axis=1)
-            )
-        else:
-            merged["all_checked_fields_match"] = merged["row_present_in_both"]
-
-        return merged
-
     required_precomputed_geometry_context_keys = [
         "Patient ID",
         "Relative structure ID",
@@ -3770,8 +3508,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         "Relative struct type",
         "Relative struct index",
         "Firing depth row index (per structure)",
+        "Firing depth row UID",
         "Penetration depth (mm)",
         "Optimal template hole",
+        "Optimal sampling point (Transducer primed frame) (X')",
         "Pre-fire needle tip (Transducer primed frame) (Z')",
         "Pre-fire needle tip (Transducer primed frame) (Y')",
         "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
@@ -3783,169 +3523,227 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         "Euler angle Z (deg)",
         "Euler convention",
     ]
+    required_non_null_firing_df_columns = [
+        "Penetration depth (mm)",
+        "Optimal template hole",
+        "Pre-fire needle tip (Transducer primed frame) (Z')",
+        "Pre-fire needle tip (Transducer primed frame) (Y')",
+        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+    ]
+    required_identity_firing_df_columns = [
+        "Patient ID",
+        "Relative structure ID",
+        "Relative struct type",
+        "Relative struct index",
+    ]
+    required_numeric_firing_df_columns = [
+        "Relative struct index",
+        "Firing depth row index (per structure)",
+        "Penetration depth (mm)",
+        "Optimal sampling point (Transducer primed frame) (X')",
+        "Pre-fire needle tip (Transducer primed frame) (Z')",
+        "Pre-fire needle tip (Transducer primed frame) (Y')",
+        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Z')",
+        "Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')",
+        "In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)",
+        "Pre-fire tip depth from apex (Transducer primed frame) (mm)",
+        "Euler angle X (deg)",
+        "Euler angle Y (deg)",
+        "Euler angle Z (deg)",
+    ]
 
-    def _handle_precomputed_issue(message):
-        if strict_precomputed_guidance:
-            raise ValueError(message)
-        _emit_validation_note(message)
+    def _build_precomputed_contract_validation_dataframe(geometry_context,
+                                                         firing_depth_df,
+                                                         dil_id,
+                                                         relative_struct_index):
+        rows = []
 
-    def _load_precomputed_guidance_inputs(specific_dil_structure,
-                                          dil_id,
-                                          relative_struct_index):
-        """
-        Read precomputed guidance inputs early and validate schema/identity.
-        Falls back to inline plotter calculations when precomputed inputs are unavailable.
-        """
-        geometry_context = specific_dil_structure.get("Biopsy optimization: Guidance-map geometry context")
-        firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+        def _add_check(check_name, passed, details=""):
+            rows.append({
+                "Patient ID": patientUID,
+                "Relative structure ID": dil_id,
+                "Check": str(check_name),
+                "Check pass": bool(passed),
+                "Details": str(details),
+            })
 
-        if not isinstance(geometry_context, dict):
-            _handle_precomputed_issue(
-                f"[Guidance precomputed] {patientUID} | {dil_id}: missing geometry context; using inline plotter calculations."
-            )
-            geometry_context = None
-        else:
+        _add_check(
+            "Geometry context exists",
+            isinstance(geometry_context, dict),
+            "Expected dict in 'Biopsy optimization: Guidance-map geometry context'."
+        )
+        if isinstance(geometry_context, dict):
             missing_context_keys = [
                 key for key in required_precomputed_geometry_context_keys if key not in geometry_context
             ]
-            if len(missing_context_keys) > 0:
-                _handle_precomputed_issue(
-                    f"[Guidance precomputed] {patientUID} | {dil_id}: geometry context missing keys {missing_context_keys}; using inline plotter calculations."
-                )
-                geometry_context = None
-            else:
-                identity_mismatch_msgs = []
-                if str(geometry_context.get("Patient ID")) != str(patientUID):
-                    identity_mismatch_msgs.append("Patient ID mismatch")
-                if str(geometry_context.get("Relative structure ID")) != str(dil_id):
-                    identity_mismatch_msgs.append("Relative structure ID mismatch")
-                if str(geometry_context.get("Relative struct type")) != str(dil_ref):
-                    identity_mismatch_msgs.append("Relative struct type mismatch")
-                context_struct_index = pandas.to_numeric(
-                    geometry_context.get("Relative struct index"), errors="coerce"
-                )
-                if np.isnan(context_struct_index) or int(context_struct_index) != int(relative_struct_index):
-                    identity_mismatch_msgs.append("Relative struct index mismatch")
-                if len(identity_mismatch_msgs) > 0:
-                    _handle_precomputed_issue(
-                        f"[Guidance precomputed] {patientUID} | {dil_id}: " +
-                        "; ".join(identity_mismatch_msgs) +
-                        "; using inline plotter calculations."
-                    )
-                    geometry_context = None
-
-        if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
-            _handle_precomputed_issue(
-                f"[Guidance precomputed] {patientUID} | {dil_id}: missing firing-depth dataframe; using inline plotter calculations."
+            _add_check(
+                "Geometry context required keys",
+                len(missing_context_keys) == 0,
+                "Missing keys: " + ", ".join(missing_context_keys) if missing_context_keys else ""
             )
-            firing_depth_df = pandas.DataFrame()
-        else:
+
+            context_patient = str(geometry_context.get("Patient ID"))
+            context_struct_id = str(geometry_context.get("Relative structure ID"))
+            context_struct_type = str(geometry_context.get("Relative struct type"))
+            context_struct_index = pandas.to_numeric(geometry_context.get("Relative struct index"), errors="coerce")
+            context_identity_ok = (
+                context_patient == str(patientUID)
+                and context_struct_id == str(dil_id)
+                and context_struct_type == str(dil_ref)
+                and (not np.isnan(context_struct_index))
+                and int(context_struct_index) == int(relative_struct_index)
+            )
+            _add_check(
+                "Geometry context identity",
+                context_identity_ok,
+                (
+                    f"Got Patient ID={context_patient}, Relative structure ID={context_struct_id}, "
+                    f"Relative struct type={context_struct_type}, Relative struct index={context_struct_index}."
+                )
+            )
+
+        firing_df_exists = isinstance(firing_depth_df, pandas.DataFrame) and (not firing_depth_df.empty)
+        _add_check(
+            "Firing-depth dataframe exists",
+            firing_df_exists,
+            "Expected non-empty dataframe in 'Biopsy optimization: Guidance-map firing depth dataframe'."
+        )
+        if firing_df_exists:
             missing_firing_columns = [
                 col for col in required_precomputed_firing_df_columns if col not in firing_depth_df.columns
             ]
-            if len(missing_firing_columns) > 0:
-                _handle_precomputed_issue(
-                    f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe missing columns {missing_firing_columns}; using inline plotter calculations."
-                )
-                firing_depth_df = pandas.DataFrame()
-            else:
-                try:
-                    expected_row_count = len(np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1))
-                    if len(firing_depth_df) != expected_row_count:
-                        _handle_precomputed_issue(
-                            f"[Guidance precomputed] {patientUID} | {dil_id}: firing-depth dataframe row count {len(firing_depth_df)} != expected {expected_row_count}; using inline plotter calculations."
-                        )
-                        firing_depth_df = pandas.DataFrame()
-                except Exception:
-                    _handle_precomputed_issue(
-                        f"[Guidance precomputed] {patientUID} | {dil_id}: unable to validate firing-depth row count; using inline plotter calculations."
-                    )
-                    firing_depth_df = pandas.DataFrame()
-
-                if not firing_depth_df.empty:
-                    identity_mismatch_msgs = []
-                    patient_values = firing_depth_df["Patient ID"].dropna().astype(str).unique().tolist()
-                    if len(patient_values) > 0 and any(val != str(patientUID) for val in patient_values):
-                        identity_mismatch_msgs.append("Patient ID mismatch")
-                    struct_id_values = firing_depth_df["Relative structure ID"].dropna().astype(str).unique().tolist()
-                    if len(struct_id_values) > 0 and any(val != str(dil_id) for val in struct_id_values):
-                        identity_mismatch_msgs.append("Relative structure ID mismatch")
-                    struct_type_values = firing_depth_df["Relative struct type"].dropna().astype(str).unique().tolist()
-                    if len(struct_type_values) > 0 and any(val != str(dil_ref) for val in struct_type_values):
-                        identity_mismatch_msgs.append("Relative struct type mismatch")
-                    struct_index_values = pandas.to_numeric(
-                        firing_depth_df["Relative struct index"], errors="coerce"
-                    ).dropna().astype(int).unique().tolist()
-                    if len(struct_index_values) > 0 and any(val != int(relative_struct_index) for val in struct_index_values):
-                        identity_mismatch_msgs.append("Relative struct index mismatch")
-
-                    if len(identity_mismatch_msgs) > 0:
-                        _handle_precomputed_issue(
-                            f"[Guidance precomputed] {patientUID} | {dil_id}: " +
-                            "; ".join(identity_mismatch_msgs) +
-                            "; using inline plotter calculations."
-                        )
-                        firing_depth_df = pandas.DataFrame()
-
-        return geometry_context, firing_depth_df
-
-    def _point_to_segment_distance(pt, start, end):
-        """Euclidean distance from point to line segment in 2D."""
-        seg = end - start
-        seg_len_sq = np.dot(seg, seg)
-        if seg_len_sq == 0:
-            return float(np.linalg.norm(pt - start)), start
-        t = np.dot(pt - start, seg) / seg_len_sq
-        t_clamped = np.clip(t, 0.0, 1.0)
-        projection = start + t_clamped * seg
-        return float(np.linalg.norm(pt - projection)), projection
-
-    def _build_legacy_fire_rows_for_sagittal(transformed_optimal_point_contour_coord_sys,
-                                             transformed_optimal_point_xprime,
-                                             optimal_template_hole_label,
-                                             nearest_prostate_template_lines_contour_plot_coords_list_of_dicts,
-                                             prostate_mesh_slice_pts_transformed_contour_plot_coords):
-        fire_rows = []
-        for penetration_depth in biopsy_fire_travel_distances:
-            needle_tip_position_before_firing = copy.deepcopy(transformed_optimal_point_contour_coord_sys)
-            needle_tip_position_before_firing[0] = (
-                needle_tip_position_before_firing[0]
-                - penetration_depth
-                + (biopsy_needle_tip_length + biopsy_needle_compartment_length / 2)
+            _add_check(
+                "Firing-depth dataframe required columns",
+                len(missing_firing_columns) == 0,
+                "Missing columns: " + ", ".join(missing_firing_columns) if missing_firing_columns else ""
             )
 
-            deflection_dist = float("nan")
-            projection_point = None
-            if len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) > 0:
-                line_coords = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
-                line_start = np.array([line_coords['start'][2], line_coords['start'][1]])
-                line_end = np.array([line_coords['end'][2], line_coords['end'][1]])
-                deflection_dist, projection_point = _point_to_segment_distance(
-                    needle_tip_position_before_firing,
-                    line_start,
-                    line_end
+            expected_row_count = len(np.asarray(list(biopsy_fire_travel_distances), dtype=float).reshape(-1))
+            _add_check(
+                "Firing-depth dataframe row count",
+                len(firing_depth_df) == expected_row_count,
+                f"Expected {expected_row_count}, got {len(firing_depth_df)}."
+            )
+
+            patient_values = firing_depth_df["Patient ID"].dropna().astype(str).unique().tolist() if "Patient ID" in firing_depth_df.columns else []
+            struct_id_values = firing_depth_df["Relative structure ID"].dropna().astype(str).unique().tolist() if "Relative structure ID" in firing_depth_df.columns else []
+            struct_type_values = firing_depth_df["Relative struct type"].dropna().astype(str).unique().tolist() if "Relative struct type" in firing_depth_df.columns else []
+            struct_index_values = pandas.to_numeric(
+                firing_depth_df["Relative struct index"], errors="coerce"
+            ).dropna().astype(int).unique().tolist() if "Relative struct index" in firing_depth_df.columns else []
+            firing_identity_ok = (
+                (len(patient_values) > 0)
+                and all(val == str(patientUID) for val in patient_values)
+                and (len(struct_id_values) > 0)
+                and all(val == str(dil_id) for val in struct_id_values)
+                and (len(struct_type_values) > 0)
+                and all(val == str(dil_ref) for val in struct_type_values)
+                and (len(struct_index_values) > 0)
+                and all(val == int(relative_struct_index) for val in struct_index_values)
+            )
+            _add_check(
+                "Firing-depth dataframe identity",
+                firing_identity_ok,
+                (
+                    f"Patient IDs={patient_values}; Struct IDs={struct_id_values}; "
+                    f"Struct types={struct_type_values}; Struct indices={struct_index_values}."
                 )
+            )
+            identity_null_counts = []
+            for col in required_identity_firing_df_columns:
+                if col in firing_depth_df.columns:
+                    identity_null_counts.append((col, int(firing_depth_df[col].isna().sum())))
+            identity_non_null_ok = all(count == 0 for _, count in identity_null_counts)
+            _add_check(
+                "Firing-depth identity fields non-null",
+                identity_non_null_ok,
+                "; ".join([f"{col}: nulls={count}" for col, count in identity_null_counts])
+            )
 
-            prostate_apex_zprime = float(np.min(prostate_mesh_slice_pts_transformed_contour_plot_coords[:, 0]))
-            depth_from_apex = needle_tip_position_before_firing[0] - prostate_apex_zprime
-            fire_rows.append({
-                "penetration_depth": float(penetration_depth),
-                "optimal_hole": optimal_template_hole_label,
-                "xprime": float(transformed_optimal_point_xprime),
-                "zprime": float(needle_tip_position_before_firing[0]),
-                "yprime": float(needle_tip_position_before_firing[1]),
-                "deflection": float(deflection_dist),
-                "depth_from_apex": float(depth_from_apex),
-                "projection_point": projection_point
-            })
-        return fire_rows
+            if "Firing depth row index (per structure)" in firing_depth_df.columns:
+                row_index_vals = pandas.to_numeric(
+                    firing_depth_df["Firing depth row index (per structure)"], errors="coerce"
+                ).to_numpy()
+                row_index_expected = np.arange(len(firing_depth_df), dtype=float)
+                row_index_ok = np.array_equal(row_index_vals, row_index_expected)
+            else:
+                row_index_ok = False
+            _add_check(
+                "Firing-depth row-index sequence",
+                row_index_ok,
+                "Expected contiguous row indices 0..N-1."
+            )
 
-    def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df,
-                                                  transformed_optimal_point_xprime,
-                                                  optimal_template_hole_label):
-        if not isinstance(precomputed_firing_depth_df, pandas.DataFrame) or precomputed_firing_depth_df.empty:
-            return []
+            if "Firing depth row UID" in firing_depth_df.columns:
+                uid_series = firing_depth_df["Firing depth row UID"].astype(str)
+                uid_ok = (uid_series.nunique(dropna=False) == len(uid_series))
+            else:
+                uid_ok = False
+            _add_check(
+                "Firing-depth row UID uniqueness",
+                uid_ok,
+                "Expected one unique UID per firing-depth row."
+            )
 
+            non_null_results = []
+            for col in required_non_null_firing_df_columns:
+                if col in firing_depth_df.columns:
+                    null_count = int(firing_depth_df[col].isna().sum())
+                    non_null_results.append((col, null_count))
+            non_null_ok = all(count == 0 for _, count in non_null_results)
+            _add_check(
+                "Firing-depth required fields non-null",
+                non_null_ok,
+                "; ".join([f"{col}: nulls={count}" for col, count in non_null_results])
+            )
+            non_finite_results = []
+            for col in required_numeric_firing_df_columns:
+                if col in firing_depth_df.columns:
+                    raw_vals = firing_depth_df[col]
+                    numeric_vals = pandas.to_numeric(raw_vals, errors="coerce")
+                    raw_not_null = raw_vals.notna().to_numpy()
+                    numeric_finite = np.isfinite(numeric_vals.to_numpy())
+                    invalid_numeric_or_non_finite_count = int((raw_not_null & (~numeric_finite)).sum())
+                    non_finite_results.append((col, invalid_numeric_or_non_finite_count))
+            non_finite_ok = all(count == 0 for _, count in non_finite_results)
+            _add_check(
+                "Firing-depth required numeric fields finite",
+                non_finite_ok,
+                "; ".join([f"{col}: invalid/non-finite={count}" for col, count in non_finite_results])
+            )
+
+        contract_df = pandas.DataFrame(rows)
+        return contract_df
+
+    def _validate_and_load_precomputed_guidance_inputs(specific_dil_structure,
+                                                       dil_id,
+                                                       relative_struct_index):
+        geometry_context = specific_dil_structure.get("Biopsy optimization: Guidance-map geometry context")
+        firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+
+        contract_df = _build_precomputed_contract_validation_dataframe(
+            geometry_context,
+            firing_depth_df,
+            dil_id,
+            relative_struct_index
+        )
+
+        failed_checks = contract_df[contract_df["Check pass"] == False]
+        if not failed_checks.empty:
+            failed_check_names = failed_checks["Check"].astype(str).tolist()
+            message = (
+                f"[Guidance precomputed] {patientUID} | {dil_id}: contract validation failed: "
+                + ", ".join(failed_check_names)
+            )
+            if strict_precomputed_guidance:
+                raise ValueError(message)
+            _emit_validation_note(message)
+            return None, None, contract_df
+
+        return geometry_context, firing_depth_df, contract_df
+
+    def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df):
         ordered_df = precomputed_firing_depth_df.copy()
         ordered_df["__firing_row_index__"] = pandas.to_numeric(
             ordered_df["Firing depth row index (per structure)"], errors="coerce"
@@ -3962,25 +3760,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 fire_row["Pre-fire tip projection on projected axis from optimal template hole (Transducer primed frame) (Y')"],
                 errors="coerce"
             )
-            projection_point = None
-            if not np.isnan(projection_zprime) and not np.isnan(projection_yprime):
-                projection_point = np.array([float(projection_zprime), float(projection_yprime)])
-
-            xprime_row = pandas.to_numeric(
-                fire_row.get("Optimal sampling point (Transducer primed frame) (X')", np.nan),
-                errors="coerce"
-            )
-            if np.isnan(xprime_row):
-                xprime_row = float(transformed_optimal_point_xprime)
-
-            optimal_hole_row = fire_row.get("Optimal template hole", optimal_template_hole_label)
-            if pandas.isna(optimal_hole_row):
-                optimal_hole_row = optimal_template_hole_label
+            projection_point = np.array([float(projection_zprime), float(projection_yprime)])
 
             fire_rows.append({
                 "penetration_depth": float(pandas.to_numeric(fire_row["Penetration depth (mm)"], errors="coerce")),
-                "optimal_hole": str(optimal_hole_row),
-                "xprime": float(xprime_row),
+                "optimal_hole": str(fire_row["Optimal template hole"]),
+                "xprime": float(pandas.to_numeric(fire_row["Optimal sampling point (Transducer primed frame) (X')"], errors="coerce")),
                 "zprime": float(pandas.to_numeric(fire_row["Pre-fire needle tip (Transducer primed frame) (Z')"], errors="coerce")),
                 "yprime": float(pandas.to_numeric(fire_row["Pre-fire needle tip (Transducer primed frame) (Y')"], errors="coerce")),
                 "deflection": float(pandas.to_numeric(
@@ -3994,165 +3779,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "projection_point": projection_point
             })
         return fire_rows
-
-    def _resolve_effective_guidance_metadata(precomputed_geometry_context,
-                                             dil_id,
-                                             inline_optimal_template_hole_label,
-                                             inline_optimal_point_prime_xyz,
-                                             inline_euler_angles,
-                                             inline_euler_convention):
-        """
-        Use precomputed geometry-context values as display/plot metadata when available.
-        Optionally compare against inline-derived values for validation bookkeeping.
-        """
-        inline_optimal_point_prime_xyz = _as_xyz(
-            inline_optimal_point_prime_xyz,
-            "inline_optimal_point_prime_xyz"
-        )
-        inline_euler_angles = np.asarray(inline_euler_angles, dtype=float).reshape(-1)
-        if inline_euler_angles.size < 3:
-            inline_euler_angles = np.array([np.nan, np.nan, np.nan], dtype=float)
-        else:
-            inline_euler_angles = np.array([
-                float(inline_euler_angles[0]),
-                float(inline_euler_angles[1]),
-                float(inline_euler_angles[2])
-            ], dtype=float)
-
-        effective_optimal_template_hole_label = str(inline_optimal_template_hole_label)
-        effective_optimal_point_prime_xyz = inline_optimal_point_prime_xyz.copy()
-        effective_euler_angles = inline_euler_angles.copy()
-        effective_euler_convention = inline_euler_convention if inline_euler_convention is not None else "-"
-
-        comparison_rows = []
-        def _add_string_compare(field_name, inline_value, precomputed_value):
-            inline_str = "-" if inline_value is None else str(inline_value)
-            precomputed_str = "-" if precomputed_value is None else str(precomputed_value)
-            comparison_rows.append({
-                "Patient ID": patientUID,
-                "Relative structure ID": dil_id,
-                "Field": field_name,
-                "Inline value": inline_str,
-                "Precomputed value": precomputed_str,
-                "Absolute difference": np.nan,
-                "Tolerance": np.nan,
-                "Match": bool(inline_str == precomputed_str)
-            })
-
-        def _add_numeric_compare(field_name, inline_value, precomputed_value, tolerance):
-            inline_num = float(inline_value)
-            precomputed_num = float(precomputed_value)
-            if np.isnan(inline_num) and np.isnan(precomputed_num):
-                match = True
-                abs_diff = np.nan
-            else:
-                abs_diff = float(abs(inline_num - precomputed_num))
-                match = bool(np.isclose(inline_num, precomputed_num, atol=float(tolerance), rtol=0.0, equal_nan=True))
-            comparison_rows.append({
-                "Patient ID": patientUID,
-                "Relative structure ID": dil_id,
-                "Field": field_name,
-                "Inline value": inline_num,
-                "Precomputed value": precomputed_num,
-                "Absolute difference": abs_diff,
-                "Tolerance": float(tolerance),
-                "Match": match
-            })
-
-        if isinstance(precomputed_geometry_context, dict):
-            precomputed_optimal_hole = str(
-                precomputed_geometry_context.get("Optimal template hole", inline_optimal_template_hole_label)
-            )
-            precomputed_optimal_point_prime_xyz = _as_xyz(
-                precomputed_geometry_context.get(
-                    "Optimal sampling point (Transducer primed frame) (XYZ array)",
-                    inline_optimal_point_prime_xyz
-                ),
-                "precomputed Optimal sampling point (Transducer primed frame) (XYZ array)"
-            )
-            precomputed_euler_angles = np.array([
-                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle X (deg)"), errors="coerce")),
-                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle Y (deg)"), errors="coerce")),
-                float(pandas.to_numeric(precomputed_geometry_context.get("Euler angle Z (deg)"), errors="coerce")),
-            ], dtype=float)
-            precomputed_euler_convention = precomputed_geometry_context.get("Euler convention")
-            precomputed_euler_convention = (
-                precomputed_euler_convention if precomputed_euler_convention is not None else "-"
-            )
-
-            _add_string_compare(
-                "Optimal template hole",
-                inline_optimal_template_hole_label,
-                precomputed_optimal_hole
-            )
-            _add_numeric_compare(
-                "Optimal sampling point (Transducer primed frame) (X')",
-                inline_optimal_point_prime_xyz[0],
-                precomputed_optimal_point_prime_xyz[0],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_numeric_compare(
-                "Optimal sampling point (Transducer primed frame) (Y')",
-                inline_optimal_point_prime_xyz[1],
-                precomputed_optimal_point_prime_xyz[1],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_numeric_compare(
-                "Optimal sampling point (Transducer primed frame) (Z')",
-                inline_optimal_point_prime_xyz[2],
-                precomputed_optimal_point_prime_xyz[2],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_numeric_compare(
-                "Euler angle X (deg)",
-                inline_euler_angles[0],
-                precomputed_euler_angles[0],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_numeric_compare(
-                "Euler angle Y (deg)",
-                inline_euler_angles[1],
-                precomputed_euler_angles[1],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_numeric_compare(
-                "Euler angle Z (deg)",
-                inline_euler_angles[2],
-                precomputed_euler_angles[2],
-                tolerance=firing_df_validation_tolerance_mm
-            )
-            _add_string_compare(
-                "Euler convention",
-                inline_euler_convention,
-                precomputed_euler_convention
-            )
-
-            effective_optimal_template_hole_label = precomputed_optimal_hole
-            effective_optimal_point_prime_xyz = precomputed_optimal_point_prime_xyz
-            effective_euler_angles = precomputed_euler_angles
-            effective_euler_convention = precomputed_euler_convention
-
-        comparison_df = pandas.DataFrame(comparison_rows)
-        if not comparison_df.empty:
-            all_match = bool(comparison_df["Match"].fillna(False).all())
-            if (not all_match) and strict_precomputed_guidance:
-                mismatch_fields = comparison_df.loc[~comparison_df["Match"], "Field"].astype(str).tolist()
-                raise ValueError(
-                    f"[Guidance precomputed] {patientUID} | {dil_id}: inline vs precomputed geometry mismatch for fields {mismatch_fields}."
-                )
-            if (not all_match) and validate_firing_df_builder:
-                mismatch_fields = comparison_df.loc[~comparison_df["Match"], "Field"].astype(str).tolist()
-                _emit_validation_note(
-                    f"[Guidance map validation] {patientUID} | {dil_id}: geometry context mismatch in fields {mismatch_fields}."
-                )
-
-        return (
-            effective_optimal_template_hole_label,
-            effective_optimal_point_prime_xyz,
-            effective_euler_angles,
-            effective_euler_convention,
-            comparison_df
-        )
 
     def _show_all_axis_lines(fig):
         """Turn on all four axis lines with ticks/labels on all sides (primary + overlay axes), including minor ticks/grid."""
@@ -4441,11 +4067,17 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             optimal_positions_df.at[0, 'Test location (Prostate centroid origin) (Z)']
         ])
         sp_dil_id = optimal_positions_df.at[0, 'Relative DIL ID']
-        _precomputed_geometry_context, precomputed_firing_depth_df = _load_precomputed_guidance_inputs(
+        precomputed_geometry_context, precomputed_firing_depth_df, precomputed_contract_df = _validate_and_load_precomputed_guidance_inputs(
             specific_dil_structure,
             sp_dil_id,
             specific_dil_index
         )
+        if validate_firing_df_builder and isinstance(precomputed_contract_df, pandas.DataFrame):
+            specific_dil_structure[
+                "Biopsy optimization: Guidance-map precomputed contract dataframe (validation)"
+            ] = precomputed_contract_df
+        if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
+            continue
 
         dil_inter_slice_interp_np_arr = specific_dil_structure['Inter-slice interpolation information'].interpolated_pts_np_arr
         dil_inter_slice_interp_np_arr_prostate_coords = dil_inter_slice_interp_np_arr - prostate_centroid
@@ -4463,8 +4095,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                                              entire_lattice_df, 
                                                                                              sp_dil_optimal_coordinate)
         transformed_grid_df, transformed_optimal_point, rotation_matrix = transform_grid_and_point_for_plotting(transducer_plane_df, transducer_plane_normal, sp_dil_optimal_coordinate)
-        inline_euler_angles = np.asarray(euler_angles, dtype=float).reshape(-1)
-        inline_euler_convention_str = euler_convention_str
 
         # pcd 
         #transducer_plane_pcd = point_containment_tools.create_point_cloud(transducer_plane_df[['Transducer plane point (X)', 'Transducer plane point (Y)', 'Transducer plane point (Z)']].to_numpy(), color = np.array([0,0,1]))
@@ -4488,31 +4118,19 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             sp_dil_optimal_coordinate, 
                                             rotation_matrix, 
                                             prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices])
-        optimal_template_hole_label = "-"
-        if len(nearest_prostate_template_lines_list_of_dicts) > 0:
-            optimal_template_hole_label = str(nearest_prostate_template_lines_list_of_dicts[0].get("label", "-"))
-        inline_optimal_template_hole_label = optimal_template_hole_label
-        inline_transformed_optimal_point_prime_xyz = _as_xyz(
-            transformed_optimal_point,
-            "transformed_optimal_point"
+        optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
+        transformed_optimal_point_prime_xyz = _as_xyz(
+            precomputed_geometry_context["Optimal sampling point (Transducer primed frame) (XYZ array)"],
+            "precomputed_geometry_context['Optimal sampling point (Transducer primed frame) (XYZ array)']"
         )
-        inline_transformed_optimal_point_contour_coord_sys = inline_transformed_optimal_point_prime_xyz[[2, 1]]
-        inline_transformed_optimal_point_xprime = float(inline_transformed_optimal_point_prime_xyz[0])
-
-        (
-            optimal_template_hole_label,
-            transformed_optimal_point_prime_xyz,
-            effective_euler_angles,
-            effective_euler_convention,
-            geometry_context_comparison_df
-        ) = _resolve_effective_guidance_metadata(
-            precomputed_geometry_context=_precomputed_geometry_context,
-            dil_id=sp_dil_id,
-            inline_optimal_template_hole_label=inline_optimal_template_hole_label,
-            inline_optimal_point_prime_xyz=inline_transformed_optimal_point_prime_xyz,
-            inline_euler_angles=inline_euler_angles,
-            inline_euler_convention=inline_euler_convention_str
-        )
+        effective_euler_angles = np.array([
+            float(pandas.to_numeric(precomputed_geometry_context["Euler angle X (deg)"], errors="coerce")),
+            float(pandas.to_numeric(precomputed_geometry_context["Euler angle Y (deg)"], errors="coerce")),
+            float(pandas.to_numeric(precomputed_geometry_context["Euler angle Z (deg)"], errors="coerce")),
+        ], dtype=float)
+        effective_euler_convention = precomputed_geometry_context.get("Euler convention")
+        if effective_euler_convention is None:
+            effective_euler_convention = "-"
         transformed_optimal_point_contour_coord_sys = transformed_optimal_point_prime_xyz[[2, 1]]
         transformed_optimal_point_xprime = float(transformed_optimal_point_prime_xyz[0])
 
@@ -4630,24 +4248,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                      color = "orange",
                                      size = 12)
 
-        precomputed_fire_rows = _build_precomputed_fire_rows_for_sagittal(
-            precomputed_firing_depth_df,
-            transformed_optimal_point_xprime,
-            optimal_template_hole_label
-        )
-        use_precomputed_fire_rows = len(precomputed_fire_rows) > 0
-
-        legacy_fire_rows = []
-        if validate_firing_df_builder or not use_precomputed_fire_rows:
-            legacy_fire_rows = _build_legacy_fire_rows_for_sagittal(
-                inline_transformed_optimal_point_contour_coord_sys,
-                inline_transformed_optimal_point_xprime,
-                inline_optimal_template_hole_label,
-                nearest_prostate_template_lines_contour_plot_coords_list_of_dicts,
-                prostate_mesh_slice_pts_transformed_contour_plot_coords
-            )
-
-        fire_rows = precomputed_fire_rows if use_precomputed_fire_rows else legacy_fire_rows
+        fire_rows = _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df)
 
         custom_height = 0
         custom_height_step = 4
@@ -4714,11 +4315,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 ))
 
         if validate_firing_df_builder:
-            if isinstance(geometry_context_comparison_df, pandas.DataFrame) and not geometry_context_comparison_df.empty:
-                specific_dil_structure[
-                    "Biopsy optimization: Guidance-map geometry context comparison dataframe (validation)"
-                ] = geometry_context_comparison_df
-
             firing_depth_df = precomputed_firing_depth_df
             if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                 _emit_validation_note(
@@ -4728,19 +4324,19 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 specific_dil_structure[
                     "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
                 ] = firing_depth_df
-                comparison_df = _compare_fire_rows_with_dataframe(
-                    legacy_fire_rows if len(legacy_fire_rows) > 0 else fire_rows,
-                    firing_depth_df,
-                    sp_dil_id,
-                    euler_angles=inline_euler_angles,
-                    euler_convention=inline_euler_convention_str,
-                    relative_struct_type=dil_ref,
-                    relative_struct_index=specific_dil_index,
-                )
-                if not comparison_df.empty:
-                    specific_dil_structure[
-                        "Biopsy optimization: Guidance-map firing depth comparison dataframe (validation)"
-                    ] = comparison_df
+                if isinstance(precomputed_contract_df, pandas.DataFrame) and not precomputed_contract_df.empty:
+                    all_checks_pass = bool(precomputed_contract_df["Check pass"].fillna(False).all())
+                    if all_checks_pass:
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks passed."
+                        )
+                    else:
+                        failed_checks = precomputed_contract_df.loc[
+                            precomputed_contract_df["Check pass"] == False, "Check"
+                        ].astype(str).tolist()
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks failed: {failed_checks}"
+                        )
 
         contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
 
