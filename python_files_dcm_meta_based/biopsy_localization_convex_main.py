@@ -96,6 +96,7 @@ import pstats
 import io
 from line_profiler import LineProfiler
 import mr_localizers
+import advanced_guidance_map_creator
 
 def main():
     
@@ -1083,6 +1084,7 @@ def main():
                                                                 "Uncertainties dataframe (final)": None,
                                                                 "Cohort: Nearest DILs to each biopsy": None,
                                                                 "Cohort: Biopsy basic spatial features dataframe": None,
+                                                                "Cohort: Guidance-map firing depth recommendations dataframe": None,
                                                                 "Cohort: 3D radiomic features all OAR and DIL structures": None,
                                                                 "Cohort: All MC structure shift vectors": None,
                                                                 "Cohort: All MC structure transformation values": None,
@@ -7906,6 +7908,18 @@ def main():
                         "Biopsy optimization - Guidance-map firing depth recommendations dataframe"
                     ] = guidance_map_firing_depth_recommendations_df
 
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+                # cohort guidance-map firing-depth recommendations dataframe
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.6", total = None)
+                cohort_guidance_map_firing_depth_recommendations_dataframe = dataframe_builders.cohort_guidance_map_firing_depth_recommendations_dataframe_builder(
+                    master_structure_reference_dict,
+                    all_ref_key,
+                    dil_ref
+                )
+                master_cohort_patient_data_and_dataframes["Dataframes"][
+                    "Cohort: Guidance-map firing depth recommendations dataframe"
+                ] = cohort_guidance_map_firing_depth_recommendations_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 # structure radiomic 3D segmentation features dataframe

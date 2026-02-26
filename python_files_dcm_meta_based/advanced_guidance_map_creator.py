@@ -4286,48 +4286,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 ))
 
         if validate_firing_df_builder:
-            if (
-                len(nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts) == 0
-                or len(nearest_prostate_template_lines_contour_plot_coords_list_of_dicts) == 0
-            ):
+            firing_depth_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+            if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                 _emit_validation_note(
-                    f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing template axis line)."
+                    f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing precomputed firing-depth dataframe)."
                 )
             else:
-                projected_axis_prostate = nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts[0]
-                projected_axis_prime = nearest_prostate_template_lines_contour_plot_coords_list_of_dicts[0]
-                unprojected_axis_prostate = (
-                    nearest_prostate_template_lines_list_of_dicts[0]
-                    if len(nearest_prostate_template_lines_list_of_dicts) > 0
-                    else None
-                )
-                geometry_context = build_guidance_map_geometry_context(
-                    patient_id=patientUID,
-                    relative_structure_id=sp_dil_id,
-                    relative_struct_type=dil_ref,
-                    relative_struct_index=specific_dil_index,
-                    optimal_template_hole_label=optimal_template_hole_label,
-                    optimal_sampling_point_prostate_xyz=sp_dil_optimal_coordinate,
-                    optimal_sampling_point_primed_xyz=transformed_optimal_point,
-                    projected_axis_line_prostate=projected_axis_prostate,
-                    projected_axis_line_primed=projected_axis_prime,
-                    unprojected_axis_line_prostate=unprojected_axis_prostate,
-                    transducer_plane_df=transducer_plane_df,
-                    prostate_slice_pts_primed_zy=prostate_mesh_slice_pts_transformed_contour_plot_coords,
-                    rotation_matrix_unprimed_to_primed=rotation_matrix,
-                    euler_angles_deg=euler_angles,
-                    euler_convention=euler_convention_str,
-                )
-                specific_dil_structure[
-                    "Biopsy optimization: Guidance-map geometry context (validation)"
-                ] = geometry_context
-
-                firing_depth_df = build_guidance_map_firing_depths_dataframe_from_context(
-                    geometry_context=geometry_context,
-                    biopsy_fire_travel_distances=biopsy_fire_travel_distances,
-                    biopsy_needle_tip_length=biopsy_needle_tip_length,
-                    biopsy_needle_compartment_length=biopsy_needle_compartment_length,
-                )
                 specific_dil_structure[
                     "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
                 ] = firing_depth_df
