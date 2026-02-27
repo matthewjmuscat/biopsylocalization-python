@@ -4932,16 +4932,13 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.DataFrame([manifest_row])
 
     def _get_template_hole_label_for_rank(specific_dil_structure, selected_rank):
-        if int(selected_rank) == 1:
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
             legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
             if isinstance(legacy_geometry_context, dict):
                 hole_label = legacy_geometry_context.get("Optimal template hole", None)
                 if hole_label is not None:
                     return str(hole_label)
-            return None
-
-        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
-        if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
             return None
         rank_series = pandas.to_numeric(candidate_geometry_df.get("Candidate hole rank"), errors="coerce")
         rank_rows = candidate_geometry_df.loc[rank_series == int(selected_rank)]
@@ -4953,12 +4950,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         return str(hole_label)
 
     def _select_precomputed_inputs_for_rank(specific_dil_structure, selected_rank):
-        legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
-        legacy_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
-
-        if int(selected_rank) == 1:
-            return legacy_geometry_context, legacy_firing_df
-
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
         candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
         if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
@@ -4985,6 +4976,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         rank_firing_df["__row_index__"] = pandas.to_numeric(
             rank_firing_df["Firing depth row index (per structure)"], errors="coerce"
         )
+        if rank_firing_df["__row_index__"].isna().any():
+            return None, None
         rank_firing_df = rank_firing_df.sort_values("__row_index__", kind="stable").drop(columns=["__row_index__"]).reset_index(drop=True)
 
         rank_geometry_context = rank_geometry_rows.iloc[0].to_dict()
