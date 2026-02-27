@@ -4001,6 +4001,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             colorbar_title_font_size = 12,
                                             fire_annotation_style = "hockey",
                                             fire_table_position = "auto",
+                                            candidate_plot_mode = "rank1",
+                                            candidate_plot_ranks = None,
                                             validate_firing_df_builder = False,
                                             strict_precomputed_guidance = False
                                             ):
@@ -4066,6 +4068,33 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     if fire_table_position not in valid_fire_table_positions:
         warnings.warn(f"Unsupported fire_table_position '{fire_table_position}'. Falling back to 'auto'.")
         fire_table_position = "auto"
+
+    candidate_plot_mode = str(candidate_plot_mode or "rank1").lower()
+    valid_candidate_plot_modes = ["rank1", "all"]
+    if candidate_plot_mode not in valid_candidate_plot_modes:
+        warnings.warn(
+            f"Unsupported candidate_plot_mode '{candidate_plot_mode}'. Falling back to 'rank1'."
+        )
+        candidate_plot_mode = "rank1"
+
+    parsed_candidate_plot_ranks = None
+    if candidate_plot_ranks is not None:
+        try:
+            if np.isscalar(candidate_plot_ranks):
+                parsed_candidate_plot_ranks = [int(candidate_plot_ranks)]
+            else:
+                parsed_candidate_plot_ranks = list({
+                    int(rank_val)
+                    for rank_val in np.asarray(list(candidate_plot_ranks)).reshape(-1)
+                })
+            parsed_candidate_plot_ranks = sorted({int(val) for val in parsed_candidate_plot_ranks})
+            if len(parsed_candidate_plot_ranks) == 0:
+                parsed_candidate_plot_ranks = None
+        except Exception:
+            warnings.warn(
+                f"Could not parse candidate_plot_ranks='{candidate_plot_ranks}'. Falling back to mode-based selection."
+            )
+            parsed_candidate_plot_ranks = None
 
     def _emit_validation_note(message):
         warnings.warn(message)
@@ -4853,6 +4882,81 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         return pandas.DataFrame(rows)
 
+    def _resolve_single_plot_rank_for_dil(specific_dil_structure, dil_id):
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        available_candidate_ranks = []
+        if isinstance(candidate_geometry_df, pandas.DataFrame) and (not candidate_geometry_df.empty) and ("Candidate hole rank" in candidate_geometry_df.columns):
+            available_candidate_ranks = sorted(
+                pandas.to_numeric(candidate_geometry_df["Candidate hole rank"], errors="coerce")
+                .dropna()
+                .astype(int)
+                .unique()
+                .tolist()
+            )
+
+        if len(available_candidate_ranks) == 0:
+            available_candidate_ranks = [1]
+
+        if parsed_candidate_plot_ranks is not None:
+            if len(parsed_candidate_plot_ranks) > 1:
+                _emit_validation_note(
+                    f"[Guidance plotting] {patientUID} | {dil_id}: multiple candidate_plot_ranks supplied "
+                    f"({parsed_candidate_plot_ranks}); rendering only first rank {parsed_candidate_plot_ranks[0]} "
+                    f"in single-rank mode."
+                )
+            selected_rank = int(parsed_candidate_plot_ranks[0])
+            return selected_rank, available_candidate_ranks
+
+        if candidate_plot_mode == "all":
+            if len(available_candidate_ranks) > 1:
+                _emit_validation_note(
+                    f"[Guidance plotting] {patientUID} | {dil_id}: candidate_plot_mode='all' requested with "
+                    f"available ranks {available_candidate_ranks}. Current renderer is single-rank; rendering rank "
+                    f"{available_candidate_ranks[0]}."
+                )
+            return int(available_candidate_ranks[0]), available_candidate_ranks
+
+        return 1, available_candidate_ranks
+
+    def _select_precomputed_inputs_for_rank(specific_dil_structure, selected_rank):
+        legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
+        legacy_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
+
+        if int(selected_rank) == 1:
+            return legacy_geometry_context, legacy_firing_df
+
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
+        if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
+            return None, None
+        if not isinstance(candidate_firing_df, pandas.DataFrame) or candidate_firing_df.empty:
+            return None, None
+
+        geometry_rank_series = pandas.to_numeric(candidate_geometry_df.get("Candidate hole rank"), errors="coerce")
+        rank_geometry_rows = candidate_geometry_df.loc[geometry_rank_series == int(selected_rank)]
+        if len(rank_geometry_rows) != 1:
+            return None, None
+
+        firing_rank_series = pandas.to_numeric(candidate_firing_df.get("Candidate hole rank"), errors="coerce")
+        rank_firing_df = candidate_firing_df.loc[firing_rank_series == int(selected_rank)].copy()
+        if rank_firing_df.empty:
+            return None, None
+
+        missing_required_legacy_cols = [
+            col for col in required_precomputed_firing_df_columns if col not in rank_firing_df.columns
+        ]
+        if len(missing_required_legacy_cols) > 0:
+            return None, None
+
+        rank_firing_df["__row_index__"] = pandas.to_numeric(
+            rank_firing_df["Firing depth row index (per structure)"], errors="coerce"
+        )
+        rank_firing_df = rank_firing_df.sort_values("__row_index__", kind="stable").drop(columns=["__row_index__"]).reset_index(drop=True)
+
+        rank_geometry_context = rank_geometry_rows.iloc[0].to_dict()
+        rank_firing_df_legacy_cols = rank_firing_df[required_precomputed_firing_df_columns].copy()
+        return rank_geometry_context, rank_firing_df_legacy_cols
+
     def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df):
         ordered_df = precomputed_firing_depth_df.copy()
         ordered_df["__firing_row_index__"] = pandas.to_numeric(
@@ -5227,8 +5331,45 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION] = candidate_contract_df
         if validate_firing_df_builder and isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame):
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
+
+        selected_plot_rank, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
+            specific_dil_structure,
+            sp_dil_id
+        )
+        if int(selected_plot_rank) not in set(available_candidate_ranks):
+            missing_rank_message = (
+                f"[Guidance plotting] {patientUID} | {sp_dil_id}: requested rank {selected_plot_rank} is not "
+                f"available. Available ranks: {available_candidate_ranks}."
+            )
+            if strict_precomputed_guidance:
+                raise ValueError(missing_rank_message)
+            _emit_validation_note(missing_rank_message)
+            continue
+
+        selected_geometry_context, selected_firing_depth_df = _select_precomputed_inputs_for_rank(
+            specific_dil_structure,
+            selected_plot_rank
+        )
+        if selected_geometry_context is None or not isinstance(selected_firing_depth_df, pandas.DataFrame) or selected_firing_depth_df.empty:
+            rank_select_message = (
+                f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} "
+                f"plot inputs from precomputed candidate data."
+            )
+            if strict_precomputed_guidance:
+                raise ValueError(rank_select_message)
+            _emit_validation_note(rank_select_message)
+            continue
+
+        precomputed_geometry_context = selected_geometry_context
+        precomputed_firing_depth_df = selected_firing_depth_df
         if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
             continue
+
+        plot_id_suffix = ""
+        if int(selected_plot_rank) != 1:
+            plot_id_suffix = f" (R{int(selected_plot_rank)})"
+        dil_plot_id = f"{dil_id_from_pydicom}{plot_id_suffix}"
+        sp_dil_plot_id = f"{sp_dil_id}{plot_id_suffix}"
 
         dil_inter_slice_interp_np_arr = specific_dil_structure['Inter-slice interpolation information'].interpolated_pts_np_arr
         dil_inter_slice_interp_np_arr_prostate_coords = dil_inter_slice_interp_np_arr - prostate_centroid
@@ -5257,9 +5398,23 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                 'Transducer plane point (Z)')
         dil_specific_pointclouds_list.append(transducer_plane_pcd_colored)
 
-        # Using the function to find the nearest neighbors
+        optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
+
+        # Select plotted template hole using precomputed rank-specific context.
         prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].values
-        nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
+        lattice_labels = prostate_grid_template_lattice_XYZ_aligned_dataframe.apply(
+            lambda row: f"{row['Label 1']}-{row['Label 2']}",
+            axis=1
+        ).astype(str).to_numpy()
+        matching_indices = np.where(lattice_labels == optimal_template_hole_label)[0]
+        if len(matching_indices) > 0:
+            nearest_indices = np.array([matching_indices[0]], dtype=int)
+        else:
+            nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
+            _emit_validation_note(
+                f"[Guidance plotting] {patientUID} | {sp_dil_plot_id}: template hole label "
+                f"'{optimal_template_hole_label}' not found in lattice. Falling back to nearest point."
+            )
         nearest_template_points = prostate_template_points[nearest_indices]
 
 
@@ -5269,7 +5424,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             sp_dil_optimal_coordinate, 
                                             rotation_matrix, 
                                             prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices])
-        optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
         transformed_optimal_point_prime_xyz = _as_xyz(
             precomputed_geometry_context["Optimal sampling point (Transducer primed frame) (XYZ array)"],
             "precomputed_geometry_context['Optimal sampling point (Transducer primed frame) (XYZ array)']"
@@ -5316,7 +5470,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         contour_plot.update_layout(
                 title=dict(
-                    text=f"TRUS plane guidance map - {patientUID} - {sp_dil_id}"
+                    text=f"TRUS plane guidance map - {patientUID} - {sp_dil_plot_id}"
                 )
             )
 
@@ -5568,7 +5722,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                             frame_label="Transducer plane frame (Z', Y')",
                                                             optimal_row=optimal_row_sagittal)
 
-        sp_dil_contour_plot_dict = {"DIL ID": dil_id_from_pydicom,
+        sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
                                     "Contour plot": contour_plot}
         trus_plane_sagittal_contour_plot_list_of_dicts.append(sp_dil_contour_plot_dict)
 
@@ -5703,7 +5857,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         contour_plot_transverse.update_layout(
                 title=dict(
-                    text=f"Transverse (Max) plane - {patientUID} - {sp_dil_id}"
+                    text=f"Transverse (Max) plane - {patientUID} - {sp_dil_plot_id}"
                 )
             )
         _anchor_colorbars_bottom_right(contour_plot_transverse)
@@ -5767,7 +5921,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                        frame_label="Transducer plane frame (Z', Y')",
                                                                        optimal_row=optimal_row_transverse)
 
-        sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_id_from_pydicom,
+        sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
                                     "Contour plot": contour_plot_transverse}
         transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)
         

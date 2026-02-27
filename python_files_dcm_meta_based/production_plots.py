@@ -4777,6 +4777,8 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                             fire_table_position="auto",
                                             draw_orientation_diagram=True,
                                             show_titles=True,
+                                            candidate_plot_mode="rank1",
+                                            candidate_plot_ranks=None,
                                             validate_firing_df_builder=False,
                                             strict_precomputed_guidance=False,
                                             ):
@@ -4877,6 +4879,8 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                                                                     colorbar_title_font_size = colorbar_title_font_size,
                                                                                     fire_annotation_style = fire_annotation_style,
                                                                                     fire_table_position = fire_table_position,
+                                                                                    candidate_plot_mode = candidate_plot_mode,
+                                                                                    candidate_plot_ranks = candidate_plot_ranks,
                                                                                     validate_firing_df_builder = validate_firing_df_builder,
                                                                                     strict_precomputed_guidance = strict_precomputed_guidance)
 
