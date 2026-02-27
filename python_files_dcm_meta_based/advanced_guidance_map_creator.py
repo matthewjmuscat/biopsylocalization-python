@@ -2040,6 +2040,12 @@ GUIDANCE_MAP_KEY_LEGACY_FIRING_DF = "Biopsy optimization: Guidance-map firing de
 GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF = "Biopsy optimization: Guidance-map candidate geometry context dataframe"
 GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF = "Biopsy optimization: Guidance-map candidate firing dataframe"
 GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate contract dataframe (validation)"
+GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate rank1 vs legacy dataframe (validation)"
+
+GUIDANCE_MAP_LEGACY_EQ_SKIP_COLUMNS = [
+    # Candidate firing rows intentionally namespace this UID by candidate hole.
+    "Firing depth row UID",
+]
 
 
 def _missing_required_dict_keys(required_keys, input_dict):
@@ -4081,6 +4087,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     required_candidate_firing_identity_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_IDENTITY_COLUMNS
     required_candidate_firing_non_null_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_NON_NULL_COLUMNS
     required_candidate_firing_numeric_columns = GUIDANCE_MAP_CANDIDATE_FIRING_DF_NUMERIC_COLUMNS
+    legacy_equivalence_skip_columns = GUIDANCE_MAP_LEGACY_EQ_SKIP_COLUMNS
+    legacy_equivalence_atol = 1e-6
+    legacy_equivalence_rtol = 1e-9
 
     def _build_precomputed_contract_validation_dataframe(geometry_context,
                                                          firing_depth_df,
@@ -4540,6 +4549,310 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         return pandas.DataFrame(rows)
 
+    def _value_equivalence_check(left_value, right_value, atol=1e-6, rtol=1e-9):
+        if isinstance(left_value, np.generic):
+            left_value = left_value.item()
+        if isinstance(right_value, np.generic):
+            right_value = right_value.item()
+
+        if left_value is None and right_value is None:
+            return True, "Both values are None."
+
+        left_is_array_like = isinstance(left_value, (list, tuple, np.ndarray))
+        right_is_array_like = isinstance(right_value, (list, tuple, np.ndarray))
+        if left_is_array_like or right_is_array_like:
+            try:
+                left_arr = np.asarray(left_value, dtype=float)
+                right_arr = np.asarray(right_value, dtype=float)
+                if left_arr.shape != right_arr.shape:
+                    return False, f"Shape mismatch: {left_arr.shape} vs {right_arr.shape}."
+                is_close = np.allclose(left_arr, right_arr, atol=atol, rtol=rtol, equal_nan=True)
+                if is_close:
+                    return True, ""
+                abs_diff = np.abs(left_arr - right_arr)
+                if abs_diff.size == 0:
+                    return False, "Array mismatch."
+                max_abs_diff = float(np.nanmax(abs_diff))
+                return False, f"Numeric array mismatch (max abs diff={max_abs_diff:.6g})."
+            except Exception:
+                left_arr_obj = np.asarray(left_value, dtype=object)
+                right_arr_obj = np.asarray(right_value, dtype=object)
+                if left_arr_obj.shape != right_arr_obj.shape:
+                    return False, f"Object-array shape mismatch: {left_arr_obj.shape} vs {right_arr_obj.shape}."
+                is_equal = np.array_equal(left_arr_obj, right_arr_obj)
+                if is_equal:
+                    return True, ""
+                return False, f"Object-array mismatch: {left_arr_obj!r} vs {right_arr_obj!r}."
+
+        if isinstance(left_value, dict) or isinstance(right_value, dict):
+            if not (isinstance(left_value, dict) and isinstance(right_value, dict)):
+                return False, f"Type mismatch: {type(left_value).__name__} vs {type(right_value).__name__}."
+            left_keys = sorted(left_value.keys())
+            right_keys = sorted(right_value.keys())
+            if left_keys != right_keys:
+                return False, f"Dict key mismatch: {left_keys} vs {right_keys}."
+            for key in left_keys:
+                is_equal, detail = _value_equivalence_check(left_value[key], right_value[key], atol=atol, rtol=rtol)
+                if not is_equal:
+                    return False, f"Dict key '{key}' mismatch: {detail}"
+            return True, ""
+
+        left_numeric = isinstance(left_value, (int, float, np.number)) and not isinstance(left_value, bool)
+        right_numeric = isinstance(right_value, (int, float, np.number)) and not isinstance(right_value, bool)
+        if left_numeric and right_numeric:
+            left_float = float(left_value)
+            right_float = float(right_value)
+            if np.isnan(left_float) and np.isnan(right_float):
+                return True, ""
+            if np.isclose(left_float, right_float, atol=atol, rtol=rtol, equal_nan=True):
+                return True, ""
+            return False, f"Numeric mismatch: {left_float:.12g} vs {right_float:.12g}."
+
+        left_is_na = pandas.isna(left_value)
+        right_is_na = pandas.isna(right_value)
+        if bool(left_is_na) and bool(right_is_na):
+            return True, ""
+        if bool(left_is_na) != bool(right_is_na):
+            return False, f"NA mismatch: {left_value!r} vs {right_value!r}."
+
+        if left_value == right_value:
+            return True, ""
+        return False, f"Value mismatch: {left_value!r} vs {right_value!r}."
+
+    def _compare_numeric_series_equivalence(legacy_series, candidate_series, atol=1e-6, rtol=1e-9):
+        legacy_raw_not_null = legacy_series.notna().to_numpy()
+        candidate_raw_not_null = candidate_series.notna().to_numpy()
+
+        null_pattern_match = np.array_equal(legacy_raw_not_null, candidate_raw_not_null)
+        if not null_pattern_match:
+            mismatch_count = int(np.sum(legacy_raw_not_null != candidate_raw_not_null))
+            return False, f"Null pattern mismatch count={mismatch_count}."
+
+        legacy_num = pandas.to_numeric(legacy_series, errors="coerce").to_numpy(dtype=float)
+        candidate_num = pandas.to_numeric(candidate_series, errors="coerce").to_numpy(dtype=float)
+
+        legacy_invalid = legacy_raw_not_null & (~np.isfinite(legacy_num))
+        candidate_invalid = candidate_raw_not_null & (~np.isfinite(candidate_num))
+        if int(np.sum(legacy_invalid)) > 0 or int(np.sum(candidate_invalid)) > 0:
+            return (
+                False,
+                f"Invalid/non-finite numeric values found (legacy={int(np.sum(legacy_invalid))}, "
+                f"candidate={int(np.sum(candidate_invalid))})."
+            )
+
+        if legacy_num.size == 0:
+            return True, ""
+
+        is_close = np.isclose(legacy_num, candidate_num, atol=atol, rtol=rtol, equal_nan=True)
+        if bool(np.all(is_close)):
+            return True, ""
+
+        abs_diff = np.abs(legacy_num - candidate_num)
+        max_abs_diff = float(np.nanmax(abs_diff))
+        mismatch_count = int(np.sum(~is_close))
+        return False, f"Numeric mismatch count={mismatch_count}, max abs diff={max_abs_diff:.6g}."
+
+    def _build_candidate_rank1_vs_legacy_validation_dataframe(specific_dil_structure,
+                                                              dil_id,
+                                                              relative_struct_index):
+        rows = []
+
+        def _add_check(check_name, passed, details=""):
+            rows.append({
+                "Patient ID": patientUID,
+                "Relative structure ID": dil_id,
+                "Check": str(check_name),
+                "Check pass": bool(passed),
+                "Details": str(details),
+            })
+
+        legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
+        legacy_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
+
+        legacy_geometry_exists = isinstance(legacy_geometry_context, dict)
+        legacy_firing_exists = isinstance(legacy_firing_df, pandas.DataFrame) and (not legacy_firing_df.empty)
+        candidate_geometry_exists = isinstance(candidate_geometry_df, pandas.DataFrame) and (not candidate_geometry_df.empty)
+        candidate_firing_exists = isinstance(candidate_firing_df, pandas.DataFrame) and (not candidate_firing_df.empty)
+
+        _add_check(
+            "Legacy geometry context exists",
+            legacy_geometry_exists,
+            f"Expected dict in '{GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT}'."
+        )
+        _add_check(
+            "Legacy firing dataframe exists",
+            legacy_firing_exists,
+            f"Expected non-empty dataframe in '{GUIDANCE_MAP_KEY_LEGACY_FIRING_DF}'."
+        )
+        _add_check(
+            "Candidate geometry dataframe exists",
+            candidate_geometry_exists,
+            f"Expected non-empty dataframe in '{GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF}'."
+        )
+        _add_check(
+            "Candidate firing dataframe exists",
+            candidate_firing_exists,
+            f"Expected non-empty dataframe in '{GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF}'."
+        )
+
+        candidate_rank1_geometry_row = None
+        if candidate_geometry_exists and "Candidate hole rank" in candidate_geometry_df.columns:
+            geometry_rank = pandas.to_numeric(candidate_geometry_df["Candidate hole rank"], errors="coerce")
+            rank1_geometry_df = candidate_geometry_df.loc[geometry_rank == 1].copy()
+            _add_check(
+                "Candidate geometry rank-1 row count",
+                len(rank1_geometry_df) == 1,
+                f"Expected 1 row, got {len(rank1_geometry_df)}."
+            )
+            if len(rank1_geometry_df) == 1:
+                candidate_rank1_geometry_row = rank1_geometry_df.iloc[0].to_dict()
+        elif candidate_geometry_exists:
+            _add_check(
+                "Candidate geometry rank-1 row count",
+                False,
+                "Missing 'Candidate hole rank' column."
+            )
+
+        if legacy_geometry_exists and (candidate_rank1_geometry_row is not None):
+            geometry_mismatches = []
+            for key in required_precomputed_geometry_context_keys:
+                if key not in candidate_rank1_geometry_row:
+                    geometry_mismatches.append(f"{key}: missing in candidate rank-1 geometry row")
+                    continue
+                left_val = legacy_geometry_context.get(key)
+                right_val = candidate_rank1_geometry_row.get(key)
+                is_equal, mismatch_detail = _value_equivalence_check(
+                    left_val,
+                    right_val,
+                    atol=legacy_equivalence_atol,
+                    rtol=legacy_equivalence_rtol
+                )
+                if not is_equal:
+                    geometry_mismatches.append(f"{key}: {mismatch_detail}")
+            _add_check(
+                "Candidate rank-1 geometry equivalence with legacy context",
+                len(geometry_mismatches) == 0,
+                "; ".join(geometry_mismatches)
+            )
+
+        candidate_rank1_firing_df = None
+        if candidate_firing_exists and "Candidate hole rank" in candidate_firing_df.columns:
+            firing_rank = pandas.to_numeric(candidate_firing_df["Candidate hole rank"], errors="coerce")
+            candidate_rank1_firing_df = candidate_firing_df.loc[firing_rank == 1].copy()
+            _add_check(
+                "Candidate firing rank-1 rows exist",
+                isinstance(candidate_rank1_firing_df, pandas.DataFrame) and (not candidate_rank1_firing_df.empty),
+                f"Expected >0 rows, got {0 if candidate_rank1_firing_df is None else len(candidate_rank1_firing_df)}."
+            )
+        elif candidate_firing_exists:
+            _add_check(
+                "Candidate firing rank-1 rows exist",
+                False,
+                "Missing 'Candidate hole rank' column."
+            )
+
+        if legacy_firing_exists and isinstance(candidate_rank1_firing_df, pandas.DataFrame) and (not candidate_rank1_firing_df.empty):
+            missing_candidate_compare_columns = [
+                col for col in required_precomputed_firing_df_columns if col not in candidate_rank1_firing_df.columns
+            ]
+            _add_check(
+                "Candidate rank-1 firing includes legacy required columns",
+                len(missing_candidate_compare_columns) == 0,
+                "Missing columns: " + ", ".join(missing_candidate_compare_columns) if missing_candidate_compare_columns else ""
+            )
+
+            if len(missing_candidate_compare_columns) == 0:
+                legacy_firing_sorted = legacy_firing_df.copy()
+                candidate_rank1_sorted = candidate_rank1_firing_df.copy()
+
+                legacy_firing_sorted["__row_index__"] = pandas.to_numeric(
+                    legacy_firing_sorted["Firing depth row index (per structure)"], errors="coerce"
+                )
+                candidate_rank1_sorted["__row_index__"] = pandas.to_numeric(
+                    candidate_rank1_sorted["Firing depth row index (per structure)"], errors="coerce"
+                )
+
+                row_index_non_null_ok = (
+                    legacy_firing_sorted["__row_index__"].notna().all()
+                    and candidate_rank1_sorted["__row_index__"].notna().all()
+                )
+                _add_check(
+                    "Rank-1/legacy firing row-index parse",
+                    row_index_non_null_ok,
+                    (
+                        f"Legacy null row-index count={int(legacy_firing_sorted['__row_index__'].isna().sum())}; "
+                        f"Candidate rank-1 null row-index count={int(candidate_rank1_sorted['__row_index__'].isna().sum())}."
+                    )
+                )
+
+                if row_index_non_null_ok:
+                    legacy_firing_sorted = legacy_firing_sorted.sort_values("__row_index__", kind="stable").reset_index(drop=True)
+                    candidate_rank1_sorted = candidate_rank1_sorted.sort_values("__row_index__", kind="stable").reset_index(drop=True)
+
+                    row_count_match = len(legacy_firing_sorted) == len(candidate_rank1_sorted)
+                    _add_check(
+                        "Rank-1/legacy firing row count",
+                        row_count_match,
+                        f"Legacy rows={len(legacy_firing_sorted)}, Candidate rank-1 rows={len(candidate_rank1_sorted)}."
+                    )
+
+                    if row_count_match:
+                        row_index_match = np.array_equal(
+                            legacy_firing_sorted["__row_index__"].to_numpy(dtype=float),
+                            candidate_rank1_sorted["__row_index__"].to_numpy(dtype=float)
+                        )
+                        _add_check(
+                            "Rank-1/legacy firing row-index alignment",
+                            row_index_match,
+                            "Firing depth row index sequence must match exactly."
+                        )
+
+                        columns_to_compare = [
+                            col for col in required_precomputed_firing_df_columns
+                            if col not in legacy_equivalence_skip_columns
+                        ]
+                        firing_column_mismatches = []
+                        for col in columns_to_compare:
+                            legacy_col = legacy_firing_sorted[col]
+                            candidate_col = candidate_rank1_sorted[col]
+                            if col in required_numeric_firing_df_columns:
+                                is_equal, mismatch_detail = _compare_numeric_series_equivalence(
+                                    legacy_col,
+                                    candidate_col,
+                                    atol=legacy_equivalence_atol,
+                                    rtol=legacy_equivalence_rtol
+                                )
+                            else:
+                                mismatch_detail = ""
+                                is_equal = True
+                                for row_idx, (left_val, right_val) in enumerate(zip(legacy_col.tolist(), candidate_col.tolist())):
+                                    equal_val, equal_detail = _value_equivalence_check(
+                                        left_val,
+                                        right_val,
+                                        atol=legacy_equivalence_atol,
+                                        rtol=legacy_equivalence_rtol
+                                    )
+                                    if not equal_val:
+                                        is_equal = False
+                                        mismatch_detail = f"Row {row_idx}: {equal_detail}"
+                                        break
+                            if not is_equal:
+                                firing_column_mismatches.append(f"{col}: {mismatch_detail}")
+                        _add_check(
+                            "Candidate rank-1 firing equivalence with legacy firing dataframe",
+                            len(firing_column_mismatches) == 0,
+                            "; ".join(firing_column_mismatches)
+                        )
+                        _add_check(
+                            "Candidate rank-1 vs legacy skipped columns",
+                            True,
+                            "Skipped columns by design: " + ", ".join(legacy_equivalence_skip_columns)
+                        )
+
+        return pandas.DataFrame(rows)
+
     def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df):
         ordered_df = precomputed_firing_depth_df.copy()
         ordered_df["__firing_row_index__"] = pandas.to_numeric(
@@ -4870,6 +5183,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             specific_dil_index
         )
         candidate_contract_df = None
+        candidate_rank1_legacy_eq_df = None
         if validate_firing_df_builder or strict_precomputed_guidance:
             candidate_contract_df = _build_candidate_contract_validation_dataframe(
                 specific_dil_structure,
@@ -4887,12 +5201,32 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     if strict_precomputed_guidance:
                         raise ValueError(candidate_failure_message)
                     _emit_validation_note(candidate_failure_message)
+            candidate_rank1_legacy_eq_df = _build_candidate_rank1_vs_legacy_validation_dataframe(
+                specific_dil_structure,
+                sp_dil_id,
+                specific_dil_index
+            )
+            if isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame) and (not candidate_rank1_legacy_eq_df.empty):
+                failed_candidate_eq_checks = candidate_rank1_legacy_eq_df[
+                    candidate_rank1_legacy_eq_df["Check pass"] == False
+                ]
+                if not failed_candidate_eq_checks.empty:
+                    failed_candidate_eq_check_names = failed_candidate_eq_checks["Check"].astype(str).tolist()
+                    candidate_eq_failure_message = (
+                        f"[Guidance candidate rank1 vs legacy] {patientUID} | {sp_dil_id}: validation failed: "
+                        + ", ".join(failed_candidate_eq_check_names)
+                    )
+                    if strict_precomputed_guidance:
+                        raise ValueError(candidate_eq_failure_message)
+                    _emit_validation_note(candidate_eq_failure_message)
         if validate_firing_df_builder and isinstance(precomputed_contract_df, pandas.DataFrame):
             specific_dil_structure[
                 "Biopsy optimization: Guidance-map precomputed contract dataframe (validation)"
             ] = precomputed_contract_df
         if validate_firing_df_builder and isinstance(candidate_contract_df, pandas.DataFrame):
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION] = candidate_contract_df
+        if validate_firing_df_builder and isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame):
+            specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
         if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
             continue
 
@@ -5166,6 +5500,19 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         ].astype(str).tolist()
                         _emit_validation_note(
                             f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks failed: {failed_candidate_checks}"
+                        )
+                if isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame) and not candidate_rank1_legacy_eq_df.empty:
+                    candidate_eq_checks_pass = bool(candidate_rank1_legacy_eq_df["Check pass"].fillna(False).all())
+                    if candidate_eq_checks_pass:
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks passed."
+                        )
+                    else:
+                        failed_candidate_eq_checks = candidate_rank1_legacy_eq_df.loc[
+                            candidate_rank1_legacy_eq_df["Check pass"] == False, "Check"
+                        ].astype(str).tolist()
+                        _emit_validation_note(
+                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks failed: {failed_candidate_eq_checks}"
                         )
 
         contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)

@@ -479,7 +479,8 @@ def main():
     bias_LR_multiplier = 1
     bias_AP_multiplier = 1
     bias_SI_multiplier = 1.5 
-    
+    # for guidance maps 
+    number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3
 
 
     # for simulated biopsies
@@ -7893,7 +7894,7 @@ def main():
                         radius_for_normals_estimation=radius_for_normals_estimation,
                         max_nn_for_normals_estimation=max_nn_for_normals_estimation,
                         biopsy_needle_tip_length=biopsy_needle_tip_length,
-                        candidate_holes_k=1,
+                        candidate_holes_k=number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation,
                         candidate_axis_line_length_mm=1000
                     )
 
@@ -8857,7 +8858,7 @@ def main():
                                             draw_orientation_diagram=False,
                                             show_titles=False,
                                             validate_firing_df_builder=True,
-                                            strict_precomputed_guidance=True
+                                            strict_precomputed_guidance=False
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)
