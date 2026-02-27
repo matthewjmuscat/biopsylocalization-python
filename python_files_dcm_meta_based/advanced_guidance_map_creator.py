@@ -4934,11 +4934,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     def _get_template_hole_label_for_rank(specific_dil_structure, selected_rank):
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
         if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
-            legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
-            if isinstance(legacy_geometry_context, dict):
-                hole_label = legacy_geometry_context.get("Optimal template hole", None)
-                if hole_label is not None:
-                    return str(hole_label)
+            return None
+        if "Candidate hole rank" not in candidate_geometry_df.columns:
             return None
         rank_series = pandas.to_numeric(candidate_geometry_df.get("Candidate hole rank"), errors="coerce")
         rank_rows = candidate_geometry_df.loc[rank_series == int(selected_rank)]
@@ -4953,36 +4950,50 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
         candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
         if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
-            return None, None
+            return None, None, "Missing or empty candidate geometry dataframe."
         if not isinstance(candidate_firing_df, pandas.DataFrame) or candidate_firing_df.empty:
-            return None, None
+            return None, None, "Missing or empty candidate firing dataframe."
+        if "Candidate hole rank" not in candidate_geometry_df.columns:
+            return None, None, "Missing 'Candidate hole rank' column in candidate geometry dataframe."
+        if "Candidate hole rank" not in candidate_firing_df.columns:
+            return None, None, "Missing 'Candidate hole rank' column in candidate firing dataframe."
+        if "Firing depth row index (per structure)" not in candidate_firing_df.columns:
+            return None, None, "Missing 'Firing depth row index (per structure)' column in candidate firing dataframe."
 
         geometry_rank_series = pandas.to_numeric(candidate_geometry_df.get("Candidate hole rank"), errors="coerce")
         rank_geometry_rows = candidate_geometry_df.loc[geometry_rank_series == int(selected_rank)]
-        if len(rank_geometry_rows) != 1:
-            return None, None
+        if len(rank_geometry_rows) == 0:
+            return None, None, f"No candidate geometry row found for rank {int(selected_rank)}."
+        if len(rank_geometry_rows) > 1:
+            return None, None, f"Multiple candidate geometry rows found for rank {int(selected_rank)}."
 
         firing_rank_series = pandas.to_numeric(candidate_firing_df.get("Candidate hole rank"), errors="coerce")
         rank_firing_df = candidate_firing_df.loc[firing_rank_series == int(selected_rank)].copy()
         if rank_firing_df.empty:
-            return None, None
+            return None, None, f"No candidate firing rows found for rank {int(selected_rank)}."
 
         missing_required_legacy_cols = [
             col for col in required_precomputed_firing_df_columns if col not in rank_firing_df.columns
         ]
         if len(missing_required_legacy_cols) > 0:
-            return None, None
+            return None, None, (
+                "Candidate firing rows are missing required plotting columns: "
+                + ", ".join(missing_required_legacy_cols)
+            )
 
         rank_firing_df["__row_index__"] = pandas.to_numeric(
             rank_firing_df["Firing depth row index (per structure)"], errors="coerce"
         )
         if rank_firing_df["__row_index__"].isna().any():
-            return None, None
+            return None, None, (
+                f"Candidate firing rows for rank {int(selected_rank)} contain non-numeric "
+                "'Firing depth row index (per structure)' values."
+            )
         rank_firing_df = rank_firing_df.sort_values("__row_index__", kind="stable").drop(columns=["__row_index__"]).reset_index(drop=True)
 
         rank_geometry_context = rank_geometry_rows.iloc[0].to_dict()
         rank_firing_df_legacy_cols = rank_firing_df[required_precomputed_firing_df_columns].copy()
-        return rank_geometry_context, rank_firing_df_legacy_cols
+        return rank_geometry_context, rank_firing_df_legacy_cols, None
 
     def _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df):
         ordered_df = precomputed_firing_depth_df.copy()
@@ -5386,15 +5397,14 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             _emit_validation_note(missing_rank_message)
             continue
 
-        selected_geometry_context, selected_firing_depth_df = _select_precomputed_inputs_for_rank(
+        selected_geometry_context, selected_firing_depth_df, rank_select_failure_reason = _select_precomputed_inputs_for_rank(
             specific_dil_structure,
             selected_plot_rank
         )
         if selected_geometry_context is None or not isinstance(selected_firing_depth_df, pandas.DataFrame) or selected_firing_depth_df.empty:
-            rank_select_message = (
-                f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} "
-                f"plot inputs from precomputed candidate data."
-            )
+            rank_select_message = f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} plot inputs from precomputed candidate data."
+            if rank_select_failure_reason:
+                rank_select_message = rank_select_message + f" Reason: {rank_select_failure_reason}"
             _persist_plot_selection_manifest_row(
                 specific_dil_structure,
                 _build_plot_selection_manifest_row(
