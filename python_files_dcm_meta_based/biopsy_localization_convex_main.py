@@ -8857,8 +8857,7 @@ def main():
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
                                             show_titles=False,
-                                            candidate_plot_mode="rank1",
-                                            candidate_plot_ranks=None,
+                                            candidate_plot_rank=1,
                                             validate_firing_df_builder=True,
                                             strict_precomputed_guidance=False
                                             )

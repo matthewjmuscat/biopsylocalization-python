@@ -4001,8 +4001,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             colorbar_title_font_size = 12,
                                             fire_annotation_style = "hockey",
                                             fire_table_position = "auto",
-                                            candidate_plot_mode = "rank1",
-                                            candidate_plot_ranks = None,
+                                            candidate_plot_rank = 1,
                                             validate_firing_df_builder = False,
                                             strict_precomputed_guidance = False
                                             ):
@@ -4069,32 +4068,24 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         warnings.warn(f"Unsupported fire_table_position '{fire_table_position}'. Falling back to 'auto'.")
         fire_table_position = "auto"
 
-    candidate_plot_mode = str(candidate_plot_mode or "rank1").lower()
-    valid_candidate_plot_modes = ["rank1", "all"]
-    if candidate_plot_mode not in valid_candidate_plot_modes:
+    candidate_plot_all_mode = False
+    requested_candidate_plot_rank = 1
+    try:
+        if isinstance(candidate_plot_rank, str) and candidate_plot_rank.strip().lower() == "all":
+            candidate_plot_all_mode = True
+            requested_candidate_plot_rank = 1
+        else:
+            requested_candidate_plot_rank = int(candidate_plot_rank)
+    except Exception:
         warnings.warn(
-            f"Unsupported candidate_plot_mode '{candidate_plot_mode}'. Falling back to 'rank1'."
+            f"Could not parse candidate_plot_rank='{candidate_plot_rank}'. Falling back to rank 1."
         )
-        candidate_plot_mode = "rank1"
-
-    parsed_candidate_plot_ranks = None
-    if candidate_plot_ranks is not None:
-        try:
-            if np.isscalar(candidate_plot_ranks):
-                parsed_candidate_plot_ranks = [int(candidate_plot_ranks)]
-            else:
-                parsed_candidate_plot_ranks = list({
-                    int(rank_val)
-                    for rank_val in np.asarray(list(candidate_plot_ranks)).reshape(-1)
-                })
-            parsed_candidate_plot_ranks = sorted({int(val) for val in parsed_candidate_plot_ranks})
-            if len(parsed_candidate_plot_ranks) == 0:
-                parsed_candidate_plot_ranks = None
-        except Exception:
-            warnings.warn(
-                f"Could not parse candidate_plot_ranks='{candidate_plot_ranks}'. Falling back to mode-based selection."
-            )
-            parsed_candidate_plot_ranks = None
+        requested_candidate_plot_rank = 1
+    if requested_candidate_plot_rank < 1:
+        warnings.warn(
+            f"candidate_plot_rank must be >= 1, got {requested_candidate_plot_rank}. Falling back to rank 1."
+        )
+        requested_candidate_plot_rank = 1
 
     def _emit_validation_note(message):
         warnings.warn(message)
@@ -4897,26 +4888,16 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         if len(available_candidate_ranks) == 0:
             available_candidate_ranks = [1]
 
-        if parsed_candidate_plot_ranks is not None:
-            if len(parsed_candidate_plot_ranks) > 1:
-                _emit_validation_note(
-                    f"[Guidance plotting] {patientUID} | {dil_id}: multiple candidate_plot_ranks supplied "
-                    f"({parsed_candidate_plot_ranks}); rendering only first rank {parsed_candidate_plot_ranks[0]} "
-                    f"in single-rank mode."
-                )
-            selected_rank = int(parsed_candidate_plot_ranks[0])
-            return selected_rank, available_candidate_ranks
-
-        if candidate_plot_mode == "all":
+        if candidate_plot_all_mode:
             if len(available_candidate_ranks) > 1:
                 _emit_validation_note(
-                    f"[Guidance plotting] {patientUID} | {dil_id}: candidate_plot_mode='all' requested with "
+                    f"[Guidance plotting] {patientUID} | {dil_id}: candidate_plot_rank='all' requested with "
                     f"available ranks {available_candidate_ranks}. Current renderer is single-rank; rendering rank "
                     f"{available_candidate_ranks[0]}."
                 )
             return int(available_candidate_ranks[0]), available_candidate_ranks
 
-        return 1, available_candidate_ranks
+        return int(requested_candidate_plot_rank), available_candidate_ranks
 
     def _select_precomputed_inputs_for_rank(specific_dil_structure, selected_rank):
         legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
@@ -5620,7 +5601,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 ))
 
         if validate_firing_df_builder:
-            firing_depth_df = precomputed_firing_depth_df
+            # Validation exports remain tied to legacy rank-1 baseline for stable contract tracking.
+            firing_depth_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
             if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                 _emit_validation_note(
                     f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing precomputed firing-depth dataframe)."
