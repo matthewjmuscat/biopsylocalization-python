@@ -2041,6 +2041,7 @@ GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF = "Biopsy optimization: Guidance-
 GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF = "Biopsy optimization: Guidance-map candidate firing dataframe"
 GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate contract dataframe (validation)"
 GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate rank1 vs legacy dataframe (validation)"
+GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION = "Biopsy optimization: Guidance-map candidate plot-selection dataframe (validation)"
 
 GUIDANCE_MAP_LEGACY_EQ_SKIP_COLUMNS = [
     # Candidate firing rows intentionally namespace this UID by candidate hole.
@@ -4873,7 +4874,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         return pandas.DataFrame(rows)
 
-    def _resolve_single_plot_rank_for_dil(specific_dil_structure, dil_id):
+    def _get_available_candidate_ranks_for_dil(specific_dil_structure):
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
         available_candidate_ranks = []
         if isinstance(candidate_geometry_df, pandas.DataFrame) and (not candidate_geometry_df.empty) and ("Candidate hole rank" in candidate_geometry_df.columns):
@@ -4887,6 +4888,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
         if len(available_candidate_ranks) == 0:
             available_candidate_ranks = [1]
+        return available_candidate_ranks
+
+    def _resolve_single_plot_rank_for_dil(specific_dil_structure, dil_id):
+        available_candidate_ranks = _get_available_candidate_ranks_for_dil(specific_dil_structure)
 
         if candidate_plot_all_mode:
             if len(available_candidate_ranks) > 1:
@@ -4898,6 +4903,54 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             return int(available_candidate_ranks[0]), available_candidate_ranks
 
         return int(requested_candidate_plot_rank), available_candidate_ranks
+
+    def _build_plot_selection_manifest_row(dil_id,
+                                           available_candidate_ranks,
+                                           requested_rank,
+                                           resolved_rank,
+                                           selected_hole_label,
+                                           status,
+                                           details=""):
+        return {
+            "Patient ID": patientUID,
+            "Relative structure ID": str(dil_id),
+            "Requested candidate plot rank": str(requested_rank),
+            "Resolved candidate plot rank": (
+                "" if resolved_rank is None else str(int(resolved_rank))
+            ),
+            "Available candidate ranks": ",".join([str(int(rank_val)) for rank_val in available_candidate_ranks]),
+            "Selected template hole label": (
+                "" if selected_hole_label is None else str(selected_hole_label)
+            ),
+            "Status": str(status),
+            "Details": str(details),
+        }
+
+    def _persist_plot_selection_manifest_row(specific_dil_structure, manifest_row):
+        if not validate_firing_df_builder:
+            return
+        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.DataFrame([manifest_row])
+
+    def _get_template_hole_label_for_rank(specific_dil_structure, selected_rank):
+        if int(selected_rank) == 1:
+            legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
+            if isinstance(legacy_geometry_context, dict):
+                hole_label = legacy_geometry_context.get("Optimal template hole", None)
+                if hole_label is not None:
+                    return str(hole_label)
+            return None
+
+        candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
+        if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
+            return None
+        rank_series = pandas.to_numeric(candidate_geometry_df.get("Candidate hole rank"), errors="coerce")
+        rank_rows = candidate_geometry_df.loc[rank_series == int(selected_rank)]
+        if rank_rows.empty:
+            return None
+        hole_label = rank_rows.iloc[0].get("Optimal template hole", None)
+        if hole_label is None:
+            return None
+        return str(hole_label)
 
     def _select_precomputed_inputs_for_rank(specific_dil_structure, selected_rank):
         legacy_geometry_context = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT)
@@ -5250,6 +5303,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     transverse_contour_plot_list_of_dicts = []
     dil_specific_pointclouds_list = []
     dil_pcd_color_arr = structs_referenced_dict[dil_ref]['PCD color']
+    manifest_requested_rank = "all" if candidate_plot_all_mode else int(requested_candidate_plot_rank)
     for specific_dil_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
         sp_dil_guidance_map_max_planes_dataframe = specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"]
         optimal_positions_df = specific_dil_structure['Biopsy optimization: Optimal biopsy location dataframe']
@@ -5322,6 +5376,18 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 f"[Guidance plotting] {patientUID} | {sp_dil_id}: requested rank {selected_plot_rank} is not "
                 f"available. Available ranks: {available_candidate_ranks}."
             )
+            _persist_plot_selection_manifest_row(
+                specific_dil_structure,
+                _build_plot_selection_manifest_row(
+                    dil_id=sp_dil_id,
+                    available_candidate_ranks=available_candidate_ranks,
+                    requested_rank=manifest_requested_rank,
+                    resolved_rank=selected_plot_rank,
+                    selected_hole_label=None,
+                    status="skipped_missing_rank",
+                    details=missing_rank_message,
+                ),
+            )
             if strict_precomputed_guidance:
                 raise ValueError(missing_rank_message)
             _emit_validation_note(missing_rank_message)
@@ -5335,6 +5401,18 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             rank_select_message = (
                 f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} "
                 f"plot inputs from precomputed candidate data."
+            )
+            _persist_plot_selection_manifest_row(
+                specific_dil_structure,
+                _build_plot_selection_manifest_row(
+                    dil_id=sp_dil_id,
+                    available_candidate_ranks=available_candidate_ranks,
+                    requested_rank=manifest_requested_rank,
+                    resolved_rank=selected_plot_rank,
+                    selected_hole_label=_get_template_hole_label_for_rank(specific_dil_structure, selected_plot_rank),
+                    status="skipped_failed_rank_inputs",
+                    details=rank_select_message,
+                ),
             )
             if strict_precomputed_guidance:
                 raise ValueError(rank_select_message)
@@ -5380,6 +5458,18 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         dil_specific_pointclouds_list.append(transducer_plane_pcd_colored)
 
         optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
+        _persist_plot_selection_manifest_row(
+            specific_dil_structure,
+            _build_plot_selection_manifest_row(
+                dil_id=sp_dil_id,
+                available_candidate_ranks=available_candidate_ranks,
+                requested_rank=manifest_requested_rank,
+                resolved_rank=selected_plot_rank,
+                selected_hole_label=optimal_template_hole_label,
+                status="rendered",
+                details=f"Rendered guidance map with rank {int(selected_plot_rank)}.",
+            ),
+        )
 
         # Select plotted template hole using precomputed rank-specific context.
         prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].values
