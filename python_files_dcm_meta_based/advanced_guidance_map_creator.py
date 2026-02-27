@@ -2708,6 +2708,7 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
     Returns:
         pandas.DataFrame: Patient-level concatenation of all per-DIL firing-depth rows.
     """
+    # --- Required anatomy and lattice inputs ---
     empty_df = pandas.DataFrame()
     selected_structures_df = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"].get("Selected structures")
     if not isinstance(selected_structures_df, pandas.DataFrame) or selected_structures_df.empty:
@@ -2736,6 +2737,7 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
         warnings.warn(f"[Guidance precompute] {patientUID}: missing entire lattice dataframe.")
         return empty_df
 
+    # --- Patient-level geometric context reused across all DILs ---
     prostate_centroid = pydicom_item[oar_ref][prostate_structure_index]["Structure global centroid"].reshape(3)
     prostate_inter_slice_interp_np_arr = pydicom_item[oar_ref][prostate_structure_index][
         'Inter-slice interpolation information'
@@ -2791,8 +2793,10 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
     )
     prostate_trimesh_prostate_frame = translate_mesh(prostate_trimesh, -prostate_centroid)
 
+    # --- Per-DIL candidate guidance precompute ---
     patient_firing_depth_df_list = []
     for specific_dil_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
+        # Reset all guidance precompute stores so downstream consumers can assume key presence.
         specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT] = None
         specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_FIRING_DF] = pandas.DataFrame()
         specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF] = pandas.DataFrame()
@@ -2999,7 +3003,8 @@ def precompute_guidance_map_firing_depths_for_patient(patientUID,
             )
         specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF] = candidate_firing_df
 
-        # Preserve current plotter contract: rank-1 candidate remains the active legacy guidance context.
+        # Keep rank-1 mirrored in legacy keys for backward compatibility and validation exports.
+        # Plot rendering now selects from candidate dataframes directly for every rank.
         geometry_context = candidate_geometry_context_dicts[0]
         specific_dil_structure[GUIDANCE_MAP_KEY_LEGACY_GEOMETRY_CONTEXT] = geometry_context
 
@@ -4927,6 +4932,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         }
 
     def _persist_plot_selection_manifest_row(specific_dil_structure, manifest_row):
+        # Manifest rows are validation artifacts; only persist when validation export is enabled.
         if not validate_firing_df_builder:
             return
         specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.DataFrame([manifest_row])
@@ -4947,6 +4953,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         return str(hole_label)
 
     def _select_precomputed_inputs_for_rank(specific_dil_structure, selected_rank):
+        # Candidate-only selection path used by plotting for all ranks, including rank 1.
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
         candidate_firing_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_FIRING_DF)
         if not isinstance(candidate_geometry_df, pandas.DataFrame) or candidate_geometry_df.empty:
@@ -5371,6 +5378,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         if validate_firing_df_builder and isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame):
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
 
+        # --- Resolve rank to render for this DIL ---
         selected_plot_rank, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
             specific_dil_structure,
             sp_dil_id
@@ -5397,6 +5405,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             _emit_validation_note(missing_rank_message)
             continue
 
+        # --- Load rank-specific precomputed geometry and firing rows ---
         selected_geometry_context, selected_firing_depth_df, rank_select_failure_reason = _select_precomputed_inputs_for_rank(
             specific_dil_structure,
             selected_plot_rank
