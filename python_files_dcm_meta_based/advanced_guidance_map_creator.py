@@ -4979,40 +4979,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         available_candidate_ranks = _get_available_candidate_ranks_for_dil(specific_dil_structure)
 
         if candidate_plot_all_mode:
-            if len(available_candidate_ranks) > 1:
-                _emit_validation_note(
-                    f"[Guidance plotting] {patientUID} | {dil_id}: candidate_plot_rank='all' requested with "
-                    f"available ranks {available_candidate_ranks}. Current renderer is single-rank; rendering rank "
-                    f"{available_candidate_ranks[0]}."
-                )
-            return int(available_candidate_ranks[0]), available_candidate_ranks
+            return [int(rank_value) for rank_value in available_candidate_ranks], available_candidate_ranks
 
-        available_rank_set = set([int(rank_value) for rank_value in available_candidate_ranks])
-        requested_available_ranks = [
-            int(rank_value) for rank_value in requested_candidate_plot_ranks if int(rank_value) in available_rank_set
-        ]
-        if len(requested_available_ranks) == 0:
-            return int(requested_candidate_plot_ranks[0]), available_candidate_ranks
-
-        if len(requested_candidate_plot_ranks) > 1:
-            requested_unavailable_ranks = [
-                int(rank_value) for rank_value in requested_candidate_plot_ranks if int(rank_value) not in available_rank_set
-            ]
-            if len(requested_unavailable_ranks) > 0:
-                _emit_validation_note(
-                    f"[Guidance plotting] {patientUID} | {dil_id}: requested candidate ranks "
-                    f"{requested_candidate_plot_ranks}, unavailable ranks {requested_unavailable_ranks}, "
-                    f"available ranks {available_candidate_ranks}. Current renderer is single-rank; rendering rank "
-                    f"{requested_available_ranks[0]}."
-                )
-            elif len(requested_available_ranks) > 1:
-                _emit_validation_note(
-                    f"[Guidance plotting] {patientUID} | {dil_id}: requested candidate ranks "
-                    f"{requested_candidate_plot_ranks} with available ranks {available_candidate_ranks}. "
-                    f"Current renderer is single-rank; rendering rank {requested_available_ranks[0]}."
-                )
-
-        return int(requested_available_ranks[0]), available_candidate_ranks
+        return [int(rank_value) for rank_value in requested_candidate_plot_ranks], available_candidate_ranks
 
     def _build_plot_selection_manifest_row(dil_id,
                                            available_candidate_ranks,
@@ -5040,7 +5009,14 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         # Manifest rows are validation artifacts; only persist when validation export is enabled.
         if not validate_firing_df_builder:
             return
-        specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.DataFrame([manifest_row])
+        existing_manifest_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION)
+        new_row_df = pandas.DataFrame([manifest_row])
+        if isinstance(existing_manifest_df, pandas.DataFrame) and not existing_manifest_df.empty:
+            specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.concat(
+                [existing_manifest_df, new_row_df], ignore_index=True
+            )
+        else:
+            specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = new_row_df
 
     def _get_template_hole_label_for_rank(specific_dil_structure, selected_rank):
         candidate_geometry_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_CANDIDATE_GEOMETRY_CONTEXT_DF)
@@ -5424,6 +5400,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         sp_dil_guidance_map_max_planes_dataframe = specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"]
         optimal_positions_df = specific_dil_structure['Biopsy optimization: Optimal biopsy location dataframe']
         dil_id_from_pydicom = specific_dil_structure['ROI']
+        if validate_firing_df_builder:
+            specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION] = pandas.DataFrame()
         # Extract the base point from optimal_positions_df using the first matched index
         #sp_dil_optimal_positions_df = optimal_positions_df[optimal_positions_df['Relative DIL index'] == specific_dil_index]
         sp_dil_optimal_coordinate = np.array([
@@ -5484,635 +5462,634 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
 
         # --- Resolve rank to render for this DIL ---
-        selected_plot_rank, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
+        selected_plot_ranks, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
             specific_dil_structure,
             sp_dil_id
         )
-        if int(selected_plot_rank) not in set(available_candidate_ranks):
-            missing_rank_message = (
-                f"[Guidance plotting] {patientUID} | {sp_dil_id}: requested rank {selected_plot_rank} is not "
-                f"available. Available ranks: {available_candidate_ranks}."
-            )
-            _persist_plot_selection_manifest_row(
-                specific_dil_structure,
-                _build_plot_selection_manifest_row(
-                    dil_id=sp_dil_id,
-                    available_candidate_ranks=available_candidate_ranks,
-                    requested_rank=manifest_requested_rank,
-                    resolved_rank=selected_plot_rank,
-                    selected_hole_label=None,
-                    status="skipped_missing_rank",
-                    details=missing_rank_message,
-                ),
-            )
-            if strict_precomputed_guidance:
-                raise ValueError(missing_rank_message)
-            _emit_validation_note(missing_rank_message)
-            continue
-
-        # --- Load rank-specific precomputed geometry and firing rows ---
-        selected_geometry_context, selected_firing_depth_df, rank_select_failure_reason = _select_precomputed_inputs_for_rank(
-            specific_dil_structure,
-            selected_plot_rank
-        )
-        if selected_geometry_context is None or not isinstance(selected_firing_depth_df, pandas.DataFrame) or selected_firing_depth_df.empty:
-            rank_select_message = f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} plot inputs from precomputed candidate data."
-            if rank_select_failure_reason:
-                rank_select_message = rank_select_message + f" Reason: {rank_select_failure_reason}"
-            _persist_plot_selection_manifest_row(
-                specific_dil_structure,
-                _build_plot_selection_manifest_row(
-                    dil_id=sp_dil_id,
-                    available_candidate_ranks=available_candidate_ranks,
-                    requested_rank=manifest_requested_rank,
-                    resolved_rank=selected_plot_rank,
-                    selected_hole_label=_get_template_hole_label_for_rank(specific_dil_structure, selected_plot_rank),
-                    status="skipped_failed_rank_inputs",
-                    details=rank_select_message,
-                ),
-            )
-            if strict_precomputed_guidance:
-                raise ValueError(rank_select_message)
-            _emit_validation_note(rank_select_message)
-            continue
-
-        precomputed_geometry_context = selected_geometry_context
-        precomputed_firing_depth_df = selected_firing_depth_df
-        if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
-            continue
-
-        plot_id_suffix = ""
-        if int(selected_plot_rank) != 1:
-            plot_id_suffix = f" (R{int(selected_plot_rank)})"
-        dil_plot_id = f"{dil_id_from_pydicom}{plot_id_suffix}"
-        sp_dil_plot_id = f"{sp_dil_id}{plot_id_suffix}"
-
-        dil_inter_slice_interp_np_arr = specific_dil_structure['Inter-slice interpolation information'].interpolated_pts_np_arr
-        dil_inter_slice_interp_np_arr_prostate_coords = dil_inter_slice_interp_np_arr - prostate_centroid
-        
-        #pcd 
-        dil_inter_slice_interp_prostate_coords_pcd = point_containment_tools.create_point_cloud(dil_inter_slice_interp_np_arr_prostate_coords, color = np.array([0,0,1]))
-        optimal_pos_pcd = point_containment_tools.create_point_cloud(sp_dil_optimal_coordinate.reshape(1, -1), color = np.array([0,1,0]))
-        dil_specific_pointclouds_list.append(dil_inter_slice_interp_prostate_coords_pcd)
-        dil_specific_pointclouds_list.append(optimal_pos_pcd)
-
-
-        transducer_plane_df, transducer_plane_normal, euler_angles, euler_convention_str = generate_grid_dataframe(transducer_saggital_plane_point_prostate_frame_sup, 
-                                                                                             transducer_saggital_plane_point_prostate_frame_inf, 
-                                                                                             transducer_plane_grid_spacing, 
-                                                                                             entire_lattice_df, 
-                                                                                             sp_dil_optimal_coordinate)
-        transformed_grid_df, transformed_optimal_point, rotation_matrix = transform_grid_and_point_for_plotting(transducer_plane_df, transducer_plane_normal, sp_dil_optimal_coordinate)
-
-        # pcd 
-        #transducer_plane_pcd = point_containment_tools.create_point_cloud(transducer_plane_df[['Transducer plane point (X)', 'Transducer plane point (Y)', 'Transducer plane point (Z)']].to_numpy(), color = np.array([0,0,1]))
-        #transducer_plane_rotated_pcd = point_containment_tools.create_point_cloud(transformed_grid_df[['Transformed X', 'Transformed Y', 'Transformed Z']].to_numpy(), color = np.array([0,0,1]))
-        #transformed_optimal_point_pcd = point_containment_tools.create_point_cloud(transformed_optimal_point.reshape(1, -1), color = np.array([1,0,0]))
-        transducer_plane_pcd_colored = dataframe_to_point_cloud(transducer_plane_df, 
-                                                                'Transducer plane point (X)', 
-                                                                'Transducer plane point (Y)', 
-                                                                'Transducer plane point (Z)')
-        dil_specific_pointclouds_list.append(transducer_plane_pcd_colored)
-
-        optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
-        _persist_plot_selection_manifest_row(
-            specific_dil_structure,
-            _build_plot_selection_manifest_row(
-                dil_id=sp_dil_id,
-                available_candidate_ranks=available_candidate_ranks,
-                requested_rank=manifest_requested_rank,
-                resolved_rank=selected_plot_rank,
-                selected_hole_label=optimal_template_hole_label,
-                status="rendered",
-                details=f"Rendered guidance map with rank {int(selected_plot_rank)}.",
-            ),
-        )
-
-        # Select plotted template hole using precomputed rank-specific context.
-        prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].values
-        lattice_labels = prostate_grid_template_lattice_XYZ_aligned_dataframe.apply(
-            lambda row: f"{row['Label 1']}-{row['Label 2']}",
-            axis=1
-        ).astype(str).to_numpy()
-        matching_indices = np.where(lattice_labels == optimal_template_hole_label)[0]
-        if len(matching_indices) > 0:
-            nearest_indices = np.array([matching_indices[0]], dtype=int)
-        else:
-            nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
-            _emit_validation_note(
-                f"[Guidance plotting] {patientUID} | {sp_dil_plot_id}: template hole label "
-                f"'{optimal_template_hole_label}' not found in lattice. Falling back to nearest point."
-            )
-        nearest_template_points = prostate_template_points[nearest_indices]
-
-
-        # Project, transform, and annotate lines
-        nearest_prostate_template_lines_contour_plot_coords_list_of_dicts, nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts, nearest_prostate_template_lines_list_of_dicts = project_and_transform_lines(nearest_template_points, 
-                                            transducer_plane_normal, 
-                                            sp_dil_optimal_coordinate, 
-                                            rotation_matrix, 
-                                            prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices])
-        transformed_optimal_point_prime_xyz = _as_xyz(
-            precomputed_geometry_context["Optimal sampling point (Transducer primed frame) (XYZ array)"],
-            "precomputed_geometry_context['Optimal sampling point (Transducer primed frame) (XYZ array)']"
-        )
-        effective_euler_angles = np.array([
-            float(pandas.to_numeric(precomputed_geometry_context["Euler angle X (deg)"], errors="coerce")),
-            float(pandas.to_numeric(precomputed_geometry_context["Euler angle Y (deg)"], errors="coerce")),
-            float(pandas.to_numeric(precomputed_geometry_context["Euler angle Z (deg)"], errors="coerce")),
-        ], dtype=float)
-        effective_euler_convention = precomputed_geometry_context.get("Euler convention")
-        if effective_euler_convention is None:
-            effective_euler_convention = "-"
-        transformed_optimal_point_contour_coord_sys = transformed_optimal_point_prime_xyz[[2, 1]]
-        transformed_optimal_point_xprime = float(transformed_optimal_point_prime_xyz[0])
-
-
-        line_pts_list = [np.array([item['start'],item['end']]) for item in nearest_prostate_template_lines_list_of_dicts]
-        nearest_template_lines_colors_list = [np.array([1,0,1]) for i in range(len(line_pts_list))]
-        #nearest_template_lines_lineset = create_lines_for_open3d(line_pts_list, nearest_template_lines_colors_list)
-        nearest_template_lines_cylinder_mesh_list = create_thick_lines_as_cylinders(line_pts_list, nearest_template_lines_colors_list, radius=0.25)
-        #nearest_template_lines_cylinder_mesh_flat_list = flatten_geometry_list(nearest_template_lines_cylinder_mesh_list)
-        dil_specific_pointclouds_list.extend(nearest_template_lines_cylinder_mesh_list)
-
-        # dil trimesh
-        #dil_trimesh = specific_dil_structure['Structure OPEN3D triangle mesh object']
-        dil_interpolation_information = specific_dil_structure["Intra-slice interpolation information"]
-        dil_threeDdata_array_fully_interpolated_with_end_caps = dil_interpolation_information.interpolated_pts_with_end_caps_np_arr
-        dil_trimesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                                interp_intra_slice_dist,
-                                dil_threeDdata_array_fully_interpolated_with_end_caps,
-                                radius_for_normals_estimation,
-                                max_nn_for_normals_estimation
-                                )
-        dil_trimesh_prostate_frame = translate_mesh(dil_trimesh, -prostate_centroid)
-
-        if plot_open3d_structure_set_complete_demonstration_bool == True:
-            prostate_frame_representation_pcd_list = non_dil_list_of_pcds + dil_specific_pointclouds_list
-            plotting_funcs.plot_geometries(*prostate_frame_representation_pcd_list)
-
-        
-
-        # create plot
-        contour_plot = plot_transformed_contour(transformed_grid_df)
-
-        contour_plot.update_layout(
-                title=dict(
-                    text=f"TRUS plane guidance map - {patientUID} - {sp_dil_plot_id}"
+        for selected_plot_rank in selected_plot_ranks:
+            if int(selected_plot_rank) not in set(available_candidate_ranks):
+                missing_rank_message = (
+                    f"[Guidance plotting] {patientUID} | {sp_dil_id}: requested rank {selected_plot_rank} is not "
+                    f"available. Available ranks: {available_candidate_ranks}."
                 )
+                _persist_plot_selection_manifest_row(
+                    specific_dil_structure,
+                    _build_plot_selection_manifest_row(
+                        dil_id=sp_dil_id,
+                        available_candidate_ranks=available_candidate_ranks,
+                        requested_rank=manifest_requested_rank,
+                        resolved_rank=selected_plot_rank,
+                        selected_hole_label=None,
+                        status="skipped_missing_rank",
+                        details=missing_rank_message,
+                    ),
+                )
+                if strict_precomputed_guidance:
+                    raise ValueError(missing_rank_message)
+                _emit_validation_note(missing_rank_message)
+                continue
+    
+            # --- Load rank-specific precomputed geometry and firing rows ---
+            selected_geometry_context, selected_firing_depth_df, rank_select_failure_reason = _select_precomputed_inputs_for_rank(
+                specific_dil_structure,
+                selected_plot_rank
             )
-
-
-        # prostate_mesh_slice_pts = slice_mesh_fast(prostate_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
-        # prostate_mesh_slice_pts_transformed = transform_points(prostate_mesh_slice_pts, rotation_matrix, transducer_plane_df)
-        # prostate_mesh_slice_pts_transformed_contour_plot_coords = prostate_mesh_slice_pts_transformed[:,[2,1]]
-        # #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
-        # contour_plot = plot_transformed_mesh_slice(contour_plot, prostate_mesh_slice_pts_transformed_contour_plot_coords, 'Prostate', color_input = 'red')
-        
-        rectum_plus_prostate_pts_contour_plot_coords_list = []
-        for trimesh_dict in structure_trimesh_objs_list_of_dicts:
-            contour_color = trimesh_dict['Color']
-            structure_trimesh = trimesh_dict['Structure trimesh']
-            structure_ID = trimesh_dict['Structure ID']
-            struct_type = trimesh_dict['Struct type']
-
-            structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transducer_plane_normal, sp_dil_optimal_coordinate)
-            if len(structure_mesh_slice_pts) != 0:
-                structure_mesh_slice_pts_transformed = transform_points(structure_mesh_slice_pts, rotation_matrix, transducer_plane_df)
-                structure_mesh_slice_pts_transformed_contour_plot_coords = structure_mesh_slice_pts_transformed[:,[2,1]]
-                #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
-                contour_plot = plot_transformed_mesh_slice(contour_plot, 
-                                                       structure_mesh_slice_pts_transformed_contour_plot_coords, 
-                                                       structure_ID, 
-                                                       color_input = misc_tools.unnormalize_color_values(contour_color))
+            if selected_geometry_context is None or not isinstance(selected_firing_depth_df, pandas.DataFrame) or selected_firing_depth_df.empty:
+                rank_select_message = f"[Guidance plotting] {patientUID} | {sp_dil_id}: failed to build rank-{selected_plot_rank} plot inputs from precomputed candidate data."
+                if rank_select_failure_reason:
+                    rank_select_message = rank_select_message + f" Reason: {rank_select_failure_reason}"
+                _persist_plot_selection_manifest_row(
+                    specific_dil_structure,
+                    _build_plot_selection_manifest_row(
+                        dil_id=sp_dil_id,
+                        available_candidate_ranks=available_candidate_ranks,
+                        requested_rank=manifest_requested_rank,
+                        resolved_rank=selected_plot_rank,
+                        selected_hole_label=_get_template_hole_label_for_rank(specific_dil_structure, selected_plot_rank),
+                        status="skipped_failed_rank_inputs",
+                        details=rank_select_message,
+                    ),
+                )
+                if strict_precomputed_guidance:
+                    raise ValueError(rank_select_message)
+                _emit_validation_note(rank_select_message)
+                continue
+    
+            precomputed_geometry_context = selected_geometry_context
+            precomputed_firing_depth_df = selected_firing_depth_df
+            if precomputed_geometry_context is None or precomputed_firing_depth_df is None:
+                continue
+    
+            plot_id_suffix = f" (R{int(selected_plot_rank)})"
+            dil_plot_id = f"{dil_id_from_pydicom}{plot_id_suffix}"
+            sp_dil_plot_id = f"{sp_dil_id}{plot_id_suffix}"
+    
+            dil_inter_slice_interp_np_arr = specific_dil_structure['Inter-slice interpolation information'].interpolated_pts_np_arr
+            dil_inter_slice_interp_np_arr_prostate_coords = dil_inter_slice_interp_np_arr - prostate_centroid
             
-                if struct_type == oar_ref or struct_type == rectum_ref:
-                    rectum_plus_prostate_pts_contour_plot_coords_list.append(structure_mesh_slice_pts_transformed_contour_plot_coords)
-                if struct_type == oar_ref:
-                    prostate_mesh_slice_pts_transformed_contour_plot_coords = structure_mesh_slice_pts_transformed_contour_plot_coords
-            else: # no points contained in slice!
-                pass
-        
-        dil_mesh_slice_pts = slice_mesh_fast_v2(dil_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
-        if len(dil_mesh_slice_pts) != 0:
-            dil_mesh_slice_pts_transformed = transform_points(dil_mesh_slice_pts, rotation_matrix, transducer_plane_df)
-            dil_mesh_slice_pts_transformed_contour_plot_coords = dil_mesh_slice_pts_transformed[:,[2,1]]
-            #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
-            contour_plot = plot_transformed_mesh_slice(contour_plot, dil_mesh_slice_pts_transformed_contour_plot_coords, sp_dil_id, color_input = misc_tools.unnormalize_color_values(dil_pcd_color_arr))
-
-        
-
-        #contour_plot = reflect_plot_about_x_axis(contour_plot) 
-
-        #prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected = copy.deepcopy(prostate_mesh_slice_pts_transformed_contour_plot_coords)
-        #prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected[:,0] = -prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected[:,0]
-
-        rectum_plus_prostate_pts_contour_plot_coords = np.vstack(rectum_plus_prostate_pts_contour_plot_coords_list)
-        #rectum_plus_prostate_pts_contour_plot_coords_reflected = copy.deepcopy(rectum_plus_prostate_pts_contour_plot_coords)
-        #rectum_plus_prostate_pts_contour_plot_coords_reflected[:,0] = -rectum_plus_prostate_pts_contour_plot_coords_reflected[:,0]
-
-
-        #contour_plot = reverse_plot_axes(contour_plot, reverse_x=True, reverse_y=True)
-
-        contour_plot = adjust_plot_area_and_reverse_axes(contour_plot, rectum_plus_prostate_pts_contour_plot_coords, margin=5, reverse_x=True, reverse_y=True)
-        _show_all_axis_lines(contour_plot)
-
-        optimal_row_sagittal = {
-            "label": f"Optimal ({sp_dil_id})",
-            "optimal_hole": optimal_template_hole_label,
-            "xprime": transformed_optimal_point_xprime,
-            "zprime": transformed_optimal_point_contour_coord_sys[0],
-            "yprime": transformed_optimal_point_contour_coord_sys[1]
-        }
-        if fire_annotation_style == "hockey":
-            contour_plot = add_points_to_plot_v2(contour_plot,
-                                         transformed_optimal_point_contour_coord_sys,
-                                         f"Optimal ({sp_dil_id}) | [{transformed_optimal_point_contour_coord_sys[0]:.2f}, {transformed_optimal_point_contour_coord_sys[1]:.2f}] mm",
-                                         legend_name = f"Optimal ({sp_dil_id})",
-                                         size = 12,
-                                         annotation_direction = "down",
-                                         text_box_bg_color="rgba(255, 255, 255, 1)",
-                                         text_box_border_color="rgba(0, 0, 0, 1)",
-                                         text_color="black")
-        elif fire_annotation_style == "compact_table":
-            contour_plot = add_points_to_plot(contour_plot,
-                                     transformed_optimal_point_contour_coord_sys,
-                                     legend_name = f"Optimal ({sp_dil_id})",
-                                     color = "orange",
-                                     size = 12)
-
-        fire_rows = _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df)
-
-        custom_height = 0
-        custom_height_step = 4
-        for index, fire_row in enumerate(fire_rows):
-            custom_height = custom_height + custom_height_step * (index + 1)
-            penetration_depth = float(fire_row["penetration_depth"])
-            needle_tip_position_before_firing = np.array([
-                float(fire_row["zprime"]),
-                float(fire_row["yprime"])
-            ], dtype=float)
-
-            projection_point = fire_row.get("projection_point", None)
-            if projection_point is not None:
-                projection_point = np.asarray(projection_point, dtype=float).reshape(-1)
-                if projection_point.size >= 2 and np.all(np.isfinite(projection_point[:2])):
-                    double_arrow_deflection_line_offset = 1  # mm offset to avoid overlap with needle tip line and align annotation
-                    p0 = np.array([needle_tip_position_before_firing[0], needle_tip_position_before_firing[1]], dtype=float)
-                    p1 = np.array([projection_point[0], projection_point[1]], dtype=float)
-                    contour_plot = add_distance_annotation(contour_plot,
-                                                           np.vstack([p0, p1]),
-                                                           start_point=p0,
-                                                           end_point=p1,
-                                                           segment_offset=(double_arrow_deflection_line_offset, 0.0),
-                                                           arrow_color='black',
-                                                           line_width=3,
-                                                           line_dash='solid',
-                                                           show_text=False,
-                                                           show_legend=True,
-                                                           legend_name="Deflection line")
-
-            deflection_dist = float(fire_row["deflection"])
-            depth_from_apex = float(fire_row["depth_from_apex"])
-            fire_label = (
-                f"Tip before fire | Penetration depth {penetration_depth:.1f} mm<br>"
-                f"[Z'={needle_tip_position_before_firing[0]:.2f} mm, "
-                f"Y'={needle_tip_position_before_firing[1]:.2f} mm] (transducer-plane frame)<br>"
-                f"Deflection from template line: {deflection_dist:.2f} mm<br>"
-                f"Tip depth from apex: {depth_from_apex:.2f} mm"
+            #pcd 
+            dil_inter_slice_interp_prostate_coords_pcd = point_containment_tools.create_point_cloud(dil_inter_slice_interp_np_arr_prostate_coords, color = np.array([0,0,1]))
+            optimal_pos_pcd = point_containment_tools.create_point_cloud(sp_dil_optimal_coordinate.reshape(1, -1), color = np.array([0,1,0]))
+            dil_specific_pointclouds_list.append(dil_inter_slice_interp_prostate_coords_pcd)
+            dil_specific_pointclouds_list.append(optimal_pos_pcd)
+    
+    
+            transducer_plane_df, transducer_plane_normal, euler_angles, euler_convention_str = generate_grid_dataframe(transducer_saggital_plane_point_prostate_frame_sup, 
+                                                                                                 transducer_saggital_plane_point_prostate_frame_inf, 
+                                                                                                 transducer_plane_grid_spacing, 
+                                                                                                 entire_lattice_df, 
+                                                                                                 sp_dil_optimal_coordinate)
+            transformed_grid_df, transformed_optimal_point, rotation_matrix = transform_grid_and_point_for_plotting(transducer_plane_df, transducer_plane_normal, sp_dil_optimal_coordinate)
+    
+            # pcd 
+            #transducer_plane_pcd = point_containment_tools.create_point_cloud(transducer_plane_df[['Transducer plane point (X)', 'Transducer plane point (Y)', 'Transducer plane point (Z)']].to_numpy(), color = np.array([0,0,1]))
+            #transducer_plane_rotated_pcd = point_containment_tools.create_point_cloud(transformed_grid_df[['Transformed X', 'Transformed Y', 'Transformed Z']].to_numpy(), color = np.array([0,0,1]))
+            #transformed_optimal_point_pcd = point_containment_tools.create_point_cloud(transformed_optimal_point.reshape(1, -1), color = np.array([1,0,0]))
+            transducer_plane_pcd_colored = dataframe_to_point_cloud(transducer_plane_df, 
+                                                                    'Transducer plane point (X)', 
+                                                                    'Transducer plane point (Y)', 
+                                                                    'Transducer plane point (Z)')
+            dil_specific_pointclouds_list.append(transducer_plane_pcd_colored)
+    
+            optimal_template_hole_label = str(precomputed_geometry_context["Optimal template hole"])
+            _persist_plot_selection_manifest_row(
+                specific_dil_structure,
+                _build_plot_selection_manifest_row(
+                    dil_id=sp_dil_id,
+                    available_candidate_ranks=available_candidate_ranks,
+                    requested_rank=manifest_requested_rank,
+                    resolved_rank=selected_plot_rank,
+                    selected_hole_label=optimal_template_hole_label,
+                    status="rendered",
+                    details=f"Rendered guidance map with rank {int(selected_plot_rank)}.",
+                ),
             )
-            legend_label = f"Fire pos. ({penetration_depth:.1f} mm)"
-            line_offset = 1  # mm offset for the line to avoid overlap with the point
-
+    
+            # Select plotted template hole using precomputed rank-specific context.
+            prostate_template_points = prostate_grid_template_lattice_XYZ_aligned_dataframe[['X', 'Y', 'Z']].values
+            lattice_labels = prostate_grid_template_lattice_XYZ_aligned_dataframe.apply(
+                lambda row: f"{row['Label 1']}-{row['Label 2']}",
+                axis=1
+            ).astype(str).to_numpy()
+            matching_indices = np.where(lattice_labels == optimal_template_hole_label)[0]
+            if len(matching_indices) > 0:
+                nearest_indices = np.array([matching_indices[0]], dtype=int)
+            else:
+                nearest_indices = find_nearest_neighbors_sklearn(prostate_template_points, sp_dil_optimal_coordinate, k=1)
+                _emit_validation_note(
+                    f"[Guidance plotting] {patientUID} | {sp_dil_plot_id}: template hole label "
+                    f"'{optimal_template_hole_label}' not found in lattice. Falling back to nearest point."
+                )
+            nearest_template_points = prostate_template_points[nearest_indices]
+    
+    
+            # Project, transform, and annotate lines
+            nearest_prostate_template_lines_contour_plot_coords_list_of_dicts, nearest_prostate_template_lines_transducer_plane_projected_list_of_dicts, nearest_prostate_template_lines_list_of_dicts = project_and_transform_lines(nearest_template_points, 
+                                                transducer_plane_normal, 
+                                                sp_dil_optimal_coordinate, 
+                                                rotation_matrix, 
+                                                prostate_grid_template_lattice_XYZ_aligned_dataframe.iloc[nearest_indices])
+            transformed_optimal_point_prime_xyz = _as_xyz(
+                precomputed_geometry_context["Optimal sampling point (Transducer primed frame) (XYZ array)"],
+                "precomputed_geometry_context['Optimal sampling point (Transducer primed frame) (XYZ array)']"
+            )
+            effective_euler_angles = np.array([
+                float(pandas.to_numeric(precomputed_geometry_context["Euler angle X (deg)"], errors="coerce")),
+                float(pandas.to_numeric(precomputed_geometry_context["Euler angle Y (deg)"], errors="coerce")),
+                float(pandas.to_numeric(precomputed_geometry_context["Euler angle Z (deg)"], errors="coerce")),
+            ], dtype=float)
+            effective_euler_convention = precomputed_geometry_context.get("Euler convention")
+            if effective_euler_convention is None:
+                effective_euler_convention = "-"
+            transformed_optimal_point_contour_coord_sys = transformed_optimal_point_prime_xyz[[2, 1]]
+            transformed_optimal_point_xprime = float(transformed_optimal_point_prime_xyz[0])
+    
+    
+            line_pts_list = [np.array([item['start'],item['end']]) for item in nearest_prostate_template_lines_list_of_dicts]
+            nearest_template_lines_colors_list = [np.array([1,0,1]) for i in range(len(line_pts_list))]
+            #nearest_template_lines_lineset = create_lines_for_open3d(line_pts_list, nearest_template_lines_colors_list)
+            nearest_template_lines_cylinder_mesh_list = create_thick_lines_as_cylinders(line_pts_list, nearest_template_lines_colors_list, radius=0.25)
+            #nearest_template_lines_cylinder_mesh_flat_list = flatten_geometry_list(nearest_template_lines_cylinder_mesh_list)
+            dil_specific_pointclouds_list.extend(nearest_template_lines_cylinder_mesh_list)
+    
+            # dil trimesh
+            #dil_trimesh = specific_dil_structure['Structure OPEN3D triangle mesh object']
+            dil_interpolation_information = specific_dil_structure["Intra-slice interpolation information"]
+            dil_threeDdata_array_fully_interpolated_with_end_caps = dil_interpolation_information.interpolated_pts_with_end_caps_np_arr
+            dil_trimesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
+                                    interp_intra_slice_dist,
+                                    dil_threeDdata_array_fully_interpolated_with_end_caps,
+                                    radius_for_normals_estimation,
+                                    max_nn_for_normals_estimation
+                                    )
+            dil_trimesh_prostate_frame = translate_mesh(dil_trimesh, -prostate_centroid)
+    
+            if plot_open3d_structure_set_complete_demonstration_bool == True:
+                prostate_frame_representation_pcd_list = non_dil_list_of_pcds + dil_specific_pointclouds_list
+                plotting_funcs.plot_geometries(*prostate_frame_representation_pcd_list)
+    
+            
+    
+            # create plot
+            contour_plot = plot_transformed_contour(transformed_grid_df)
+    
+            contour_plot.update_layout(
+                    title=dict(
+                        text=f"TRUS plane guidance map - {patientUID} - {sp_dil_plot_id}"
+                    )
+                )
+    
+    
+            # prostate_mesh_slice_pts = slice_mesh_fast(prostate_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
+            # prostate_mesh_slice_pts_transformed = transform_points(prostate_mesh_slice_pts, rotation_matrix, transducer_plane_df)
+            # prostate_mesh_slice_pts_transformed_contour_plot_coords = prostate_mesh_slice_pts_transformed[:,[2,1]]
+            # #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
+            # contour_plot = plot_transformed_mesh_slice(contour_plot, prostate_mesh_slice_pts_transformed_contour_plot_coords, 'Prostate', color_input = 'red')
+            
+            rectum_plus_prostate_pts_contour_plot_coords_list = []
+            for trimesh_dict in structure_trimesh_objs_list_of_dicts:
+                contour_color = trimesh_dict['Color']
+                structure_trimesh = trimesh_dict['Structure trimesh']
+                structure_ID = trimesh_dict['Structure ID']
+                struct_type = trimesh_dict['Struct type']
+    
+                structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transducer_plane_normal, sp_dil_optimal_coordinate)
+                if len(structure_mesh_slice_pts) != 0:
+                    structure_mesh_slice_pts_transformed = transform_points(structure_mesh_slice_pts, rotation_matrix, transducer_plane_df)
+                    structure_mesh_slice_pts_transformed_contour_plot_coords = structure_mesh_slice_pts_transformed[:,[2,1]]
+                    #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
+                    contour_plot = plot_transformed_mesh_slice(contour_plot, 
+                                                           structure_mesh_slice_pts_transformed_contour_plot_coords, 
+                                                           structure_ID, 
+                                                           color_input = misc_tools.unnormalize_color_values(contour_color))
+                
+                    if struct_type == oar_ref or struct_type == rectum_ref:
+                        rectum_plus_prostate_pts_contour_plot_coords_list.append(structure_mesh_slice_pts_transformed_contour_plot_coords)
+                    if struct_type == oar_ref:
+                        prostate_mesh_slice_pts_transformed_contour_plot_coords = structure_mesh_slice_pts_transformed_contour_plot_coords
+                else: # no points contained in slice!
+                    pass
+            
+            dil_mesh_slice_pts = slice_mesh_fast_v2(dil_trimesh_prostate_frame, transducer_plane_normal, sp_dil_optimal_coordinate)
+            if len(dil_mesh_slice_pts) != 0:
+                dil_mesh_slice_pts_transformed = transform_points(dil_mesh_slice_pts, rotation_matrix, transducer_plane_df)
+                dil_mesh_slice_pts_transformed_contour_plot_coords = dil_mesh_slice_pts_transformed[:,[2,1]]
+                #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
+                contour_plot = plot_transformed_mesh_slice(contour_plot, dil_mesh_slice_pts_transformed_contour_plot_coords, sp_dil_id, color_input = misc_tools.unnormalize_color_values(dil_pcd_color_arr))
+    
+            
+    
+            #contour_plot = reflect_plot_about_x_axis(contour_plot) 
+    
+            #prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected = copy.deepcopy(prostate_mesh_slice_pts_transformed_contour_plot_coords)
+            #prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected[:,0] = -prostate_mesh_slice_pts_transformed_contour_plot_coords_reflected[:,0]
+    
+            rectum_plus_prostate_pts_contour_plot_coords = np.vstack(rectum_plus_prostate_pts_contour_plot_coords_list)
+            #rectum_plus_prostate_pts_contour_plot_coords_reflected = copy.deepcopy(rectum_plus_prostate_pts_contour_plot_coords)
+            #rectum_plus_prostate_pts_contour_plot_coords_reflected[:,0] = -rectum_plus_prostate_pts_contour_plot_coords_reflected[:,0]
+    
+    
+            #contour_plot = reverse_plot_axes(contour_plot, reverse_x=True, reverse_y=True)
+    
+            contour_plot = adjust_plot_area_and_reverse_axes(contour_plot, rectum_plus_prostate_pts_contour_plot_coords, margin=5, reverse_x=True, reverse_y=True)
+            _show_all_axis_lines(contour_plot)
+    
+            optimal_row_sagittal = {
+                "label": f"Optimal ({sp_dil_id})",
+                "optimal_hole": optimal_template_hole_label,
+                "xprime": transformed_optimal_point_xprime,
+                "zprime": transformed_optimal_point_contour_coord_sys[0],
+                "yprime": transformed_optimal_point_contour_coord_sys[1]
+            }
             if fire_annotation_style == "hockey":
                 contour_plot = add_points_to_plot_v2(contour_plot,
-                                                    needle_tip_position_before_firing,
-                                                    fire_label,
-                                                    color='red',
-                                                    symbol='arrow-bar-left',
-                                                    custom_height=custom_height,
-                                                    legend_name=legend_label,
-                                                    color_index=index,
-                                                    annotation_x_offset=line_offset,
-                                                    text_box_bg_color="rgba(255, 255, 255, 1)",
-                                                    text_box_border_color="rgba(0, 0, 0, 1)",
-                                                    text_color="black")
+                                             transformed_optimal_point_contour_coord_sys,
+                                             f"Optimal ({sp_dil_id}) | [{transformed_optimal_point_contour_coord_sys[0]:.2f}, {transformed_optimal_point_contour_coord_sys[1]:.2f}] mm",
+                                             legend_name = f"Optimal ({sp_dil_id})",
+                                             size = 12,
+                                             annotation_direction = "down",
+                                             text_box_bg_color="rgba(255, 255, 255, 1)",
+                                             text_box_border_color="rgba(0, 0, 0, 1)",
+                                             text_color="black")
             elif fire_annotation_style == "compact_table":
-                marker_colors = ['#333333', '#FF7F50', '#008080']
-                contour_plot.add_trace(go.Scatter(
-                    x=[needle_tip_position_before_firing[0]],
-                    y=[needle_tip_position_before_firing[1]],
-                    mode='markers',
-                    marker=dict(color=marker_colors[index % len(marker_colors)], size=10, symbol='arrow-bar-left'),
-                    name=legend_label
-                ))
-
-        if validate_firing_df_builder:
-            # Validation exports remain tied to legacy rank-1 baseline for stable contract tracking.
-            firing_depth_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
-            if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
-                _emit_validation_note(
-                    f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing precomputed firing-depth dataframe)."
-                )
-            else:
-                specific_dil_structure[
-                    "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
-                ] = firing_depth_df
-                if isinstance(precomputed_contract_df, pandas.DataFrame) and not precomputed_contract_df.empty:
-                    all_checks_pass = bool(precomputed_contract_df["Check pass"].fillna(False).all())
-                    if all_checks_pass:
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks passed."
-                        )
-                    else:
-                        failed_checks = precomputed_contract_df.loc[
-                            precomputed_contract_df["Check pass"] == False, "Check"
-                        ].astype(str).tolist()
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks failed: {failed_checks}"
-                        )
-                if isinstance(candidate_contract_df, pandas.DataFrame) and not candidate_contract_df.empty:
-                    candidate_checks_pass = bool(candidate_contract_df["Check pass"].fillna(False).all())
-                    if candidate_checks_pass:
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks passed."
-                        )
-                    else:
-                        failed_candidate_checks = candidate_contract_df.loc[
-                            candidate_contract_df["Check pass"] == False, "Check"
-                        ].astype(str).tolist()
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks failed: {failed_candidate_checks}"
-                        )
-                if isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame) and not candidate_rank1_legacy_eq_df.empty:
-                    candidate_eq_checks_pass = bool(candidate_rank1_legacy_eq_df["Check pass"].fillna(False).all())
-                    if candidate_eq_checks_pass:
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks passed."
-                        )
-                    else:
-                        failed_candidate_eq_checks = candidate_rank1_legacy_eq_df.loc[
-                            candidate_rank1_legacy_eq_df["Check pass"] == False, "Check"
-                        ].astype(str).tolist()
-                        _emit_validation_note(
-                            f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks failed: {failed_candidate_eq_checks}"
-                        )
-
-        contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
-
-
-        contour_plot = add_x_bounds_with_annotations(contour_plot, 
-                                        prostate_mesh_slice_pts_transformed_contour_plot_coords, 
-                                        y_position = 1.0,
-                                        x_offset = -1.5,  
-                                        label_yanchor = "top",
-                                        max_x_label="Base", 
-                                        min_x_label="Apex", 
-                                        line_color_max='black', 
-                                        line_color_min='black', 
-                                        line_style_max='dot',
-                                        line_style_min='dot', 
-                                        line_width=3 
-                                        )
-
-
-        contour_plot = add_distance_annotation(contour_plot, 
-                                               prostate_mesh_slice_pts_transformed_contour_plot_coords, 
-                                               y_position=-0.075, 
-                                               arrow_color='black',
-                                               x_offset=0,
-                                               text_box_bg_color="rgba(255, 255, 255, 1)",
-                                               text_box_border_color="rgba(0, 0, 0, 1)",
-                                               text_color="black")
-
-        if simple_angle_display_option_bool == False:
-            contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
-                                                    effective_euler_angles,
-                                                    effective_euler_convention, 
-                                                    position='bottom right')
-        elif simple_angle_display_option_bool == True:
-            z_angle = effective_euler_angles[2]
-            contour_plot = add_sagittal_angle_to_plot(contour_plot, 
-                                                                 z_angle, 
-                                                                 position='bottom right')
-
-        
-        z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
-
-        _anchor_colorbars_bottom_right(contour_plot)
-
-        contour_plot = set_square_aspect_ratio(contour_plot)
-        
-
-        if fire_annotation_style == "compact_table":
-            contour_plot = add_compact_fire_positions_table(contour_plot,
-                                                            fire_rows,
-                                                            position=fire_table_position,
-                                                            frame_label="Transducer plane frame (Z', Y')",
-                                                            optimal_row=optimal_row_sagittal)
-
-        sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
-                                    "Contour plot": contour_plot}
-        trus_plane_sagittal_contour_plot_list_of_dicts.append(sp_dil_contour_plot_dict)
-
-
-
-
-
-
-
-        ###
-
-        ### TRANSVERSE ###
-
-        ###
-
-
-
-
-
-
-
-        plane_specific_guidance_map_max_planes_dataframe = sp_dil_guidance_map_max_planes_dataframe[sp_dil_guidance_map_max_planes_dataframe['Patient plane'].str.contains('Transverse')]
-
-        #plane_specific_guidance_map_max_planes_dataframe = sp_dil_guidance_map_max_planes_dataframe[sp_dil_guidance_map_max_planes_dataframe['Patient plane'] == plane]
-        #hor_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 1 name']
-        #vert_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 2 name']
-        #const_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Const coord name']
-        
-        contour_plot_transverse = go.Figure()
-
-        sp_dil_optimal_coordinate_transverse_contour_plot_coords = sp_dil_optimal_coordinate[[0,1]]
-        optimal_row_transverse = {
-            "label": f"Optimal ({sp_dil_id})",
-            "optimal_hole": optimal_template_hole_label,
-            "xprime": transformed_optimal_point_xprime,
-            "zprime": transformed_optimal_point_contour_coord_sys[0],
-            "yprime": transformed_optimal_point_contour_coord_sys[1]
-        }
-        if fire_annotation_style == "hockey":
-            contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
-                                         sp_dil_optimal_coordinate_transverse_contour_plot_coords,
-                                         f"Optimal ({sp_dil_id}) | [{sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]:.2f}, {sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]:.2f}] mm",
-                                         legend_name = f"Optimal ({sp_dil_id})",
-                                         size = 12)
-        elif fire_annotation_style == "compact_table":
-            contour_plot_transverse = add_points_to_plot(contour_plot_transverse,
-                                         sp_dil_optimal_coordinate_transverse_contour_plot_coords,
+                contour_plot = add_points_to_plot(contour_plot,
+                                         transformed_optimal_point_contour_coord_sys,
                                          legend_name = f"Optimal ({sp_dil_id})",
                                          color = "orange",
                                          size = 12)
-
-        origin = np.array([0,0]) 
-        contour_plot_transverse = add_points_to_plot(contour_plot_transverse, 
-                                     origin, 
-                                     legend_name = f"Prostate centroid projection",
-                                     color = "black",
-                                    size = 10)
-
-        transverse_plane_normal = np.array([0.,0.,1.])
-        alternate_prostate_slice_shift_from_prostate_apex = 10 # ie. 1 cm from apex
-        rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list = []
-        for trimesh_dict in structure_trimesh_objs_list_of_dicts:
-            contour_color = trimesh_dict['Color']
-            structure_trimesh = trimesh_dict['Structure trimesh']
-            structure_ID = trimesh_dict['Structure ID']
-            struct_type = trimesh_dict['Struct type']
-
-            structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transverse_plane_normal, sp_dil_optimal_coordinate)
-            if len(structure_mesh_slice_pts) != 0:
-
-                #structure_mesh_slice_pts_transformed = transform_points(structure_mesh_slice_pts, rotation_matrix, transducer_plane_df)
-                structure_mesh_slice_pts_transverse_contour_plot_coords = structure_mesh_slice_pts[:,[0,1]]
-                #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
-                contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
-                                                       structure_mesh_slice_pts_transverse_contour_plot_coords, 
-                                                       structure_ID, 
-                                                       color_input = misc_tools.unnormalize_color_values(contour_color))
-            if struct_type == oar_ref:
-                contour_color_alternate = np.array([0,0,0])
-                alternate_z_slice_prostate_location = min_z_prostate + alternate_prostate_slice_shift_from_prostate_apex
-                structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transverse_plane_normal, alternate_z_slice_prostate_location)
+    
+            fire_rows = _build_precomputed_fire_rows_for_sagittal(precomputed_firing_depth_df)
+    
+            custom_height = 0
+            custom_height_step = 4
+            for index, fire_row in enumerate(fire_rows):
+                custom_height = custom_height + custom_height_step * (index + 1)
+                penetration_depth = float(fire_row["penetration_depth"])
+                needle_tip_position_before_firing = np.array([
+                    float(fire_row["zprime"]),
+                    float(fire_row["yprime"])
+                ], dtype=float)
+    
+                projection_point = fire_row.get("projection_point", None)
+                if projection_point is not None:
+                    projection_point = np.asarray(projection_point, dtype=float).reshape(-1)
+                    if projection_point.size >= 2 and np.all(np.isfinite(projection_point[:2])):
+                        double_arrow_deflection_line_offset = 1  # mm offset to avoid overlap with needle tip line and align annotation
+                        p0 = np.array([needle_tip_position_before_firing[0], needle_tip_position_before_firing[1]], dtype=float)
+                        p1 = np.array([projection_point[0], projection_point[1]], dtype=float)
+                        contour_plot = add_distance_annotation(contour_plot,
+                                                               np.vstack([p0, p1]),
+                                                               start_point=p0,
+                                                               end_point=p1,
+                                                               segment_offset=(double_arrow_deflection_line_offset, 0.0),
+                                                               arrow_color='black',
+                                                               line_width=3,
+                                                               line_dash='solid',
+                                                               show_text=False,
+                                                               show_legend=True,
+                                                               legend_name="Deflection line")
+    
+                deflection_dist = float(fire_row["deflection"])
+                depth_from_apex = float(fire_row["depth_from_apex"])
+                fire_label = (
+                    f"Tip before fire | Penetration depth {penetration_depth:.1f} mm<br>"
+                    f"[Z'={needle_tip_position_before_firing[0]:.2f} mm, "
+                    f"Y'={needle_tip_position_before_firing[1]:.2f} mm] (transducer-plane frame)<br>"
+                    f"Deflection from template line: {deflection_dist:.2f} mm<br>"
+                    f"Tip depth from apex: {depth_from_apex:.2f} mm"
+                )
+                legend_label = f"Fire pos. ({penetration_depth:.1f} mm)"
+                line_offset = 1  # mm offset for the line to avoid overlap with the point
+    
+                if fire_annotation_style == "hockey":
+                    contour_plot = add_points_to_plot_v2(contour_plot,
+                                                        needle_tip_position_before_firing,
+                                                        fire_label,
+                                                        color='red',
+                                                        symbol='arrow-bar-left',
+                                                        custom_height=custom_height,
+                                                        legend_name=legend_label,
+                                                        color_index=index,
+                                                        annotation_x_offset=line_offset,
+                                                        text_box_bg_color="rgba(255, 255, 255, 1)",
+                                                        text_box_border_color="rgba(0, 0, 0, 1)",
+                                                        text_color="black")
+                elif fire_annotation_style == "compact_table":
+                    marker_colors = ['#333333', '#FF7F50', '#008080']
+                    contour_plot.add_trace(go.Scatter(
+                        x=[needle_tip_position_before_firing[0]],
+                        y=[needle_tip_position_before_firing[1]],
+                        mode='markers',
+                        marker=dict(color=marker_colors[index % len(marker_colors)], size=10, symbol='arrow-bar-left'),
+                        name=legend_label
+                    ))
+    
+            if validate_firing_df_builder:
+                # Validation exports remain tied to legacy rank-1 baseline for stable contract tracking.
+                firing_depth_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
+                if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
+                    _emit_validation_note(
+                        f"[Guidance map validation] {patientUID} | {sp_dil_id}: skipped (missing precomputed firing-depth dataframe)."
+                    )
+                else:
+                    specific_dil_structure[
+                        "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
+                    ] = firing_depth_df
+                    if isinstance(precomputed_contract_df, pandas.DataFrame) and not precomputed_contract_df.empty:
+                        all_checks_pass = bool(precomputed_contract_df["Check pass"].fillna(False).all())
+                        if all_checks_pass:
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks passed."
+                            )
+                        else:
+                            failed_checks = precomputed_contract_df.loc[
+                                precomputed_contract_df["Check pass"] == False, "Check"
+                            ].astype(str).tolist()
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: precomputed guidance contract checks failed: {failed_checks}"
+                            )
+                    if isinstance(candidate_contract_df, pandas.DataFrame) and not candidate_contract_df.empty:
+                        candidate_checks_pass = bool(candidate_contract_df["Check pass"].fillna(False).all())
+                        if candidate_checks_pass:
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks passed."
+                            )
+                        else:
+                            failed_candidate_checks = candidate_contract_df.loc[
+                                candidate_contract_df["Check pass"] == False, "Check"
+                            ].astype(str).tolist()
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate guidance contract checks failed: {failed_candidate_checks}"
+                            )
+                    if isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame) and not candidate_rank1_legacy_eq_df.empty:
+                        candidate_eq_checks_pass = bool(candidate_rank1_legacy_eq_df["Check pass"].fillna(False).all())
+                        if candidate_eq_checks_pass:
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks passed."
+                            )
+                        else:
+                            failed_candidate_eq_checks = candidate_rank1_legacy_eq_df.loc[
+                                candidate_rank1_legacy_eq_df["Check pass"] == False, "Check"
+                            ].astype(str).tolist()
+                            _emit_validation_note(
+                                f"[Guidance map validation] {patientUID} | {sp_dil_id}: candidate rank-1 vs legacy equivalence checks failed: {failed_candidate_eq_checks}"
+                            )
+    
+            contour_plot = add_lines_to_contour_plot(contour_plot, nearest_prostate_template_lines_contour_plot_coords_list_of_dicts)
+    
+    
+            contour_plot = add_x_bounds_with_annotations(contour_plot, 
+                                            prostate_mesh_slice_pts_transformed_contour_plot_coords, 
+                                            y_position = 1.0,
+                                            x_offset = -1.5,  
+                                            label_yanchor = "top",
+                                            max_x_label="Base", 
+                                            min_x_label="Apex", 
+                                            line_color_max='black', 
+                                            line_color_min='black', 
+                                            line_style_max='dot',
+                                            line_style_min='dot', 
+                                            line_width=3 
+                                            )
+    
+    
+            contour_plot = add_distance_annotation(contour_plot, 
+                                                   prostate_mesh_slice_pts_transformed_contour_plot_coords, 
+                                                   y_position=-0.075, 
+                                                   arrow_color='black',
+                                                   x_offset=0,
+                                                   text_box_bg_color="rgba(255, 255, 255, 1)",
+                                                   text_box_border_color="rgba(0, 0, 0, 1)",
+                                                   text_color="black")
+    
+            if simple_angle_display_option_bool == False:
+                contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
+                                                        effective_euler_angles,
+                                                        effective_euler_convention, 
+                                                        position='bottom right')
+            elif simple_angle_display_option_bool == True:
+                z_angle = effective_euler_angles[2]
+                contour_plot = add_sagittal_angle_to_plot(contour_plot, 
+                                                                     z_angle, 
+                                                                     position='bottom right')
+    
+            
+            z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
+    
+            _anchor_colorbars_bottom_right(contour_plot)
+    
+            contour_plot = set_square_aspect_ratio(contour_plot)
+            
+    
+            if fire_annotation_style == "compact_table":
+                contour_plot = add_compact_fire_positions_table(contour_plot,
+                                                                fire_rows,
+                                                                position=fire_table_position,
+                                                                frame_label="Transducer plane frame (Z', Y')",
+                                                                optimal_row=optimal_row_sagittal)
+    
+            sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
+                                        "Contour plot": contour_plot}
+            trus_plane_sagittal_contour_plot_list_of_dicts.append(sp_dil_contour_plot_dict)
+    
+    
+    
+    
+    
+    
+    
+            ###
+    
+            ### TRANSVERSE ###
+    
+            ###
+    
+    
+    
+    
+    
+    
+    
+            plane_specific_guidance_map_max_planes_dataframe = sp_dil_guidance_map_max_planes_dataframe[sp_dil_guidance_map_max_planes_dataframe['Patient plane'].str.contains('Transverse')]
+    
+            #plane_specific_guidance_map_max_planes_dataframe = sp_dil_guidance_map_max_planes_dataframe[sp_dil_guidance_map_max_planes_dataframe['Patient plane'] == plane]
+            #hor_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 1 name']
+            #vert_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Coord 2 name']
+            #const_axis_column_name = plane_specific_guidance_map_max_planes_dataframe.sample().reset_index(drop=True).at[0,'Const coord name']
+            
+            contour_plot_transverse = go.Figure()
+    
+            sp_dil_optimal_coordinate_transverse_contour_plot_coords = sp_dil_optimal_coordinate[[0,1]]
+            optimal_row_transverse = {
+                "label": f"Optimal ({sp_dil_id})",
+                "optimal_hole": optimal_template_hole_label,
+                "xprime": transformed_optimal_point_xprime,
+                "zprime": transformed_optimal_point_contour_coord_sys[0],
+                "yprime": transformed_optimal_point_contour_coord_sys[1]
+            }
+            if fire_annotation_style == "hockey":
+                contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
+                                             sp_dil_optimal_coordinate_transverse_contour_plot_coords,
+                                             f"Optimal ({sp_dil_id}) | [{sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]:.2f}, {sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]:.2f}] mm",
+                                             legend_name = f"Optimal ({sp_dil_id})",
+                                             size = 12)
+            elif fire_annotation_style == "compact_table":
+                contour_plot_transverse = add_points_to_plot(contour_plot_transverse,
+                                             sp_dil_optimal_coordinate_transverse_contour_plot_coords,
+                                             legend_name = f"Optimal ({sp_dil_id})",
+                                             color = "orange",
+                                             size = 12)
+    
+            origin = np.array([0,0]) 
+            contour_plot_transverse = add_points_to_plot(contour_plot_transverse, 
+                                         origin, 
+                                         legend_name = f"Prostate centroid projection",
+                                         color = "black",
+                                        size = 10)
+    
+            transverse_plane_normal = np.array([0.,0.,1.])
+            alternate_prostate_slice_shift_from_prostate_apex = 10 # ie. 1 cm from apex
+            rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list = []
+            for trimesh_dict in structure_trimesh_objs_list_of_dicts:
+                contour_color = trimesh_dict['Color']
+                structure_trimesh = trimesh_dict['Structure trimesh']
+                structure_ID = trimesh_dict['Structure ID']
+                struct_type = trimesh_dict['Struct type']
+    
+                structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transverse_plane_normal, sp_dil_optimal_coordinate)
                 if len(structure_mesh_slice_pts) != 0:
+    
                     #structure_mesh_slice_pts_transformed = transform_points(structure_mesh_slice_pts, rotation_matrix, transducer_plane_df)
                     structure_mesh_slice_pts_transverse_contour_plot_coords = structure_mesh_slice_pts[:,[0,1]]
                     #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
                     contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
-                                                            structure_mesh_slice_pts_transverse_contour_plot_coords, 
-                                                            f'{structure_ID} {alternate_prostate_slice_shift_from_prostate_apex:.1f} mm shift from apex', 
-                                                            color_input = misc_tools.unnormalize_color_values(contour_color_alternate))
-            if struct_type == oar_ref or struct_type == rectum_ref:
-                rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list.append(structure_mesh_slice_pts_transverse_contour_plot_coords)
-
-        rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame = np.vstack(rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list)
-
-
-        dil_mesh_slice_pts = slice_mesh_fast_v2(dil_trimesh_prostate_frame, transverse_plane_normal, sp_dil_optimal_coordinate)
-        if len(dil_mesh_slice_pts) != 0:
-            #dil_mesh_slice_pts_transformed = transform_points(dil_mesh_slice_pts, rotation_matrix, transducer_plane_df)
-            dil_mesh_slice_pts_transverse_contour_plot_coords = dil_mesh_slice_pts[:,[0,1]]
-            #dil_mesh_slice_pts_transformed_contour_plot_coords = dil_mesh_slice_pts_transformed[:,[2,1]]
-            #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
-            contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
-                                                                  dil_mesh_slice_pts_transverse_contour_plot_coords, 
-                                                                  sp_dil_id, 
-                                                                  color_input = misc_tools.unnormalize_color_values(dil_pcd_color_arr))
-        
-        ## this was code to plot the nearest z slice of the dil structure instead of slicing the trimesh objects using slice_mesh_fast
-        # interslice_interpolation_information = specific_dil_structure["Inter-slice interpolation information"]                        
-        # interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-        # interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-        # intraslice_interpolated_zslices_list = dil_interpolation_information.interpolated_pts_list
-        # sp_dil_optimal_coordinate_org_frame = sp_dil_optimal_coordinate + prostate_centroid
-        # closest_z_index, closest_z_val = point_containment_tools.take_closest_numpy(interpolated_zvals_list, [sp_dil_optimal_coordinate_org_frame[2]])
-        # transverse_slice_of_dil_at_optimal_depth = np.array(intraslice_interpolated_zslices_list[closest_z_index[0]])
-        # transverse_slice_of_dil_at_optimal_depth_in_prostate_frame = transverse_slice_of_dil_at_optimal_depth - prostate_centroid
-        # transverse_slice_of_dil_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection = np.append(transverse_slice_of_dil_at_optimal_depth_in_prostate_frame, transverse_slice_of_dil_at_optimal_depth_in_prostate_frame[[0],:], axis = 0)
-
-        # contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
-        #                                                           transverse_slice_of_dil_at_optimal_depth_in_prostate_frame, 
-        #                                                           sp_dil_id, 
-        #                                                           color_input = np.array([0,255,0]))
-
-
-        # Add contour plot of the values of the max plane of the optimization
-
-        contour_plot_transverse = plot_transverse_contour(contour_plot_transverse,
-                                                          plane_specific_guidance_map_max_planes_dataframe,
-                                                          colorbar_title="Containment proportion",
-                                                          colorbar_title_font_size=colorbar_title_font_size
-                                                          )
-        
-
-        contour_plot_transverse.update_layout(
-                title=dict(
-                    text=f"Transverse (Max) plane - {patientUID} - {sp_dil_plot_id}"
+                                                           structure_mesh_slice_pts_transverse_contour_plot_coords, 
+                                                           structure_ID, 
+                                                           color_input = misc_tools.unnormalize_color_values(contour_color))
+                if struct_type == oar_ref:
+                    contour_color_alternate = np.array([0,0,0])
+                    alternate_z_slice_prostate_location = min_z_prostate + alternate_prostate_slice_shift_from_prostate_apex
+                    structure_mesh_slice_pts = slice_mesh_fast_v2(structure_trimesh, transverse_plane_normal, alternate_z_slice_prostate_location)
+                    if len(structure_mesh_slice_pts) != 0:
+                        #structure_mesh_slice_pts_transformed = transform_points(structure_mesh_slice_pts, rotation_matrix, transducer_plane_df)
+                        structure_mesh_slice_pts_transverse_contour_plot_coords = structure_mesh_slice_pts[:,[0,1]]
+                        #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
+                        contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
+                                                                structure_mesh_slice_pts_transverse_contour_plot_coords, 
+                                                                f'{structure_ID} {alternate_prostate_slice_shift_from_prostate_apex:.1f} mm shift from apex', 
+                                                                color_input = misc_tools.unnormalize_color_values(contour_color_alternate))
+                if struct_type == oar_ref or struct_type == rectum_ref:
+                    rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list.append(structure_mesh_slice_pts_transverse_contour_plot_coords)
+    
+            rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame = np.vstack(rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame_list)
+    
+    
+            dil_mesh_slice_pts = slice_mesh_fast_v2(dil_trimesh_prostate_frame, transverse_plane_normal, sp_dil_optimal_coordinate)
+            if len(dil_mesh_slice_pts) != 0:
+                #dil_mesh_slice_pts_transformed = transform_points(dil_mesh_slice_pts, rotation_matrix, transducer_plane_df)
+                dil_mesh_slice_pts_transverse_contour_plot_coords = dil_mesh_slice_pts[:,[0,1]]
+                #dil_mesh_slice_pts_transformed_contour_plot_coords = dil_mesh_slice_pts_transformed[:,[2,1]]
+                #mesh_slice_pts_transformed_ordered = solve_tsp_google(mesh_slice_pts_transformed)
+                contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
+                                                                      dil_mesh_slice_pts_transverse_contour_plot_coords, 
+                                                                      sp_dil_id, 
+                                                                      color_input = misc_tools.unnormalize_color_values(dil_pcd_color_arr))
+            
+            ## this was code to plot the nearest z slice of the dil structure instead of slicing the trimesh objects using slice_mesh_fast
+            # interslice_interpolation_information = specific_dil_structure["Inter-slice interpolation information"]                        
+            # interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+            # interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+            # intraslice_interpolated_zslices_list = dil_interpolation_information.interpolated_pts_list
+            # sp_dil_optimal_coordinate_org_frame = sp_dil_optimal_coordinate + prostate_centroid
+            # closest_z_index, closest_z_val = point_containment_tools.take_closest_numpy(interpolated_zvals_list, [sp_dil_optimal_coordinate_org_frame[2]])
+            # transverse_slice_of_dil_at_optimal_depth = np.array(intraslice_interpolated_zslices_list[closest_z_index[0]])
+            # transverse_slice_of_dil_at_optimal_depth_in_prostate_frame = transverse_slice_of_dil_at_optimal_depth - prostate_centroid
+            # transverse_slice_of_dil_at_optimal_depth_in_prostate_frame_with_first_point_appended_for_connection = np.append(transverse_slice_of_dil_at_optimal_depth_in_prostate_frame, transverse_slice_of_dil_at_optimal_depth_in_prostate_frame[[0],:], axis = 0)
+    
+            # contour_plot_transverse = plot_transformed_mesh_slice(contour_plot_transverse, 
+            #                                                           transverse_slice_of_dil_at_optimal_depth_in_prostate_frame, 
+            #                                                           sp_dil_id, 
+            #                                                           color_input = np.array([0,255,0]))
+    
+    
+            # Add contour plot of the values of the max plane of the optimization
+    
+            contour_plot_transverse = plot_transverse_contour(contour_plot_transverse,
+                                                              plane_specific_guidance_map_max_planes_dataframe,
+                                                              colorbar_title="Containment proportion",
+                                                              colorbar_title_font_size=colorbar_title_font_size
+                                                              )
+            
+    
+            contour_plot_transverse.update_layout(
+                    title=dict(
+                        text=f"Transverse (Max) plane - {patientUID} - {sp_dil_plot_id}"
+                    )
                 )
-            )
-        _anchor_colorbars_bottom_right(contour_plot_transverse)
-
-
-        # Example data preparation
-        # prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY = prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr[:, [0,1]]  # Extract only the XY coordinates
-        # nearest_points = nearest_template_points[:, [0,1]]  # Assume nearest_template_points is already filtered to the relevant coordinates
-        # labels = prostate_grid_template_lattice_XYZ_aligned_dataframe.loc[nearest_indices].apply(lambda x: f"{x['Label 1']}-{x['Label 2']}", axis=1).tolist()
-
-        # Assuming 'contour_plot_transverse' is already initialized and is a Plotly figure object
-        # contour_plot_transverse = add_transverse_contour_plot_elements(contour_plot_transverse, 
-        #                                                                prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY, 
-        #                                                                nearest_points, 
-        #                                                                labels)
-        
-        contour_plot_transverse = add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_only(contour_plot_transverse, 
-                                                                                           prostate_grid_template_lattice_XYZ_aligned_dataframe, 
-                                                                                           nearest_template_points,
-                                                                                           template_label_font_size=template_label_font_size)
-
-        
-
-        
-
-        z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
-        contour_plot_transverse = add_z_angle_line_to_plot(contour_plot_transverse, transducer_saggital_plane_point_prostate_frame_sup, z_angle)
-
-        if simple_angle_display_option_bool == False:
-            contour_plot_transverse = add_euler_angles_to_plot_v3(contour_plot_transverse, 
-                                                    effective_euler_angles,
-                                                    effective_euler_convention, 
-                                                    position='bottom right')
-        elif simple_angle_display_option_bool == True:
-            contour_plot_transverse = add_sagittal_angle_to_plot(contour_plot_transverse, 
-                                                                 z_angle, 
-                                                                 position='bottom right')
-
-        prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY = prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr[:, [0,1]]  # Extract only the XY coordinates
-        rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords = np.vstack([rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame,prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY])
-        bounds_points_xy = rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords[:, :2]
-
-        contour_plot_transverse = adjust_plot_area_and_reverse_axes(contour_plot_transverse, 
-                                                                    bounds_points_xy, 
-                                                                    margin=5, 
-                                                                    reverse_x = False, 
-                                                                    reverse_y = True)
-        _show_all_axis_lines(contour_plot_transverse)
-
-        if draw_orientation_diagram:
-            contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
-
-        contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
-
-        
-
-        if fire_annotation_style == "compact_table":
-            contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
-                                                                       fire_rows,
-                                                                       position=fire_table_position,
-                                                                       frame_label="Transducer plane frame (Z', Y')",
-                                                                       optimal_row=optimal_row_transverse)
-
-        sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
-                                    "Contour plot": contour_plot_transverse}
-        transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)
+            _anchor_colorbars_bottom_right(contour_plot_transverse)
+    
+    
+            # Example data preparation
+            # prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY = prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr[:, [0,1]]  # Extract only the XY coordinates
+            # nearest_points = nearest_template_points[:, [0,1]]  # Assume nearest_template_points is already filtered to the relevant coordinates
+            # labels = prostate_grid_template_lattice_XYZ_aligned_dataframe.loc[nearest_indices].apply(lambda x: f"{x['Label 1']}-{x['Label 2']}", axis=1).tolist()
+    
+            # Assuming 'contour_plot_transverse' is already initialized and is a Plotly figure object
+            # contour_plot_transverse = add_transverse_contour_plot_elements(contour_plot_transverse, 
+            #                                                                prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY, 
+            #                                                                nearest_points, 
+            #                                                                labels)
+            
+            contour_plot_transverse = add_perineal_template_lattice_to_transverse_contour_plot_outer_annotations_only(contour_plot_transverse, 
+                                                                                               prostate_grid_template_lattice_XYZ_aligned_dataframe, 
+                                                                                               nearest_template_points,
+                                                                                               template_label_font_size=template_label_font_size)
+    
+            
+    
+            
+    
+            z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
+            contour_plot_transverse = add_z_angle_line_to_plot(contour_plot_transverse, transducer_saggital_plane_point_prostate_frame_sup, z_angle)
+    
+            if simple_angle_display_option_bool == False:
+                contour_plot_transverse = add_euler_angles_to_plot_v3(contour_plot_transverse, 
+                                                        effective_euler_angles,
+                                                        effective_euler_convention, 
+                                                        position='bottom right')
+            elif simple_angle_display_option_bool == True:
+                contour_plot_transverse = add_sagittal_angle_to_plot(contour_plot_transverse, 
+                                                                     z_angle, 
+                                                                     position='bottom right')
+    
+            prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY = prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr[:, [0,1]]  # Extract only the XY coordinates
+            rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords = np.vstack([rectum_plus_prostate_mesh_transverse_slice_pts_prostate_coord_frame,prostate_grid_template_lattice_XYZ_aligned_prostate_coord_frame_arr_XY])
+            bounds_points_xy = rectum_plus_prostate_plus_perineal_template_pts_prostate_frame_coords[:, :2]
+    
+            contour_plot_transverse = adjust_plot_area_and_reverse_axes(contour_plot_transverse, 
+                                                                        bounds_points_xy, 
+                                                                        margin=5, 
+                                                                        reverse_x = False, 
+                                                                        reverse_y = True)
+            _show_all_axis_lines(contour_plot_transverse)
+    
+            if draw_orientation_diagram:
+                contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
+    
+            contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
+    
+            
+    
+            if fire_annotation_style == "compact_table":
+                contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
+                                                                           fire_rows,
+                                                                           position=fire_table_position,
+                                                                           frame_label="Transducer plane frame (Z', Y')",
+                                                                           optimal_row=optimal_row_transverse)
+    
+            sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
+                                        "Contour plot": contour_plot_transverse}
+            transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)
         
 
     return trus_plane_sagittal_contour_plot_list_of_dicts, transverse_contour_plot_list_of_dicts
