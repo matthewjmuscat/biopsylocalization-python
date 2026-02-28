@@ -4074,24 +4074,101 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         warnings.warn(f"Unsupported fire_table_position '{fire_table_position}'. Falling back to 'auto'.")
         fire_table_position = "auto"
 
-    candidate_plot_all_mode = False
-    requested_candidate_plot_rank = 1
-    try:
-        if isinstance(candidate_plot_rank, str) and candidate_plot_rank.strip().lower() == "all":
-            candidate_plot_all_mode = True
-            requested_candidate_plot_rank = 1
+    def _parse_candidate_plot_rank_request(candidate_plot_rank_input):
+        """
+        Normalize plot-rank input into either:
+          - all-mode, or
+          - explicit ordered rank list.
+        """
+        parse_notes = []
+        candidate_plot_all_mode_local = False
+        requested_candidate_plot_ranks_local = []
+        requested_candidate_plot_rank_label_local = "1"
+
+        def _coerce_positive_rank(rank_input):
+            if isinstance(rank_input, bool):
+                raise ValueError("boolean rank values are not supported")
+            rank_value = int(rank_input)
+            if rank_value < 1:
+                raise ValueError(f"rank must be >= 1, got {rank_value}")
+            return rank_value
+
+        def _append_unique_rank(rank_value):
+            if rank_value not in requested_candidate_plot_ranks_local:
+                requested_candidate_plot_ranks_local.append(rank_value)
+
+        if isinstance(candidate_plot_rank_input, str):
+            stripped_rank = candidate_plot_rank_input.strip()
+            if stripped_rank.lower() == "all":
+                candidate_plot_all_mode_local = True
+                requested_candidate_plot_rank_label_local = "all"
+            else:
+                try:
+                    parsed_rank = _coerce_positive_rank(candidate_plot_rank_input)
+                    _append_unique_rank(parsed_rank)
+                except Exception:
+                    parse_notes.append(
+                        f"Could not parse candidate_plot_rank='{candidate_plot_rank_input}'. Falling back to rank 1."
+                    )
+        elif isinstance(candidate_plot_rank_input, (list, tuple, set, np.ndarray, pandas.Series)):
+            raw_rank_values = list(candidate_plot_rank_input)
+            contains_all = any(
+                isinstance(raw_rank_value, str) and raw_rank_value.strip().lower() == "all"
+                for raw_rank_value in raw_rank_values
+            )
+            if contains_all:
+                candidate_plot_all_mode_local = True
+                requested_candidate_plot_rank_label_local = "all"
+                parse_notes.append(
+                    "candidate_plot_rank list contains 'all'; using all available candidate ranks."
+                )
+            else:
+                invalid_rank_values = []
+                for raw_rank_value in raw_rank_values:
+                    try:
+                        parsed_rank = _coerce_positive_rank(raw_rank_value)
+                        _append_unique_rank(parsed_rank)
+                    except Exception:
+                        invalid_rank_values.append(str(raw_rank_value))
+
+                if len(invalid_rank_values) > 0:
+                    parse_notes.append(
+                        "Ignoring invalid candidate_plot_rank list values: " + ", ".join(invalid_rank_values)
+                    )
+                if len(requested_candidate_plot_ranks_local) > 0:
+                    requested_candidate_plot_rank_label_local = "[" + ",".join(
+                        [str(rank_value) for rank_value in requested_candidate_plot_ranks_local]
+                    ) + "]"
+                else:
+                    parse_notes.append(
+                        f"candidate_plot_rank list '{candidate_plot_rank_input}' produced no valid ranks. Falling back to rank 1."
+                    )
         else:
-            requested_candidate_plot_rank = int(candidate_plot_rank)
-    except Exception:
-        warnings.warn(
-            f"Could not parse candidate_plot_rank='{candidate_plot_rank}'. Falling back to rank 1."
+            try:
+                parsed_rank = _coerce_positive_rank(candidate_plot_rank_input)
+                _append_unique_rank(parsed_rank)
+            except Exception:
+                parse_notes.append(
+                    f"Could not parse candidate_plot_rank='{candidate_plot_rank_input}'. Falling back to rank 1."
+                )
+
+        if (not candidate_plot_all_mode_local) and (len(requested_candidate_plot_ranks_local) == 0):
+            requested_candidate_plot_ranks_local = [1]
+            requested_candidate_plot_rank_label_local = "1"
+
+        return (
+            candidate_plot_all_mode_local,
+            requested_candidate_plot_ranks_local,
+            requested_candidate_plot_rank_label_local,
+            parse_notes
         )
-        requested_candidate_plot_rank = 1
-    if requested_candidate_plot_rank < 1:
-        warnings.warn(
-            f"candidate_plot_rank must be >= 1, got {requested_candidate_plot_rank}. Falling back to rank 1."
-        )
-        requested_candidate_plot_rank = 1
+
+    (
+        candidate_plot_all_mode,
+        requested_candidate_plot_ranks,
+        requested_candidate_plot_rank_label,
+        candidate_plot_rank_parse_notes
+    ) = _parse_candidate_plot_rank_request(candidate_plot_rank)
 
     def _emit_validation_note(message):
         warnings.warn(message)
@@ -4100,6 +4177,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 important_info.add_text_line(message, live_display)
             except Exception:
                 pass
+
+    for parse_note in candidate_plot_rank_parse_notes:
+        _emit_validation_note(parse_note)
 
     required_precomputed_geometry_context_keys = GUIDANCE_MAP_LEGACY_GEOMETRY_CONTEXT_REQUIRED_KEYS
     required_precomputed_firing_df_columns = GUIDANCE_MAP_LEGACY_FIRING_DF_REQUIRED_COLUMNS
@@ -4907,7 +4987,32 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 )
             return int(available_candidate_ranks[0]), available_candidate_ranks
 
-        return int(requested_candidate_plot_rank), available_candidate_ranks
+        available_rank_set = set([int(rank_value) for rank_value in available_candidate_ranks])
+        requested_available_ranks = [
+            int(rank_value) for rank_value in requested_candidate_plot_ranks if int(rank_value) in available_rank_set
+        ]
+        if len(requested_available_ranks) == 0:
+            return int(requested_candidate_plot_ranks[0]), available_candidate_ranks
+
+        if len(requested_candidate_plot_ranks) > 1:
+            requested_unavailable_ranks = [
+                int(rank_value) for rank_value in requested_candidate_plot_ranks if int(rank_value) not in available_rank_set
+            ]
+            if len(requested_unavailable_ranks) > 0:
+                _emit_validation_note(
+                    f"[Guidance plotting] {patientUID} | {dil_id}: requested candidate ranks "
+                    f"{requested_candidate_plot_ranks}, unavailable ranks {requested_unavailable_ranks}, "
+                    f"available ranks {available_candidate_ranks}. Current renderer is single-rank; rendering rank "
+                    f"{requested_available_ranks[0]}."
+                )
+            elif len(requested_available_ranks) > 1:
+                _emit_validation_note(
+                    f"[Guidance plotting] {patientUID} | {dil_id}: requested candidate ranks "
+                    f"{requested_candidate_plot_ranks} with available ranks {available_candidate_ranks}. "
+                    f"Current renderer is single-rank; rendering rank {requested_available_ranks[0]}."
+                )
+
+        return int(requested_available_ranks[0]), available_candidate_ranks
 
     def _build_plot_selection_manifest_row(dil_id,
                                            available_candidate_ranks,
@@ -5314,7 +5419,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     transverse_contour_plot_list_of_dicts = []
     dil_specific_pointclouds_list = []
     dil_pcd_color_arr = structs_referenced_dict[dil_ref]['PCD color']
-    manifest_requested_rank = "all" if candidate_plot_all_mode else int(requested_candidate_plot_rank)
+    manifest_requested_rank = requested_candidate_plot_rank_label
     for specific_dil_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
         sp_dil_guidance_map_max_planes_dataframe = specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"]
         optimal_positions_df = specific_dil_structure['Biopsy optimization: Optimal biopsy location dataframe']
