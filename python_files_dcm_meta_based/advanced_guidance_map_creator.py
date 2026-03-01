@@ -440,7 +440,8 @@ def add_compact_fire_positions_table(fig,
                                      fire_rows,
                                      position='auto',
                                      frame_label="Transducer plane frame (Z', Y')",
-                                     optimal_row=None):
+                                     optimal_row=None,
+                                     metadata_row=None):
     """
     Add a compact fire-position summary table as a single annotation.
     If position is "auto", choose the least-crowded corner in paper space.
@@ -804,7 +805,12 @@ def add_compact_fire_positions_table(fig,
     if len(optimal_table_rows) > 0:
         optimal_table_height = min(0.24, max(0.10, 0.10 + 0.042 * len(optimal_table_rows)))
         inter_table_gap = 0.008
-    table_height = throw_table_height + inter_table_gap + optimal_table_height
+    metadata_strip_height = 0.0
+    metadata_to_main_gap = 0.0
+    if isinstance(metadata_row, dict) and len(metadata_row) > 0:
+        metadata_strip_height = 0.08
+        metadata_to_main_gap = 0.008
+    table_height = metadata_strip_height + metadata_to_main_gap + throw_table_height + inter_table_gap + optimal_table_height
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
         table_width = max(table_width, title_min_width)
@@ -903,7 +909,45 @@ def add_compact_fire_positions_table(fig,
         ymax = float(np.clip(ymax, ymin + 0.01, 0.99))
 
     tables_top = ymax - (title_gap + title_band_height)
-    throw_table_ymax = float(np.clip(tables_top, ymin + 0.01, 0.99))
+    current_top = float(np.clip(tables_top, ymin + 0.01, 0.99))
+
+    if isinstance(metadata_row, dict) and len(metadata_row) > 0:
+        metadata_headers = list(metadata_row.keys())
+        metadata_values = [str(metadata_row.get(key, "-")) for key in metadata_headers]
+        metadata_col_widths = []
+        for key, value in zip(metadata_headers, metadata_values):
+            width_weight = float(max(len(str(key)), len(str(value)), 8))
+            if key.lower().startswith("patient"):
+                width_weight *= 1.15
+            if key.lower().startswith("dil"):
+                width_weight *= 1.10
+            metadata_col_widths.append(width_weight)
+
+        metadata_ymax = current_top
+        metadata_ymin = float(np.clip(metadata_ymax - metadata_strip_height, ymin, metadata_ymax - 0.005))
+        fig.add_trace(go.Table(
+            domain=dict(x=[xmin, xmax], y=[metadata_ymin, metadata_ymax]),
+            header=dict(
+                values=[f"<b>{header}</b>" for header in metadata_headers],
+                align="center",
+                fill_color="rgba(245,245,245,1)",
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=24
+            ),
+            cells=dict(
+                values=[[value] for value in metadata_values],
+                align=["center"] * len(metadata_headers),
+                fill_color=[["rgba(255,255,255,1)"] for _ in metadata_headers],
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=24
+            ),
+            columnwidth=metadata_col_widths
+        ))
+        current_top = float(np.clip(metadata_ymin - metadata_to_main_gap, ymin + 0.01, metadata_ymin))
+
+    throw_table_ymax = current_top
     throw_table_ymin = float(np.clip(throw_table_ymax - throw_table_height, ymin, throw_table_ymax - 0.005))
 
     # Slightly taller rows so larger publication fonts remain legible without clipping.
@@ -1517,6 +1561,9 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
     """
     Add Euler angles to a Plotly figure as an annotation, dynamically placed based on current axis ranges and specified position.
     """
+    # Convention is displayed in the compact metadata strip; keep this parameter for API compatibility.
+    _ = euler_convention_str
+
     # Dictionary to map positions to x, y, xanchor, and yanchor settings
     position_settings = {
         'top right': {'x': 1, 'y': 1, 'xanchor': 'right', 'yanchor': 'top'},
@@ -1535,7 +1582,7 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
     z_dir = "CW" if z_angle > 0 else ("CCW" if z_angle < 0 else "0")
     z_abs = abs(z_angle)
     euler_text = (
-        f"Euler Angles:<br>{euler_convention_str}"
+        "Euler Angles:"
         f"<br>X: {euler_angles[0]:.1f}°"
         f"<br>Y: {euler_angles[1]:.1f}°"
         f"<br>Z: {z_angle:.1f}° ({z_abs:.1f}° {z_dir})"
@@ -5961,11 +6008,18 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             
     
             if fire_annotation_style == "compact_table":
+                metadata_strip = {
+                    "Patient ID": str(patientUID),
+                    "DIL ID": str(sp_dil_id),
+                    "Rank": f"R{int(selected_plot_rank)}",
+                    "Euler conv": str(effective_euler_convention),
+                }
                 contour_plot = add_compact_fire_positions_table(contour_plot,
                                                                 fire_rows,
                                                                 position=fire_table_position,
-                                                                frame_label=f"Transducer plane frame (Z', Y') | Rank R{int(selected_plot_rank)}",
-                                                                optimal_row=optimal_row_sagittal)
+                                                                frame_label="Transducer plane frame (Z', Y')",
+                                                                optimal_row=optimal_row_sagittal,
+                                                                metadata_row=metadata_strip)
     
             sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot}
@@ -6164,8 +6218,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
                                                                            fire_rows,
                                                                            position=fire_table_position,
-                                                                           frame_label=f"Transducer plane frame (Z', Y') | Rank R{int(selected_plot_rank)}",
-                                                                           optimal_row=optimal_row_transverse)
+                                                                           frame_label="Transducer plane frame (Z', Y')",
+                                                                           optimal_row=optimal_row_transverse,
+                                                                           metadata_row=metadata_strip)
     
             sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot_transverse}
