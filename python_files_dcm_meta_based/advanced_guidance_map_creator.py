@@ -739,41 +739,44 @@ def add_compact_fire_positions_table(fig,
         return text_val if text_val else "-"
 
     column_headers = [
-        "Type",
-        "Optimal hole",
-        "Depth (mm)",
-        "Z' (mm)",
-        "Y' (mm)",
-        "Defl (mm)",
-        "From apex (mm)",
+        "Entry",
+        "Hole",
+        "Throw<br>(mm)",
+        "Z'<br>(mm)",
+        "Y'<br>(mm)",
+        "In-plane<br>defl (mm)",
+        "Out-plane<br>defl (mm)",
+        "Distance from<br>apex (mm)",
     ]
 
     table_rows = []
     for fire_index, fire_row in enumerate(fire_rows):
         table_rows.append({
-            "Type": f"Depth setting {fire_index + 1}",
-            "Optimal hole": _text_or_dash(fire_row.get("optimal_hole")),
-            "Depth (mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
-            "Z' (mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
-            "Y' (mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
-            "Defl (mm)": _fmt_or_dash(fire_row.get("deflection"), decimals=1),
-            "From apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
+            "Entry": "Throw",
+            "Hole": _text_or_dash(fire_row.get("optimal_hole")),
+            "Throw<br>(mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
+            "Z'<br>(mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
+            "Y'<br>(mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
+            "In-plane<br>defl (mm)": _fmt_or_dash(fire_row.get("deflection"), decimals=1),
+            "Out-plane<br>defl (mm)": _fmt_or_dash(fire_row.get("out_of_plane_deflection"), decimals=1),
+            "Distance from<br>apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
         })
 
     if optimal_row is not None:
         table_rows.append({
-            "Type": str(optimal_row.get("label") or "Optimal template hole"),
-            "Optimal hole": _text_or_dash(optimal_row.get("optimal_hole")),
-            "Depth (mm)": "-",
-            "Z' (mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
-            "Y' (mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
-            "Defl (mm)": "-",
-            "From apex (mm)": "-",
+            "Entry": "Optimal",
+            "Hole": _text_or_dash(optimal_row.get("optimal_hole")),
+            "Throw<br>(mm)": "-",
+            "Z'<br>(mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
+            "Y'<br>(mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
+            "In-plane<br>defl (mm)": "-",
+            "Out-plane<br>defl (mm)": "-",
+            "Distance from<br>apex (mm)": "-",
         })
 
     max_chars_per_col = []
     for col_header in column_headers:
-        max_chars = len(col_header)
+        max_chars = len(_strip_markup(col_header))
         for row in table_rows:
             max_chars = max(max_chars, len(str(row[col_header])))
         max_chars_per_col.append(max_chars)
@@ -782,10 +785,12 @@ def add_compact_fire_positions_table(fig,
     column_width_weights = []
     for col_header, max_chars in zip(column_headers, max_chars_per_col):
         width_weight = float(max(6, max_chars))
-        if col_header == "Type":
+        if col_header == "Entry":
             width_weight *= 1.35
-        elif col_header == "Optimal hole":
+        elif col_header == "Hole":
             width_weight *= 1.2
+        elif col_header == "Distance from<br>apex (mm)":
+            width_weight *= 1.1
         column_width_weights.append(width_weight)
     plot_x_min, plot_x_max = _axis_domain("x", "x")
     max_table_width_paper = 0.98
@@ -915,7 +920,7 @@ def add_compact_fire_positions_table(fig,
         ),
         cells=dict(
             values=table_cells_by_col,
-            align=["left", "center", "center", "center", "center", "center", "center"],
+            align=(["left"] + ["center"] * (len(column_headers) - 1)),
             fill_color=fill_colors_by_col,
             line_color="black",
             font=dict(size=10, color="black"),
@@ -5155,6 +5160,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     fire_row["In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)"],
                     errors="coerce"
                 )),
+                "out_of_plane_deflection": float(pandas.to_numeric(
+                    fire_row["Out-of-plane axis offset from optimal template hole distance (mm)"],
+                    errors="coerce"
+                )),
                 "depth_from_apex": float(pandas.to_numeric(
                     fire_row["Pre-fire tip depth from apex (Transducer primed frame) (mm)"],
                     errors="coerce"
@@ -5929,7 +5938,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot = add_compact_fire_positions_table(contour_plot,
                                                                 fire_rows,
                                                                 position=fire_table_position,
-                                                                frame_label="Transducer plane frame (Z', Y')",
+                                                                frame_label=f"Transducer plane frame (Z', Y') | Rank R{int(selected_plot_rank)}",
                                                                 optimal_row=optimal_row_sagittal)
     
             sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
@@ -6129,7 +6138,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
                                                                            fire_rows,
                                                                            position=fire_table_position,
-                                                                           frame_label="Transducer plane frame (Z', Y')",
+                                                                           frame_label=f"Transducer plane frame (Z', Y') | Rank R{int(selected_plot_rank)}",
                                                                            optimal_row=optimal_row_transverse)
     
             sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
