@@ -5484,7 +5484,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         if validate_firing_df_builder and isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame):
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
 
-        # --- Resolve rank to render for this DIL ---
+        # --- Resolve ranks to attempt for this DIL ---
         selected_plot_ranks, available_candidate_ranks = _resolve_plot_ranks_for_dil(
             specific_dil_structure,
             sp_dil_id
@@ -5808,7 +5808,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     ))
     
             if validate_firing_df_builder:
-                # Validation exports remain tied to legacy rank-1 baseline for stable contract tracking.
+                # Keep legacy rank-1 exports as QA references while candidate-first plotting is active.
                 firing_depth_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
                 if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                     _emit_validation_note(
