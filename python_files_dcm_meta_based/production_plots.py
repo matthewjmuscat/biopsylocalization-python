@@ -37,6 +37,12 @@ import warnings
 import dataframe_builders
 import math
 
+_GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_CANDIDATE_CONTRACT_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_CANDIDATE_LEGACY_EQ_BY_PATIENT = {}
+_GUIDANCE_MAP_VALIDATION_CANDIDATE_PLOT_SELECTION_BY_PATIENT = {}
+
 def production_plot_sampled_shift_vector_box_plots_by_patient(patientUID,
                                               patient_sp_output_figures_dir_dict,
                                               structs_referenced_list,
@@ -4772,11 +4778,17 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                             fire_table_position="auto",
                                             draw_orientation_diagram=True,
                                             show_titles=True,
+                                            candidate_plot_rank=1,
+                                            validate_firing_df_builder=False,
+                                            strict_precomputed_guidance=False,
                                             ):
     
     
     if save_formats is None:
         save_formats = ["svg", "html"]
+
+    def _safe_name(value):
+        return str(value).replace("/", "_").replace("\\", "_")
 
     # Slightly larger default fonts (overrideable via args)
     axis_title_font_size = axis_title_font_size or 16
@@ -4866,7 +4878,167 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
                                                                                     draw_orientation_diagram = draw_orientation_diagram,
                                                                                     colorbar_title_font_size = colorbar_title_font_size,
                                                                                     fire_annotation_style = fire_annotation_style,
-                                                                                    fire_table_position = fire_table_position)
+                                                                                    fire_table_position = fire_table_position,
+                                                                                    candidate_plot_rank = candidate_plot_rank,
+                                                                                    validate_firing_df_builder = validate_firing_df_builder,
+                                                                                    strict_precomputed_guidance = strict_precomputed_guidance)
+
+    if validate_firing_df_builder:
+        validation_dir = patient_sp_output_figures_dir.joinpath("Validation dataframes", "guidance_map_firing_depths")
+        validation_dir.mkdir(parents=True, exist_ok=True)
+
+        patient_firing_df_list = []
+        patient_contract_df_list = []
+        patient_candidate_contract_df_list = []
+        patient_candidate_legacy_eq_df_list = []
+        patient_candidate_plot_selection_df_list = []
+
+        for specific_dil_structure in pydicom_item[dil_ref]:
+            dil_id = specific_dil_structure.get("ROI", "DIL")
+            safe_patient = _safe_name(patientUID)
+            safe_dil = _safe_name(dil_id)
+
+            firing_df = specific_dil_structure.get(
+                "Biopsy optimization: Guidance-map firing depth dataframe (validation)"
+            )
+            if isinstance(firing_df, pandas.DataFrame) and not firing_df.empty:
+                firing_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_firing_depths_validation.csv"
+                )
+                firing_df.to_csv(firing_path, index=False)
+                patient_firing_df_list.append(firing_df.copy())
+
+            contract_df = specific_dil_structure.get(
+                "Biopsy optimization: Guidance-map precomputed contract dataframe (validation)"
+            )
+            if isinstance(contract_df, pandas.DataFrame) and not contract_df.empty:
+                contract_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_precomputed_contract_validation.csv"
+                )
+                contract_df.to_csv(contract_path, index=False)
+                patient_contract_df_list.append(contract_df.copy())
+
+            candidate_contract_df = specific_dil_structure.get(
+                advanced_guidance_map_creator.GUIDANCE_MAP_KEY_CANDIDATE_CONTRACT_DF_VALIDATION
+            )
+            if isinstance(candidate_contract_df, pandas.DataFrame) and not candidate_contract_df.empty:
+                candidate_contract_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_candidate_contract_validation.csv"
+                )
+                candidate_contract_df.to_csv(candidate_contract_path, index=False)
+                patient_candidate_contract_df_list.append(candidate_contract_df.copy())
+
+            candidate_legacy_eq_df = specific_dil_structure.get(
+                advanced_guidance_map_creator.GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION
+            )
+            if isinstance(candidate_legacy_eq_df, pandas.DataFrame) and not candidate_legacy_eq_df.empty:
+                candidate_legacy_eq_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_candidate_rank1_vs_legacy_validation.csv"
+                )
+                candidate_legacy_eq_df.to_csv(candidate_legacy_eq_path, index=False)
+                patient_candidate_legacy_eq_df_list.append(candidate_legacy_eq_df.copy())
+
+            candidate_plot_selection_df = specific_dil_structure.get(
+                advanced_guidance_map_creator.GUIDANCE_MAP_KEY_CANDIDATE_PLOT_SELECTION_DF_VALIDATION
+            )
+            if isinstance(candidate_plot_selection_df, pandas.DataFrame) and not candidate_plot_selection_df.empty:
+                candidate_plot_selection_path = validation_dir.joinpath(
+                    f"{safe_patient}-{safe_dil}-guidance_map_candidate_plot_selection_validation.csv"
+                )
+                candidate_plot_selection_df.to_csv(candidate_plot_selection_path, index=False)
+                patient_candidate_plot_selection_df_list.append(candidate_plot_selection_df.copy())
+
+        if len(patient_firing_df_list) > 0:
+            patient_firing_df = pandas.concat(patient_firing_df_list, ignore_index=True)
+            patient_firing_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_firing_depths_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT[patientUID] = patient_firing_df
+
+        if len(patient_contract_df_list) > 0:
+            patient_contract_df = pandas.concat(patient_contract_df_list, ignore_index=True)
+            patient_contract_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_precomputed_contract_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT[patientUID] = patient_contract_df
+
+        if len(patient_candidate_contract_df_list) > 0:
+            patient_candidate_contract_df = pandas.concat(patient_candidate_contract_df_list, ignore_index=True)
+            patient_candidate_contract_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_candidate_contract_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_CANDIDATE_CONTRACT_BY_PATIENT[patientUID] = patient_candidate_contract_df
+
+        if len(patient_candidate_legacy_eq_df_list) > 0:
+            patient_candidate_legacy_eq_df = pandas.concat(patient_candidate_legacy_eq_df_list, ignore_index=True)
+            patient_candidate_legacy_eq_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_candidate_rank1_vs_legacy_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_CANDIDATE_LEGACY_EQ_BY_PATIENT[patientUID] = patient_candidate_legacy_eq_df
+
+        if len(patient_candidate_plot_selection_df_list) > 0:
+            patient_candidate_plot_selection_df = pandas.concat(
+                patient_candidate_plot_selection_df_list, ignore_index=True
+            )
+            patient_candidate_plot_selection_df.to_csv(
+                validation_dir.joinpath(f"{_safe_name(patientUID)}-guidance_map_candidate_plot_selection_validation.csv"),
+                index=False
+            )
+            _GUIDANCE_MAP_VALIDATION_CANDIDATE_PLOT_SELECTION_BY_PATIENT[patientUID] = patient_candidate_plot_selection_df
+
+        global_validation_dir = patient_sp_output_figures_dir.parent.joinpath(
+            "Global", "Validation dataframes", "guidance_map_firing_depths"
+        )
+        global_validation_dir.mkdir(parents=True, exist_ok=True)
+
+        if len(_GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT) > 0:
+            cohort_firing_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_FIRING_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_firing_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_firing_depths_validation.csv"),
+                index=False
+            )
+
+        if len(_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT) > 0:
+            cohort_contract_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_CONTRACT_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_contract_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_precomputed_contract_validation.csv"),
+                index=False
+            )
+
+        if len(_GUIDANCE_MAP_VALIDATION_CANDIDATE_CONTRACT_BY_PATIENT) > 0:
+            cohort_candidate_contract_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_CANDIDATE_CONTRACT_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_candidate_contract_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_candidate_contract_validation.csv"),
+                index=False
+            )
+
+        if len(_GUIDANCE_MAP_VALIDATION_CANDIDATE_LEGACY_EQ_BY_PATIENT) > 0:
+            cohort_candidate_legacy_eq_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_CANDIDATE_LEGACY_EQ_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_candidate_legacy_eq_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_candidate_rank1_vs_legacy_validation.csv"),
+                index=False
+            )
+
+        if len(_GUIDANCE_MAP_VALIDATION_CANDIDATE_PLOT_SELECTION_BY_PATIENT) > 0:
+            cohort_candidate_plot_selection_df = pandas.concat(
+                list(_GUIDANCE_MAP_VALIDATION_CANDIDATE_PLOT_SELECTION_BY_PATIENT.values()), ignore_index=True
+            )
+            cohort_candidate_plot_selection_df.to_csv(
+                global_validation_dir.joinpath("Cohort-guidance_map_candidate_plot_selection_validation.csv"),
+                index=False
+            )
     
     for contour_plot_dict in trus_plane_sagittal_contour_plot_list_of_dicts:
         dil_id = contour_plot_dict["DIL ID"]

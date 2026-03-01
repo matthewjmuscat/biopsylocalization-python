@@ -3081,6 +3081,56 @@ def dil_optimization_results_dataframe_builder(master_structure_reference_dict,
         pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Optimal DIL targeting entire lattice dataframe"] = sp_patient_potential_optimal_dataframe
 
 
+def cohort_guidance_map_firing_depth_recommendations_dataframe_builder(master_structure_reference_dict,
+                                                                       all_ref_key,
+                                                                       dil_ref,
+                                                                       downcast_threshold=0.25):
+    """
+    Concatenate patient-level guidance-map firing-depth recommendation dataframes into one cohort dataframe.
+
+    Uses the patient dataframe key:
+      "Biopsy optimization - Guidance-map firing depth recommendations dataframe"
+    and falls back to per-DIL storage if that key is empty.
+    """
+    cohort_guidance_map_firing_depth_recommendations_dataframe = pandas.DataFrame()
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        preproc_df_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+        patient_df = preproc_df_dict.get("Biopsy optimization - Guidance-map firing depth recommendations dataframe")
+
+        if not isinstance(patient_df, pandas.DataFrame) or patient_df.empty:
+            patient_df_list = []
+            for specific_dil_structure in pydicom_item[dil_ref]:
+                sp_dil_df = specific_dil_structure.get("Biopsy optimization: Guidance-map firing depth dataframe")
+                if isinstance(sp_dil_df, pandas.DataFrame) and not sp_dil_df.empty:
+                    patient_df_list.append(sp_dil_df)
+            if len(patient_df_list) > 0:
+                patient_df = pandas.concat(patient_df_list, ignore_index=True)
+            else:
+                patient_df = pandas.DataFrame()
+
+        if isinstance(patient_df, pandas.DataFrame) and not patient_df.empty:
+            patient_df = convert_columns_to_categorical_and_downcast(
+                patient_df,
+                threshold=downcast_threshold,
+                ignore_types=(np.floating,)
+            )
+            preproc_df_dict["Biopsy optimization - Guidance-map firing depth recommendations dataframe"] = patient_df
+            cohort_guidance_map_firing_depth_recommendations_dataframe = pandas.concat(
+                [cohort_guidance_map_firing_depth_recommendations_dataframe, patient_df],
+                ignore_index=True
+            )
+
+    if not cohort_guidance_map_firing_depth_recommendations_dataframe.empty:
+        cohort_guidance_map_firing_depth_recommendations_dataframe = convert_columns_to_categorical_and_downcast(
+            cohort_guidance_map_firing_depth_recommendations_dataframe,
+            threshold=downcast_threshold,
+            ignore_types=(np.floating,)
+        )
+
+    return cohort_guidance_map_firing_depth_recommendations_dataframe
+
+
 
 
 
