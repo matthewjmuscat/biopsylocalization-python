@@ -4011,6 +4011,17 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             validate_firing_df_builder = False,
                                             strict_precomputed_guidance = False
                                             ):
+    """
+    Build sagittal and transverse guidance-map contour plots using precomputed candidate dataframes.
+
+    `candidate_plot_rank` supports:
+      - int: render that rank only
+      - list-like of ints: render each requested rank in order
+      - "all": render all available ranks for each DIL
+
+    Rank requests that are unavailable are skipped in non-strict mode and logged in the
+    plot-selection manifest; strict mode raises immediately on such failures.
+    """
 
     def _anchor_colorbars_bottom_right(fig):
         """Place contour colorbars bottom-right outside plot area with left-side vertical labels."""
@@ -4975,7 +4986,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             available_candidate_ranks = [1]
         return available_candidate_ranks
 
-    def _resolve_single_plot_rank_for_dil(specific_dil_structure, dil_id):
+    def _resolve_plot_ranks_for_dil(specific_dil_structure, dil_id):
         available_candidate_ranks = _get_available_candidate_ranks_for_dil(specific_dil_structure)
 
         if candidate_plot_all_mode:
@@ -5462,7 +5473,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
 
         # --- Resolve rank to render for this DIL ---
-        selected_plot_ranks, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
+        selected_plot_ranks, available_candidate_ranks = _resolve_plot_ranks_for_dil(
             specific_dil_structure,
             sp_dil_id
         )
