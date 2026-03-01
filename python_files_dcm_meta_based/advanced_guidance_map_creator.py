@@ -4031,11 +4031,18 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     """
 
     def _anchor_colorbars_bottom_right(fig):
-        """Place contour colorbars bottom-right outside plot area with left-side vertical labels."""
-        colorbar_x = 1.13
-        colorbar_len = 0.5
-        colorbar_y = 0.0
-        label_x_offset = 0.012
+        """
+        Place contour colorbars in the right-side utility column.
+
+        Layout intent:
+          - top band: compact table
+          - left block: square map
+          - right block: legend (upper) + colorbar (lower)
+        """
+        colorbar_x = 1.16
+        colorbar_len = 0.36
+        colorbar_y = 0.02
+        label_x_offset = 0.014
         for tr in fig.data:
             if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
                 title_text = ""
@@ -4070,6 +4077,24 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         yanchor="middle",
                         font=dict(size=title_font_size, color="black")
                     )
+
+    def _anchor_legend_right_side(fig):
+        """
+        Place legend in the upper region of the right-side utility column.
+
+        This avoids the top table band and keeps legend/colorbar grouped to the
+        right without touching map axis ranges/aspect.
+        """
+        fig.update_layout(
+            legend=dict(
+                x=1.02,
+                y=0.83,
+                xanchor="left",
+                yanchor="top",
+                orientation="v",
+                traceorder="normal"
+            )
+        )
 
     if fire_annotation_style not in ["hockey", "compact_table"]:
         warnings.warn(f"Unsupported fire_annotation_style '{fire_annotation_style}'. Falling back to 'hockey'.")
@@ -5898,9 +5923,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             
             z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
-    
+
+            _anchor_legend_right_side(contour_plot)
             _anchor_colorbars_bottom_right(contour_plot)
-    
+
             contour_plot = set_square_aspect_ratio(contour_plot)
             
     
@@ -6098,9 +6124,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             if draw_orientation_diagram:
                 contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
-    
+
+            _anchor_legend_right_side(contour_plot_transverse)
             contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
-    
+
             
     
             if fire_annotation_style == "compact_table":
