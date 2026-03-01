@@ -749,9 +749,9 @@ def add_compact_fire_positions_table(fig,
         "Distance from<br>apex (mm)",
     ]
 
-    table_rows = []
+    throw_table_rows = []
     for fire_index, fire_row in enumerate(fire_rows):
-        table_rows.append({
+        throw_table_rows.append({
             "Entry": "Throw",
             "Hole": _text_or_dash(fire_row.get("optimal_hole")),
             "Throw<br>(mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
@@ -762,8 +762,9 @@ def add_compact_fire_positions_table(fig,
             "Distance from<br>apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
         })
 
+    optimal_table_rows = []
     if optimal_row is not None:
-        table_rows.append({
+        optimal_table_rows.append({
             "Entry": "Optimal",
             "Hole": _text_or_dash(optimal_row.get("optimal_hole")),
             "Throw<br>(mm)": "-",
@@ -773,11 +774,12 @@ def add_compact_fire_positions_table(fig,
             "Out-plane<br>defl (mm)": "-",
             "Distance from<br>apex (mm)": "-",
         })
+    all_table_rows = throw_table_rows + optimal_table_rows
 
     max_chars_per_col = []
     for col_header in column_headers:
         max_chars = len(_strip_markup(col_header))
-        for row in table_rows:
+        for row in all_table_rows:
             max_chars = max(max_chars, len(str(row[col_header])))
         max_chars_per_col.append(max_chars)
 
@@ -796,7 +798,13 @@ def add_compact_fire_positions_table(fig,
     max_table_width_paper = 0.98
     table_width = max(0.56, 0.0085 * approx_char_count)
     table_width = min(table_width, max_table_width_paper)
-    table_height = min(0.84, max(0.18, 0.10 + 0.042 * len(table_rows)))
+    throw_table_height = min(0.72, max(0.16, 0.10 + 0.042 * len(throw_table_rows)))
+    optimal_table_height = 0.0
+    inter_table_gap = 0.0
+    if len(optimal_table_rows) > 0:
+        optimal_table_height = min(0.24, max(0.10, 0.10 + 0.042 * len(optimal_table_rows)))
+        inter_table_gap = 0.008
+    table_height = throw_table_height + inter_table_gap + optimal_table_height
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
         table_width = max(table_width, title_min_width)
@@ -894,22 +902,16 @@ def add_compact_fire_positions_table(fig,
         ymin = float(np.clip(ymin, 0.01, 0.98))
         ymax = float(np.clip(ymax, ymin + 0.01, 0.99))
 
-    table_ymin = ymin
-    table_ymax = ymax - (title_gap + title_band_height)
-    table_ymax = float(np.clip(table_ymax, table_ymin + 0.01, 0.99))
-
-    table_cells_by_col = [[row[col_header] for row in table_rows] for col_header in column_headers]
-    row_fill_colors = ["rgba(255,255,255,1)" for _ in table_rows]
-    if optimal_row is not None and len(row_fill_colors) > 0:
-        row_fill_colors[-1] = "rgba(238,238,238,1)"
-    fill_colors_by_col = [row_fill_colors[:] for _ in column_headers]
+    tables_top = ymax - (title_gap + title_band_height)
+    throw_table_ymax = float(np.clip(tables_top, ymin + 0.01, 0.99))
+    throw_table_ymin = float(np.clip(throw_table_ymax - throw_table_height, ymin, throw_table_ymax - 0.005))
 
     # Slightly taller rows so larger publication fonts remain legible without clipping.
     header_height = 30
     cell_height = 26
 
     fig.add_trace(go.Table(
-        domain=dict(x=[xmin, xmax], y=[table_ymin, table_ymax]),
+        domain=dict(x=[xmin, xmax], y=[throw_table_ymin, throw_table_ymax]),
         header=dict(
             values=[f"<b>{col_header}</b>" for col_header in column_headers],
             align="center",
@@ -919,9 +921,9 @@ def add_compact_fire_positions_table(fig,
             height=header_height
         ),
         cells=dict(
-            values=table_cells_by_col,
+            values=[[row[col_header] for row in throw_table_rows] for col_header in column_headers],
             align=(["left"] + ["center"] * (len(column_headers) - 1)),
-            fill_color=fill_colors_by_col,
+            fill_color=[["rgba(255,255,255,1)" for _ in throw_table_rows] for _ in column_headers],
             line_color="black",
             font=dict(size=10, color="black"),
             height=cell_height
@@ -929,10 +931,34 @@ def add_compact_fire_positions_table(fig,
         columnwidth=column_width_weights
     ))
 
+    if len(optimal_table_rows) > 0:
+        optimal_table_ymax = float(np.clip(throw_table_ymin - inter_table_gap, ymin + 0.01, throw_table_ymin - 0.002))
+        optimal_table_ymin = float(np.clip(optimal_table_ymax - optimal_table_height, ymin, optimal_table_ymax - 0.005))
+        fig.add_trace(go.Table(
+            domain=dict(x=[xmin, xmax], y=[optimal_table_ymin, optimal_table_ymax]),
+            header=dict(
+                values=[f"<b>{col_header}</b>" for col_header in column_headers],
+                align="center",
+                fill_color="rgba(245,245,245,1)",
+                line_color="black",
+                font=dict(size=11, color="black"),
+                height=header_height
+            ),
+            cells=dict(
+                values=[[row[col_header] for row in optimal_table_rows] for col_header in column_headers],
+                align=(["left"] + ["center"] * (len(column_headers) - 1)),
+                fill_color=[["rgba(238,238,238,1)" for _ in optimal_table_rows] for _ in column_headers],
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=cell_height
+            ),
+            columnwidth=column_width_weights
+        ))
+
     if frame_label:
         fig.add_annotation(
             x=(xmin + xmax) / 2.0,
-            y=(table_ymax + ymax) / 2.0,
+            y=(tables_top + ymax) / 2.0,
             xref="paper",
             yref="paper",
             showarrow=False,
