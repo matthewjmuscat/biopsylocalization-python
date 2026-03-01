@@ -480,8 +480,19 @@ def main():
     bias_AP_multiplier = 1
     bias_SI_multiplier = 1.5 
     # for guidance maps 
-    number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3
-
+    number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3 # number of optimal template holes to consider for guidance maps firing depth recommendation
+    show_titles_for_guidance_maps = False
+    # Guidance-map plotting rank policy:
+    #   - int (e.g., 1 or 2): render that rank only
+    #   - list of ints (e.g., [1, 2, 3]): attempt each in order
+    #   - "all": render all available ranks for each DIL
+    candidate_plot_ranks_behavior = 'all'
+    # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
+    validate_firing_df_builder_behavior = True
+    # Strict mode policy:
+    #   - True: fail fast on missing/invalid rank data (raises)
+    #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
+    strict_precomputed_guidance_behavior = False
 
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
@@ -8856,10 +8867,10 @@ def main():
                                             fire_annotation_style="compact_table",
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
-                                            show_titles=False,
-                                            candidate_plot_rank='all',
-                                            validate_firing_df_builder=True,
-                                            strict_precomputed_guidance=False
+                                            show_titles=show_titles_for_guidance_maps,
+                                            candidate_plot_rank=candidate_plot_ranks_behavior,
+                                            validate_firing_df_builder=validate_firing_df_builder_behavior,
+                                            strict_precomputed_guidance=strict_precomputed_guidance_behavior
                                             )
                         
                         patients_progress.update(processing_patients_task, advance = 1)

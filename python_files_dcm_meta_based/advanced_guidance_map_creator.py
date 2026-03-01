@@ -4011,6 +4011,24 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             validate_firing_df_builder = False,
                                             strict_precomputed_guidance = False
                                             ):
+    """
+    Build sagittal and transverse guidance-map contour plots using precomputed candidate dataframes.
+
+    `candidate_plot_rank` supports:
+      - int: render that rank only
+      - list-like of ints: render each requested rank in order
+      - "all": render all available ranks for each DIL
+    Invalid rank values are ignored where possible; if no valid explicit rank remains, rank 1 is used.
+
+    Strict policy:
+      - strict_precomputed_guidance=False: unavailable/invalid rank inputs are skipped and logged
+      - strict_precomputed_guidance=True: unavailable/invalid rank inputs raise immediately
+
+    Plot-selection manifest status values:
+      - rendered
+      - skipped_missing_rank
+      - skipped_failed_rank_inputs
+    """
 
     def _anchor_colorbars_bottom_right(fig):
         """Place contour colorbars bottom-right outside plot area with left-side vertical labels."""
@@ -4079,6 +4097,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         Normalize plot-rank input into either:
           - all-mode, or
           - explicit ordered rank list.
+
+        Parsing semantics are intentionally stable:
+          - order is preserved for explicit rank lists
+          - duplicate ranks are de-duplicated
+          - invalid entries are reported via parse notes
         """
         parse_notes = []
         candidate_plot_all_mode_local = False
@@ -4975,7 +4998,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             available_candidate_ranks = [1]
         return available_candidate_ranks
 
-    def _resolve_single_plot_rank_for_dil(specific_dil_structure, dil_id):
+    def _resolve_plot_ranks_for_dil(specific_dil_structure, dil_id):
         available_candidate_ranks = _get_available_candidate_ranks_for_dil(specific_dil_structure)
 
         if candidate_plot_all_mode:
@@ -5461,8 +5484,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         if validate_firing_df_builder and isinstance(candidate_rank1_legacy_eq_df, pandas.DataFrame):
             specific_dil_structure[GUIDANCE_MAP_KEY_CANDIDATE_LEGACY_EQ_DF_VALIDATION] = candidate_rank1_legacy_eq_df
 
-        # --- Resolve rank to render for this DIL ---
-        selected_plot_ranks, available_candidate_ranks = _resolve_single_plot_rank_for_dil(
+        # --- Resolve ranks to attempt for this DIL ---
+        selected_plot_ranks, available_candidate_ranks = _resolve_plot_ranks_for_dil(
             specific_dil_structure,
             sp_dil_id
         )
@@ -5785,7 +5808,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     ))
     
             if validate_firing_df_builder:
-                # Validation exports remain tied to legacy rank-1 baseline for stable contract tracking.
+                # Keep legacy rank-1 exports as QA references while candidate-first plotting is active.
                 firing_depth_df = specific_dil_structure.get(GUIDANCE_MAP_KEY_LEGACY_FIRING_DF)
                 if not isinstance(firing_depth_df, pandas.DataFrame) or firing_depth_df.empty:
                     _emit_validation_note(
