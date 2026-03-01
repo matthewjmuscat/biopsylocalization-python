@@ -4786,8 +4786,12 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
     Render and save sagittal/transverse guidance maps for each DIL.
 
     `candidate_plot_rank` supports int, list-like ints, or "all" and is forwarded to the
-    guidance-map creator. Strict mode controls whether rank/data issues fail fast
-    (`strict_precomputed_guidance=True`) or are logged/skipped (`False`).
+    guidance-map creator.
+
+    Strict policy:
+      - strict_precomputed_guidance=True: fail fast on rank/data issues
+      - strict_precomputed_guidance=False: skip problematic ranks and log details in
+        guidance-map validation outputs (including plot-selection manifest).
     """
 
     if save_formats is None:

@@ -4018,9 +4018,16 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
       - int: render that rank only
       - list-like of ints: render each requested rank in order
       - "all": render all available ranks for each DIL
+    Invalid rank values are ignored where possible; if no valid explicit rank remains, rank 1 is used.
 
-    Rank requests that are unavailable are skipped in non-strict mode and logged in the
-    plot-selection manifest; strict mode raises immediately on such failures.
+    Strict policy:
+      - strict_precomputed_guidance=False: unavailable/invalid rank inputs are skipped and logged
+      - strict_precomputed_guidance=True: unavailable/invalid rank inputs raise immediately
+
+    Plot-selection manifest status values:
+      - rendered
+      - skipped_missing_rank
+      - skipped_failed_rank_inputs
     """
 
     def _anchor_colorbars_bottom_right(fig):
@@ -4090,6 +4097,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         Normalize plot-rank input into either:
           - all-mode, or
           - explicit ordered rank list.
+
+        Parsing semantics are intentionally stable:
+          - order is preserved for explicit rank lists
+          - duplicate ranks are de-duplicated
+          - invalid entries are reported via parse notes
         """
         parse_notes = []
         candidate_plot_all_mode_local = False

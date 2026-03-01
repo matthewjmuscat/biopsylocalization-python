@@ -482,9 +482,17 @@ def main():
     # for guidance maps 
     number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3 # number of optimal template holes to consider for guidance maps firing depth recommendation
     show_titles_for_guidance_maps = False
-    candidate_plot_ranks_behavior = 'all' # can be 'all', int or list of ints (eg. 1 or [1,2,3]) this controls which of the k ranks create guidance maps. note although error handling is in place, these values should not exceed value set by number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation
-    validate_firing_df_builder_behavior = True # validates incoming data for guidance maps, logs located in output figures/preprocessiong/global/validation dataframes or patient_sp_folder/validation dataframes
-    strict_precomputed_guidance_behavior = False # hard fail on data checks, throws error. False allows continue but still logs 
+    # Guidance-map plotting rank policy:
+    #   - int (e.g., 1 or 2): render that rank only
+    #   - list of ints (e.g., [1, 2, 3]): attempt each in order
+    #   - "all": render all available ranks for each DIL
+    candidate_plot_ranks_behavior = 'all'
+    # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
+    validate_firing_df_builder_behavior = True
+    # Strict mode policy:
+    #   - True: fail fast on missing/invalid rank data (raises)
+    #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
+    strict_precomputed_guidance_behavior = False
 
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
