@@ -788,14 +788,14 @@ def add_compact_fire_positions_table(fig,
             width_weight *= 1.2
         column_width_weights.append(width_weight)
     plot_x_min, plot_x_max = _axis_domain("x", "x")
-    plot_domain_width = max(0.01, float(plot_x_max - plot_x_min))
+    max_table_width_paper = 0.98
     table_width = max(0.56, 0.0085 * approx_char_count)
-    table_width = min(table_width, plot_domain_width)
+    table_width = min(table_width, max_table_width_paper)
     table_height = min(0.84, max(0.18, 0.10 + 0.042 * len(table_rows)))
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
         table_width = max(table_width, title_min_width)
-        table_width = min(table_width, plot_domain_width)
+        table_width = min(table_width, max_table_width_paper)
 
     # Reserve title band above table and include it in placement/scoring.
     title_gap = 0.006 if frame_label else 0.0
@@ -803,19 +803,14 @@ def add_compact_fire_positions_table(fig,
     total_block_height = table_height + title_gap + title_band_height
 
     if position_normalized == "outside top center":
-        # Reserve a top band outside the plotting area and center the table in that band.
-        domain_pad = 0.01
-        domain_left = float(plot_x_min + domain_pad)
-        domain_right = float(plot_x_max - domain_pad)
-        if domain_right <= domain_left:
-            domain_left = float(plot_x_min)
-            domain_right = float(plot_x_max)
+        # Reserve a top band outside the plotting area and center the table there.
+        # Use full paper width (not plot-domain width) so the square map remains unchanged
+        # while table width can grow independently.
+        domain_left = 0.01
+        domain_right = 0.99
+        table_width = max(0.01, domain_right - domain_left)
 
-        max_width_for_domain = max(0.01, domain_right - domain_left)
-        # Use the full available plot-domain width in this mode.
-        table_width = max_width_for_domain
-
-        x_center = 0.5 * (plot_x_min + plot_x_max)
+        x_center = 0.5
         xmin = x_center - table_width / 2.0
         xmax = x_center + table_width / 2.0
         if xmin < domain_left:
