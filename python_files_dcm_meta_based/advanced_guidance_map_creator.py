@@ -4103,19 +4103,38 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
       - skipped_failed_rank_inputs
     """
 
-    def _anchor_colorbars_bottom_right(fig):
-        """
-        Place contour colorbars in the right-side utility column.
+    def _get_map_y_domain(fig):
+        yaxis_obj = getattr(fig.layout, "yaxis", None)
+        if yaxis_obj is not None and getattr(yaxis_obj, "domain", None) is not None:
+            y_domain = yaxis_obj.domain
+            if len(y_domain) >= 2:
+                return float(y_domain[0]), float(y_domain[1])
+        return 0.0, 1.0
 
-        Layout intent:
-          - top band: compact table
-          - left block: square map
-          - right block: legend (upper) + colorbar (lower)
+    def _reserve_right_utility_lane(fig):
         """
-        colorbar_x = 1.16
-        colorbar_len = 0.36
-        colorbar_y = 0.02
-        label_x_offset = 0.014
+        Reserve a fixed paper-space lane for legend/colorbar.
+        Keep the map in the left block to avoid renderer auto-margin growth.
+        """
+        map_x0 = 0.0
+        map_x1 = 0.76
+        if getattr(fig.layout, "xaxis", None) is not None:
+            fig.layout.xaxis.domain = [map_x0, map_x1]
+        if getattr(fig.layout, "xaxis2", None) is not None:
+            fig.layout.xaxis2.domain = [map_x0, map_x1]
+
+    def _anchor_colorbars_right_side(fig):
+        """
+        Place contour colorbars in the right-side utility lane (inside paper [0,1]).
+        """
+        lane_left = 0.77
+        lane_right = 0.99
+        map_y0, map_y1 = _get_map_y_domain(fig)
+        map_height = max(0.01, map_y1 - map_y0)
+        colorbar_x = lane_right - 0.03
+        colorbar_len = max(0.16, min(0.46, 0.82 * map_height))
+        colorbar_y = map_y0 + 0.5 * map_height
+        label_x_offset = 0.018
         for tr in fig.data:
             if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
                 title_text = ""
@@ -4128,9 +4147,9 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
                 tr.update(colorbar=dict(
                     x=colorbar_x,
-                    xanchor="left",
+                    xanchor="center",
                     y=colorbar_y,
-                    yanchor="bottom",
+                    yanchor="middle",
                     lenmode="fraction",
                     len=colorbar_len,
                     orientation="v",
@@ -4140,7 +4159,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 if title_text:
                     fig.add_annotation(
                         x=colorbar_x - label_x_offset,
-                        y=colorbar_y + 0.5 * colorbar_len,
+                        y=colorbar_y,
                         xref="paper",
                         yref="paper",
                         text=title_text,
@@ -4153,21 +4172,27 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
     def _anchor_legend_right_side(fig):
         """
-        Place legend in the upper region of the right-side utility column.
-
-        This avoids the top table band and keeps legend/colorbar grouped to the
-        right without touching map axis ranges/aspect.
+        Place legend in the right-side utility lane beside the colorbar.
         """
+        lane_left = 0.77
+        map_y0, map_y1 = _get_map_y_domain(fig)
+        map_height = max(0.01, map_y1 - map_y0)
+        legend_y = map_y0 + 0.5 * map_height
         fig.update_layout(
             legend=dict(
-                x=1.02,
-                y=0.83,
+                x=lane_left + 0.01,
+                y=legend_y,
                 xanchor="left",
-                yanchor="top",
+                yanchor="middle",
                 orientation="v",
                 traceorder="normal"
             )
         )
+
+    def _apply_right_utility_lane_layout(fig):
+        _reserve_right_utility_lane(fig)
+        _anchor_legend_right_side(fig)
+        _anchor_colorbars_right_side(fig)
 
     if fire_annotation_style not in ["hockey", "compact_table"]:
         warnings.warn(f"Unsupported fire_annotation_style '{fire_annotation_style}'. Falling back to 'hockey'.")
@@ -6001,9 +6026,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             
             z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
 
-            _anchor_legend_right_side(contour_plot)
-            _anchor_colorbars_bottom_right(contour_plot)
-
             contour_plot = set_square_aspect_ratio(contour_plot)
             
     
@@ -6020,7 +6042,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                 frame_label="Transducer plane frame (Z', Y')",
                                                                 optimal_row=optimal_row_sagittal,
                                                                 metadata_row=metadata_strip)
-    
+            _apply_right_utility_lane_layout(contour_plot)
+
             sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot}
             trus_plane_sagittal_contour_plot_list_of_dicts.append(sp_dil_contour_plot_dict)
@@ -6159,7 +6182,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         text=f"Transverse (Max) plane - {patientUID} - {sp_dil_plot_id}"
                     )
                 )
-            _anchor_colorbars_bottom_right(contour_plot_transverse)
     
     
             # Example data preparation
@@ -6208,8 +6230,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             if draw_orientation_diagram:
                 contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
-
-            _anchor_legend_right_side(contour_plot_transverse)
             contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
 
             
@@ -6221,7 +6241,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                                            frame_label="Transducer plane frame (Z', Y')",
                                                                            optimal_row=optimal_row_transverse,
                                                                            metadata_row=metadata_strip)
-    
+            _apply_right_utility_lane_layout(contour_plot_transverse)
+
             sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot_transverse}
             transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)

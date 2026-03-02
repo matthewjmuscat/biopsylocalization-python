@@ -4812,14 +4812,25 @@ def guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
     colorbar_title_font_size = colorbar_title_font_size or 12
 
     def _apply_font_sizes(fig):
+        # Preserve any legend placement already set by the guidance-map creator.
+        existing_legend = getattr(fig.layout, "legend", None)
+        legend_layout = dict(
+            font=dict(size=legend_font_size),
+            bordercolor="black",
+            borderwidth=1,
+            bgcolor="rgba(255,255,255,0.8)"
+        )
+        if existing_legend is not None:
+            for legend_key in ["x", "y", "xanchor", "yanchor", "orientation", "traceorder"]:
+                legend_val = getattr(existing_legend, legend_key, None)
+                if legend_val is not None:
+                    legend_layout[legend_key] = legend_val
+
         # Axes
         fig.update_layout(
             xaxis_title_font=dict(size=axis_title_font_size),
             yaxis_title_font=dict(size=axis_title_font_size),
-            legend=dict(font=dict(size=legend_font_size),
-                        bordercolor="black",
-                        borderwidth=1,
-                        bgcolor="rgba(255,255,255,0.8)")
+            legend=legend_layout
         )
         fig.update_xaxes(tickfont=dict(size=axis_tick_font_size))
         fig.update_yaxes(tickfont=dict(size=axis_tick_font_size))
