@@ -741,7 +741,6 @@ def add_compact_fire_positions_table(fig,
         return text_val if text_val else "-"
 
     throw_headers = [
-        "Hole",
         "Throw<br>(mm)",
         "Z'<br>(mm)",
         "Y'<br>(mm)",
@@ -762,7 +761,6 @@ def add_compact_fire_positions_table(fig,
     throw_table_rows = []
     for fire_row in fire_rows:
         throw_table_rows.append({
-            "Hole": _text_or_dash(fire_row.get("optimal_hole")),
             "Throw<br>(mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
             "Z'<br>(mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
             "Y'<br>(mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
@@ -816,12 +814,12 @@ def add_compact_fire_positions_table(fig,
     inter_table_gap = 0.0
     if len(optimal_table_rows) > 0:
         optimal_table_height = min(0.24, max(0.10, 0.10 + 0.042 * len(optimal_table_rows)))
-        inter_table_gap = 0.02
+        inter_table_gap = 0.010
     metadata_strip_height = 0.0
     metadata_to_main_gap = 0.0
     if isinstance(metadata_row, dict) and len(metadata_row) > 0:
         metadata_strip_height = 0.08
-        metadata_to_main_gap = 0.015
+        metadata_to_main_gap = 0.026
     table_height = metadata_strip_height + metadata_to_main_gap + throw_table_height + inter_table_gap + optimal_table_height
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
@@ -4160,7 +4158,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         Keep the map in the left block to avoid renderer auto-margin growth.
         """
         map_x0 = 0.0
-        map_x1 = 0.70
+        map_x1 = 0.63
         if getattr(fig.layout, "xaxis", None) is not None:
             fig.layout.xaxis.domain = [map_x0, map_x1]
         if getattr(fig.layout, "xaxis2", None) is not None:
@@ -4184,16 +4182,16 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         """
         Place contour colorbars in the right-side utility lane (inside paper [0,1]).
         """
-        lane_left = 0.71
+        lane_left = 0.67
         lane_right = 0.99
         legend_width = _estimate_legend_width(fig)
         legend_x = lane_left + 0.01
-        colorbar_x = float(np.clip(legend_x + legend_width + 0.08, 0.90, lane_right - 0.01))
+        colorbar_x = float(np.clip(legend_x + legend_width + 0.10, 0.93, lane_right - 0.01))
         map_y0, map_y1 = _get_map_y_domain(fig)
         map_height = max(0.01, map_y1 - map_y0)
         colorbar_len = max(0.16, min(0.46, 0.82 * map_height))
         colorbar_y = map_y0 + 0.5 * map_height
-        label_x_offset = 0.022
+        label_x_offset = 0.03
         for tr in fig.data:
             if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
                 title_text = ""
@@ -4212,6 +4210,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     lenmode="fraction",
                     len=colorbar_len,
                     orientation="v",
+                    thicknessmode="pixels",
+                    thickness=30,
                     title=dict(text="")
                 ))
 
@@ -4233,7 +4233,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         """
         Place legend in the right-side utility lane beside the colorbar.
         """
-        lane_left = 0.71
+        lane_left = 0.67
         map_y0, map_y1 = _get_map_y_domain(fig)
         map_height = max(0.01, map_y1 - map_y0)
         legend_y = map_y0 + 0.5 * map_height
@@ -6104,7 +6104,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot = add_compact_fire_positions_table(contour_plot,
                                                                 fire_rows,
                                                                 position=fire_table_position,
-                                                                frame_label="Sagittal TRUS plane frame (primed)",
+                                                                frame_label="Sagittal TRUS plane frame (transducer primed Z',Y')",
                                                                 optimal_row=optimal_row_sagittal,
                                                                 metadata_row=metadata_strip,
                                                                 optimal_coord_header_1="Optimal Z'<br>(mm)",
@@ -6296,7 +6296,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             contour_plot_transverse = adjust_plot_area_and_reverse_axes(contour_plot_transverse, 
                                                                         bounds_points_xy, 
-                                                                        margin=5, 
+                                                                        margin=7, 
                                                                         reverse_x = False, 
                                                                         reverse_y = True)
             _show_all_axis_lines(contour_plot_transverse)
