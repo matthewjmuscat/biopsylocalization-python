@@ -493,6 +493,8 @@ def main():
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
     strict_precomputed_guidance_behavior = False
+    # If False, Euler-angle annotation box is hidden on the map; Euler values remain in compact tables.
+    show_euler_annotation_box_behavior = True
 
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
@@ -8868,6 +8870,7 @@ def main():
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
                                             show_titles=show_titles_for_guidance_maps,
+                                            show_euler_annotation_box=show_euler_annotation_box_behavior,
                                             candidate_plot_rank=candidate_plot_ranks_behavior,
                                             validate_firing_df_builder=validate_firing_df_builder_behavior,
                                             strict_precomputed_guidance=strict_precomputed_guidance_behavior

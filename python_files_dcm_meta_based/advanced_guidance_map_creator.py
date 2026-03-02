@@ -443,11 +443,10 @@ def add_compact_fire_positions_table(fig,
                                      optimal_row=None,
                                      metadata_row=None):
     """
-    Add a compact fire-position summary table as a single annotation.
+    Add compact summary tables (metadata, throw rows, optimal row).
     If position is "auto", choose the least-crowded corner in paper space.
-    Optionally include optimal-point information in the same table.
     """
-    if len(fire_rows) == 0:
+    if len(fire_rows) == 0 and optimal_row is None:
         return fig
 
     def _strip_markup(text):
@@ -739,8 +738,7 @@ def add_compact_fire_positions_table(fig,
         text_val = str(value).strip()
         return text_val if text_val else "-"
 
-    column_headers = [
-        "Entry",
+    throw_headers = [
         "Hole",
         "Throw<br>(mm)",
         "Z'<br>(mm)",
@@ -750,10 +748,18 @@ def add_compact_fire_positions_table(fig,
         "Distance from<br>apex (mm)",
     ]
 
+    optimal_headers = [
+        "Hole",
+        "Optimal Z'<br>(mm)",
+        "Optimal Y'<br>(mm)",
+        "Euler X<br>(deg)",
+        "Euler Y<br>(deg)",
+        "Euler Z<br>(deg)",
+    ]
+
     throw_table_rows = []
-    for fire_index, fire_row in enumerate(fire_rows):
+    for fire_row in fire_rows:
         throw_table_rows.append({
-            "Entry": "Throw",
             "Hole": _text_or_dash(fire_row.get("optimal_hole")),
             "Throw<br>(mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
             "Z'<br>(mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
@@ -766,35 +772,34 @@ def add_compact_fire_positions_table(fig,
     optimal_table_rows = []
     if optimal_row is not None:
         optimal_table_rows.append({
-            "Entry": "Optimal",
             "Hole": _text_or_dash(optimal_row.get("optimal_hole")),
-            "Throw<br>(mm)": "-",
-            "Z'<br>(mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
-            "Y'<br>(mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
-            "In-plane<br>defl (mm)": "-",
-            "Out-plane<br>defl (mm)": "-",
-            "Distance from<br>apex (mm)": "-",
+            "Optimal Z'<br>(mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
+            "Optimal Y'<br>(mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
+            "Euler X<br>(deg)": _fmt_or_dash(optimal_row.get("euler_x_deg"), decimals=1),
+            "Euler Y<br>(deg)": _fmt_or_dash(optimal_row.get("euler_y_deg"), decimals=1),
+            "Euler Z<br>(deg)": _fmt_or_dash(optimal_row.get("euler_z_deg"), decimals=1),
         })
-    all_table_rows = throw_table_rows + optimal_table_rows
 
-    max_chars_per_col = []
-    for col_header in column_headers:
-        max_chars = len(_strip_markup(col_header))
-        for row in all_table_rows:
-            max_chars = max(max_chars, len(str(row[col_header])))
-        max_chars_per_col.append(max_chars)
+    def _build_table_column_widths(headers, rows):
+        max_chars_per_col = []
+        for col_header in headers:
+            max_chars = len(_strip_markup(col_header))
+            for row in rows:
+                max_chars = max(max_chars, len(str(row[col_header])))
+            max_chars_per_col.append(max_chars)
+        width_weights = []
+        for col_header, max_chars in zip(headers, max_chars_per_col):
+            width_weight = float(max(6, max_chars))
+            if col_header.startswith("Hole"):
+                width_weight *= 1.2
+            if "Distance from" in col_header:
+                width_weight *= 1.1
+            width_weights.append(width_weight)
+        return width_weights, sum(max_chars_per_col)
 
-    approx_char_count = sum(max_chars_per_col)
-    column_width_weights = []
-    for col_header, max_chars in zip(column_headers, max_chars_per_col):
-        width_weight = float(max(6, max_chars))
-        if col_header == "Entry":
-            width_weight *= 1.35
-        elif col_header == "Hole":
-            width_weight *= 1.2
-        elif col_header == "Distance from<br>apex (mm)":
-            width_weight *= 1.1
-        column_width_weights.append(width_weight)
+    throw_column_width_weights, throw_char_count = _build_table_column_widths(throw_headers, throw_table_rows)
+    optimal_column_width_weights, optimal_char_count = _build_table_column_widths(optimal_headers, optimal_table_rows)
+    approx_char_count = max(throw_char_count, optimal_char_count)
     plot_x_min, plot_x_max = _axis_domain("x", "x")
     max_table_width_paper = 0.98
     table_width = max(0.56, 0.0085 * approx_char_count)
@@ -957,7 +962,7 @@ def add_compact_fire_positions_table(fig,
     fig.add_trace(go.Table(
         domain=dict(x=[xmin, xmax], y=[throw_table_ymin, throw_table_ymax]),
         header=dict(
-            values=[f"<b>{col_header}</b>" for col_header in column_headers],
+            values=[f"<b>{col_header}</b>" for col_header in throw_headers],
             align="center",
             fill_color="rgba(255,255,255,1)",
             line_color="black",
@@ -965,15 +970,30 @@ def add_compact_fire_positions_table(fig,
             height=header_height
         ),
         cells=dict(
-            values=[[row[col_header] for row in throw_table_rows] for col_header in column_headers],
-            align=(["left"] + ["center"] * (len(column_headers) - 1)),
-            fill_color=[["rgba(255,255,255,1)" for _ in throw_table_rows] for _ in column_headers],
+            values=[[row[col_header] for row in throw_table_rows] for col_header in throw_headers],
+            align=(["left"] + ["center"] * (len(throw_headers) - 1)),
+            fill_color=[["rgba(255,255,255,1)" for _ in throw_table_rows] for _ in throw_headers],
             line_color="black",
             font=dict(size=10, color="black"),
             height=cell_height
         ),
-        columnwidth=column_width_weights
+        columnwidth=throw_column_width_weights
     ))
+
+    fig.add_annotation(
+        x=xmin,
+        y=throw_table_ymax + 0.004,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        text="<b>Throw settings</b>",
+        font=dict(size=10, color="black"),
+        xanchor="left",
+        yanchor="bottom",
+        bgcolor="rgba(255,255,255,1)",
+        bordercolor="rgba(0,0,0,1)",
+        borderpad=2
+    )
 
     if len(optimal_table_rows) > 0:
         optimal_table_ymax = float(np.clip(throw_table_ymin - inter_table_gap, ymin + 0.01, throw_table_ymin - 0.002))
@@ -981,7 +1001,7 @@ def add_compact_fire_positions_table(fig,
         fig.add_trace(go.Table(
             domain=dict(x=[xmin, xmax], y=[optimal_table_ymin, optimal_table_ymax]),
             header=dict(
-                values=[f"<b>{col_header}</b>" for col_header in column_headers],
+                values=[f"<b>{col_header}</b>" for col_header in optimal_headers],
                 align="center",
                 fill_color="rgba(245,245,245,1)",
                 line_color="black",
@@ -989,15 +1009,29 @@ def add_compact_fire_positions_table(fig,
                 height=header_height
             ),
             cells=dict(
-                values=[[row[col_header] for row in optimal_table_rows] for col_header in column_headers],
-                align=(["left"] + ["center"] * (len(column_headers) - 1)),
-                fill_color=[["rgba(238,238,238,1)" for _ in optimal_table_rows] for _ in column_headers],
+                values=[[row[col_header] for row in optimal_table_rows] for col_header in optimal_headers],
+                align=(["left"] + ["center"] * (len(optimal_headers) - 1)),
+                fill_color=[["rgba(238,238,238,1)" for _ in optimal_table_rows] for _ in optimal_headers],
                 line_color="black",
                 font=dict(size=10, color="black"),
                 height=cell_height
             ),
-            columnwidth=column_width_weights
+            columnwidth=optimal_column_width_weights
         ))
+        fig.add_annotation(
+            x=xmin,
+            y=optimal_table_ymax + 0.004,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            text="<b>Optimal sampling point</b>",
+            font=dict(size=10, color="black"),
+            xanchor="left",
+            yanchor="bottom",
+            bgcolor="rgba(255,255,255,1)",
+            bordercolor="rgba(0,0,0,1)",
+            borderpad=2
+        )
 
     if frame_label:
         fig.add_annotation(
@@ -4082,7 +4116,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             fire_table_position = "auto",
                                             candidate_plot_rank = 1,
                                             validate_firing_df_builder = False,
-                                            strict_precomputed_guidance = False
+                                            strict_precomputed_guidance = False,
+                                            show_euler_annotation_box = True
                                             ):
     """
     Build sagittal and transverse guidance-map contour plots using precomputed candidate dataframes.
@@ -5849,7 +5884,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "optimal_hole": optimal_template_hole_label,
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
-                "yprime": transformed_optimal_point_contour_coord_sys[1]
+                "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "euler_x_deg": float(effective_euler_angles[0]),
+                "euler_y_deg": float(effective_euler_angles[1]),
+                "euler_z_deg": float(effective_euler_angles[2]),
             }
             if fire_annotation_style == "hockey":
                 contour_plot = add_points_to_plot_v2(contour_plot,
@@ -6012,12 +6050,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                    text_box_border_color="rgba(0, 0, 0, 1)",
                                                    text_color="black")
     
-            if simple_angle_display_option_bool == False:
+            if show_euler_annotation_box and simple_angle_display_option_bool == False:
                 contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
                                                         effective_euler_angles,
                                                         effective_euler_convention, 
                                                         position='bottom right')
-            elif simple_angle_display_option_bool == True:
+            elif show_euler_annotation_box and simple_angle_display_option_bool == True:
                 z_angle = effective_euler_angles[2]
                 contour_plot = add_sagittal_angle_to_plot(contour_plot, 
                                                                      z_angle, 
@@ -6081,7 +6119,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "optimal_hole": optimal_template_hole_label,
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
-                "yprime": transformed_optimal_point_contour_coord_sys[1]
+                "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "euler_x_deg": float(effective_euler_angles[0]),
+                "euler_y_deg": float(effective_euler_angles[1]),
+                "euler_z_deg": float(effective_euler_angles[2]),
             }
             if fire_annotation_style == "hockey":
                 contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
@@ -6207,12 +6248,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
             contour_plot_transverse = add_z_angle_line_to_plot(contour_plot_transverse, transducer_saggital_plane_point_prostate_frame_sup, z_angle)
     
-            if simple_angle_display_option_bool == False:
+            if show_euler_annotation_box and simple_angle_display_option_bool == False:
                 contour_plot_transverse = add_euler_angles_to_plot_v3(contour_plot_transverse, 
                                                         effective_euler_angles,
                                                         effective_euler_convention, 
                                                         position='bottom right')
-            elif simple_angle_display_option_bool == True:
+            elif show_euler_annotation_box and simple_angle_display_option_bool == True:
                 contour_plot_transverse = add_sagittal_angle_to_plot(contour_plot_transverse, 
                                                                      z_angle, 
                                                                      position='bottom right')
