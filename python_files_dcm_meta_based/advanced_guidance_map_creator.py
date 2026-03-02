@@ -441,7 +441,9 @@ def add_compact_fire_positions_table(fig,
                                      position='auto',
                                      frame_label="Transducer plane frame (Z', Y')",
                                      optimal_row=None,
-                                     metadata_row=None):
+                                     metadata_row=None,
+                                     optimal_coord_header_1="Optimal Z'<br>(mm)",
+                                     optimal_coord_header_2="Optimal Y'<br>(mm)"):
     """
     Add compact summary tables (metadata, throw rows, optimal row).
     If position is "auto", choose the least-crowded corner in paper space.
@@ -750,8 +752,8 @@ def add_compact_fire_positions_table(fig,
 
     optimal_headers = [
         "Hole",
-        "Optimal Z'<br>(mm)",
-        "Optimal Y'<br>(mm)",
+        optimal_coord_header_1,
+        optimal_coord_header_2,
         "Euler X<br>(deg)",
         "Euler Y<br>(deg)",
         "Euler Z<br>(deg)",
@@ -773,11 +775,16 @@ def add_compact_fire_positions_table(fig,
     if optimal_row is not None:
         optimal_table_rows.append({
             "Hole": _text_or_dash(optimal_row.get("optimal_hole")),
-            "Optimal Z'<br>(mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
-            "Optimal Y'<br>(mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
+            optimal_coord_header_1: _fmt_or_dash(optimal_row.get("coord_1"), decimals=1),
+            optimal_coord_header_2: _fmt_or_dash(optimal_row.get("coord_2"), decimals=1),
             "Euler X<br>(deg)": _fmt_or_dash(optimal_row.get("euler_x_deg"), decimals=1),
             "Euler Y<br>(deg)": _fmt_or_dash(optimal_row.get("euler_y_deg"), decimals=1),
-            "Euler Z<br>(deg)": _fmt_or_dash(optimal_row.get("euler_z_deg"), decimals=1),
+            "Euler Z<br>(deg)": _text_or_dash(
+                optimal_row.get(
+                    "euler_z_with_direction",
+                    _fmt_or_dash(optimal_row.get("euler_z_deg"), decimals=1)
+                )
+            ),
         })
 
     def _build_table_column_widths(headers, rows):
@@ -809,12 +816,12 @@ def add_compact_fire_positions_table(fig,
     inter_table_gap = 0.0
     if len(optimal_table_rows) > 0:
         optimal_table_height = min(0.24, max(0.10, 0.10 + 0.042 * len(optimal_table_rows)))
-        inter_table_gap = 0.008
+        inter_table_gap = 0.02
     metadata_strip_height = 0.0
     metadata_to_main_gap = 0.0
     if isinstance(metadata_row, dict) and len(metadata_row) > 0:
         metadata_strip_height = 0.08
-        metadata_to_main_gap = 0.008
+        metadata_to_main_gap = 0.015
     table_height = metadata_strip_height + metadata_to_main_gap + throw_table_height + inter_table_gap + optimal_table_height
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
@@ -3696,15 +3703,16 @@ def set_square_aspect_ratio(fig):
     Parameters:
     - fig (plotly.graph_objs.Figure): The figure object to be modified.
     """
-    # Set x-axis to anchor to the y-axis
+    # Use one-way scale anchoring and domain constraints to preserve square units
+    # while avoiding unintended range expansion when extra layout domains are used.
     fig.update_layout(
         xaxis=dict(
             scaleanchor='y',
-            scaleratio=1
+            scaleratio=1,
+            constrain='domain'
         ),
         yaxis=dict(
-            scaleanchor='x',
-            scaleratio=1
+            constrain='domain'
         )
     )
 
@@ -4152,24 +4160,40 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         Keep the map in the left block to avoid renderer auto-margin growth.
         """
         map_x0 = 0.0
-        map_x1 = 0.76
+        map_x1 = 0.70
         if getattr(fig.layout, "xaxis", None) is not None:
             fig.layout.xaxis.domain = [map_x0, map_x1]
         if getattr(fig.layout, "xaxis2", None) is not None:
             fig.layout.xaxis2.domain = [map_x0, map_x1]
 
+    def _estimate_legend_width(fig):
+        legend_labels = []
+        for tr in fig.data:
+            if getattr(tr, "showlegend", None) is False:
+                continue
+            trace_name = getattr(tr, "name", None)
+            if trace_name:
+                legend_labels.append(str(trace_name))
+        if len(legend_labels) == 0:
+            return 0.0
+        max_chars = max([len(label) for label in legend_labels])
+        est_width = 0.08 + 0.0085 * max_chars
+        return float(np.clip(est_width, 0.14, 0.24))
+
     def _anchor_colorbars_right_side(fig):
         """
         Place contour colorbars in the right-side utility lane (inside paper [0,1]).
         """
-        lane_left = 0.77
+        lane_left = 0.71
         lane_right = 0.99
+        legend_width = _estimate_legend_width(fig)
+        legend_x = lane_left + 0.01
+        colorbar_x = float(np.clip(legend_x + legend_width + 0.08, 0.90, lane_right - 0.01))
         map_y0, map_y1 = _get_map_y_domain(fig)
         map_height = max(0.01, map_y1 - map_y0)
-        colorbar_x = lane_right - 0.03
         colorbar_len = max(0.16, min(0.46, 0.82 * map_height))
         colorbar_y = map_y0 + 0.5 * map_height
-        label_x_offset = 0.018
+        label_x_offset = 0.022
         for tr in fig.data:
             if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
                 title_text = ""
@@ -4209,7 +4233,7 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
         """
         Place legend in the right-side utility lane beside the colorbar.
         """
-        lane_left = 0.77
+        lane_left = 0.71
         map_y0, map_y1 = _get_map_y_domain(fig)
         map_height = max(0.01, map_y1 - map_y0)
         legend_y = map_y0 + 0.5 * map_height
@@ -5885,9 +5909,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
                 "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "coord_1": transformed_optimal_point_contour_coord_sys[0],
+                "coord_2": transformed_optimal_point_contour_coord_sys[1],
                 "euler_x_deg": float(effective_euler_angles[0]),
                 "euler_y_deg": float(effective_euler_angles[1]),
                 "euler_z_deg": float(effective_euler_angles[2]),
+                "euler_z_with_direction": f"{float(effective_euler_angles[2]):.1f}° ({_angle_direction_label(float(effective_euler_angles[2]))})",
             }
             if fire_annotation_style == "hockey":
                 contour_plot = add_points_to_plot_v2(contour_plot,
@@ -6077,9 +6104,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot = add_compact_fire_positions_table(contour_plot,
                                                                 fire_rows,
                                                                 position=fire_table_position,
-                                                                frame_label="Transducer plane frame (Z', Y')",
+                                                                frame_label="Sagittal TRUS plane frame (primed)",
                                                                 optimal_row=optimal_row_sagittal,
-                                                                metadata_row=metadata_strip)
+                                                                metadata_row=metadata_strip,
+                                                                optimal_coord_header_1="Optimal Z'<br>(mm)",
+                                                                optimal_coord_header_2="Optimal Y'<br>(mm)")
             _apply_right_utility_lane_layout(contour_plot)
 
             sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
@@ -6120,9 +6149,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
                 "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "coord_1": float(sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]),
+                "coord_2": float(sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]),
                 "euler_x_deg": float(effective_euler_angles[0]),
                 "euler_y_deg": float(effective_euler_angles[1]),
                 "euler_z_deg": float(effective_euler_angles[2]),
+                "euler_z_with_direction": f"{float(effective_euler_angles[2]):.1f}° ({_angle_direction_label(float(effective_euler_angles[2]))})",
             }
             if fire_annotation_style == "hockey":
                 contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
@@ -6279,9 +6311,11 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
                                                                            fire_rows,
                                                                            position=fire_table_position,
-                                                                           frame_label="Transducer plane frame (Z', Y')",
+                                                                           frame_label="Transverse plane (prostate centroid frame X,Y)",
                                                                            optimal_row=optimal_row_transverse,
-                                                                           metadata_row=metadata_strip)
+                                                                           metadata_row=metadata_strip,
+                                                                           optimal_coord_header_1="Optimal X<br>(mm)",
+                                                                           optimal_coord_header_2="Optimal Y<br>(mm)")
             _apply_right_utility_lane_layout(contour_plot_transverse)
 
             sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,

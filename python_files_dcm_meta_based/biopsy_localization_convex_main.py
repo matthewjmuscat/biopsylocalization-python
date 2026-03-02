@@ -494,7 +494,7 @@ def main():
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
     strict_precomputed_guidance_behavior = False
     # If False, Euler-angle annotation box is hidden on the map; Euler values remain in compact tables.
-    show_euler_annotation_box_behavior = True
+    show_euler_annotation_box_behavior = False
 
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
@@ -8791,6 +8791,9 @@ def main():
 
                         patient_sp_preprocessing_output_figures_dir = patient_sp_preprocessing_output_figures_dir_dict[patientUID]
                         
+
+                        # Old guidance maps (blue backgrounds) commented out, no use
+                        """"
                         # Cumulative projection guidance map
                         production_plots.production_plot_guidance_maps_cumulative_projection(patientUID,
                                                 patient_sp_preprocessing_output_figures_dir,
@@ -8813,6 +8816,8 @@ def main():
                                             svg_image_height,
                                             general_plot_name_string
                                             )
+                        """
+
                         """
                         production_plots.guidance_map_transducer_angle_sagittal(patientUID,
                                             patient_sp_preprocessing_output_figures_dir,
