@@ -440,13 +440,15 @@ def add_compact_fire_positions_table(fig,
                                      fire_rows,
                                      position='auto',
                                      frame_label="Transducer plane frame (Z', Y')",
-                                     optimal_row=None):
+                                     optimal_row=None,
+                                     metadata_row=None,
+                                     optimal_coord_header_1="Optimal Z'<br>(mm)",
+                                     optimal_coord_header_2="Optimal Y'<br>(mm)"):
     """
-    Add a compact fire-position summary table as a single annotation.
+    Add compact summary tables (metadata, throw rows, optimal row).
     If position is "auto", choose the least-crowded corner in paper space.
-    Optionally include optimal-point information in the same table.
     """
-    if len(fire_rows) == 0:
+    if len(fire_rows) == 0 and optimal_row is None:
         return fig
 
     def _strip_markup(text):
@@ -738,64 +740,91 @@ def add_compact_fire_positions_table(fig,
         text_val = str(value).strip()
         return text_val if text_val else "-"
 
-    column_headers = [
-        "Type",
-        "Optimal hole",
-        "Depth (mm)",
-        "Z' (mm)",
-        "Y' (mm)",
-        "Defl (mm)",
-        "From apex (mm)",
+    throw_headers = [
+        "Throw<br>(mm)",
+        "Z'<br>(mm)",
+        "Y'<br>(mm)",
+        "In-plane<br>defl (mm)",
+        "Out-plane<br>defl (mm)",
+        "Distance from<br>apex (mm)",
     ]
 
-    table_rows = []
-    for fire_index, fire_row in enumerate(fire_rows):
-        table_rows.append({
-            "Type": f"Depth setting {fire_index + 1}",
-            "Optimal hole": _text_or_dash(fire_row.get("optimal_hole")),
-            "Depth (mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
-            "Z' (mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
-            "Y' (mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
-            "Defl (mm)": _fmt_or_dash(fire_row.get("deflection"), decimals=1),
-            "From apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
+    optimal_headers = [
+        "Hole",
+        optimal_coord_header_1,
+        optimal_coord_header_2,
+        "Euler X<br>(deg)",
+        "Euler Y<br>(deg)",
+        "Euler Z<br>(deg)",
+    ]
+
+    throw_table_rows = []
+    for fire_row in fire_rows:
+        throw_table_rows.append({
+            "Throw<br>(mm)": _fmt_or_dash(fire_row.get("penetration_depth"), decimals=1),
+            "Z'<br>(mm)": _fmt_or_dash(fire_row.get("zprime"), decimals=1),
+            "Y'<br>(mm)": _fmt_or_dash(fire_row.get("yprime"), decimals=1),
+            "In-plane<br>defl (mm)": _fmt_or_dash(fire_row.get("deflection"), decimals=1),
+            "Out-plane<br>defl (mm)": _fmt_or_dash(fire_row.get("out_of_plane_deflection"), decimals=1),
+            "Distance from<br>apex (mm)": _fmt_or_dash(fire_row.get("depth_from_apex"), decimals=1),
         })
 
+    optimal_table_rows = []
     if optimal_row is not None:
-        table_rows.append({
-            "Type": str(optimal_row.get("label") or "Optimal template hole"),
-            "Optimal hole": _text_or_dash(optimal_row.get("optimal_hole")),
-            "Depth (mm)": "-",
-            "Z' (mm)": _fmt_or_dash(optimal_row.get("zprime"), decimals=1),
-            "Y' (mm)": _fmt_or_dash(optimal_row.get("yprime"), decimals=1),
-            "Defl (mm)": "-",
-            "From apex (mm)": "-",
+        optimal_table_rows.append({
+            "Hole": _text_or_dash(optimal_row.get("optimal_hole")),
+            optimal_coord_header_1: _fmt_or_dash(optimal_row.get("coord_1"), decimals=1),
+            optimal_coord_header_2: _fmt_or_dash(optimal_row.get("coord_2"), decimals=1),
+            "Euler X<br>(deg)": _fmt_or_dash(optimal_row.get("euler_x_deg"), decimals=1),
+            "Euler Y<br>(deg)": _fmt_or_dash(optimal_row.get("euler_y_deg"), decimals=1),
+            "Euler Z<br>(deg)": _text_or_dash(
+                optimal_row.get(
+                    "euler_z_with_direction",
+                    _fmt_or_dash(optimal_row.get("euler_z_deg"), decimals=1)
+                )
+            ),
         })
 
-    max_chars_per_col = []
-    for col_header in column_headers:
-        max_chars = len(col_header)
-        for row in table_rows:
-            max_chars = max(max_chars, len(str(row[col_header])))
-        max_chars_per_col.append(max_chars)
+    def _build_table_column_widths(headers, rows):
+        max_chars_per_col = []
+        for col_header in headers:
+            max_chars = len(_strip_markup(col_header))
+            for row in rows:
+                max_chars = max(max_chars, len(str(row[col_header])))
+            max_chars_per_col.append(max_chars)
+        width_weights = []
+        for col_header, max_chars in zip(headers, max_chars_per_col):
+            width_weight = float(max(6, max_chars))
+            if col_header.startswith("Hole"):
+                width_weight *= 1.2
+            if "Distance from" in col_header:
+                width_weight *= 1.1
+            width_weights.append(width_weight)
+        return width_weights, sum(max_chars_per_col)
 
-    approx_char_count = sum(max_chars_per_col)
-    column_width_weights = []
-    for col_header, max_chars in zip(column_headers, max_chars_per_col):
-        width_weight = float(max(6, max_chars))
-        if col_header == "Type":
-            width_weight *= 1.35
-        elif col_header == "Optimal hole":
-            width_weight *= 1.2
-        column_width_weights.append(width_weight)
+    throw_column_width_weights, throw_char_count = _build_table_column_widths(throw_headers, throw_table_rows)
+    optimal_column_width_weights, optimal_char_count = _build_table_column_widths(optimal_headers, optimal_table_rows)
+    approx_char_count = max(throw_char_count, optimal_char_count)
     plot_x_min, plot_x_max = _axis_domain("x", "x")
-    plot_domain_width = max(0.01, float(plot_x_max - plot_x_min))
+    max_table_width_paper = 0.98
     table_width = max(0.56, 0.0085 * approx_char_count)
-    table_width = min(table_width, plot_domain_width)
-    table_height = min(0.84, max(0.18, 0.10 + 0.042 * len(table_rows)))
+    table_width = min(table_width, max_table_width_paper)
+    throw_table_height = min(0.72, max(0.16, 0.10 + 0.042 * len(throw_table_rows)))
+    optimal_table_height = 0.0
+    inter_table_gap = 0.0
+    if len(optimal_table_rows) > 0:
+        optimal_table_height = min(0.24, max(0.10, 0.10 + 0.042 * len(optimal_table_rows)))
+        inter_table_gap = 0.010
+    metadata_strip_height = 0.0
+    metadata_to_main_gap = 0.0
+    if isinstance(metadata_row, dict) and len(metadata_row) > 0:
+        metadata_strip_height = 0.08
+        metadata_to_main_gap = 0.026
+    table_height = metadata_strip_height + metadata_to_main_gap + throw_table_height + inter_table_gap + optimal_table_height
     if frame_label:
         title_min_width = 0.12 + 0.0068 * len(str(frame_label))
         table_width = max(table_width, title_min_width)
-        table_width = min(table_width, plot_domain_width)
+        table_width = min(table_width, max_table_width_paper)
 
     # Reserve title band above table and include it in placement/scoring.
     title_gap = 0.006 if frame_label else 0.0
@@ -803,19 +832,14 @@ def add_compact_fire_positions_table(fig,
     total_block_height = table_height + title_gap + title_band_height
 
     if position_normalized == "outside top center":
-        # Reserve a top band outside the plotting area and center the table in that band.
-        domain_pad = 0.01
-        domain_left = float(plot_x_min + domain_pad)
-        domain_right = float(plot_x_max - domain_pad)
-        if domain_right <= domain_left:
-            domain_left = float(plot_x_min)
-            domain_right = float(plot_x_max)
+        # Reserve a top band outside the plotting area and center the table there.
+        # Use full paper width (not plot-domain width) so the square map remains unchanged
+        # while table width can grow independently.
+        domain_left = 0.01
+        domain_right = 0.99
+        table_width = max(0.01, domain_right - domain_left)
 
-        max_width_for_domain = max(0.01, domain_right - domain_left)
-        # Use the full available plot-domain width in this mode.
-        table_width = max_width_for_domain
-
-        x_center = 0.5 * (plot_x_min + plot_x_max)
+        x_center = 0.5
         xmin = x_center - table_width / 2.0
         xmax = x_center + table_width / 2.0
         if xmin < domain_left:
@@ -894,24 +918,56 @@ def add_compact_fire_positions_table(fig,
         ymin = float(np.clip(ymin, 0.01, 0.98))
         ymax = float(np.clip(ymax, ymin + 0.01, 0.99))
 
-    table_ymin = ymin
-    table_ymax = ymax - (title_gap + title_band_height)
-    table_ymax = float(np.clip(table_ymax, table_ymin + 0.01, 0.99))
+    tables_top = ymax - (title_gap + title_band_height)
+    current_top = float(np.clip(tables_top, ymin + 0.01, 0.99))
 
-    table_cells_by_col = [[row[col_header] for row in table_rows] for col_header in column_headers]
-    row_fill_colors = ["rgba(255,255,255,1)" for _ in table_rows]
-    if optimal_row is not None and len(row_fill_colors) > 0:
-        row_fill_colors[-1] = "rgba(238,238,238,1)"
-    fill_colors_by_col = [row_fill_colors[:] for _ in column_headers]
+    if isinstance(metadata_row, dict) and len(metadata_row) > 0:
+        metadata_headers = list(metadata_row.keys())
+        metadata_values = [str(metadata_row.get(key, "-")) for key in metadata_headers]
+        metadata_col_widths = []
+        for key, value in zip(metadata_headers, metadata_values):
+            width_weight = float(max(len(str(key)), len(str(value)), 8))
+            if key.lower().startswith("patient"):
+                width_weight *= 1.15
+            if key.lower().startswith("dil"):
+                width_weight *= 1.10
+            metadata_col_widths.append(width_weight)
+
+        metadata_ymax = current_top
+        metadata_ymin = float(np.clip(metadata_ymax - metadata_strip_height, ymin, metadata_ymax - 0.005))
+        fig.add_trace(go.Table(
+            domain=dict(x=[xmin, xmax], y=[metadata_ymin, metadata_ymax]),
+            header=dict(
+                values=[f"<b>{header}</b>" for header in metadata_headers],
+                align="center",
+                fill_color="rgba(245,245,245,1)",
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=24
+            ),
+            cells=dict(
+                values=[[value] for value in metadata_values],
+                align=["center"] * len(metadata_headers),
+                fill_color=[["rgba(255,255,255,1)"] for _ in metadata_headers],
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=24
+            ),
+            columnwidth=metadata_col_widths
+        ))
+        current_top = float(np.clip(metadata_ymin - metadata_to_main_gap, ymin + 0.01, metadata_ymin))
+
+    throw_table_ymax = current_top
+    throw_table_ymin = float(np.clip(throw_table_ymax - throw_table_height, ymin, throw_table_ymax - 0.005))
 
     # Slightly taller rows so larger publication fonts remain legible without clipping.
     header_height = 30
     cell_height = 26
 
     fig.add_trace(go.Table(
-        domain=dict(x=[xmin, xmax], y=[table_ymin, table_ymax]),
+        domain=dict(x=[xmin, xmax], y=[throw_table_ymin, throw_table_ymax]),
         header=dict(
-            values=[f"<b>{col_header}</b>" for col_header in column_headers],
+            values=[f"<b>{col_header}</b>" for col_header in throw_headers],
             align="center",
             fill_color="rgba(255,255,255,1)",
             line_color="black",
@@ -919,20 +975,73 @@ def add_compact_fire_positions_table(fig,
             height=header_height
         ),
         cells=dict(
-            values=table_cells_by_col,
-            align=["left", "center", "center", "center", "center", "center", "center"],
-            fill_color=fill_colors_by_col,
+            values=[[row[col_header] for row in throw_table_rows] for col_header in throw_headers],
+            align=(["left"] + ["center"] * (len(throw_headers) - 1)),
+            fill_color=[["rgba(255,255,255,1)" for _ in throw_table_rows] for _ in throw_headers],
             line_color="black",
             font=dict(size=10, color="black"),
             height=cell_height
         ),
-        columnwidth=column_width_weights
+        columnwidth=throw_column_width_weights
     ))
+
+    fig.add_annotation(
+        x=xmin,
+        y=throw_table_ymax + 0.004,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        text="<b>Throw settings</b>",
+        font=dict(size=10, color="black"),
+        xanchor="left",
+        yanchor="bottom",
+        bgcolor="rgba(255,255,255,1)",
+        bordercolor="rgba(0,0,0,1)",
+        borderpad=2
+    )
+
+    if len(optimal_table_rows) > 0:
+        optimal_table_ymax = float(np.clip(throw_table_ymin - inter_table_gap, ymin + 0.01, throw_table_ymin - 0.002))
+        optimal_table_ymin = float(np.clip(optimal_table_ymax - optimal_table_height, ymin, optimal_table_ymax - 0.005))
+        fig.add_trace(go.Table(
+            domain=dict(x=[xmin, xmax], y=[optimal_table_ymin, optimal_table_ymax]),
+            header=dict(
+                values=[f"<b>{col_header}</b>" for col_header in optimal_headers],
+                align="center",
+                fill_color="rgba(245,245,245,1)",
+                line_color="black",
+                font=dict(size=11, color="black"),
+                height=header_height
+            ),
+            cells=dict(
+                values=[[row[col_header] for row in optimal_table_rows] for col_header in optimal_headers],
+                align=(["left"] + ["center"] * (len(optimal_headers) - 1)),
+                fill_color=[["rgba(238,238,238,1)" for _ in optimal_table_rows] for _ in optimal_headers],
+                line_color="black",
+                font=dict(size=10, color="black"),
+                height=cell_height
+            ),
+            columnwidth=optimal_column_width_weights
+        ))
+        fig.add_annotation(
+            x=xmin,
+            y=optimal_table_ymax + 0.004,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            text="<b>Optimal sampling point</b>",
+            font=dict(size=10, color="black"),
+            xanchor="left",
+            yanchor="bottom",
+            bgcolor="rgba(255,255,255,1)",
+            bordercolor="rgba(0,0,0,1)",
+            borderpad=2
+        )
 
     if frame_label:
         fig.add_annotation(
             x=(xmin + xmax) / 2.0,
-            y=(table_ymax + ymax) / 2.0,
+            y=(tables_top + ymax) / 2.0,
             xref="paper",
             yref="paper",
             showarrow=False,
@@ -1491,6 +1600,9 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
     """
     Add Euler angles to a Plotly figure as an annotation, dynamically placed based on current axis ranges and specified position.
     """
+    # Convention is displayed in the compact metadata strip; keep this parameter for API compatibility.
+    _ = euler_convention_str
+
     # Dictionary to map positions to x, y, xanchor, and yanchor settings
     position_settings = {
         'top right': {'x': 1, 'y': 1, 'xanchor': 'right', 'yanchor': 'top'},
@@ -1509,7 +1621,7 @@ def add_euler_angles_to_plot_v3(fig, euler_angles, euler_convention_str, positio
     z_dir = "CW" if z_angle > 0 else ("CCW" if z_angle < 0 else "0")
     z_abs = abs(z_angle)
     euler_text = (
-        f"Euler Angles:<br>{euler_convention_str}"
+        "Euler Angles:"
         f"<br>X: {euler_angles[0]:.1f}°"
         f"<br>Y: {euler_angles[1]:.1f}°"
         f"<br>Z: {z_angle:.1f}° ({z_abs:.1f}° {z_dir})"
@@ -3589,15 +3701,16 @@ def set_square_aspect_ratio(fig):
     Parameters:
     - fig (plotly.graph_objs.Figure): The figure object to be modified.
     """
-    # Set x-axis to anchor to the y-axis
+    # Use one-way scale anchoring and domain constraints to preserve square units
+    # while avoiding unintended range expansion when extra layout domains are used.
     fig.update_layout(
         xaxis=dict(
             scaleanchor='y',
-            scaleratio=1
+            scaleratio=1,
+            constrain='domain'
         ),
         yaxis=dict(
-            scaleanchor='x',
-            scaleratio=1
+            constrain='domain'
         )
     )
 
@@ -4009,7 +4122,8 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                             fire_table_position = "auto",
                                             candidate_plot_rank = 1,
                                             validate_firing_df_builder = False,
-                                            strict_precomputed_guidance = False
+                                            strict_precomputed_guidance = False,
+                                            show_euler_annotation_box = True
                                             ):
     """
     Build sagittal and transverse guidance-map contour plots using precomputed candidate dataframes.
@@ -4030,12 +4144,54 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
       - skipped_failed_rank_inputs
     """
 
-    def _anchor_colorbars_bottom_right(fig):
-        """Place contour colorbars bottom-right outside plot area with left-side vertical labels."""
-        colorbar_x = 1.13
-        colorbar_len = 0.5
-        colorbar_y = 0.0
-        label_x_offset = 0.012
+    def _get_map_y_domain(fig):
+        yaxis_obj = getattr(fig.layout, "yaxis", None)
+        if yaxis_obj is not None and getattr(yaxis_obj, "domain", None) is not None:
+            y_domain = yaxis_obj.domain
+            if len(y_domain) >= 2:
+                return float(y_domain[0]), float(y_domain[1])
+        return 0.0, 1.0
+
+    def _reserve_right_utility_lane(fig):
+        """
+        Reserve a fixed paper-space lane for legend/colorbar.
+        Keep the map in the left block to avoid renderer auto-margin growth.
+        """
+        map_x0 = 0.0
+        map_x1 = 0.63
+        if getattr(fig.layout, "xaxis", None) is not None:
+            fig.layout.xaxis.domain = [map_x0, map_x1]
+        if getattr(fig.layout, "xaxis2", None) is not None:
+            fig.layout.xaxis2.domain = [map_x0, map_x1]
+
+    def _estimate_legend_width(fig):
+        legend_labels = []
+        for tr in fig.data:
+            if getattr(tr, "showlegend", None) is False:
+                continue
+            trace_name = getattr(tr, "name", None)
+            if trace_name:
+                legend_labels.append(str(trace_name))
+        if len(legend_labels) == 0:
+            return 0.0
+        max_chars = max([len(label) for label in legend_labels])
+        est_width = 0.08 + 0.0085 * max_chars
+        return float(np.clip(est_width, 0.14, 0.24))
+
+    def _anchor_colorbars_right_side(fig):
+        """
+        Place contour colorbars in the right-side utility lane (inside paper [0,1]).
+        """
+        lane_left = 0.67
+        lane_right = 0.99
+        legend_width = _estimate_legend_width(fig)
+        legend_x = lane_left + 0.01
+        colorbar_x = float(np.clip(legend_x + legend_width + 0.10, 0.93, lane_right - 0.01))
+        map_y0, map_y1 = _get_map_y_domain(fig)
+        map_height = max(0.01, map_y1 - map_y0)
+        colorbar_len = max(0.16, min(0.46, 0.82 * map_height))
+        colorbar_y = map_y0 + 0.5 * map_height
+        label_x_offset = 0.03
         for tr in fig.data:
             if getattr(tr, "type", None) == "contour" and hasattr(tr, "colorbar") and tr.colorbar:
                 title_text = ""
@@ -4048,19 +4204,21 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
 
                 tr.update(colorbar=dict(
                     x=colorbar_x,
-                    xanchor="left",
+                    xanchor="center",
                     y=colorbar_y,
-                    yanchor="bottom",
+                    yanchor="middle",
                     lenmode="fraction",
                     len=colorbar_len,
                     orientation="v",
+                    thicknessmode="pixels",
+                    thickness=30,
                     title=dict(text="")
                 ))
 
                 if title_text:
                     fig.add_annotation(
                         x=colorbar_x - label_x_offset,
-                        y=colorbar_y + 0.5 * colorbar_len,
+                        y=colorbar_y,
                         xref="paper",
                         yref="paper",
                         text=title_text,
@@ -4070,6 +4228,30 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         yanchor="middle",
                         font=dict(size=title_font_size, color="black")
                     )
+
+    def _anchor_legend_right_side(fig):
+        """
+        Place legend in the right-side utility lane beside the colorbar.
+        """
+        lane_left = 0.67
+        map_y0, map_y1 = _get_map_y_domain(fig)
+        map_height = max(0.01, map_y1 - map_y0)
+        legend_y = map_y0 + 0.5 * map_height
+        fig.update_layout(
+            legend=dict(
+                x=lane_left + 0.01,
+                y=legend_y,
+                xanchor="left",
+                yanchor="middle",
+                orientation="v",
+                traceorder="normal"
+            )
+        )
+
+    def _apply_right_utility_lane_layout(fig):
+        _reserve_right_utility_lane(fig)
+        _anchor_legend_right_side(fig)
+        _anchor_colorbars_right_side(fig)
 
     if fire_annotation_style not in ["hockey", "compact_table"]:
         warnings.warn(f"Unsupported fire_annotation_style '{fire_annotation_style}'. Falling back to 'hockey'.")
@@ -5135,6 +5317,10 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                     fire_row["In-plane offset from pre-fire tip to projected axis from optimal template hole distance (mm)"],
                     errors="coerce"
                 )),
+                "out_of_plane_deflection": float(pandas.to_numeric(
+                    fire_row["Out-of-plane axis offset from optimal template hole distance (mm)"],
+                    errors="coerce"
+                )),
                 "depth_from_apex": float(pandas.to_numeric(
                     fire_row["Pre-fire tip depth from apex (Transducer primed frame) (mm)"],
                     errors="coerce"
@@ -5722,7 +5908,13 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "optimal_hole": optimal_template_hole_label,
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
-                "yprime": transformed_optimal_point_contour_coord_sys[1]
+                "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "coord_1": transformed_optimal_point_contour_coord_sys[0],
+                "coord_2": transformed_optimal_point_contour_coord_sys[1],
+                "euler_x_deg": float(effective_euler_angles[0]),
+                "euler_y_deg": float(effective_euler_angles[1]),
+                "euler_z_deg": float(effective_euler_angles[2]),
+                "euler_z_with_direction": f"{float(effective_euler_angles[2]):.1f}° ({_angle_direction_label(float(effective_euler_angles[2]))})",
             }
             if fire_annotation_style == "hockey":
                 contour_plot = add_points_to_plot_v2(contour_plot,
@@ -5885,12 +6077,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                                                    text_box_border_color="rgba(0, 0, 0, 1)",
                                                    text_color="black")
     
-            if simple_angle_display_option_bool == False:
+            if show_euler_annotation_box and simple_angle_display_option_bool == False:
                 contour_plot = add_euler_angles_to_plot_v3(contour_plot, 
                                                         effective_euler_angles,
                                                         effective_euler_convention, 
                                                         position='bottom right')
-            elif simple_angle_display_option_bool == True:
+            elif show_euler_annotation_box and simple_angle_display_option_bool == True:
                 z_angle = effective_euler_angles[2]
                 contour_plot = add_sagittal_angle_to_plot(contour_plot, 
                                                                      z_angle, 
@@ -5898,19 +6090,27 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             
             z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
-    
-            _anchor_colorbars_bottom_right(contour_plot)
-    
+
             contour_plot = set_square_aspect_ratio(contour_plot)
             
     
             if fire_annotation_style == "compact_table":
+                metadata_strip = {
+                    "Patient ID": str(patientUID),
+                    "DIL ID": str(sp_dil_id),
+                    "Rank": f"R{int(selected_plot_rank)}",
+                    "Euler conv": str(effective_euler_convention),
+                }
                 contour_plot = add_compact_fire_positions_table(contour_plot,
                                                                 fire_rows,
                                                                 position=fire_table_position,
-                                                                frame_label="Transducer plane frame (Z', Y')",
-                                                                optimal_row=optimal_row_sagittal)
-    
+                                                                frame_label="Sagittal TRUS plane frame (transducer primed Z',Y')",
+                                                                optimal_row=optimal_row_sagittal,
+                                                                metadata_row=metadata_strip,
+                                                                optimal_coord_header_1="Optimal Z'<br>(mm)",
+                                                                optimal_coord_header_2="Optimal Y'<br>(mm)")
+            _apply_right_utility_lane_layout(contour_plot)
+
             sp_dil_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot}
             trus_plane_sagittal_contour_plot_list_of_dicts.append(sp_dil_contour_plot_dict)
@@ -5948,7 +6148,13 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                 "optimal_hole": optimal_template_hole_label,
                 "xprime": transformed_optimal_point_xprime,
                 "zprime": transformed_optimal_point_contour_coord_sys[0],
-                "yprime": transformed_optimal_point_contour_coord_sys[1]
+                "yprime": transformed_optimal_point_contour_coord_sys[1],
+                "coord_1": float(sp_dil_optimal_coordinate_transverse_contour_plot_coords[0]),
+                "coord_2": float(sp_dil_optimal_coordinate_transverse_contour_plot_coords[1]),
+                "euler_x_deg": float(effective_euler_angles[0]),
+                "euler_y_deg": float(effective_euler_angles[1]),
+                "euler_z_deg": float(effective_euler_angles[2]),
+                "euler_z_with_direction": f"{float(effective_euler_angles[2]):.1f}° ({_angle_direction_label(float(effective_euler_angles[2]))})",
             }
             if fire_annotation_style == "hockey":
                 contour_plot_transverse = add_points_to_plot_v2(contour_plot_transverse,
@@ -6049,7 +6255,6 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
                         text=f"Transverse (Max) plane - {patientUID} - {sp_dil_plot_id}"
                     )
                 )
-            _anchor_colorbars_bottom_right(contour_plot_transverse)
     
     
             # Example data preparation
@@ -6075,12 +6280,12 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
             z_angle = effective_euler_angles[2]  # using precomputed guidance metadata when available
             contour_plot_transverse = add_z_angle_line_to_plot(contour_plot_transverse, transducer_saggital_plane_point_prostate_frame_sup, z_angle)
     
-            if simple_angle_display_option_bool == False:
+            if show_euler_annotation_box and simple_angle_display_option_bool == False:
                 contour_plot_transverse = add_euler_angles_to_plot_v3(contour_plot_transverse, 
                                                         effective_euler_angles,
                                                         effective_euler_convention, 
                                                         position='bottom right')
-            elif simple_angle_display_option_bool == True:
+            elif show_euler_annotation_box and simple_angle_display_option_bool == True:
                 contour_plot_transverse = add_sagittal_angle_to_plot(contour_plot_transverse, 
                                                                      z_angle, 
                                                                      position='bottom right')
@@ -6091,25 +6296,28 @@ def create_advanced_guidance_map_transducer_saggital_and_transverse_contour_plot
     
             contour_plot_transverse = adjust_plot_area_and_reverse_axes(contour_plot_transverse, 
                                                                         bounds_points_xy, 
-                                                                        margin=5, 
+                                                                        margin=7, 
                                                                         reverse_x = False, 
                                                                         reverse_y = True)
             _show_all_axis_lines(contour_plot_transverse)
     
             if draw_orientation_diagram:
                 contour_plot_transverse = add_angle_orientation_diagram(contour_plot_transverse, position = (0.8,0.05))
-    
             contour_plot_transverse = set_square_aspect_ratio(contour_plot_transverse)
-    
+
             
     
             if fire_annotation_style == "compact_table":
                 contour_plot_transverse = add_compact_fire_positions_table(contour_plot_transverse,
                                                                            fire_rows,
                                                                            position=fire_table_position,
-                                                                           frame_label="Transducer plane frame (Z', Y')",
-                                                                           optimal_row=optimal_row_transverse)
-    
+                                                                           frame_label="Transverse plane (prostate centroid frame X,Y)",
+                                                                           optimal_row=optimal_row_transverse,
+                                                                           metadata_row=metadata_strip,
+                                                                           optimal_coord_header_1="Optimal X<br>(mm)",
+                                                                           optimal_coord_header_2="Optimal Y<br>(mm)")
+            _apply_right_utility_lane_layout(contour_plot_transverse)
+
             sp_dil_transverse_contour_plot_dict = {"DIL ID": dil_plot_id,
                                         "Contour plot": contour_plot_transverse}
             transverse_contour_plot_list_of_dicts.append(sp_dil_transverse_contour_plot_dict)

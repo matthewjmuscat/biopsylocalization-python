@@ -414,9 +414,9 @@ def main():
     simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
     #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
     bx_sample_pts_lattice_spacing = 1
-    num_MC_containment_simulations_input = 10
+    num_MC_containment_simulations_input = 10000
     keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 10
+    num_MC_dose_simulations_input = 10000
     num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
     biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
     num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
@@ -493,17 +493,19 @@ def main():
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
     strict_precomputed_guidance_behavior = False
+    # If False, Euler-angle annotation box is hidden on the map; Euler values remain in compact tables.
+    show_euler_annotation_box_behavior = False
 
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_centroid_dil'}
                               ,   
                             optimal_dil_sim_key:
-                              {"Create": False,
+                              {"Create": True,
                               "Relative to struct type": dil_ref,
                               "Identifier string": 'sim_optimal_dil'}
                             }
@@ -8789,6 +8791,9 @@ def main():
 
                         patient_sp_preprocessing_output_figures_dir = patient_sp_preprocessing_output_figures_dir_dict[patientUID]
                         
+
+                        # Old guidance maps (blue backgrounds) commented out, no use
+                        """"
                         # Cumulative projection guidance map
                         production_plots.production_plot_guidance_maps_cumulative_projection(patientUID,
                                                 patient_sp_preprocessing_output_figures_dir,
@@ -8811,6 +8816,8 @@ def main():
                                             svg_image_height,
                                             general_plot_name_string
                                             )
+                        """
+
                         """
                         production_plots.guidance_map_transducer_angle_sagittal(patientUID,
                                             patient_sp_preprocessing_output_figures_dir,
@@ -8868,6 +8875,7 @@ def main():
                                             fire_table_position="outside top center",
                                             draw_orientation_diagram=False,
                                             show_titles=show_titles_for_guidance_maps,
+                                            show_euler_annotation_box=show_euler_annotation_box_behavior,
                                             candidate_plot_rank=candidate_plot_ranks_behavior,
                                             validate_firing_df_builder=validate_firing_df_builder_behavior,
                                             strict_precomputed_guidance=strict_precomputed_guidance_behavior
