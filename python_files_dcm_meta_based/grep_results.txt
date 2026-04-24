@@ -1,0 +1,212 @@
+./misc_tools.py:1492:                                       append_default_exterior_tissue = False,
+./misc_tools.py:1493:                                       default_exterior_tissue = 'Periprostatic'):
+./misc_tools.py:1499:    if append_default_exterior_tissue == True:
+./misc_tools.py:1500:        heirarchy_list.append(default_exterior_tissue)
+./misc_tools.py:1506:                                       append_default_exterior_tissue = False,
+./misc_tools.py:1507:                                       default_exterior_tissue = 'Periprostatic'):
+./misc_tools.py:1513:    if append_default_exterior_tissue == True:
+./misc_tools.py:1514:        heirarchy_list.append(default_exterior_tissue)
+./biopsy_localization_convex_main.py:754:                                        "Tissue classification sum-to-one plot": \
+./biopsy_localization_convex_main.py:756:                                             "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
+./biopsy_localization_convex_main.py:758:                                        "Tissue classification sum-to-one nominal plot": \
+./biopsy_localization_convex_main.py:760:                                             "Plot name": ' - tissue_class_sum-to-one_nominal_chart',
+./biopsy_localization_convex_main.py:800:                                        "Cohort - Tissue class global score sum-to-one box plots": \
+./biopsy_localization_convex_main.py:802:                                             "Plot name": ' cohort - tissue_class_sum-to-one_global_scores_by_bx_type'
+./biopsy_localization_convex_main.py:804:                                        "Cohort - Tissue class sum-to-one spatial ridgeline plots": \
+./biopsy_localization_convex_main.py:806:                                             "Plot name": ' cohort - tissue_class_sum-to-one_ridgeline'
+./biopsy_localization_convex_main.py:808:                                        "Cohort - Tissue class sum-to-one spatial nominal heatmap": \
+./biopsy_localization_convex_main.py:810:                                             "Plot name": ' cohort - tissue_class_sum-to-one_nominal_heatmap'
+./biopsy_localization_convex_main.py:812:                                        "Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class": \
+./biopsy_localization_convex_main.py:814:                                             "Plot name": ' cohort - tissue_class_sum-to-one_all_biopsy_voxels_histogram_by_tissue_class'
+./biopsy_localization_convex_main.py:907:    cancer_tissue_label = 'DIL'
+./biopsy_localization_convex_main.py:909:    default_exterior_tissue = 'Periprostatic' # For tissue class stuff! Basically dictates what to call tissue that doesnt lie in any defined structure!
+./biopsy_localization_convex_main.py:916:    tissue_volume_operator_dictionary = {cancer_tissue_label: 'greater',
+./biopsy_localization_convex_main.py:920:                                         default_exterior_tissue: 'less'
+./biopsy_localization_convex_main.py:990:                                          'Tissue class name': cancer_tissue_label,
+./biopsy_localization_convex_main.py:1106:                                                                "Cohort: sum-to-one mc results": None,
+./biopsy_localization_convex_main.py:1107:                                                                "Cohort: global sum-to-one mc results": None,
+./biopsy_localization_convex_main.py:7513:                                        cancer_tissue_label,
+./biopsy_localization_convex_main.py:7514:                                        default_exterior_tissue,
+./biopsy_localization_convex_main.py:7583:                                                                                            cancer_tissue_label,
+./biopsy_localization_convex_main.py:7584:                                                                                            default_exterior_tissue,
+./biopsy_localization_convex_main.py:7664:                        cancer_tissue_label,
+./biopsy_localization_convex_main.py:7695:                        #del specific_bx_structure['MC data: compiled sim results']
+./biopsy_localization_convex_main.py:8006:                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"] = cohort_mc_sum_to_one_pt_wise_results_dataframe
+./biopsy_localization_convex_main.py:8012:                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: global sum-to-one mc results"] = cohort_mc_sum_to_one_global_results_dataframe
+./biopsy_localization_convex_main.py:8503:                        cancer_tissue_label,
+./biopsy_localization_convex_main.py:9736:                                                                                                        cancer_tissue_label
+./biopsy_localization_convex_main.py:9758:                    # deprecated dataframe! Superceded by sum-to-one mc results dataframe
+./biopsy_localization_convex_main.py:9760:                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"] 
+./biopsy_localization_convex_main.py:9784:                                                                                                                    cancer_tissue_label
+./biopsy_localization_convex_main.py:9796:                                                                                                                                    cancer_tissue_label)
+./biopsy_localization_convex_main.py:10144:                if production_plots_input_dictionary["Tissue classification sum-to-one plot"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10146:                    general_plot_name_string = production_plots_input_dictionary["Tissue classification sum-to-one plot"]["Plot name"]
+./biopsy_localization_convex_main.py:10150:                    processing_patient_production_plot_description = "Creating tissue class sum-to-one plots [{}]...".format(patientUID_default)
+./biopsy_localization_convex_main.py:10152:                    processing_patient_production_plot_description_completed = "Creating tissue class sum-to-one plots"
+./biopsy_localization_convex_main.py:10159:                        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"]
+./biopsy_localization_convex_main.py:10161:                        processing_patient_production_plot_description = "Creating tissue class sum-to-one plots [{}]...".format(patientUID)
+./biopsy_localization_convex_main.py:10173:                                                                                    default_exterior_tissue,
+./biopsy_localization_convex_main.py:10188:                if production_plots_input_dictionary["Tissue classification sum-to-one nominal plot"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10190:                    general_plot_name_string = production_plots_input_dictionary["Tissue classification sum-to-one nominal plot"]["Plot name"]
+./biopsy_localization_convex_main.py:10194:                    processing_patient_production_plot_description = "Creating tissue class sum-to-one nominal plots [{}]...".format(patientUID_default)
+./biopsy_localization_convex_main.py:10196:                    processing_patient_production_plot_description_completed = "Creating tissue class sum-to-one nominal plots"
+./biopsy_localization_convex_main.py:10202:                        processing_patient_production_plot_description = "Creating tissue class sum-to-one nominal plots [{}]...".format(patientUID)
+./biopsy_localization_convex_main.py:10205:                        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] 
+./biopsy_localization_convex_main.py:10232:                if production_plots_input_dictionary["Cohort - Tissue class global score sum-to-one box plots"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10234:                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - tissue class global scores sum-to-one boxplots...', total=None)
+./biopsy_localization_convex_main.py:10235:                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - tissue class global scores sum-to-one boxplots', total=1, visible = False)
+./biopsy_localization_convex_main.py:10239:                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class global score sum-to-one box plots"]["Plot name"]
+./biopsy_localization_convex_main.py:10241:                    cohort_mc_sum_to_one_global_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: global sum-to-one mc results"]
+./biopsy_localization_convex_main.py:10255:                if production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial ridgeline plots"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10257:                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Tissue class sum-to-one spatial ridgeline plots...', total=None)
+./biopsy_localization_convex_main.py:10258:                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Tissue class sum-to-one spatial ridgeline plots', total=1, visible = False)
+./biopsy_localization_convex_main.py:10262:                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial ridgeline plots"]["Plot name"]
+./biopsy_localization_convex_main.py:10264:                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+./biopsy_localization_convex_main.py:10281:                if production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial nominal heatmap"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10283:                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Tissue class sum-to-one spatial nominal heatmap...', total=None)
+./biopsy_localization_convex_main.py:10284:                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Tissue class sum-to-one spatial nominal heatmap', total=1, visible = False)
+./biopsy_localization_convex_main.py:10288:                    general_plot_name_string = production_plots_input_dictionary["Cohort - Tissue class sum-to-one spatial nominal heatmap"]["Plot name"]
+./biopsy_localization_convex_main.py:10290:                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+./biopsy_localization_convex_main.py:10308:                if production_plots_input_dictionary["Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class"]["Plot bool"] == True:
+./biopsy_localization_convex_main.py:10310:                    main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class...', total=None)
+./biopsy_localization_convex_main.py:10311:                    main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class', total=1, visible = False)
+./biopsy_localization_convex_main.py:10315:                    general_plot_name_string = production_plots_input_dictionary["Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class"]["Plot name"]
+./biopsy_localization_convex_main.py:10317:                    cohort_mc_sum_to_one_pt_wise_results_dataframe = master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: sum-to-one mc results"]
+./biopsy_localization_convex_main.py:10452:                                            cancer_tissue_label)
+./biopsy_localization_convex_main.py:10608:                                                cancer_tissue_label,
+./biopsy_localization_convex_main.py:10995:                         "MC data: compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:10996:                         "MC data: compiled sim sum-to-one results dataframe": None,
+./biopsy_localization_convex_main.py:10997:                         #"MC data: mutual compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:10998:                         "MC data: compiled sim results": None, 
+./biopsy_localization_convex_main.py:10999:                         "MC data: mutual compiled sim results": None,
+./biopsy_localization_convex_main.py:11129:                                "MC data: compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:11130:                                "MC data: compiled sim sum-to-one results dataframe": None,
+./biopsy_localization_convex_main.py:11131:                                #"MC data: mutual compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:11132:                                "MC data: compiled sim results": None,
+./biopsy_localization_convex_main.py:11133:                                "MC data: mutual compiled sim results": None, 
+./biopsy_localization_convex_main.py:11208:                                                                                 "Tissue class - sum-to-one mc results": None,
+./biopsy_localization_convex_main.py:11213:                                                                                 #"Tissue class - Pt wise mutual tissue class results": None,
+./production_plots.py:2071:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./production_plots.py:2103:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./production_plots.py:2350:        tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./production_plots.py:2366:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./production_plots.py:2687:                                                cancer_tissue_label,
+./production_plots.py:2752:            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (non-sim only)',
+./production_plots.py:2778:            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (sim only)',
+./production_plots.py:2829:            title='Distribution of first order Sobol indices (tissue classification, '+cancer_tissue_label+') (non-sim only)',
+./production_plots.py:2869:            title='Distribution of total order Sobol indices (tissue classification, ' + cancer_tissue_label + ')',
+./production_plots.py:2898:            title='Distribution of first order Sobol indices by biopsy class (tissue classification, ' + cancer_tissue_label + ')',
+./production_plots.py:5344:                                            cancer_tissue_label):
+./production_plots.py:5348:    df = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+./production_plots.py:5736:                                            cancer_tissue_label
+./production_plots.py:5743:    df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+./production_plots.py:5840:                                                                                        cancer_tissue_label
+./production_plots.py:5847:    #df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt["Structure ROI"] == cancer_tissue_label]
+./production_plots.py:5848:    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Structure ROI"] == cancer_tissue_label]
+./production_plots.py:6010:                                                                                          cancer_tissue_label):
+./production_plots.py:6018:    df_tissue = sp_patient_binom_df[sp_patient_binom_df["Tissue class"] == cancer_tissue_label]
+./production_plots.py:7460:                                                                        default_exterior_tissue,
+./production_plots.py:7543:                                       append_default_exterior_tissue = True,
+./production_plots.py:7544:                                       default_exterior_tissue = default_exterior_tissue
+./production_plots.py:7673:    fig.write_image(svg_dose_fig_file_path, scale = svg_image_scale, width = svg_image_width, height = svg_image_height/3) # added /3 here to make the y axis categories closer together, ie to make the plot flatter so that it can fit beneath the sum-to-one spatial regression plots.
+./production_plots.py:7698:    ax.set_title('Boxplots of Global Mean, Min, and Max (sum-to-one) Values by Tissue Class', fontsize=12)
+./production_plots.py:7737:    g.fig.suptitle('Boxplots of Global Mean, Min, and Max (sum-to-one) Values by Tissue Class', y=1.02, fontsize=12)
+./production_plots.py:8044:            print(f"Cohort sum-to-one histogram plot | Tissue class: {tissue_class} | LinAlgError: {e}")
+./production_plots.py:8051:            print(f"Cohort sum-to-one histogram plot | Tissue class: {tissue_class} | An unexpected error occurred: {e}")
+./csv_writers.py:13:                           cancer_tissue_label,
+./csv_writers.py:63:                    tissue_classes_list = [cancer_tissue_label,structure_miss_probability_roi,miss_structure_complement_label]
+./csv_writers.py:99:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./csv_writers.py:152:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./csv_writers.py:181:                    tumor_containment_structure_binom_est_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"].tolist()
+./test_code.ipynb:1406:    "        #del specific_bx_structure['MC data: compiled sim results']\n",
+./test_code.ipynb:13134:    "df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt[\"Structure ROI\"] == cancer_tissue_label]\n",
+./test_code.ipynb:19212:    "#df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt[\"Structure ROI\"] == cancer_tissue_label]\n",
+./test_code.ipynb:19213:    "df_tissue = sp_patient_binom_df[sp_patient_binom_df[\"Structure ROI\"] == cancer_tissue_label]\n",
+./test_code.ipynb:19492:    "                                                                                        cancer_tissue_label\n",
+./test_code.ipynb:19499:    "    #df_tissue = cohort_all_binom_data_by_trial_and_pt[cohort_all_binom_data_by_trial_and_pt[\"Structure ROI\"] == cancer_tissue_label]\n",
+./test_code.ipynb:19500:    "    df_tissue = sp_patient_binom_df[sp_patient_binom_df[\"Structure ROI\"] == cancer_tissue_label]\n",
+./test_code.ipynb:19958:    "        \"Tumor tissue binomial est arr\": np.array([0.1, 0.2, 0.3]),\n",
+./test_code.ipynb:19963:    "    \"MC data: compiled sim results\": {\n",
+./test_code.ipynb:19980:    "cancer_tissue_label = \"Cancer\"\n",
+./test_code.ipynb:20002:    "                                         cancer_tissue_label,\n",
+./test_code.ipynb:20016:    "    tumor_tissue_bionomial_est_arr = specific_bx_structure[\"MC data: tumor tissue probability\"][\"Tumor tissue binomial est arr\"]\n",
+./test_code.ipynb:20029:    "    ROI_name_point_wise_for_pd_data_frame_list = [cancer_tissue_label]*len(bx_points_bx_coords_sys_arr_list)\n",
+./test_code.ipynb:20034:    "    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./test_code.ipynb:20108:    "                                                                          cancer_tissue_label,\n",
+./test_code.ipynb:20117:    "                                                           cancer_tissue_label,\n",
+./test_code.ipynb:20141:    "        \"Structure ROI\": prepare_list([cancer_tissue_label] * len(bx_points_arr), miss_structure_complement_label, len(bx_points_arr)),\n",
+./test_code.ipynb:20146:    "        \"Mean probability (binom est)\": tumor_data[\"Tumor tissue binomial est arr\"].tolist() + specific_bx_structure[\"MC data: miss structure tissue probability\"][\"OAR tissue miss binomial est arr\"].tolist(),\n",
+./test_code.ipynb:20153:    "    for key_tuple, value_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./test_code.ipynb:20179:    "                                                                                     cancer_tissue_label,\n",
+./test_code.ipynb:20485:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20575:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20661:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20704:    "            specific_bx_structure[\"MC data: compiled sim results dataframe\"] = containment_output_by_rel_structure_pandas_data_frame\n",
+./test_code.ipynb:30845:    "# Add default_exterior_tissue results by calculating the difference between trials and successes\n",
+./test_code.ipynb:30854:    "        'Relative structure type': default_exterior_tissue,\n",
+./test_code.ipynb:30858:    "# Convert the default_exterior_tissue rows into a DataFrame\n",
+./test_code.ipynb:30861:    "# Concatenate the default_exterior_tissue rows into the final result using pandas.concat\n",
+./test_code.ipynb:30874:    "tissue_class_mapping[default_exterior_tissue] = default_exterior_tissue\n",
+./test_code.ipynb:30911:    "# Add default_exterior_tissue results for nominal by calculating the difference between trials and successes\n",
+./test_code.ipynb:30920:    "        'Relative structure type': default_exterior_tissue,\n",
+./test_code.ipynb:30927:    "# Concatenate the default_exterior_tissue rows into the nominal result\n",
+./test_code.ipynb:37101:    "file_path = \"/home/mjm/Documents/UBC/Research/Research papers/biopsy - tissue class structure set/7 patients csvs/Cohort: sum-to-one mc results.csv\"\n",
+./test_code.ipynb:37112:    "output_path = \"/home/mjm/Documents/UBC/Research/Research papers/biopsy - tissue class structure set/7 patients csvs/Cohort: sum-to-one mc results_global_scores.csv\"\n",
+./test_code.ipynb:37138:    "input_path = \"/home/mjm/Documents/UBC/Research/Research papers/biopsy - tissue class structure set/7 patients csvs/Cohort: sum-to-one mc results_global_scores.csv\"\n",
+./test_code.ipynb:37524:    "                                            cancer_tissue_label):\n",
+./MC_simulator_convex.py:78:                       cancer_tissue_label,
+./MC_simulator_convex.py:79:                       default_exterior_tissue,
+./MC_simulator_convex.py:1447:                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calcing sum-to-one probabilities", total = None)
+./MC_simulator_convex.py:1453:                                                        default_exterior_tissue = default_exterior_tissue)
+./MC_simulator_convex.py:1756:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
+./MC_simulator_convex.py:1757:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
+./MC_simulator_convex.py:1758:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
+./MC_simulator_convex.py:1762:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1763:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1963:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1964:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1987:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./MC_simulator_convex.py:2003:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./MC_simulator_convex.py:2039:                mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = specific_bx_structure["MC data: compiled sim sum-to-one results dataframe"]
+./MC_simulator_convex.py:2055:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
+./MC_simulator_convex.py:2083:        specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est arr": None, 
+./MC_simulator_convex.py:2113:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./MC_simulator_convex.py:2114:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./MC_simulator_convex.py:2183:                specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est arr"] = probability_pt_wise_dil_tissue_arr
+./MC_simulator_convex.py:2242:                                                                                                                                                                                                cancer_tissue_label,
+./MC_simulator_convex.py:2271:                             cancer_tissue_label,
+./MC_simulator_convex.py:2328:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./MC_simulator_convex.py:4790:                             cancer_tissue_label,
+./MC_simulator_convex.py:4804:    containment_output_by_MC_trial_pandas_data_frame_DIL_and_min_threshold_subset = containment_output_by_MC_trial_pandas_data_frame[(containment_output_by_MC_trial_pandas_data_frame["Structure ROI"] == cancer_tissue_label) &
+./MC_simulator_convex.py:4928:                                                        default_exterior_tissue = 'Periprostatic'):
+./MC_simulator_convex.py:4937:                                       append_default_exterior_tissue = False
+./MC_simulator_convex.py:4980:    # Add default_exterior_tissue results by calculating the difference between trials and successes
+./MC_simulator_convex.py:4989:            'Relative structure type': default_exterior_tissue,
+./MC_simulator_convex.py:4993:    # Convert the default_exterior_tissue rows into a DataFrame
+./MC_simulator_convex.py:4996:    # Concatenate the default_exterior_tissue rows into the final result using pandas.concat
+./MC_simulator_convex.py:5009:    tissue_class_mapping[default_exterior_tissue] = default_exterior_tissue
+./MC_simulator_convex.py:5053:                                                        default_exterior_tissue = 'Periprostatic'):
+./MC_simulator_convex.py:5062:                                       append_default_exterior_tissue = False
+./MC_simulator_convex.py:5105:    # Add default_exterior_tissue results by calculating the difference between trials and successes
+./MC_simulator_convex.py:5114:            'Relative structure type': default_exterior_tissue,
+./MC_simulator_convex.py:5118:    # Convert the default_exterior_tissue rows into a DataFrame
+./MC_simulator_convex.py:5121:    # Concatenate the default_exterior_tissue rows into the final result using pandas.concat
+./MC_simulator_convex.py:5134:    tissue_class_mapping[default_exterior_tissue] = default_exterior_tissue
+./MC_simulator_convex.py:5171:    # Add default_exterior_tissue results for nominal by calculating the difference between trials and successes
+./MC_simulator_convex.py:5180:            'Relative structure type': default_exterior_tissue,
+./MC_simulator_convex.py:5187:    # Concatenate the default_exterior_tissue rows into the nominal result
+./fanova.py:45:            cancer_tissue_label,
+./fanova.py:605:                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"] = mutual_fanova_compiled_results_for_fixed_bx_dict
+./fanova.py:641:                    mutual_fanova_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"]
+./fanova.py:1021:                                                                "Relative structure ROI": cancer_tissue_label,
+./dataframe_builders.py:204:                                         cancer_tissue_label,
+./dataframe_builders.py:218:    tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./dataframe_builders.py:231:    ROI_name_point_wise_for_pd_data_frame_list = [cancer_tissue_label]*len(bx_points_bx_coords_sys_arr_list)
+./dataframe_builders.py:236:    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./dataframe_builders.py:315:            sp_bx_mc_structure_specific_pt_wise_results_dataframe = specific_bx_structure["MC data: compiled sim results dataframe"]
+./dataframe_builders.py:339:            mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = specific_bx_structure["MC data: compiled sim sum-to-one results dataframe"]
+./dataframe_builders.py:345:        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - sum-to-one mc results"] = multi_structure_mc_sum_to_one_pt_wise_results_dataframe
+./dataframe_builders.py:429:            sp_bx_mc_tissue_class_pt_wise_results_dataframe = specific_bx_structure["MC data: mutual compiled sim results dataframe"]
+./dataframe_builders.py:435:        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Pt wise mutual tissue class results"] = multi_structure_mc_tissue_class_pt_wise_results_dataframe
+./dataframe_builders.py:603:            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure["MC data: compiled sim results dataframe"] 
+./dataframe_builders.py:646:            specific_bx_structure["MC data: compiled sim results dataframe"] = containment_output_by_rel_structure_pandas_data_frame
