@@ -243,6 +243,126 @@ The target-lane summary dataframe should include:
 - agreement delta,
 - lane identifiers so legacy and target outputs can be distinguished cleanly.
 
+## Change Inventory And Movement Classification
+
+We should not treat every planned change as the same kind of work.
+
+For this repo, every planned change should be classified into one of four buckets before coding:
+
+- additive no-move change,
+- adjacent sidecar wrapper,
+- later reposition candidate,
+- high-risk no-move block.
+
+This classification is part of the safety protocol.
+
+### Category A: Additive No-Move Changes
+
+These changes add new objects, new exports, new gates, or new comparison artifacts without changing the execution location of legacy logic.
+
+These are the safest early passes.
+
+Current items in this category:
+
+- dedicated per-biopsy `PD_target` audit export from the existing downstream structure-level tables,
+- new top-of-main target-lane flags and settings placed beside the current optimizer settings,
+- blank storage slots for target-lane outputs on biopsy dictionaries and cohort dataframe dictionaries,
+- retained target-lane score export beside downstream recovered `PD_target`,
+- dual export of `PD_target` and legacy `PD_all`,
+- a comparison-manifest writer for shadow-validation passes.
+
+### Category B: Adjacent Sidecar Wrapper Candidates
+
+These are blocks where we want to preserve the legacy code path exactly, wrap the existing logic with the same body, and run the wrapper beside the legacy block in shadow mode at the same execution point.
+
+These passes do not move the code.
+
+They only prove that:
+
+- the wrapper sees the same inputs,
+- the wrapper emits the same outputs,
+- the wrapper performs the same mutations,
+- the wrapper preserves any needed downstream state.
+
+Current items in this category:
+
+- `MC_prepper_funcs.generate_transformations(...)`,
+- `MC_prepper_funcs.biopsy_only_transformer(...)`,
+- `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)`,
+- any later callable seam we introduce around structure-side preparation needed to evaluate target-lane robust scores,
+- any legacy block whose code body can be preserved verbatim and whose outputs can be compared cleanly through a manifest.
+
+For every adjacent sidecar wrapper pass, the rule is:
+
+- keep the legacy block live,
+- keep the wrapped code body identical unless a difference is explicitly justified,
+- run the wrapper on copied inputs or copied touched state,
+- emit a comparison manifest,
+- do not reposition the call in the same pass.
+
+### Category C: Later Reposition Candidates
+
+These are the steps that may eventually need to run earlier or later than they do now, but should not be moved until the equivalent adjacent sidecar wrapper has already been validated.
+
+Current items in this category:
+
+- uncertainty preparation if exact draw reuse for the optimizer requires access to uncertainty-attached objects before the legacy simulation-prep point,
+- transform sampling if exact draw reuse for the optimizer requires sampled transforms before the legacy simulation-prep point,
+- any structure-side dilation or alternate-geometry preparation that the target-lane robust score must share with the downstream Monte Carlo path,
+- any optimizer-adjacent callable seam that currently depends on state produced later in the pipeline.
+
+For every reposition pass, the rule is:
+
+- first validate the wrapped block at the original location,
+- then audit all required inputs at the proposed new location,
+- then compare the input-state manifest between old location and new location,
+- only then move the call.
+
+### Category D: High-Risk No-Move Blocks
+
+These are blocks that should remain untouched while we are still building confidence in the wrapper and manifest process.
+
+Current items in this category:
+
+- the legacy optimizer loop itself,
+- the benchmark-sensitive structure-side geometry and containment path in `MC_simulator_convex.py`,
+- biopsy geometry creation in `biopsy_creator.py`,
+- biopsy transport logic in `biopsy_transporter.py`,
+- the existing downstream any-DIL Monte Carlo scoring behavior.
+
+These blocks may be read, wrapped beside their current execution point, or compared through manifests, but they should not be rewritten or moved in the early passes.
+
+## Shadow Validation Protocol
+
+Every sidecar pass should produce a machine-readable comparison manifest.
+
+At minimum, the manifest should record:
+
+- block name,
+- execution location,
+- patient and structure identifiers relevant to the block,
+- compared object path or output name,
+- equality status,
+- shape and dtype when arrays are involved,
+- exact mismatch summary when equality fails,
+- notes on whether row order or key order is part of the contract.
+
+The purpose of the manifest is to let us inspect equality after one real run without guessing.
+
+This protocol applies before any legacy block is removed and before any validated block is repositioned.
+
+## Recommended Execution Order
+
+The practical order should be:
+
+1. Add the comparison-manifest machinery.
+2. Complete the additive no-move passes.
+3. Shadow-wrap `generate_transformations(...)` beside the legacy call and validate exact equality.
+4. Shadow-wrap `biopsy_only_transformer(...)` beside the legacy call and validate exact equality.
+5. Shadow-wrap `biopsy_transformer_to_relative_structures(...)` beside the legacy call and validate exact equality.
+6. Decide whether the target-lane still requires any call-site repositioning after those validated seams exist.
+7. If repositioning is still required, move one validated block at a time with a separate state-input validation pass.
+
 ## Implementation Phases
 
 ## Phase 1: Expose A Clean `PD_target` Export Without Changing Optimization
