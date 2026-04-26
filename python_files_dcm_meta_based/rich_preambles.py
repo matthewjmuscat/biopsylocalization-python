@@ -10,13 +10,66 @@ from rich.progress import (
     TimeRemainingColumn
 )
 from rich.panel import Panel
-from rich.console import Group
+from rich.console import Console, Group
 from rich.table import Table
 from rich.layout import Layout
+from rich.live import Live
 from rich.text import Text
 import time
 import psutil
 import GPUtil
+
+
+class NullLiveDisplay:
+    """A minimal Live-compatible object for non-interactive runs."""
+
+    def __init__(self,
+                 renderable=None,
+                 refresh_per_second=8,
+                 screen=True,
+                 transient=False
+                 ):
+        self.renderable = renderable
+        self.refresh_per_second = refresh_per_second
+        self.screen = screen
+        self.transient = transient
+        self.console = Console(force_terminal=False, color_system=None)
+        self.is_started = False
+        self.rich_live_display_bool = False
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stop()
+        return False
+
+    def start(self, *args, **kwargs):
+        self.is_started = True
+
+    def stop(self, *args, **kwargs):
+        self.is_started = False
+
+    def refresh(self, *args, **kwargs):
+        return None
+
+    def update(self, renderable=None, *args, **kwargs):
+        if renderable is not None:
+            self.renderable = renderable
+
+
+def get_live_display(renderable,
+                     refresh_per_second=8,
+                     screen=True,
+                     rich_live_display_bool=True
+                     ):
+    if rich_live_display_bool == True:
+        return Live(renderable, refresh_per_second=refresh_per_second, screen=screen)
+
+    return NullLiveDisplay(renderable,
+                           refresh_per_second=refresh_per_second,
+                           screen=screen)
 
 
 def get_completed_progress():
@@ -308,6 +361,9 @@ class info_output:
         if len(self.text_lines) > self.max_lines:
             # Remove the oldest Text object
             self.text_lines.pop(0)
+
+        if getattr(live_display_obj, "rich_live_display_bool", True) == False:
+            live_display_obj.console.print(f"[{self.line_num}][{datetime.now().strftime('%H:%M:%S')}] > {text_str}")
 
         # Refresh the live display by calling refresh on the live display object
         live_display_obj.refresh()

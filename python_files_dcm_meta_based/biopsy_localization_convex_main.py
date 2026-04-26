@@ -97,6 +97,9 @@ import io
 from line_profiler import LineProfiler
 import mr_localizers
 import advanced_guidance_map_creator
+import target_dil_v2.lane_runner as target_dil_v2_lane_runner
+import target_dil_v2.length_sidecar as target_dil_v2_length_sidecar
+import target_dil_v2.state as target_dil_v2_state
 
 def main():
     
@@ -372,6 +375,7 @@ def main():
 
 
     spinner_type = 'moon' # other decent ones are 'point' and 'line' or 'line2'
+    rich_live_display_bool = False # [FIRST_PASS_CONFIG] If False, disables the Rich live screen and falls back to plain console status/prompt output.
     output_folder_name = 'Output data'
     preprocessed_data_folder_name = 'Preprocessed data'
     preprocessed_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict'
@@ -500,16 +504,17 @@ def main():
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
     bx_sim_locations_dict = {centroid_dil_sim_key:
-                              {"Create": True,
-                              "Relative to struct type": dil_ref,
-                              "Identifier string": 'sim_centroid_dil'}
-                              ,   
-                            optimal_dil_sim_key:
-                              {"Create": True,
-                              "Relative to struct type": dil_ref,
-                              "Identifier string": 'sim_optimal_dil'}
-                            }
-    simulated_biopsy_length_method = 'match real'   # can be 'full' (ie. 19mm), 
+                                                            {"Create": True,
+                                                            "Relative to struct type": dil_ref,
+                                                            "Identifier string": 'sim_centroid_dil'}
+                                                            ,   
+                                                        optimal_dil_sim_key:
+                                                            {"Create": True,
+                                                            "Relative to struct type": dil_ref,
+                                                            "Identifier string": 'sim_optimal_dil'}
+                                                        }
+    target_dil_v2_enabled = True # [FIRST_PASS_CONFIG]
+    simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' (ie. 19mm), 
                                                     #'real normal' (samples from a normal distribution with mu=real_mean, std = real_std), 
                                                     # 'real mean' (all sim biopsy lengths are equal to real_mean),
                                                     # 'match real' (each sim biopsy length is equal to the real biopsy length for the same DIL the real biopsy was targetting, if there is more than one real biopsy targetting that dil it takes the mean of them for the simulated biopsy, and if no real biopsy targetted that dil it takes the mean of all biopsies)
@@ -1144,7 +1149,10 @@ def main():
         layout_groups = (app_header,progress_group_info_list,important_info,app_footer)
         
                
-        with Live(rich_layout, refresh_per_second = 8, screen = True) as live_display:
+        with rich_preambles.get_live_display(rich_layout,
+                                             refresh_per_second = 8,
+                                             screen = True,
+                                             rich_live_display_bool = rich_live_display_bool) as live_display:
             rich_layout["header"].update(app_header)
             rich_layout["main-left"].update(progress_group)
             #rich_layout["box2"].update(Panel(make_syntax(), border_style="green"))
@@ -1546,6 +1554,9 @@ def main():
                                                                                                 important_info,
                                                                                                 live_display
                                                                                                 )
+                target_dil_v2_state.ensure_target_dil_v2_state(master_structure_reference_dict,
+                                                                bx_ref,
+                                                                all_ref_key)
                 #live_display.stop()
                 indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
@@ -5451,79 +5462,103 @@ def main():
                 processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
                 processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
 
-                real_biopsy_lengths_list = []
+                if target_dil_v2_enabled == True:
+                    target_dil_v2_length_sidecar_results_dict = target_dil_v2_length_sidecar.run_length_sidecar(master_structure_reference_dict,
+                                                                                                                 bx_ref,
+                                                                                                                 dil_ref,
+                                                                                                                 all_ref_key,
+                                                                                                                 simulated_biopsy_length_method,
+                                                                                                                 biopsy_needle_compartment_length,
+                                                                                                                 target_dil_v2_enabled)
+                    real_biopsy_lengths_list = target_dil_v2_length_sidecar_results_dict["real_biopsy_lengths_list"]
+                    real_bx_lengths_by_dil = target_dil_v2_length_sidecar_results_dict["real_bx_lengths_by_dil"]
+                    mean_of_real_biopsy_lengths = target_dil_v2_length_sidecar_results_dict["mean_of_real_biopsy_lengths"]
+                    std_of_real_biopsy_lengths = target_dil_v2_length_sidecar_results_dict["std_of_real_biopsy_lengths"]
+                else:
+                    real_biopsy_lengths_list = []
 
 
-                # NEW: real lengths per patient, per DIL Ref #
-                # real_bx_lengths_by_dil[patientUID][dil_refnum] = [len1, len2, ...]
-                real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
+                    # NEW: real lengths per patient, per DIL Ref #
+                    # real_bx_lengths_by_dil[patientUID][dil_refnum] = [len1, len2, ...]
+                    real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                        
+                        structureID_default = "Initializing"
+                        num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_bx_structs_patient_specific)
+
+
+                        # Pre-compute DIL centroids for this patient (keyed by DIL Ref #)
+                        dil_centroids_by_ref = {}
+                        if dil_ref in pydicom_item:
+                            for specific_dil_structure in pydicom_item[dil_ref]:
+                                dil_refnum = specific_dil_structure["Ref #"]
+                                dil_centroid = np.array(
+                                    specific_dil_structure["Structure global centroid"]
+                                ).reshape(3)
+                                dil_centroids_by_ref[dil_refnum] = dil_centroid
+
+
+                        
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
+                            simulated_bool = specific_structure["Simulated bool"]
+                            if not simulated_bool:
+                                # length of this real core
+                                length = specific_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                                real_biopsy_lengths_list.append(length)
+
+                                # If there are any DILs, assign this core to the nearest DIL (by centroid)
+                                if dil_centroids_by_ref:
+                                    bx_centroid = np.array(
+                                        specific_structure["Structure global centroid"]
+                                    ).reshape(3)
+
+                                    best_refnum = None
+                                    best_dist2 = None
+                                    for dil_refnum, dil_centroid in dil_centroids_by_ref.items():
+                                        d2 = np.sum((bx_centroid - dil_centroid) ** 2)
+                                        if best_dist2 is None or d2 < best_dist2:
+                                            best_dist2 = d2
+                                            best_refnum = dil_refnum
+
+                                    if best_refnum is not None:
+                                        real_bx_lengths_by_dil[patientUID][best_refnum].append(length)
+                            
+                            
+                            structures_progress.update(processing_structures_task, advance=1)
+
+       
+                        structures_progress.remove_task(processing_structures_task)
+
+
+                    # create info for simulated biopsies
+                    real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list)
+                    mean_of_real_biopsy_lengths = np.mean(real_biopsy_lengths_arr)
+                    std_of_real_biopsy_lengths = np.std(real_biopsy_lengths_arr)
 
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
                     patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"
-                    num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
-                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_bx_structs_patient_specific)
-
-
-                    # Pre-compute DIL centroids for this patient (keyed by DIL Ref #)
-                    dil_centroids_by_ref = {}
-                    if dil_ref in pydicom_item:
-                        for specific_dil_structure in pydicom_item[dil_ref]:
-                            dil_refnum = specific_dil_structure["Ref #"]
-                            dil_centroid = np.array(
-                                specific_dil_structure["Structure global centroid"]
-                            ).reshape(3)
-                            dil_centroids_by_ref[dil_refnum] = dil_centroid
-
-
-                    
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
-                        simulated_bool = specific_structure["Simulated bool"]
-                        if not simulated_bool:
-                            # length of this real core
-                            length = specific_structure["Reconstructed biopsy cylinder length (from contour data)"]
-                            real_biopsy_lengths_list.append(length)
-
-                            # If there are any DILs, assign this core to the nearest DIL (by centroid)
-                            if dil_centroids_by_ref:
-                                bx_centroid = np.array(
-                                    specific_structure["Structure global centroid"]
-                                ).reshape(3)
-
-                                best_refnum = None
-                                best_dist2 = None
-                                for dil_refnum, dil_centroid in dil_centroids_by_ref.items():
-                                    d2 = np.sum((bx_centroid - dil_centroid) ** 2)
-                                    if best_dist2 is None or d2 < best_dist2:
-                                        best_dist2 = d2
-                                        best_refnum = dil_refnum
-
-                                if best_refnum is not None:
-                                    real_bx_lengths_by_dil[patientUID][best_refnum].append(length)
-                        
-                        
-                        structures_progress.update(processing_structures_task, advance=1)
-
-       
-                    structures_progress.remove_task(processing_structures_task)
                     patients_progress.update(processing_patients_task, advance=1)
                     completed_progress.update(processing_patients_task_completed, advance=1)
                 patients_progress.update(processing_patients_task, visible=False)
                 completed_progress.update(processing_patients_task_completed,  visible=True)
 
+                if target_dil_v2_enabled == True:
+                    target_dil_v2_lane_runner.run_first_pass_target_dil_v2_lane(master_structure_reference_dict,
+                                                                                bx_ref,
+                                                                                dil_ref,
+                                                                                all_ref_key,
+                                                                                target_dil_v2_enabled)
+
                
                 ###################    SET SOME PRELIMS FOR THE SIMULATED BIOPSIES  
                
                
-                # create info for simulated biopsies
-                real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list)
-                mean_of_real_biopsy_lengths = np.mean(real_biopsy_lengths_arr)
-                std_of_real_biopsy_lengths = np.std(real_biopsy_lengths_arr)
-
-
                 # initialize the basics for drawing the simulated biopsies
                 centroid_line_vec_sim_list = [0,0,1]
                 centroid_first_pos_sim_list = [0,0,0]
@@ -5563,7 +5598,12 @@ def main():
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
                         # determine the length of this particular core
-                        if simulated_biopsy_length_method == 'full':
+                        biopsy_needle_sim_sampled_length = None
+                        if target_dil_v2_enabled == True:
+                            biopsy_needle_sim_sampled_length = specific_structure[target_dil_v2_state.MC_PREP_BIOPSY_CYLINDER_LENGTH_KEY]
+                        if biopsy_needle_sim_sampled_length is not None:
+                            centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1)
+                        elif simulated_biopsy_length_method == 'full':
                             centroid_sep_sim_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
                         elif simulated_biopsy_length_method == 'real normal':
                             within_bounds = False
@@ -6250,6 +6290,9 @@ def main():
                             preprocessed_file_ready = True
                                 
                 live_display.start()
+                target_dil_v2_state.ensure_target_dil_v2_state(master_structure_reference_dict,
+                                                                bx_ref,
+                                                                all_ref_key)
                 important_info.add_text_line("Loaded master_structure_reference_dict from: "+ preprocessed_master_structure_reference_dict_path_str, live_display)
                 important_info.add_text_line("Loaded master_structure_info_dict from: "+ preprocessed_master_structure_info_dict_path_str, live_display)
 
@@ -7801,6 +7844,9 @@ def main():
                             master_structure_info_dict = pickle.load(results_master_structure_info_dict_file)
 
                         live_display.start()
+                        target_dil_v2_state.ensure_target_dil_v2_state(master_structure_reference_dict,
+                                                                        bx_ref,
+                                                                        all_ref_key)
                         important_info.add_text_line("Loaded master_structure_reference_dict_results from: "+ results_master_structure_reference_dict_path_str, live_display)
                         important_info.add_text_line("Loaded master_structure_info_dict_results from: "+ results_master_structure_info_dict_path_str, live_display)
                     
@@ -10948,6 +10994,8 @@ def structure_referencer(data_removals_dict_bx,
                          "Struct type": st_ref_list[0],
                          "Simulated bool": False,
                          "Simulated type": 'Real',
+                         target_dil_v2_state.MC_PREP_BIOPSY_CYLINDER_LENGTH_KEY: None,
+                         target_dil_v2_state.MC_PREP_BIOPSY_CYLINDER_LENGTH_METHOD_KEY: None,
                          "Reconstructed biopsy cylinder length (from contour data)": None, 
                          "Raw contour pts zslice list": None,
                          "Raw contour pts": None, 
@@ -10972,6 +11020,7 @@ def structure_referencer(data_removals_dict_bx,
                          "Maximum pairwise distance": None,
                          "Structure volume": None, 
                          "Voxel size for structure volume calc": None,
+                         target_dil_v2_state.TARGET_DIL_V2_DICT_KEY: None,
                          "Target DIL dict": None,
                          "Random uniformly sampled volume pts arr": None, 
                          "Random uniformly sampled volume pts pcd": None, 
@@ -11082,6 +11131,8 @@ def structure_referencer(data_removals_dict_bx,
                                 "Relative structure type": bx_sim_type_dict["Relative to struct type"],
                                 "Relative structure name": x.ROIName,
                                 "Relative structure ref #": x.ROINumber, 
+                                target_dil_v2_state.MC_PREP_BIOPSY_CYLINDER_LENGTH_KEY: None,
+                                target_dil_v2_state.MC_PREP_BIOPSY_CYLINDER_LENGTH_METHOD_KEY: None,
                                 "Reconstructed biopsy cylinder length (from contour data)": None, 
                                 "Raw contour pts zslice list": None,
                                 "Raw contour pts": None, 
@@ -11106,6 +11157,7 @@ def structure_referencer(data_removals_dict_bx,
                                 "Maximum pairwise distance": None,
                                 "Structure volume": None, 
                                 "Voxel size for structure volume calc": None, 
+                                target_dil_v2_state.TARGET_DIL_V2_DICT_KEY: None,
                                 "Target DIL dict": None,
                                 "Random uniformly sampled volume pts arr": None, 
                                 "Random uniformly sampled volume pts pcd": None, 
@@ -11188,12 +11240,14 @@ def structure_referencer(data_removals_dict_bx,
 
             # Note that all of the dataframes in the below "Multi-structure output data frames dict" are output as csvs in the final report
             all_ref = {"Multi-structure information dict (not for csv output)": {"Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe": None, # THIS DATAFRAME WAS DELETED AFTER OPTIMIZATION TO SAVE MEMORY!
+                                                                                  target_dil_v2_state.TARGET_DIL_V2_INFO_DICT_KEY: None,
                                                                                   },
                         "Multi-structure pre-processing output dataframes dict": {"Selected structures": None,
                                                                                   "Biopsy basic spatial features dataframe": None,
                                                                                   #"Structure information dimension": pandas.DataFrame(),
                                                                                   #"Structure information (Non-BX)": pandas.DataFrame(),
                                                                                   "Nearest DILs info dataframe": None,
+                                                                                  target_dil_v2_state.TARGET_DIL_V2_SUMMARY_DATAFRAME_KEY: None,
                                                                                   "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": None,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": None,

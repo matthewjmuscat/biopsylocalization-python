@@ -182,6 +182,12 @@ Why this matters:
 Surprising detail:
 
 - current simulated-biopsy shell creation is gated by the existing `bx_sim_locations_dict` logic and an explicit patient check in this region; this should be treated as real current behavior, not assumed away
+- that explicit patient check is currently `PatientID == 'F2'`
+- the current simulated-biopsy constructor is DIL-driven, not real-biopsy-driven
+- once a patient passes the gate, the code iterates eligible relative structures and enabled simulated types to create shells
+- with the current configuration, that means one simulated set per eligible DIL per enabled simulated type
+- multiple real biopsies targeting the same DIL do not currently produce multiple simulated sets
+- a DIL with no matched real biopsy can still receive simulated biopsy shells under the current legacy regime
 
 ## Stage 1: Legacy DIL Optimizer
 

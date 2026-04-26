@@ -798,24 +798,33 @@ Recommended initial contents:
 Purpose:
 
 - compute and store the earliest safe biopsy-length objects needed by the new lane and by early transform sampling,
+- compute and store the earliest safe biopsy-to-target routing objects needed for one-to-one parent matching,
 - do not build biopsy geometry,
 - do not move or replace the later biopsy-construction logic.
 
 Recommended functions:
 
 - `collect_real_biopsy_length_statistics(...)`
+- `collect_real_biopsy_target_routes(...)`
 - `assign_simulated_biopsy_nominal_lengths(...)`
 
 Stored outputs on biopsy dictionaries should stay in the current object-storage style, for example:
 
 - `Simulated biopsy nominal length`
 - `Simulated biopsy nominal length method`
+- `Matched real biopsy index`
+- `Matched real biopsy ROI`
+- `Matched real biopsy ref #`
+- `Matched real biopsy exists bool`
+- `Unmatched DIL extra simulated bool`
 
 The later simulated-biopsy block can then copy that stored value into:
 
 - `Reconstructed biopsy cylinder length (from contour data)`
 
 after geometry is actually built, or can directly reuse the stored scalar to preserve equality with the earlier prepass.
+
+To minimize downstream risk, these new parent-match fields should first be exported only through new `v2` or target-lane dataframes rather than being pushed immediately into broad legacy CSV schemas.
 
 #### `target_lane.py`
 
@@ -910,7 +919,29 @@ This helper should store:
 
 This prepass should not do interpolation, point-cloud creation, reconstructed-biopsy creation, or structure-volume calculation.
 
-### Stage 2: Add an early simulated-length prepass before the optimizer
+### Stage 2: Add an early biopsy-to-target routing prepass before simulated construction
+
+If the future design requires one simulated set per real biopsy, then some biopsy-to-target routing must exist before simulated biopsy expansion.
+
+This does not mean the full late `Target DIL by centroid dict` block has to move earlier.
+
+It means a smaller sidecar prepass should resolve and store only the routing state needed to decide:
+
+- which DIL each real biopsy is matched to,
+- which real biopsies belong to each DIL,
+- whether a DIL has any matched real biopsy at all,
+- which parent real biopsy a one-to-one simulated biopsy should inherit its length from.
+
+Recommended design direction for the next constructor pass:
+
+- remain DIL-driven as the primary creation regime,
+- use matched real-biopsy identity as a secondary expansion key,
+- create one simulated set per matched real biopsy for each eligible DIL,
+- optionally, behind a separate gate, also create an additional unmatched-DIL simulated set when a DIL has no matched real biopsy.
+
+This preserves the ability to keep lesion-driven extras while still supporting the new one-to-one counterfactual design.
+
+### Stage 3: Add an early simulated-length prepass before the optimizer
 
 Walk the simulated biopsy objects and store one scalar nominal length per biopsy according to the configured `simulated_biopsy_length_method`.
 
@@ -922,7 +953,12 @@ This helper must not create point clouds, centroid lines, interpolations, or tra
 
 It only stores the scalar nominal length and metadata about how it was chosen.
 
-### Stage 3: Move only the uncertainty attachment earlier
+For the future one-to-one design, `match real` should be reinterpreted as:
+
+- match the parent real biopsy length exactly for simulated biopsies that have a matched real parent,
+- optionally use `full` needle-compartment length for unmatched-DIL extras when that gate is enabled.
+
+### Stage 4: Move only the uncertainty attachment earlier
 
 Keep the current uncertainty-loading logic, but factor it into a callable helper that can run before the optimizer.
 
@@ -930,7 +966,7 @@ Do not create a second uncertainty system.
 
 Do not move unrelated later simulation consumers in the same pass.
 
-### Stage 4: Sample transforms earlier with an isolated CuPy RNG
+### Stage 5: Sample transforms earlier with an isolated CuPy RNG
 
 At this point the required inputs for transform generation exist:
 
@@ -943,13 +979,13 @@ But this earlier call must use an isolated CuPy RNG so the legacy optimizer's cu
 
 This is the moment where one-time transform generation and reuse becomes safe.
 
-### Stage 5: Run the legacy optimizer where it already lives
+### Stage 6: Run the legacy optimizer where it already lives
 
 Do not move the legacy optimizer in the same pass.
 
 Its outputs are still needed later for optimal simulated-biopsy placement.
 
-### Stage 6: Run the new target optimizer as a concurrent lane
+### Stage 7: Run the new target optimizer as a concurrent lane
 
 Add a new gated call beside the legacy optimizer call in main.
 
@@ -962,7 +998,7 @@ The concurrent target lane should:
 - consume the already prepared transform data or transform-ready state,
 - write its own target-lane output objects without touching legacy optimizer objects.
 
-### Stage 7: Run the existing real-biopsy geometry block later
+### Stage 8: Run the existing real-biopsy geometry block later
 
 Keep the current full real-biopsy geometry block later in the pipeline.
 
@@ -970,7 +1006,7 @@ It should continue to build all the legacy geometry and volume products it alrea
 
 As an audit check, it can confirm that the later legacy length matches the earlier `MC prep biopsy cylinder length` for each real biopsy.
 
-### Stage 8: Run the existing simulated-biopsy geometry block later
+### Stage 9: Run the existing simulated-biopsy geometry block later
 
 Keep the current simulated-biopsy geometry construction and transport block later in the pipeline.
 
@@ -980,7 +1016,7 @@ Instead of recomputing the simulated biopsy nominal length inline, that block sh
 
 For the optimal simulated type, it should still call `biopsy_transporter.biopsy_transporter_optimal(...)` after the legacy optimizer has produced its location dataframe.
 
-### Stage 9: Reuse stored transforms downstream
+### Stage 10: Reuse stored transforms downstream
 
 The downstream transform consumers should use the already stored transform arrays.
 
@@ -992,12 +1028,13 @@ The minimum clean changes in `biopsy_localization_convex_main.py` are:
 
 1. add new top-of-main flags for the target lane and for early transform preparation,
 2. add one small call to a real-biopsy scalar-length prepass before the optimizer,
-3. add one small call to `assign_simulated_biopsy_nominal_lengths(...)` before the optimizer,
-4. factor uncertainty attachment into a callable helper and invoke it before transform preparation,
-5. relocate or wrap the existing transform generation call so it happens after uncertainty plus the new length prepass,
-6. give the moved transform-sampling path an isolated CuPy RNG,
-7. add one new adjacent call to `run_target_dil_optimizer_lane(...)` beside the legacy optimizer block,
-8. change the later simulated-biopsy block to consume the stored nominal length scalar instead of recomputing it inline.
+3. add one small call to an early biopsy-to-target routing helper that stores parent-match state without moving the full late metadata block,
+4. add one small call to `assign_simulated_biopsy_nominal_lengths(...)` before the optimizer,
+5. factor uncertainty attachment into a callable helper and invoke it before transform preparation,
+6. relocate or wrap the existing transform generation call so it happens after uncertainty plus the new length prepass,
+7. give the moved transform-sampling path an isolated CuPy RNG,
+8. add one new adjacent call to `run_target_dil_optimizer_lane(...)` beside the legacy optimizer block,
+9. change the later simulated-biopsy block to consume the stored nominal length scalar instead of recomputing it inline.
 
 That is the whole refactor shape.
 
