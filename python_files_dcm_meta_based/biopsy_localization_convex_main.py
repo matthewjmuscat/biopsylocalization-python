@@ -101,6 +101,7 @@ import target_dil_v2.length_sidecar as target_dil_v2_length_sidecar
 import target_dil_v2.state as target_dil_v2_state
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
+from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 
 
@@ -516,6 +517,7 @@ def main():
                                                             "Relative to struct type": dil_ref,
                                                             "Identifier string": 'sim_optimal_dil'}
                                                         }
+    simulated_biopsy_fraction_numbers_to_create = 'all'   # [FIRST_PASS_CONFIG] use [2] for legacy F2-only behavior
     target_dil_v2_enabled = True # [FIRST_PASS_CONFIG]
     simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' (ie. 19mm), 
                                                     #'real normal' (samples from a normal distribution with mu=real_mean, std = real_std), 
@@ -1106,6 +1108,7 @@ def main():
                                                                 "Uncertainties dataframe (final)": None,
                                                                 "Cohort: Nearest DILs to each biopsy": None,
                                                                 "Cohort: Biopsy basic spatial features dataframe": None,
+                                                                "Cohort: Simulated biopsy preparation dataframe": None,
                                                                 "Cohort: Guidance-map firing depth recommendations dataframe": None,
                                                                 "Cohort: 3D radiomic features all OAR and DIL structures": None,
                                                                 "Cohort: All MC structure shift vectors": None,
@@ -1553,6 +1556,7 @@ def main():
                                                                                                 urethra_contour_names,
                                                                                                 interp_inter_slice_dist,
                                                                                                 interp_intra_slice_dist,
+                                                                                                simulated_biopsy_fraction_numbers_to_create,
                                                                                                 fraction_prefixes,
                                                                                                 important_info,
                                                                                                 live_display
@@ -4402,6 +4406,15 @@ def main():
                             live_display
                             )
 
+                live_display = simulated_biopsy_preparer(master_structure_reference_dict,
+                            bx_ref,
+                            dil_ref,
+                            all_ref_key,
+                            simulated_biopsy_length_method,
+                            biopsy_needle_compartment_length,
+                            live_display,
+                            master_structure_info_dict = master_structure_info_dict
+                            )
 
 
 
@@ -4412,6 +4425,7 @@ def main():
 
 
 
+                live_display.stop()
                 ########## PERFORM BIOPSY DIL OPTIMIZATION
                 # modularized!
                 live_display = biopsy_optimizer_module_v1(master_structure_reference_dict,
@@ -7281,6 +7295,12 @@ def main():
                                        all_ref_key,
                                        bx_ref)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Biopsy basic spatial features dataframe"] = cohort_biopsy_basic_spatial_features_dataframe
+                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+
+                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2.5", total = None)
+                cohort_simulated_biopsy_preparation_dataframe = dataframe_builders.cohort_simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
+                                       all_ref_key)
+                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Simulated biopsy preparation dataframe"] = cohort_simulated_biopsy_preparation_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 
@@ -10167,6 +10187,7 @@ def structure_referencer(data_removals_dict_bx,
                          urethra_list,
                          interp_inter_slice_dist,
                          interp_intra_slice_dist,
+                         simulated_biopsy_fraction_numbers_to_create,
                          fraction_prefixes,
                          important_info,
                          live_display
@@ -10456,10 +10477,17 @@ def structure_referencer(data_removals_dict_bx,
 
 
             bpsy_ref_index_start = len(bpsy_ref)
+            patient_fraction_number = misc_tools.extract_number_from_string(str(structure_item[0x0010,0x0020].value), fraction_prefixes)
+            if simulated_biopsy_fraction_numbers_to_create == 'all':
+                create_simulated_biopsies_for_this_fraction = True
+            elif type(simulated_biopsy_fraction_numbers_to_create) in [list, tuple, set]:
+                create_simulated_biopsies_for_this_fraction = patient_fraction_number in simulated_biopsy_fraction_numbers_to_create
+            else:
+                create_simulated_biopsies_for_this_fraction = patient_fraction_number == simulated_biopsy_fraction_numbers_to_create
             sim_bpsy_ref_index_start = 0
             bpsy_ref_simulated_total = []
             for bx_sim_type_str, bx_sim_type_dict in bx_sim_locations_dict.items():
-                if bx_sim_type_dict["Create"] == True and str(structure_item[0x0010,0x0020].value) == 'F2':
+                if bx_sim_type_dict["Create"] == True and create_simulated_biopsies_for_this_fraction == True:
                     sim_bx_relative_to = bx_sim_type_dict["Relative to struct type"]
                     bx_sim_ref_identifier_str = bx_sim_type_dict["Identifier string"]
 
@@ -10613,6 +10641,7 @@ def structure_referencer(data_removals_dict_bx,
                                                                                   },
                         "Multi-structure pre-processing output dataframes dict": {"Selected structures": None,
                                                                                   "Biopsy basic spatial features dataframe": None,
+                                                                                  "Simulated biopsy preparation dataframe": None,
                                                                                   #"Structure information dimension": pandas.DataFrame(),
                                                                                   #"Structure information (Non-BX)": pandas.DataFrame(),
                                                                                   "Nearest DILs info dataframe": None,

@@ -3131,6 +3131,40 @@ def cohort_guidance_map_firing_depth_recommendations_dataframe_builder(master_st
     return cohort_guidance_map_firing_depth_recommendations_dataframe
 
 
+def cohort_simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
+                                                          all_ref_key,
+                                                          downcast_threshold=0.25):
+    cohort_simulated_biopsy_preparation_dataframe = pandas.DataFrame()
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        preproc_df_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+        patient_df = preproc_df_dict.get("Simulated biopsy preparation dataframe")
+
+        if not isinstance(patient_df, pandas.DataFrame) or patient_df.empty:
+            patient_df = pandas.DataFrame()
+
+        if isinstance(patient_df, pandas.DataFrame) and not patient_df.empty:
+            patient_df = convert_columns_to_categorical_and_downcast(
+                patient_df,
+                threshold=downcast_threshold,
+                ignore_types=(np.floating,)
+            )
+            preproc_df_dict["Simulated biopsy preparation dataframe"] = patient_df
+            cohort_simulated_biopsy_preparation_dataframe = pandas.concat(
+                [cohort_simulated_biopsy_preparation_dataframe, patient_df],
+                ignore_index=True
+            )
+
+    if not cohort_simulated_biopsy_preparation_dataframe.empty:
+        cohort_simulated_biopsy_preparation_dataframe = convert_columns_to_categorical_and_downcast(
+            cohort_simulated_biopsy_preparation_dataframe,
+            threshold=downcast_threshold,
+            ignore_types=(np.floating,)
+        )
+
+    return cohort_simulated_biopsy_preparation_dataframe
+
+
 
 
 

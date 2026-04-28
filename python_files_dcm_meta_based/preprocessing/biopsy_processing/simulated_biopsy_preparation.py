@@ -243,6 +243,35 @@ def _refresh_biopsy_info_dict(master_structure_info_dict,
 	master_structure_info_dict["By patient"][patientUID][bx_ref]["Biopsy type counts"] = bpsy_type_counts_dict
 
 
+def _refresh_global_biopsy_info_dict(master_structure_info_dict,
+								 bx_ref
+								 ):
+	if master_structure_info_dict is None:
+		return
+
+	if master_structure_info_dict.get("Global") is None:
+		return
+
+	if master_structure_info_dict.get("By patient") is None:
+		return
+
+	global_num_biopsies = 0
+	global_num_biopsies_by_type = {}
+
+	for patientUID, patient_info_dict in master_structure_info_dict["By patient"].items():
+		if bx_ref not in patient_info_dict:
+			continue
+
+		sp_patient_biopsy_info_dict = patient_info_dict[bx_ref]
+		global_num_biopsies = global_num_biopsies + sp_patient_biopsy_info_dict.get("Num structs", 0)
+
+		for biopsy_type, count in sp_patient_biopsy_info_dict.get("Biopsy type counts", {}).items():
+			global_num_biopsies_by_type[biopsy_type] = global_num_biopsies_by_type.get(biopsy_type, 0) + count
+
+	master_structure_info_dict["Global"]["Num biopsies"] = global_num_biopsies
+	master_structure_info_dict["Global"]["Num biopsies by bx type dict"] = global_num_biopsies_by_type
+
+
 def assign_simulated_biopsy_targets(master_structure_reference_dict,
 									bx_ref,
 									dil_ref,
@@ -433,6 +462,9 @@ def expand_simulated_biopsy_multiplicity(master_structure_reference_dict,
 									  bx_ref,
 									  pydicom_item[bx_ref])
 
+	_refresh_global_biopsy_info_dict(master_structure_info_dict,
+								 bx_ref)
+
 	return live_display
 
 
@@ -447,13 +479,6 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 	real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
 
 	for patientUID, pydicom_item in master_structure_reference_dict.items():
-		dil_centroids_by_ref = {}
-		if dil_ref in pydicom_item:
-			for specific_dil_structure in pydicom_item[dil_ref]:
-				dil_refnum = specific_dil_structure["Ref #"]
-				dil_centroid = np.array(specific_dil_structure["Structure global centroid"]).reshape(3)
-				dil_centroids_by_ref[dil_refnum] = dil_centroid
-
 		for specific_structure in pydicom_item[bx_ref]:
 			contour_length_mm = specific_structure.get("Reconstructed biopsy cylinder length (from contour data)")
 			centroid_line_length_mm = specific_structure.get("Centroid line vec length (bx needle base to bx needle tip)")
@@ -481,12 +506,11 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 
 			real_biopsy_lengths_list.append(float(contour_length_mm))
 
-			if dil_centroids_by_ref and specific_structure.get("Structure global centroid") is not None:
-				bx_centroid = np.array(specific_structure["Structure global centroid"]).reshape(3)
-				best_refnum = _find_nearest_dil_refnum(bx_centroid,
-											  dil_centroids_by_ref)
-				if best_refnum is not None:
-					real_bx_lengths_by_dil[patientUID][best_refnum].append(float(contour_length_mm))
+			simulated_biopsy_preparation_dict = _get_simulated_biopsy_preparation_dict(specific_structure)
+			target_structure_type = simulated_biopsy_preparation_dict.get("Target structure type")
+			target_structure_refnum = simulated_biopsy_preparation_dict.get("Target structure ref #")
+			if target_structure_type == dil_ref and target_structure_refnum is not None:
+				real_bx_lengths_by_dil[patientUID][target_structure_refnum].append(float(contour_length_mm))
 
 	if len(real_biopsy_lengths_list) >= 1:
 		real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list, dtype=float)
@@ -574,8 +598,6 @@ def simulated_biopsy_preparation_dataframe_builder(master_structure_reference_di
 										   all_ref_key,
 										   live_display
 										   ):
-	cohort_simulated_biopsy_preparation_dataframe = pandas.DataFrame()
-
 	for patientUID, pydicom_item in master_structure_reference_dict.items():
 		patient_rows = []
 
@@ -590,6 +612,7 @@ def simulated_biopsy_preparation_dataframe_builder(master_structure_reference_di
 				"Simulated type": specific_structure["Simulated type"],
 				"Relative structure type": specific_structure.get("Relative structure type"),
 				"Relative structure ref #": specific_structure.get("Relative structure ref #"),
+				"Length determined": simulated_biopsy_preparation_dict["Length determined"],
 				"Contour length mm": simulated_biopsy_preparation_dict["Contour length mm"],
 				"Centroid line length mm": simulated_biopsy_preparation_dict["Centroid line length mm"],
 				"Nominal length mm": simulated_biopsy_preparation_dict["Nominal length mm"],
@@ -608,19 +631,15 @@ def simulated_biopsy_preparation_dataframe_builder(master_structure_reference_di
 				"Matched real biopsy index": simulated_biopsy_preparation_dict["Matched real biopsy index"],
 				"Extra biopsy bool": simulated_biopsy_preparation_dict["Extra biopsy bool"],
 				"Family source": simulated_biopsy_preparation_dict["Family source"],
+				"Multiplicity base ROI": simulated_biopsy_preparation_dict["Multiplicity base ROI"],
+				"Multiplicity base ref #": simulated_biopsy_preparation_dict["Multiplicity base ref #"],
 				"Preparation complete": simulated_biopsy_preparation_dict["Preparation complete"],
 			})
 
 		sp_patient_simulated_biopsy_preparation_dataframe = pandas.DataFrame(patient_rows)
 		pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Simulated biopsy preparation dataframe"] = sp_patient_simulated_biopsy_preparation_dataframe
-		cohort_simulated_biopsy_preparation_dataframe = pandas.concat([
-			cohort_simulated_biopsy_preparation_dataframe,
-			sp_patient_simulated_biopsy_preparation_dataframe,
-		], ignore_index=True)
 
-	return cohort_simulated_biopsy_preparation_dataframe, live_display
-
-
+	return live_display
 def simulated_biopsy_preparer(master_structure_reference_dict,
 							  bx_ref,
 							  dil_ref,
@@ -641,18 +660,16 @@ def simulated_biopsy_preparer(master_structure_reference_dict,
 												live_display,
 												master_structure_info_dict=master_structure_info_dict)
 
-	length_results_dict, live_display = determine_simulated_biopsy_lengths(master_structure_reference_dict,
+	_, live_display = determine_simulated_biopsy_lengths(master_structure_reference_dict,
 															bx_ref,
 															dil_ref,
 															simulated_biopsy_length_method,
 															biopsy_needle_compartment_length,
 															live_display)
 
-	cohort_simulated_biopsy_preparation_dataframe, live_display = simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
+	live_display = simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
 																   bx_ref,
 																   all_ref_key,
 																   live_display)
 
-	length_results_dict["cohort_simulated_biopsy_preparation_dataframe"] = cohort_simulated_biopsy_preparation_dataframe
-
-	return length_results_dict, live_display
+	return live_display
