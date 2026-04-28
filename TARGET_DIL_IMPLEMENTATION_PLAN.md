@@ -941,6 +941,15 @@ Recommended design direction for the next constructor pass:
 
 This preserves the ability to keep lesion-driven extras while still supporting the new one-to-one counterfactual design.
 
+That unmatched-DIL extra path should not hardwire length behavior.
+
+It should have its own configurable unmatched-extra length method, for example:
+
+- `full`
+- `real normal`
+- `real mean`
+- other explicitly allowed fallback modes if later needed
+
 ### Stage 3: Add an early simulated-length prepass before the optimizer
 
 Walk the simulated biopsy objects and store one scalar nominal length per biopsy according to the configured `simulated_biopsy_length_method`.
@@ -956,7 +965,7 @@ It only stores the scalar nominal length and metadata about how it was chosen.
 For the future one-to-one design, `match real` should be reinterpreted as:
 
 - match the parent real biopsy length exactly for simulated biopsies that have a matched real parent,
-- optionally use `full` needle-compartment length for unmatched-DIL extras when that gate is enabled.
+- for unmatched-DIL extras, use a separate configurable fallback length method rather than reusing parent-match semantics.
 
 ### Stage 4: Move only the uncertainty attachment earlier
 
