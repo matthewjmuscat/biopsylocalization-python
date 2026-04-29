@@ -4939,9 +4939,8 @@ def main():
                     completed_progress.update(processing_patients_task_completed,  visible=True)
                     
                
-                ###################    SET SOME PRELIMS FOR THE SIMULATED BIOPSIES  
-               
-               
+                ###################    FINALIZE SIMULATED BIOPSIES FROM PREPARED/PLANNED STATE
+
                 live_display = simulated_biopsy_processer(master_structure_reference_dict,
                             master_structure_info_dict,
                             structs_referenced_dict,
