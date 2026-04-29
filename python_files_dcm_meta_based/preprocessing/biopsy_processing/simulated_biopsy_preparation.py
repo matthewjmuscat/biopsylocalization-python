@@ -112,6 +112,19 @@ def _set_length_information(specific_structure,
 	_update_preparation_complete(specific_structure)
 
 
+def get_prepared_simulated_biopsy_length_mm(specific_structure):
+	simulated_biopsy_preparation_dict = _get_simulated_biopsy_preparation_dict(specific_structure)
+	nominal_length_mm = simulated_biopsy_preparation_dict.get("Nominal length mm")
+	if nominal_length_mm is None:
+		raise ValueError(
+			"Simulated biopsy preparation nominal length is missing for {}".format(
+				specific_structure.get("ROI")
+			)
+		)
+
+	return float(nominal_length_mm)
+
+
 def _set_target_information(specific_structure,
 							target_determined,
 							target_source,

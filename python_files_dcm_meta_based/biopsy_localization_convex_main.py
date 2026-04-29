@@ -99,6 +99,7 @@ import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
+from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 
 
@@ -4829,88 +4830,88 @@ def main():
                 """
                 
 
+                
+                ###  DETERMINE LENGTH FOR SIMULATED CORES (legacy and commented out)
+                if False:
+                    patientUID_default = "Initializing"
+                    processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID_default)
+                    processing_patients_task_completed_main_description = "[green]Determining simulated biopsy lengths"
+                    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
 
-                ###  DETERMINE LENGTH FOR SIMULATED CORES
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Determining simulated biopsy lengths"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                real_biopsy_lengths_list = []
-
-
-                # NEW: real lengths per patient, per DIL Ref #
-                # real_bx_lengths_by_dil[patientUID][dil_refnum] = [len1, len2, ...]
-                real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"
-                    num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
-                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_bx_structs_patient_specific)
+                    real_biopsy_lengths_list = []
 
 
-                    # Pre-compute DIL centroids for this patient (keyed by DIL Ref #)
-                    dil_centroids_by_ref = {}
-                    if dil_ref in pydicom_item:
-                        for specific_dil_structure in pydicom_item[dil_ref]:
-                            dil_refnum = specific_dil_structure["Ref #"]
-                            dil_centroid = np.array(
-                                specific_dil_structure["Structure global centroid"]
-                            ).reshape(3)
-                            dil_centroids_by_ref[dil_refnum] = dil_centroid
+                    # NEW: real lengths per patient, per DIL Ref #
+                    # real_bx_lengths_by_dil[patientUID][dil_refnum] = [len1, len2, ...]
+                    real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                        
+                        structureID_default = "Initializing"
+                        num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_bx_structs_patient_specific)
 
 
-                    
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
-                        simulated_bool = specific_structure["Simulated bool"]
-                        if not simulated_bool:
-                            # length of this real core
-                            length = specific_structure["Reconstructed biopsy cylinder length (from contour data)"]
-                            real_biopsy_lengths_list.append(length)
-
-                            # If there are any DILs, assign this core to the nearest DIL (by centroid)
-                            if dil_centroids_by_ref:
-                                bx_centroid = np.array(
-                                    specific_structure["Structure global centroid"]
+                        # Pre-compute DIL centroids for this patient (keyed by DIL Ref #)
+                        dil_centroids_by_ref = {}
+                        if dil_ref in pydicom_item:
+                            for specific_dil_structure in pydicom_item[dil_ref]:
+                                dil_refnum = specific_dil_structure["Ref #"]
+                                dil_centroid = np.array(
+                                    specific_dil_structure["Structure global centroid"]
                                 ).reshape(3)
+                                dil_centroids_by_ref[dil_refnum] = dil_centroid
 
-                                best_refnum = None
-                                best_dist2 = None
-                                for dil_refnum, dil_centroid in dil_centroids_by_ref.items():
-                                    d2 = np.sum((bx_centroid - dil_centroid) ** 2)
-                                    if best_dist2 is None or d2 < best_dist2:
-                                        best_dist2 = d2
-                                        best_refnum = dil_refnum
 
-                                if best_refnum is not None:
-                                    real_bx_lengths_by_dil[patientUID][best_refnum].append(length)
                         
-                        
-                        structures_progress.update(processing_structures_task, advance=1)
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
+                            simulated_bool = specific_structure["Simulated bool"]
+                            if not simulated_bool:
+                                # length of this real core
+                                length = specific_structure["Reconstructed biopsy cylinder length (from contour data)"]
+                                real_biopsy_lengths_list.append(length)
 
-   
-                    structures_progress.remove_task(processing_structures_task)
+                                # If there are any DILs, assign this core to the nearest DIL (by centroid)
+                                if dil_centroids_by_ref:
+                                    bx_centroid = np.array(
+                                        specific_structure["Structure global centroid"]
+                                    ).reshape(3)
+
+                                    best_refnum = None
+                                    best_dist2 = None
+                                    for dil_refnum, dil_centroid in dil_centroids_by_ref.items():
+                                        d2 = np.sum((bx_centroid - dil_centroid) ** 2)
+                                        if best_dist2 is None or d2 < best_dist2:
+                                            best_dist2 = d2
+                                            best_refnum = dil_refnum
+
+                                    if best_refnum is not None:
+                                        real_bx_lengths_by_dil[patientUID][best_refnum].append(length)
+                            
+                            
+                            structures_progress.update(processing_structures_task, advance=1)
+
+    
+                        structures_progress.remove_task(processing_structures_task)
 
 
-                # create info for simulated biopsies
-                real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list)
-                mean_of_real_biopsy_lengths = np.mean(real_biopsy_lengths_arr)
-                std_of_real_biopsy_lengths = np.std(real_biopsy_lengths_arr)
+                    # create info for simulated biopsies
+                    real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list)
+                    mean_of_real_biopsy_lengths = np.mean(real_biopsy_lengths_arr)
+                    std_of_real_biopsy_lengths = np.std(real_biopsy_lengths_arr)
 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)
-
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Determining simulated biopsy lengths [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                        patients_progress.update(processing_patients_task, advance=1)
+                        completed_progress.update(processing_patients_task_completed, advance=1)
+                    patients_progress.update(processing_patients_task, visible=False)
+                    completed_progress.update(processing_patients_task_completed,  visible=True)
+                    
                
                 ###################    SET SOME PRELIMS FOR THE SIMULATED BIOPSIES  
                
@@ -4953,41 +4954,43 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        # determine the length of this particular core
-                        if simulated_biopsy_length_method == 'full':
-                            centroid_sep_sim_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                        elif simulated_biopsy_length_method == 'real normal':
-                            within_bounds = False
-                            while within_bounds == False:
-                                biopsy_needle_sim_sampled_length = np.random.normal(loc = mean_of_real_biopsy_lengths, scale = std_of_real_biopsy_lengths)
-                                if (biopsy_needle_sim_sampled_length >= mean_of_real_biopsy_lengths - 2*std_of_real_biopsy_lengths) and (biopsy_needle_sim_sampled_length <= mean_of_real_biopsy_lengths + 2*std_of_real_biopsy_lengths):
-                                    within_bounds = True
-                                else:
-                                    pass
-                            centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                        elif simulated_biopsy_length_method == 'real mean':
-                            centroid_sep_sim_dist = mean_of_real_biopsy_lengths/(num_centroids_for_sim_bxs-1)
+                        # determine the length of this particular core (legacy and commented out)
+                        if False:
+                            if simulated_biopsy_length_method == 'full':
+                                centroid_sep_sim_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
+                            elif simulated_biopsy_length_method == 'real normal':
+                                within_bounds = False
+                                while within_bounds == False:
+                                    biopsy_needle_sim_sampled_length = np.random.normal(loc = mean_of_real_biopsy_lengths, scale = std_of_real_biopsy_lengths)
+                                    if (biopsy_needle_sim_sampled_length >= mean_of_real_biopsy_lengths - 2*std_of_real_biopsy_lengths) and (biopsy_needle_sim_sampled_length <= mean_of_real_biopsy_lengths + 2*std_of_real_biopsy_lengths):
+                                        within_bounds = True
+                                    else:
+                                        pass
+                                centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
+                            elif simulated_biopsy_length_method == 'real mean':
+                                centroid_sep_sim_dist = mean_of_real_biopsy_lengths/(num_centroids_for_sim_bxs-1)
 
-                        elif simulated_biopsy_length_method == 'match real':
-                            # start with global mean as a fallback
-                            biopsy_needle_sim_sampled_length = mean_of_real_biopsy_lengths
+                            elif simulated_biopsy_length_method == 'match real':
+                                # start with global mean as a fallback
+                                biopsy_needle_sim_sampled_length = mean_of_real_biopsy_lengths
 
-                            # If this sim is relative to a DIL, try to match that DIL's real-core lengths
-                            rel_type = specific_structure["Relative structure type"]
-                            rel_refnum = specific_structure["Relative structure ref #"]
+                                # If this sim is relative to a DIL, try to match that DIL's real-core lengths
+                                rel_type = specific_structure["Relative structure type"]
+                                rel_refnum = specific_structure["Relative structure ref #"]
 
-                            # dil_ref is the DIL type
-                            if rel_type == dil_ref:
-                                lengths_for_this_dil = real_bx_lengths_by_dil.get(patientUID, {}).get(rel_refnum, [])
-                                if lengths_for_this_dil:
-                                    biopsy_needle_sim_sampled_length = float(np.mean(lengths_for_this_dil))
+                                # dil_ref is the DIL type
+                                if rel_type == dil_ref:
+                                    lengths_for_this_dil = real_bx_lengths_by_dil.get(patientUID, {}).get(rel_refnum, [])
+                                    if lengths_for_this_dil:
+                                        biopsy_needle_sim_sampled_length = float(np.mean(lengths_for_this_dil))
 
-                            centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1)
-                        
+                                centroid_sep_sim_dist = biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1)
+                            
+                        biopsy_needle_sim_sampled_length = get_prepared_simulated_biopsy_length_mm(specific_structure)
                         threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_sim_list,
                                                                                                                 centroid_first_pos_sim_list,
                                                                                                                 num_centroids_for_sim_bxs,
-                                                                                                                centroid_sep_sim_dist,
+                                                                                                                biopsy_needle_sim_sampled_length/(num_centroids_for_sim_bxs-1),
                                                                                                                 simulated_bx_rad,
                                                                                                                 plot_simulated_cores_immediately)
                         
