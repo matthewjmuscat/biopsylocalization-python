@@ -1,5 +1,10 @@
 ## License and Use
 
+## Working Docs
+
+- Input DICOM assessment and future export-contract notes: `INPUT_DICOM_DATA_ASSESSMENT.md`
+- Output dataframe cleanup roadmap: `OUTPUT_DATAFRAME_UPGRADE_ROADMAP.md`
+
 This repository is licensed under a **Non-Commercial Research License**  
 (see the `LICENSE` file for full terms).
 

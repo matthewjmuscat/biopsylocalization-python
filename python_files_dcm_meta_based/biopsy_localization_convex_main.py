@@ -81,7 +81,6 @@ import cuspatial
 import geopandas
 from itertools import combinations
 import biopsy_transporter
-import biopsy_point_sampler
 import machina_learning
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -104,6 +103,7 @@ from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_b
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
+from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 
 

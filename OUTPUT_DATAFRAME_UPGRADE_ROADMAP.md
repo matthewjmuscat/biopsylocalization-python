@@ -12,7 +12,20 @@ The upgrade should preserve backward compatibility with current runs while givin
 2. Use stable UIDs as primary join keys.
 3. Keep ROI and ref number columns as audit fields, not primary join keys.
 4. Add fraction metadata from concrete DICOM fields when available.
-5. If a concrete fraction field is not available, write `NA` rather than inferring a new fraction column from the generated patient UID string.
+5. Resolve import metadata from a config-described DICOM field contract rather than one hard-coded export assumption.
+6. If a concrete fraction field is not available, write `NA` rather than inferring a new fraction column from the generated patient UID string.
+
+## Input DICOM Contract Dependency
+
+The dataframe upgrade is downstream of the input DICOM contract.
+
+Current assessment notes live in `INPUT_DICOM_DATA_ASSESSMENT.md`.
+
+The key direction is:
+
+1. keep one default export profile for the data already used in this repo,
+2. allow config-defined field selection for patient identity, fraction identity, MR or US routing, and series classification,
+3. keep output dataframe columns sourced from the resolved config contract rather than from ad hoc string parsing scattered through the pipeline.
 
 ## Fraction Metadata
 
@@ -20,7 +33,7 @@ Current code stores `Fraction number` by parsing the DICOM patient ID string.
 
 That should be treated as legacy behavior.
 
-For the upgraded dataframe pathway, prefer a concrete DICOM fraction source.
+For the upgraded dataframe pathway, prefer a concrete DICOM fraction source resolved through the input-data config contract.
 
 Confirmed candidate source from the current RTPLAN data:
 
@@ -32,11 +45,14 @@ Observed sample behavior:
 - RTPLAN contains `FractionGroupSequence[0].FractionGroupNumber = 1`
 - the same sample also separates patient identity across DICOM patient name and patient ID fields
 
-Upgrade rule:
+Default upgrade rule:
 
 1. use RTPLAN `FractionGroupSequence[*].FractionGroupNumber` when available and unambiguous,
-2. otherwise use `NA` for the new canonical dataframe fraction column,
-3. keep the current legacy parsed `Fraction number` field only as an audit/deprecation field until old joins are retired.
+2. otherwise use the next configured fraction field candidate for the active export profile,
+3. otherwise use `NA` for the new canonical dataframe fraction column,
+4. keep the current legacy parsed `Fraction number` field only as an audit/deprecation field until old joins are retired.
+
+This keeps the default path aligned with the current RTPLAN data while allowing other sites to declare a different authoritative fraction field without rewriting dataframe builders.
 
 ## Canonical Join UIDs
 
