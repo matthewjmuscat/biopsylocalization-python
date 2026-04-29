@@ -98,7 +98,7 @@ import mr_localizers
 import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
-from preprocessing.biopsy_processing.realized_biopsy_targeting import get_legacy_realized_biopsy_targeting_fields
+from preprocessing.biopsy_processing.realized_biopsy_targeting import realized_biopsy_targeting_processer
 from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_biopsy_planner_processer
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
@@ -5335,62 +5335,18 @@ def main():
 
                 ################## ALL BIOPSIES
 
-
-                live_display.stop()
-                #print('test')
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Performing other calculations on patient structure data [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Performing other calculations on patient structure data"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Performing other calculations on patient structure data [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-
-
-                    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
-
-                    specific_prostate_info_df = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref]
-                    selected_prostate_info = specific_prostate_info_df.to_dict('records')[0]
-
-                    prostate_found_bool = selected_prostate_info["Struct found bool"]
-
-
-
-
-                    structureID_default = "Initializing"
-                    num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_general_structs_patient_specific)
-                    for structs in structs_referenced_list:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            structureID = specific_structure["ROI"]
-                            structure_reference_number = specific_structure["Ref #"]
-                            processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                            if structs == bx_ref:
-                                legacy_realized_targeting_fields = get_legacy_realized_biopsy_targeting_fields(
-                                    pydicom_item,
-                                    specific_structure,
-                                    selected_prostate_info,
-                                    prostate_found_bool,
-                                    oar_ref,
-                                    dil_ref,
-                                )
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index].update(
-                                    legacy_realized_targeting_fields
-                                )
-
-                            structures_progress.update(processing_structures_task, advance=1)
-                    structures_progress.remove_task(processing_structures_task)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)    
+                live_display = realized_biopsy_targeting_processer(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    all_ref_key,
+                    bx_ref,
+                    oar_ref,
+                    dil_ref,
+                    patients_progress,
+                    structures_progress,
+                    completed_progress,
+                    live_display,
+                )
 
 
 

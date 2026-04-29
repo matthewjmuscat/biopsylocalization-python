@@ -97,13 +97,13 @@ def _build_target_dil_dicts(pydicom_item,
     return target_dil_by_centroids_dict, target_dil_by_surfaces_dict, dil_distance_dict
 
 
-def get_legacy_realized_biopsy_targeting_fields(pydicom_item,
-                                                specific_bx_structure,
-                                                selected_prostate_info,
-                                                prostate_found_bool,
-                                                oar_ref,
-                                                dil_ref
-                                                ):
+def calculate_legacy_realized_biopsy_targeting_fields(pydicom_item,
+                                                      specific_bx_structure,
+                                                      selected_prostate_info,
+                                                      prostate_found_bool,
+                                                      oar_ref,
+                                                      dil_ref
+                                                      ):
     bx_location_in_prostate_ref_frame_dict = _build_bx_location_in_prostate_dict(
         pydicom_item,
         specific_bx_structure,
@@ -123,3 +123,106 @@ def get_legacy_realized_biopsy_targeting_fields(pydicom_item,
         "Target DIL by surfaces dict": target_dil_by_surfaces_dict,
         "Nearest DILs info dict": dil_distance_dict,
     }
+
+
+def _get_selected_prostate_info(pydicom_item,
+                                all_ref_key,
+                                oar_ref
+                                ):
+    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]
+    specific_prostate_info_df = sp_patient_selected_structure_info_dataframe[
+        sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref
+    ]
+    selected_prostate_info = specific_prostate_info_df.to_dict("records")[0]
+    prostate_found_bool = selected_prostate_info["Struct found bool"]
+
+    return selected_prostate_info, prostate_found_bool
+
+
+def apply_legacy_realized_biopsy_targeting_fields(pydicom_item,
+                                                  specific_bx_structure,
+                                                  selected_prostate_info,
+                                                  prostate_found_bool,
+                                                  oar_ref,
+                                                  dil_ref
+                                                  ):
+    specific_bx_structure.update(
+        calculate_legacy_realized_biopsy_targeting_fields(
+            pydicom_item,
+            specific_bx_structure,
+            selected_prostate_info,
+            prostate_found_bool,
+            oar_ref,
+            dil_ref,
+        )
+    )
+
+
+def realized_biopsy_targeting_processer(master_structure_reference_dict,
+                                        master_structure_info_dict,
+                                        all_ref_key,
+                                        bx_ref,
+                                        oar_ref,
+                                        dil_ref,
+                                        patients_progress,
+                                        structures_progress,
+                                        completed_progress,
+                                        live_display
+                                        ):
+    live_display.stop()
+
+    patient_uid_default = "Initializing"
+    processing_patients_task_main_description = "[red]Determining realized biopsy targeting [{}]...".format(patient_uid_default)
+    processing_patients_task_completed_main_description = "[green]Determining realized biopsy targeting"
+    processing_patients_task = patients_progress.add_task(
+        processing_patients_task_main_description,
+        total=master_structure_info_dict["Global"]["Num cases"],
+    )
+    processing_patients_task_completed = completed_progress.add_task(
+        processing_patients_task_completed_main_description,
+        total=master_structure_info_dict["Global"]["Num cases"],
+        visible=False,
+    )
+
+    for patient_uid, pydicom_item in master_structure_reference_dict.items():
+        processing_patients_task_main_description = "[red]Determining realized biopsy targeting [{}]...".format(patient_uid)
+        patients_progress.update(processing_patients_task, description=processing_patients_task_main_description)
+
+        selected_prostate_info, prostate_found_bool = _get_selected_prostate_info(
+            pydicom_item,
+            all_ref_key,
+            oar_ref,
+        )
+
+        structure_id_default = "Initializing"
+        num_bx_structs_patient_specific = len(pydicom_item[bx_ref])
+        processing_structures_task_main_description = "[cyan]Determining biopsy targets [{},{}]...".format(patient_uid, structure_id_default)
+        processing_structures_task = structures_progress.add_task(
+            processing_structures_task_main_description,
+            total=num_bx_structs_patient_specific,
+        )
+
+        for specific_bx_structure in pydicom_item[bx_ref]:
+            structure_id = specific_bx_structure["ROI"]
+            processing_structures_task_main_description = "[cyan]Determining biopsy targets [{},{}]...".format(patient_uid, structure_id)
+            structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
+
+            apply_legacy_realized_biopsy_targeting_fields(
+                pydicom_item,
+                specific_bx_structure,
+                selected_prostate_info,
+                prostate_found_bool,
+                oar_ref,
+                dil_ref,
+            )
+
+            structures_progress.update(processing_structures_task, advance=1)
+
+        structures_progress.remove_task(processing_structures_task)
+        patients_progress.update(processing_patients_task, advance=1)
+        completed_progress.update(processing_patients_task_completed, advance=1)
+
+    patients_progress.update(processing_patients_task, visible=False)
+    completed_progress.update(processing_patients_task_completed, visible=True)
+
+    return live_display
