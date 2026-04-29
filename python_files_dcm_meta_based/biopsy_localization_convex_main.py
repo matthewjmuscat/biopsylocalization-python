@@ -81,6 +81,7 @@ import cuspatial
 import geopandas
 from itertools import combinations
 import biopsy_transporter
+import biopsy_point_sampler
 import machina_learning
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -6125,7 +6126,7 @@ def main():
             """
             for arg in args_list:
                 _ = MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel(*arg)  # dry run to avoid pickling overhead in the parallel run
-                _ = MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired(*arg)
+                _ = biopsy_point_sampler.sample_biopsy_points_from_reconstructed_global_delaunay_convex_structure(*arg)
             """
 
         
@@ -6137,7 +6138,7 @@ def main():
             #parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel, args_list)
 
             # This one fixes the above issues and samples nicely
-            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel_repaired, args_list)
+            parallel_results_sampled_bx_points_from_global_delaunay_arr_and_bounding_box_arr = parallel_pool.starmap(biopsy_point_sampler.sample_biopsy_points_from_reconstructed_global_delaunay_convex_structure, args_list)
 
 
             indeterminate_progress_main.update(sampling_points_task_indeterminate, visible = False, refresh = True)

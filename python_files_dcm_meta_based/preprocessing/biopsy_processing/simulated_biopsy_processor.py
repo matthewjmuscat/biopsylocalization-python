@@ -18,7 +18,7 @@ def _transport_planned_simulated_biopsy(pydicom_item,
     elif simulated_type == optimal_dil_sim_key:
         transport_family = "optimal"
 
-    return biopsy_transporter.transport_planned_biopsy(
+    return biopsy_transporter.transport_planned_biopsy_with_metadata(
         pydicom_item,
         specific_structure,
         planned_threeDdata_zslice_list,
@@ -144,14 +144,16 @@ def simulated_biopsy_processer(master_structure_reference_dict,
             processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID, structureID)
             structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
 
-            threeDdata_zslice_list = get_planned_simulated_biopsy_zslice_list(specific_structure)
-            threeDdata_zslice_list = _transport_planned_simulated_biopsy(
+            planned_threeDdata_zslice_list = get_planned_simulated_biopsy_zslice_list(specific_structure)
+            transport_result_dict = _transport_planned_simulated_biopsy(
                 pydicom_item,
                 specific_structure,
-                threeDdata_zslice_list,
+                planned_threeDdata_zslice_list,
                 centroid_dil_sim_key,
                 optimal_dil_sim_key,
             )
+            threeDdata_zslice_list = transport_result_dict["Transported raw contour pts zslice list"]
+            specific_structure["Simulated biopsy transport dict"] = transport_result_dict["Simulated biopsy transport dict"]
             live_display = _finalize_simulated_biopsy_geometry(master_structure_reference_dict,
                                                                patientUID,
                                                                bx_ref,
