@@ -686,12 +686,12 @@ def main():
                                              "Plot name": " - dose-scatter-quantiles_axial_dose_distribution"
                                              },
                                         "Axial dose distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose-regression-quantiles_axial_dose_distribution_matplotlib",
                                              "Num rand trials to show": 10
                                              },
                                         "Axial dose GRADIENT distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose-regression-quantiles_axial_dose_gradient_distribution_matplotlib",
                                              "Num rand trials to show": 10
                                              },
@@ -705,11 +705,11 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
                                         "Axial dose voxelized ridgeline plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose_voxelized_ridgeline",
                                              },
                                         "Axial dose and tissue colored voxelized ridgeline plot": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - dose_and_dil_tissue_colored_voxelized_ridgeline",
                                              },
                                         "Axial dose distribution voxelized violin plot": \
@@ -728,11 +728,11 @@ def main():
                                              "Nominal point color": 'rgba(227, 27, 35, 1)'
                                              },
                                         "Differential DVH dose quantiles plot seaborn": \
-                                            {"Plot bool": True,  #
+                                            {"Plot bool": False,  #
                                              "Plot name": ' - dose-differential_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH quantile regression seaborn": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-cumulative_DVH_quantiles_plot'
                                              },
                                         "Cumulative DVH showing N trials plot": \
@@ -744,7 +744,7 @@ def main():
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_regression_only'
                                              },
                                         "Cumulative DVH quantile regression all trials plot colorwash": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - dose-DVH-cumulative_DVH_regressions_quantiles_colorwash'
                                              },
                                         "Cohort - Dosimetry boxplots all biopsies": \
@@ -761,11 +761,11 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Tissue classification sum-to-one plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_sum-to-one_binom_regression_probabilities',
                                             },
                                         "Tissue classification sum-to-one nominal plot": \
-                                            {"Plot bool": True, #
+                                            {"Plot bool": False, #
                                              "Plot name": ' - tissue_class_sum-to-one_nominal_chart',
                                             },
                                         "Axial tissue class voxelized ridgeline plot": \
@@ -774,7 +774,7 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Axial MR distribution quantiles regression plot matplotlib": \
-                                            {"Plot bool": True, # 
+                                            {"Plot bool": False, # 
                                              "Plot name": " - mr-regression-quantiles_axial_distribution_matplotlib"
                                              },
                                         "Cohort - Sampled translation vector magnitudes box plots": \
@@ -782,23 +782,23 @@ def main():
                                              "Plot name": " - Cohort - sampled_translations_vecs_and_mags_boxplot"
                                              },
                                         "Cohort - Prostate biopsies heatmap": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - Cohort - biopsies_prostate_heatmap"
                                              },
                                         "Cohort - Prostate DILs heatmap": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": " - Cohort - DILs_prostate_heatmap"
                                              },   
                                         "Cohort - Scatter plot matrix targeting accuracy": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, 
                                              "Plot name": ' - scatter_plot_matrix_targeting_accuracy'
                                              },
                                         "Cohort - Scatter plot 2d gaussian transverse accuracy": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - 2d_gaussian_transverse_accuracy'
                                              },
                                         "Cohort - Scatter plot 2d gaussian sagittal accuracy": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' - 2d_gaussian_sagittal_accuracy'
                                              },
                                         "Cohort - Tissue class global score by biopsy type": \
@@ -807,19 +807,19 @@ def main():
                                              "Structure miss ROI": structure_miss_probability_roi
                                              },
                                         "Cohort - Tissue class global score sum-to-one box plots": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' cohort - tissue_class_sum-to-one_global_scores_by_bx_type'
                                              },
                                         "Cohort - Tissue class sum-to-one spatial ridgeline plots": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' cohort - tissue_class_sum-to-one_ridgeline'
                                              }, 
                                         "Cohort - Tissue class sum-to-one spatial nominal heatmap": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' cohort - tissue_class_sum-to-one_nominal_heatmap'
                                              },
                                         "Cohort - All biopsy voxels histogram sum-to-one binom est by tissue class": \
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, #
                                              "Plot name": ' cohort - tissue_class_sum-to-one_all_biopsy_voxels_histogram_by_tissue_class'
                                              },
                                         "Cohort - Tissue volume by biopsy type": \

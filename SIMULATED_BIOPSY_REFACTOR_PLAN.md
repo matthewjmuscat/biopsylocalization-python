@@ -363,6 +363,95 @@ The dispatcher should hide whether the source is:
 
 This keeps the post-optimizer simulated processor from hardcoding optimizer-specific field assumptions.
 
+Status update:
+
+- the first transport-dispatch seam now exists,
+- the current transporter still preserves the centroid and optimal translation math,
+- the remaining work in this phase is selection-contract cleanup and diagnostics rather than basic code movement.
+
+The next pass for this phase should make the dispatcher answer two separate questions:
+
+- which transport family applies,
+- which final candidate location should be kept.
+
+That split matters because future optimizer-v2 and guidance-map flows may want to expose more than one retained candidate even when the actual transport family is still just one of the legacy families.
+
+### Phase 3A: Reconcile Intended And Realized Targeting
+
+The early targeter should remain in the preparation layer.
+
+That early pass records intended targeting metadata only:
+
+- which structure the simulated biopsy is supposed to target,
+- where multiplicity and family membership came from,
+- what the optimizer or transport stage is expected to preserve.
+
+That data should continue to live in the simulated biopsy preparation dict.
+
+After optimizer-driven transport and final simulated-biopsy realization, run a second targeting pass on the fully realized biopsy geometry.
+
+That late pass should continue to write the legacy downstream fields such as:
+
+- `Target DIL by centroid dict`,
+- `Target DIL by surfaces dict`,
+- `Nearest DILs info dict`,
+- `Bx location in prostate dict`.
+
+Those late fields should remain the downstream contract because existing builders and plots still consume them.
+
+The preparation dict should not be overwritten by the late pass.
+
+Reasoning:
+
+- the early targeter answers intended targeting,
+- the late targeter answers achieved targeting,
+- for stable workflows they should usually agree,
+- when they do not agree, that disagreement is a validation signal rather than a reason to collapse the two namespaces.
+
+### Phase 3B: Add A Target Agreement Validator
+
+Once both targeting layers exist, add a focused target-agreement validator.
+
+This should compare at least:
+
+- the intended target recorded in the preparation dict,
+- the realized target recorded in the late legacy targeting fields.
+
+The first implementation should be warning-oriented rather than hard-failing.
+
+Recommended outputs:
+
+- a Rich warning line when intended and realized targets disagree,
+- patient ID and biopsy ID in the warning text,
+- intended target and realized target identifiers in the message,
+- an optional dataframe or summary object for later auditing.
+
+This validator becomes more important when optimizer v2 or any stochastic targeting mode is introduced, because final location is not truly known until after transport and finalization.
+
+### Phase 3C: Add Transport Selection Diagnostics And Rank Retention
+
+For optimal simulated biopsies, do not rely on silent selection of the winning optimizer row.
+
+The transport or optimizer stage should expose enough metadata to confirm that the retained biopsy really corresponds to the intended top-ranked candidate.
+
+The next pass should record and optionally display:
+
+- how many optimal candidates were considered,
+- which candidate rank was retained,
+- what tie-break rule was applied,
+- the retained candidate coordinates.
+
+The Rich UI should emit a concise confirmation line when an optimal biopsy is realized so that it is obvious that rank 1 was kept unless another rank was explicitly requested.
+
+This phase should also leave room for a future `keep_k_optimal` contract.
+
+That contract is useful for both:
+
+- future optimizer-v2 simulated biopsy families,
+- existing and future guidance-map flows that may want to expose the top several retained candidates rather than only the best one.
+
+Note that there is already meaningful candidate-rank guidance-map work in `advanced_guidance_map_creator.py`, so this phase should align with that existing surface rather than inventing a conflicting candidate contract.
+
 ### Phase 4: Add The Biopsy Point Sampler For Optimizer V2
 
 This phase depends on the planner existing as a stable pre-optimizer seam.
@@ -432,6 +521,63 @@ So the recommended order is:
 1. reuse the current reconstructed-object definition,
 2. reuse Delaunay containment for the first planning-side sampler,
 3. only revisit constant-z polygon containment later if profiling or edge-case behavior gives a concrete reason.
+
+### Phase 4C: Replace The Downstream Sampler With The Shared Module
+
+Before the sampler is reused pre-optimizer, extract the current repaired downstream sampler into a dedicated module and switch the downstream MC-prep path to call that shared module.
+
+The first pass should preserve the current downstream sampler semantics exactly.
+
+That means preserving at least:
+
+- the centerline-aligned sampling lattice,
+- the start-at-apex behavior,
+- the explicit axial end behavior,
+- the current point-index contract used by downstream dataframe builders,
+- the current Delaunay/global-convex containment backend.
+
+This step freezes the existing sampler behavior in one place before it is reused for optimizer v2.
+
+Validation for this phase should compare before and after for a representative case at the sampled-point level, not only at the geometry level.
+
+Compare at least:
+
+- sampled point arrays,
+- sampled point counts,
+- biopsy-frame coordinates,
+- downstream per-point dataframe row counts.
+
+### Phase 4D: Move Transform Generation Earlier By Splitting Generation From Application
+
+The current code already has an early transform-generation stage and a later transform-application stage, but the contract is still blurred by realized-geometry dependencies.
+
+In this context, transform generation means only generating the trial-wise parameters such as:
+
+- dilation samples,
+- rotation samples,
+- translation samples,
+- biopsy-needle-compartment shift samples.
+
+It does not mean acting on biopsy sample points yet.
+
+The correct refactor is:
+
+1. keep a pure transform-parameter generation stage,
+2. keep a later transform-application stage that acts on sampled points.
+
+The remaining blocker to moving generation earlier is that the biopsy-needle-compartment shift generation still reads realized contour length.
+
+That dependency should be rerouted to nominal or planned simulated length from the preparation or planning layer.
+
+Preferred end state:
+
+- generate transform parameters for all biopsies before optimizer-v2 targeting,
+- continue to apply those parameters later to sampled points after sampling has been performed.
+
+Interim fallback if needed:
+
+- move real-biopsy transform generation earlier first,
+- but do not make that the long-term contract unless simulated-length rerouting becomes unexpectedly expensive.
 
 ### Phase 5: Extract Shared Finalization Logic If Still Worthwhile
 
@@ -610,29 +756,34 @@ For one representative case, compare before and after for at least:
 - `Centroid line vec (bx needle base to bx needle tip)`
 - `Reconstructed structure pts arr`
 
-If there is drift, stop and resolve it before Phase 2.
+For the current rerun, also compare the matching patient outputs against the Mar 3 reference run once the run completes.
 
-## Recommended Immediate Next Coding Pass
+If there is drift, stop and resolve it before beginning the phased upgrades below.
 
-The next coding pass should implement Phase 1 only.
+## Recommended Immediate Next Upgrade Sequence
 
-That means:
+The next work should proceed in this order:
 
-1. create the new simulated-biopsy module boundaries,
-2. keep them in the current post-optimizer position,
-3. preserve the current realized writeback contract,
-4. archive the legacy inline block under `if False:`,
-5. run a focused validation pass.
+1. close validation on the current rerun,
+2. compare current outputs against the older matching patients and the Mar 3 reference outputs,
+3. add the late realized-targeting pass while keeping the early intended-targeting pass unchanged,
+4. add the target-agreement validator and Rich warning output,
+5. add transport-selection diagnostics and rank-retention metadata for optimal transports,
+6. extract the repaired downstream sampler into a shared module and replace the downstream caller with it,
+7. reroute transform-generation length reads to preparation or planning length and move transform generation earlier,
+8. then consume the shared sampler from the planning side for optimizer v2.
 
-Only after that succeeds should the planner be moved before the optimizer.
+Guidance-map candidate-rank support should be treated as an active dependency during the transport-selection work rather than as a separate disconnected track.
 
 ## Summary Decision
 
 The agreed safe path is:
 
-1. modularize the current simulated-biopsy block in place,
-2. validate it,
-3. then split planning before the optimizer and realization after the optimizer,
-4. then add the transport dispatcher and sampler seams for optimizer v2.
+1. validate the now-modularized planning and realization pipeline against existing outputs,
+2. keep intended and realized targeting as distinct contracts,
+3. add agreement validation between those two targeting layers,
+4. make optimal-transport selection explicit and diagnosable,
+5. freeze the current repaired downstream sampler inside a shared module,
+6. then move transform generation earlier and reuse the same sampler for optimizer v2.
 
 This plan intentionally prefers correctness and reviewability over collapsing multiple architectural moves into one pass.
