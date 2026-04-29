@@ -1,18 +1,5 @@
-import math
-
-import numpy as np
-
-import anatomy_reconstructor_tools
-import biopsy_creator
 import biopsy_transporter
-import centroid_finder
-import math_funcs as mf
-import misc_tools
-import pca
-import point_containment_tools
-from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_geometry_helper import finalize_biopsy_geometry_from_zslice_list
-from preprocessing.biopsy_processing.simulated_biopsy_planner import build_simulated_biopsy_planning_state
 from preprocessing.biopsy_processing.simulated_biopsy_planner import get_planned_simulated_biopsy_zslice_list
 
 
@@ -130,12 +117,7 @@ def simulated_biopsy_processer(master_structure_reference_dict,
                                structures_progress,
                                completed_progress,
                                indeterminate_progress_sub,
-                               live_display,
-                               centroid_line_vec_sim_list,
-                               centroid_first_pos_sim_list,
-                               num_centroids_for_sim_bxs,
-                               simulated_bx_rad,
-                               plot_simulated_cores_immediately
+                               live_display
                                ):
 
     patientUID_default = "Initializing"
@@ -164,14 +146,6 @@ def simulated_biopsy_processer(master_structure_reference_dict,
             processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID, structureID)
             structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
 
-            build_simulated_biopsy_planning_state(
-                specific_structure,
-                centroid_line_vec_sim_list,
-                centroid_first_pos_sim_list,
-                num_centroids_for_sim_bxs,
-                simulated_bx_rad,
-                plot_simulated_cores_immediately,
-            )
             threeDdata_zslice_list = get_planned_simulated_biopsy_zslice_list(specific_structure)
             threeDdata_zslice_list = _transport_planned_simulated_biopsy(
                 pydicom_item,
@@ -210,6 +184,19 @@ def simulated_biopsy_processer(master_structure_reference_dict,
                                                                live_display)
 
             if False:
+                import math
+
+                import numpy as np
+
+                import anatomy_reconstructor_tools
+                import biopsy_creator
+                import centroid_finder
+                import math_funcs as mf
+                import misc_tools
+                import pca
+                import point_containment_tools
+                from preprocessing.interpolation.interpolation import interpolation_information_obj
+
                 total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
                 threeDdata_array = np.empty([total_structure_points, 3])
 

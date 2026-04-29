@@ -98,6 +98,7 @@ import mr_localizers
 import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
+from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_biopsy_planner_processer
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
@@ -4411,6 +4412,30 @@ def main():
                             master_structure_info_dict = master_structure_info_dict
                             )
 
+                ###################    SET SOME PRELIMS FOR THE SIMULATED BIOPSIES
+
+                # initialize the basics for drawing the simulated biopsies
+                centroid_line_vec_sim_list = [0,0,1]
+                centroid_first_pos_sim_list = [0,0,0]
+                num_centroids_for_sim_bxs = 10
+                simulated_bx_rad = 2
+                plot_simulated_cores_immediately = False
+                # note that the length of the simulated biopsy is determined on a per biopsy basis in the below code!
+
+                live_display = simulated_biopsy_planner_processer(master_structure_reference_dict,
+                            master_structure_info_dict,
+                            bx_ref,
+                            patients_progress,
+                            structures_progress,
+                            completed_progress,
+                            live_display,
+                            centroid_line_vec_sim_list,
+                            centroid_first_pos_sim_list,
+                            num_centroids_for_sim_bxs,
+                            simulated_bx_rad,
+                            plot_simulated_cores_immediately,
+                            )
+
 
 
 
@@ -4917,15 +4942,6 @@ def main():
                 ###################    SET SOME PRELIMS FOR THE SIMULATED BIOPSIES  
                
                
-                # initialize the basics for drawing the simulated biopsies
-                centroid_line_vec_sim_list = [0,0,1]
-                centroid_first_pos_sim_list = [0,0,0]
-                num_centroids_for_sim_bxs = 10
-                simulated_bx_rad = 2
-                plot_simulated_cores_immediately = False
-                # note that the length of the simulated biopsy is determined on a per biopsy basis in the below code!
-                    
-
                 live_display = simulated_biopsy_processer(master_structure_reference_dict,
                             master_structure_info_dict,
                             structs_referenced_dict,
@@ -4955,11 +4971,6 @@ def main():
                             completed_progress,
                             indeterminate_progress_sub,
                             live_display,
-                            centroid_line_vec_sim_list,
-                            centroid_first_pos_sim_list,
-                            num_centroids_for_sim_bxs,
-                            simulated_bx_rad,
-                            plot_simulated_cores_immediately,
                             )
 
                 if False:

@@ -40,11 +40,47 @@ Planning exists so that:
 
 Planning must not overwrite the normal final biopsy geometry fields in the master structure dictionary.
 
+Planning now has two layers:
+
+- planned raw contour z-slice geometry,
+- a reconstructed biopsy model prepared for sampling.
+
+The reconstructed model is the important new seam for optimizer v2.
+
+That model should be built from the planned z-slice list using the same low-level helper that the realized finalizer uses later on final world-space geometry.
+
 ### 3. Realized State
 
 Realized state is the final transported, reconstructed, world-space simulated biopsy geometry.
 
 This is the only state that downstream biopsy parsing, sextant classification, voxel binning, and MC-related code should consume.
+
+## Current Implemented Boundary
+
+The code now has a shared lower-level builder in:
+
+- `python_files_dcm_meta_based/preprocessing/biopsy_processing/biopsy_geometry_helper.py`
+
+Current shared helper:
+
+- `build_reconstructed_biopsy_model_for_sampling_from_zslice_list(...)`
+
+This helper is the shared reconstruction seam between planning and realization.
+
+It accepts a biopsy contour z-slice list and returns a reconstructed biopsy model prepared for sampling, including at least:
+
+- raw contour point array,
+- centroid array,
+- structure global centroid,
+- centroid-line fit and derived vectors,
+- reconstructed biopsy array,
+- reconstructed point cloud,
+- reconstructed global Delaunay object,
+- rotated constant-z representation of the reconstructed biopsy.
+
+The realized finalizer still owns interpolation, volume calculation, and writeback into the canonical downstream biopsy keys.
+
+The planner now owns the planning-side copy of that reconstructed biopsy model in the planning dict.
 
 ## Current Pipeline Shape
 
@@ -57,6 +93,15 @@ The current relevant execution order in `biopsy_localization_convex_main.py` is:
 5. downstream all-biopsies parsing and later MC-related steps
 
 That means the current inline simulated block is post-optimizer and writes the final realized geometry that later code consumes.
+
+The current modularized execution order is now:
+
+1. real biopsy processing
+2. simulated biopsy preparation
+3. simulated biopsy planning
+4. legacy optimizer
+5. simulated biopsy transport and realization
+6. downstream parsing and MC-related steps
 
 ## Critical Invariants
 
@@ -235,9 +280,14 @@ Suggested minimum contents:
 - `Planned centroid count`
 - `Planned centroid separation mm`
 - `Planned raw contour pts zslice list`
+- `Planned reconstructed biopsy model dict`
 - `Planning source`
 
 This dict should be additive and should not replace any current canonical biopsy field.
+
+The `Planned reconstructed biopsy model dict` is the pre-optimizer object that future v2 sampling should consume.
+
+It should remain planning-scoped. It must not be written into the normal realized biopsy keys.
 
 #### Transport in Phase 1
 
@@ -317,7 +367,7 @@ This keeps the post-optimizer simulated processor from hardcoding optimizer-spec
 
 This phase depends on the planner existing as a stable pre-optimizer seam.
 
-The future biopsy point sampler should consume planning geometry, not final realized geometry.
+The future biopsy point sampler should consume the planning-side reconstructed biopsy model, not the realized downstream biopsy keys.
 
 That is the correct place for stochastic optimizer-v2 support.
 
@@ -333,9 +383,55 @@ Target dependency shape:
 
 1. preparation
 2. planning
-3. biopsy point sampler
-4. optimizer v2
-5. final transport and realization
+3. shared reconstructed biopsy model builder
+4. deterministic biopsy point sampler
+5. optimizer v2
+6. final transport and realization
+
+### Phase 4A: Shared Reconstructed Model Contract
+
+The planning stage and the realized finalizer must pass through the same reconstruction helper.
+
+That shared helper should remain lower-level than the finalizer.
+
+Why this matters:
+
+- the optimizer needs the same reconstructed biopsy object definition that downstream realization uses,
+- but the optimizer does not need interpolation side effects, world-space writeback, or volume calculation on every candidate,
+- keeping the builder lower-level avoids forcing optimizer v2 through the full realized finalization path.
+
+The correct split is:
+
+1. build reconstructed biopsy model from a z-slice list,
+2. optionally sample from that model,
+3. optionally finalize and write the realized downstream fields.
+
+The finalizer should call the builder, not duplicate it.
+
+The planner should call the same builder and store the resulting model in planning namespace.
+
+### Phase 4B: Containment Backend Recommendation
+
+For the next pass, keep the current Delaunay/global-convex containment method for biopsy sampling.
+
+Recommendation:
+
+- do not replace biopsy Delaunay containment with the constant-z-slice point-in-polygon path in this pass,
+- treat any future containment swap as an internal sampler backend change, not as a new planner/finalizer architecture.
+
+Reasoning:
+
+- the current reconstructed biopsy is already a straight convex object,
+- the existing late sampler already consumes the reconstructed global Delaunay object successfully,
+- optimizer v2 only needs the same sampling contract earlier in the pipeline,
+- the constant-z-slice polygon route would introduce a second containment contract and another place for geometric drift,
+- your custom point-in-polygon route appears to rely on constant z slices, so it is only attractive after an explicit profiling or correctness reason justifies the extra conversion path.
+
+So the recommended order is:
+
+1. reuse the current reconstructed-object definition,
+2. reuse Delaunay containment for the first planning-side sampler,
+3. only revisit constant-z polygon containment later if profiling or edge-case behavior gives a concrete reason.
 
 ### Phase 5: Extract Shared Finalization Logic If Still Worthwhile
 
@@ -347,6 +443,12 @@ After the simulated path is modularized and reordered safely, revisit the duplic
 At that point, if the shared surface is still large and stable, extract the common z-slice-to-biopsy-fields logic into a dedicated helper.
 
 This is useful, but it is not required before the planner/realizer boundary is proven.
+
+Status update:
+
+- the shared realized finalizer already exists,
+- the lower-level reconstructed-biopsy-model builder now also exists,
+- the remaining missing piece is the deterministic planning-side biopsy point sampler that consumes the planned reconstructed model.
 
 ## Proposed Phase 1 File Layout
 
@@ -386,7 +488,8 @@ def build_simulated_biopsy_planning_state(
 Output expectation:
 
 - populate a simulated biopsy planning dict,
-- return planned z-slice geometry in the canonical planning frame if needed immediately.
+- return planned z-slice geometry in the canonical planning frame if needed immediately,
+- build and store the planned reconstructed biopsy model dict for sampling.
 
 ### Processor API
 
@@ -439,11 +542,17 @@ Responsibilities:
 Example shape:
 
 ```python
+def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(...):
+    ...
+
 def finalize_biopsy_geometry_from_zslice_list(...):
     ...
 ```
 
-This helper would be shared by real and simulated biopsy processors if extracted.
+These helpers now serve different layers:
+
+- `build_reconstructed_biopsy_model_for_sampling_from_zslice_list(...)` is the shared lower-level reconstruction seam for planning and realization,
+- `finalize_biopsy_geometry_from_zslice_list(...)` is the realized downstream writeback layer.
 
 ## What Should Not Happen In Phase 1
 
@@ -460,6 +569,10 @@ The downstream parser should continue consuming final realized geometry exactly 
 ### Do not replace `biopsy_transporter.py`
 
 The transport primitives already exist. The correct first step is to route through them cleanly, not rewrite them.
+
+### Do not replace Delaunay biopsy containment during the sampler-seam pass
+
+That is a backend optimization question, not the current architectural blocker.
 
 ### Do not collapse planning and final geometry into the same fields
 
