@@ -1,4 +1,5 @@
 import biopsy_creator
+from sampling import biopsy_point_sampler
 
 from preprocessing.biopsy_processing.biopsy_geometry_helper import build_reconstructed_biopsy_model_for_sampling_from_zslice_list
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
@@ -14,6 +15,11 @@ def _create_default_simulated_biopsy_planning_dict():
         "Planned centroid separation mm": None,
         "Planned raw contour pts zslice list": None,
         "Planned reconstructed biopsy model dict": None,
+        "Planned sample lattice spacing mm": None,
+        "Planned sampled volume pts arr": None,
+        "Planned sample bounding box pts arr": None,
+        "Planned sampled point count": None,
+        "Planned sampling metadata": None,
         "Planning source": None,
     }
 
@@ -90,6 +96,45 @@ def get_planned_simulated_biopsy_model_dict(specific_structure):
         )
 
     return planned_reconstructed_biopsy_model_dict
+
+
+def build_simulated_biopsy_planning_sample_state(specific_structure,
+                                                 grid_separation_distance,
+                                                 patientUID="Planning frame",
+                                                 structure_type="Planned simulated biopsy",
+                                                 specific_structure_index=-1
+                                                 ):
+    planned_reconstructed_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
+    sampled_bx_pts_arr, bounding_box_pts_arr, num_sampled_bx_pts, sampling_metadata = biopsy_point_sampler.sample_biopsy_points_from_reconstructed_biopsy_model_dict(
+        grid_separation_distance,
+        planned_reconstructed_biopsy_model_dict,
+        patientUID,
+        structure_type,
+        specific_structure_index,
+    )
+
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    simulated_biopsy_planning_dict["Planned sample lattice spacing mm"] = float(grid_separation_distance)
+    simulated_biopsy_planning_dict["Planned sampled volume pts arr"] = sampled_bx_pts_arr
+    simulated_biopsy_planning_dict["Planned sample bounding box pts arr"] = bounding_box_pts_arr
+    simulated_biopsy_planning_dict["Planned sampled point count"] = int(num_sampled_bx_pts)
+    simulated_biopsy_planning_dict["Planned sampling metadata"] = sampling_metadata
+
+    return simulated_biopsy_planning_dict
+
+
+def get_planned_simulated_biopsy_sampled_points_arr(specific_structure):
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    planned_sampled_volume_pts_arr = simulated_biopsy_planning_dict.get("Planned sampled volume pts arr")
+
+    if planned_sampled_volume_pts_arr is None:
+        raise ValueError(
+            "Simulated biopsy planning sampled points are missing for {}".format(
+                specific_structure.get("ROI")
+            )
+        )
+
+    return planned_sampled_volume_pts_arr
 
 
 def simulated_biopsy_planner_processer(master_structure_reference_dict,
