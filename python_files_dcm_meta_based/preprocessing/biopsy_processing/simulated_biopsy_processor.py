@@ -10,22 +10,20 @@ def _transport_planned_simulated_biopsy(pydicom_item,
                                         optimal_dil_sim_key
                                         ):
     simulated_type = specific_structure["Simulated type"]
+    transport_family = "identity"
 
     if simulated_type == centroid_dil_sim_key:
-        return biopsy_transporter.biopsy_transporter_centroid(
-            pydicom_item,
-            specific_structure,
-            planned_threeDdata_zslice_list,
-        )
+        transport_family = "centroid"
 
-    if simulated_type == optimal_dil_sim_key:
-        return biopsy_transporter.biopsy_transporter_optimal(
-            pydicom_item,
-            specific_structure,
-            planned_threeDdata_zslice_list,
-        )
+    elif simulated_type == optimal_dil_sim_key:
+        transport_family = "optimal"
 
-    return planned_threeDdata_zslice_list
+    return biopsy_transporter.transport_planned_biopsy(
+        pydicom_item,
+        specific_structure,
+        planned_threeDdata_zslice_list,
+        transport_family=transport_family,
+    )
 
 
 def _finalize_simulated_biopsy_geometry(master_structure_reference_dict,
