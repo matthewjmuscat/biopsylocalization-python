@@ -321,6 +321,14 @@ The future biopsy point sampler should consume planning geometry, not final real
 
 That is the correct place for stochastic optimizer-v2 support.
 
+The sampler should be deterministic and reusable.
+
+That means:
+
+- the same sampler definition should be usable on pre-optimizer planning geometry and on post-optimizer realized geometry,
+- sampling should be defined cleanly enough that a planning biopsy can be sampled once and then repeatedly transported if that is the efficient strategy for coarse-to-fine or stochastic optimization loops,
+- the optimizer should not depend on a second special-purpose sampling scheme that differs from the downstream realized-geometry sampling interpretation.
+
 Target dependency shape:
 
 1. preparation
