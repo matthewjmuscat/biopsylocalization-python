@@ -1,5 +1,8 @@
 import copy
 import pickle
+import subprocess
+import sys
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -12,6 +15,63 @@ import point_containment_tools
 
 PREPROCESSED_EXPORT_MODE = "preprocessed"
 RESULTS_EXPORT_MODE = "results"
+EXPORT_METADATA_KEY = "Dataset export metadata"
+PICKLE_SANITIZER_VERSION = 2
+
+
+GENERAL_STRUCTURE_RUNTIME_KEYS = {
+    "Point cloud raw",
+    "Interpolated structure point cloud dict",
+    "Structure OPEN3D triangle mesh object",
+}
+
+RESULTS_BX_RUNTIME_KEYS = {
+    "Random uniformly sampled volume pts pcd",
+    "Random uniformly sampled volume pts bx coord sys pcd",
+    "Bounding box for random uniformly sampled volume pts",
+    "MC data: bx and structure shifted dict",
+    "MC data: bx to dose NN search objects list",
+    "FANOVA: sobol indices (containment)",
+    "FANOVA: sobol indices (dose)",
+    "FANOVA: sobol indices (DIL tissue)",
+}
+
+DOSE_RUNTIME_KEYS = {
+    "Dose grid point cloud",
+    "Dose grid point cloud thresholded",
+    "Dose grid gradient point cloud",
+    "Dose grid gradient point cloud thresholded",
+    "KDtree",
+    "KDtree gradient",
+}
+
+MR_RUNTIME_KEYS = {
+    "MR ADC grid point cloud",
+    "MR ADC grid point cloud thresholded",
+    "KDtree",
+}
+
+NON_PICKLABLE_RUNTIME_MODULE_FRAGMENTS = (
+    "open3d",
+    "scipy.spatial",
+    "sklearn.neighbors",
+    "rich.",
+)
+
+NON_PICKLABLE_RUNTIME_CLASS_FRAGMENTS = (
+    "PointCloud",
+    "TriangleMesh",
+    "LineSet",
+    "KDTree",
+    "KDTreeFlann",
+)
+
+
+class _DropValueType:
+    pass
+
+
+DROP_VALUE = _DropValueType()
 
 
 def _pop_keys(mapping_obj, key_names):
@@ -19,89 +79,257 @@ def _pop_keys(mapping_obj, key_names):
         mapping_obj.pop(key_name, None)
 
 
-def _clear_delaunay_lineset_if_present(delaunay_obj):
-    if delaunay_obj is not None and hasattr(delaunay_obj, "delaunay_line_set"):
-        delaunay_obj.delaunay_line_set = None
+def _is_known_non_picklable_runtime_object(value):
+    value_type = type(value)
+    module_name = getattr(value_type, "__module__", "")
+    class_name = getattr(value_type, "__name__", "")
+
+    if any(module_fragment in module_name for module_fragment in NON_PICKLABLE_RUNTIME_MODULE_FRAGMENTS):
+        return True
+
+    return any(class_fragment in class_name for class_fragment in NON_PICKLABLE_RUNTIME_CLASS_FRAGMENTS)
 
 
-def _sanitize_planned_simulated_biopsy_runtime_objects(specific_bx_structure):
-    simulated_biopsy_planning_dict = specific_bx_structure.get("Simulated biopsy planning dict")
+def _clone_value_for_pickle(value):
+    if isinstance(value, dict):
+        value_safe = {}
+        for key, nested_value in value.items():
+            nested_value_safe = _clone_value_for_pickle(nested_value)
+            if nested_value_safe is DROP_VALUE:
+                continue
+            value_safe[key] = nested_value_safe
+        return value_safe
+
+    if isinstance(value, list):
+        value_safe = []
+        for nested_value in value:
+            nested_value_safe = _clone_value_for_pickle(nested_value)
+            if nested_value_safe is DROP_VALUE:
+                continue
+            value_safe.append(nested_value_safe)
+        return value_safe
+
+    if isinstance(value, tuple):
+        value_safe = []
+        for nested_value in value:
+            nested_value_safe = _clone_value_for_pickle(nested_value)
+            if nested_value_safe is DROP_VALUE:
+                continue
+            value_safe.append(nested_value_safe)
+        return tuple(value_safe)
+
+    if isinstance(value, set):
+        value_safe = []
+        for nested_value in value:
+            nested_value_safe = _clone_value_for_pickle(nested_value)
+            if nested_value_safe is DROP_VALUE:
+                continue
+            value_safe.append(nested_value_safe)
+        try:
+            return type(value)(value_safe)
+        except TypeError:
+            return value_safe
+
+    if _is_known_non_picklable_runtime_object(value):
+        return DROP_VALUE
+
+    return value
+
+
+def _clone_delaunay_without_lineset(delaunay_obj):
+    if delaunay_obj is None:
+        return None
+
+    try:
+        delaunay_obj_safe = copy.copy(delaunay_obj)
+    except Exception:
+        return None
+
+    if hasattr(delaunay_obj_safe, "delaunay_line_set"):
+        delaunay_obj_safe.delaunay_line_set = None
+
+    return delaunay_obj_safe
+
+
+def _clone_reconstructed_biopsy_model_dict_for_pickle(reconstructed_biopsy_model_dict):
+    if reconstructed_biopsy_model_dict is None:
+        return None
+
+    reconstructed_biopsy_model_dict_safe = {}
+    for key, value in reconstructed_biopsy_model_dict.items():
+        if key == "Reconstructed structure point cloud":
+            reconstructed_biopsy_model_dict_safe[key] = None
+            continue
+
+        if key == "Reconstructed structure delaunay global":
+            reconstructed_biopsy_model_dict_safe[key] = _clone_delaunay_without_lineset(value)
+            continue
+
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        reconstructed_biopsy_model_dict_safe[key] = value_safe
+
+    return reconstructed_biopsy_model_dict_safe
+
+
+def _clone_simulated_biopsy_planning_dict_for_pickle(simulated_biopsy_planning_dict):
     if simulated_biopsy_planning_dict is None:
-        return
+        return None
 
-    planned_reconstructed_biopsy_model_dict = simulated_biopsy_planning_dict.get("Planned reconstructed biopsy model dict")
-    if planned_reconstructed_biopsy_model_dict is None:
-        return
+    simulated_biopsy_planning_dict_safe = {}
+    for key, value in simulated_biopsy_planning_dict.items():
+        if key == "Planned reconstructed biopsy model dict":
+            simulated_biopsy_planning_dict_safe[key] = _clone_reconstructed_biopsy_model_dict_for_pickle(value)
+            continue
 
-    planned_reconstructed_biopsy_model_dict["Reconstructed structure point cloud"] = None
-    _clear_delaunay_lineset_if_present(planned_reconstructed_biopsy_model_dict.get("Reconstructed structure delaunay global"))
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        simulated_biopsy_planning_dict_safe[key] = value_safe
 
-
-def _sanitize_general_structure_for_pickle(specific_structure,
-                                           remove_uncertainty_data=False):
-    _pop_keys(
-        specific_structure,
-        [
-            "Point cloud raw",
-            "Interpolated structure point cloud dict",
-            "Structure OPEN3D triangle mesh object",
-        ],
-    )
-
-    if remove_uncertainty_data:
-        specific_structure.pop("Uncertainty data", None)
+    return simulated_biopsy_planning_dict_safe
 
 
-def _sanitize_bx_structure_for_pickle(specific_bx_structure,
-                                      export_mode):
-    _sanitize_planned_simulated_biopsy_runtime_objects(specific_bx_structure)
-    _sanitize_general_structure_for_pickle(
-        specific_bx_structure,
-        remove_uncertainty_data=(export_mode == RESULTS_EXPORT_MODE),
-    )
+def _clone_general_structure_for_pickle(specific_structure,
+                                        remove_uncertainty_data=False):
+    specific_structure_safe = {}
 
-    specific_bx_structure["Reconstructed structure point cloud"] = None
-    _clear_delaunay_lineset_if_present(specific_bx_structure.get("Reconstructed structure delaunay global"))
+    for key, value in specific_structure.items():
+        if key in GENERAL_STRUCTURE_RUNTIME_KEYS:
+            continue
 
-    if export_mode == RESULTS_EXPORT_MODE:
-        _pop_keys(
-            specific_bx_structure,
-            [
-                "Random uniformly sampled volume pts pcd",
-                "Random uniformly sampled volume pts bx coord sys pcd",
-                "Bounding box for random uniformly sampled volume pts",
-                "MC data: bx and structure shifted dict",
-                "MC data: bx to dose NN search objects list",
-                "FANOVA: sobol indices (containment)",
-                "FANOVA: sobol indices (dose)",
-                "FANOVA: sobol indices (DIL tissue)",
-            ],
-        )
+        if remove_uncertainty_data and key == "Uncertainty data":
+            continue
+
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        specific_structure_safe[key] = value_safe
+
+    return specific_structure_safe
 
 
-def _sanitize_dose_dict_for_pickle(dose_ref_dict):
-    _pop_keys(
-        dose_ref_dict,
-        [
-            "Dose grid point cloud",
-            "Dose grid point cloud thresholded",
-            "Dose grid gradient point cloud",
-            "Dose grid gradient point cloud thresholded",
-            "KDtree",
-            "KDtree gradient",
-        ],
-    )
+def _clone_bx_structure_for_pickle(specific_bx_structure,
+                                   export_mode):
+    specific_bx_structure_safe = {}
+    remove_uncertainty_data = export_mode == RESULTS_EXPORT_MODE
+
+    for key, value in specific_bx_structure.items():
+        if key in GENERAL_STRUCTURE_RUNTIME_KEYS:
+            continue
+
+        if remove_uncertainty_data and key == "Uncertainty data":
+            continue
+
+        if export_mode == RESULTS_EXPORT_MODE and key in RESULTS_BX_RUNTIME_KEYS:
+            continue
+
+        if key == "Reconstructed structure point cloud":
+            specific_bx_structure_safe[key] = None
+            continue
+
+        if key == "Reconstructed structure delaunay global":
+            specific_bx_structure_safe[key] = _clone_delaunay_without_lineset(value)
+            continue
+
+        if key == "Simulated biopsy planning dict":
+            specific_bx_structure_safe[key] = _clone_simulated_biopsy_planning_dict_for_pickle(value)
+            continue
+
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        specific_bx_structure_safe[key] = value_safe
+
+    return specific_bx_structure_safe
 
 
-def _sanitize_mr_dict_for_pickle(mr_adc_subdict):
-    _pop_keys(
-        mr_adc_subdict,
-        [
-            "MR ADC grid point cloud",
-            "MR ADC grid point cloud thresholded",
-            "KDtree",
-        ],
-    )
+def _clone_dose_dict_for_pickle(dose_ref_dict):
+    dose_ref_dict_safe = {}
+
+    for key, value in dose_ref_dict.items():
+        if key in DOSE_RUNTIME_KEYS:
+            continue
+
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        dose_ref_dict_safe[key] = value_safe
+
+    return dose_ref_dict_safe
+
+
+def _clone_mr_dict_for_pickle(mr_adc_subdict):
+    mr_adc_subdict_safe = {}
+
+    for key, value in mr_adc_subdict.items():
+        if key in MR_RUNTIME_KEYS:
+            continue
+
+        value_safe = _clone_value_for_pickle(value)
+        if value_safe is DROP_VALUE:
+            continue
+        mr_adc_subdict_safe[key] = value_safe
+
+    return mr_adc_subdict_safe
+
+
+def _git_command_output(working_dir, args):
+    try:
+        return subprocess.check_output(
+            ["git", *args],
+            cwd=str(working_dir),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+
+
+def _build_git_metadata(export_dir):
+    repo_root = _git_command_output(export_dir, ["rev-parse", "--show-toplevel"])
+    if repo_root is None:
+        return None
+
+    return {
+        "repo root": repo_root,
+        "commit": _git_command_output(export_dir, ["rev-parse", "HEAD"]),
+        "short commit": _git_command_output(export_dir, ["rev-parse", "--short", "HEAD"]),
+        "branch": _git_command_output(export_dir, ["rev-parse", "--abbrev-ref", "HEAD"]),
+        "dirty": bool(_git_command_output(export_dir, ["status", "--porcelain"])),
+    }
+
+
+def _build_export_metadata(export_mode,
+                           export_dir,
+                           reference_dict_filename,
+                           info_dict_filename,
+                           summary_filename=None):
+    export_metadata = {
+        "export mode": export_mode,
+        "generated at utc": datetime.now(timezone.utc).isoformat(),
+        "sanitizer version": PICKLE_SANITIZER_VERSION,
+        "python version": sys.version.split()[0],
+        "reference dict filename": reference_dict_filename,
+        "info dict filename": info_dict_filename,
+    }
+
+    if summary_filename is not None:
+        export_metadata["summary filename"] = summary_filename
+
+    git_metadata = _build_git_metadata(export_dir)
+    if git_metadata is not None:
+        export_metadata["git"] = git_metadata
+
+    return export_metadata
+
+
+def _build_exportable_master_structure_info_dict(master_structure_info_dict,
+                                                 export_metadata):
+    master_structure_info_dict_safe = copy.deepcopy(master_structure_info_dict)
+    master_structure_info_dict_safe.setdefault("Global", {})[EXPORT_METADATA_KEY] = export_metadata
+    return master_structure_info_dict_safe
 
 
 def build_pickle_safe_master_structure_reference_dict(master_structure_reference_dict,
@@ -113,26 +341,38 @@ def build_pickle_safe_master_structure_reference_dict(master_structure_reference
                                                       urethra_ref_key,
                                                       dose_ref,
                                                       mr_adc_ref):
-    master_structure_reference_dict_safe = copy.deepcopy(master_structure_reference_dict)
+    master_structure_reference_dict_safe = {}
 
-    for _patient_uid, pydicom_item in master_structure_reference_dict_safe.items():
-        for specific_bx_structure in pydicom_item.get(bx_ref, []):
-            _sanitize_bx_structure_for_pickle(specific_bx_structure, export_mode)
+    for patient_uid, pydicom_item in master_structure_reference_dict.items():
+        pydicom_item_safe = {}
 
-        remove_uncertainty_data = export_mode == RESULTS_EXPORT_MODE
-        for specific_oar_structure in pydicom_item.get(oar_ref, []):
-            _sanitize_general_structure_for_pickle(specific_oar_structure, remove_uncertainty_data=remove_uncertainty_data)
-        for specific_dil_structure in pydicom_item.get(dil_ref, []):
-            _sanitize_general_structure_for_pickle(specific_dil_structure, remove_uncertainty_data=remove_uncertainty_data)
-        for specific_rectum_structure in pydicom_item.get(rectum_ref_key, []):
-            _sanitize_general_structure_for_pickle(specific_rectum_structure, remove_uncertainty_data=remove_uncertainty_data)
-        for specific_urethra_structure in pydicom_item.get(urethra_ref_key, []):
-            _sanitize_general_structure_for_pickle(specific_urethra_structure, remove_uncertainty_data=remove_uncertainty_data)
+        for key, value in pydicom_item.items():
+            if key == bx_ref:
+                pydicom_item_safe[key] = [_clone_bx_structure_for_pickle(specific_bx_structure, export_mode) for specific_bx_structure in value]
+                continue
 
-        if dose_ref in pydicom_item:
-            _sanitize_dose_dict_for_pickle(pydicom_item[dose_ref])
-        if mr_adc_ref in pydicom_item:
-            _sanitize_mr_dict_for_pickle(pydicom_item[mr_adc_ref])
+            if key in {oar_ref, dil_ref, rectum_ref_key, urethra_ref_key}:
+                remove_uncertainty_data = export_mode == RESULTS_EXPORT_MODE
+                pydicom_item_safe[key] = [
+                    _clone_general_structure_for_pickle(specific_structure, remove_uncertainty_data=remove_uncertainty_data)
+                    for specific_structure in value
+                ]
+                continue
+
+            if key == dose_ref:
+                pydicom_item_safe[key] = _clone_dose_dict_for_pickle(value)
+                continue
+
+            if key == mr_adc_ref:
+                pydicom_item_safe[key] = _clone_mr_dict_for_pickle(value)
+                continue
+
+            value_safe = _clone_value_for_pickle(value)
+            if value_safe is DROP_VALUE:
+                continue
+            pydicom_item_safe[key] = value_safe
+
+        master_structure_reference_dict_safe[patient_uid] = pydicom_item_safe
 
     return master_structure_reference_dict_safe
 
@@ -173,6 +413,17 @@ def export_preprocessed_pickle_bundle(master_structure_reference_dict,
         dose_ref,
         mr_adc_ref,
     )
+    export_metadata = _build_export_metadata(
+        PREPROCESSED_EXPORT_MODE,
+        export_dir,
+        reference_dict_filename,
+        info_dict_filename,
+        summary_filename=summary_filename,
+    )
+    master_structure_info_dict_safe = _build_exportable_master_structure_info_dict(
+        master_structure_info_dict,
+        export_metadata,
+    )
 
     reference_dict_path = export_dir.joinpath(reference_dict_filename)
     with open(reference_dict_path, "wb") as master_structure_reference_dict_file:
@@ -180,7 +431,7 @@ def export_preprocessed_pickle_bundle(master_structure_reference_dict,
 
     info_dict_path = export_dir.joinpath(info_dict_filename)
     with open(info_dict_path, "wb") as master_structure_info_dict_file:
-        pickle.dump(master_structure_info_dict, master_structure_info_dict_file)
+        pickle.dump(master_structure_info_dict_safe, master_structure_info_dict_file)
 
     summary_path = export_dir.joinpath(summary_filename)
     preprocessed_info_dataframe = dataframe_builders.preprocessed_dataset_summary_dataframe_builder(
@@ -220,6 +471,16 @@ def export_results_pickle_bundle(master_structure_reference_dict,
         dose_ref,
         mr_adc_ref,
     )
+    export_metadata = _build_export_metadata(
+        RESULTS_EXPORT_MODE,
+        export_dir,
+        reference_dict_filename,
+        info_dict_filename,
+    )
+    master_structure_info_dict_safe = _build_exportable_master_structure_info_dict(
+        master_structure_info_dict,
+        export_metadata,
+    )
 
     reference_dict_path = export_dir.joinpath(reference_dict_filename)
     with open(reference_dict_path, "wb") as master_structure_reference_dict_file:
@@ -227,7 +488,7 @@ def export_results_pickle_bundle(master_structure_reference_dict,
 
     info_dict_path = export_dir.joinpath(info_dict_filename)
     with open(info_dict_path, "wb") as master_structure_info_dict_file:
-        pickle.dump(master_structure_info_dict, master_structure_info_dict_file)
+        pickle.dump(master_structure_info_dict_safe, master_structure_info_dict_file)
 
     return {
         "reference_dict_path": reference_dict_path,
