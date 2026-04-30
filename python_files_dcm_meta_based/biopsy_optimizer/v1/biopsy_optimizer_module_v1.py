@@ -9,6 +9,7 @@ import MC_simulator_convex
 import misc_tools
 from . import biopsy_optimizer_module_v1_helpers
 import dataframe_builders
+import dataframe_dtype_policy
 import pandas
 import plotly.graph_objects as go
 
@@ -433,10 +434,30 @@ def biopsy_optimizer_module_v1(master_structure_reference_dict,
                                     'Test location (Prostate centroid origin) (Y)',
                                     'Test location (Prostate centroid origin) (Z)')
             
-            dil_centroids_optimization_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(dil_centroids_optimization_locations_dataframe, threshold=0.25, ignore_types=(np.floating,))
-            optimal_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(optimal_locations_dataframe, threshold=0.25, ignore_types=(np.floating,))
-            potential_optimal_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(potential_optimal_locations_dataframe, threshold=0.25, ignore_types=(np.floating,))
-            zero_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(zero_locations_dataframe, threshold=0.25, ignore_types=(np.floating,))
+            dil_centroids_optimization_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                dil_centroids_optimization_locations_dataframe,
+                threshold=0.25,
+                ignore_types=(np.floating,),
+                do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+            )
+            optimal_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                optimal_locations_dataframe,
+                threshold=0.25,
+                ignore_types=(np.floating,),
+                do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+            )
+            potential_optimal_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                potential_optimal_locations_dataframe,
+                threshold=0.25,
+                ignore_types=(np.floating,),
+                do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+            )
+            zero_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                zero_locations_dataframe,
+                threshold=0.25,
+                ignore_types=(np.floating,),
+                do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+            )
 
             #potential_optimal_locations_dataframe_centroid_dropped = potential_optimal_locations_dataframe.drop([0])
             #centered_cubic_lattice_points_only_contained_in_ANY_dil_arr = np.vstack([centered_cubic_lattice_points_only_contained_in_ANY_dil_arr,potential_optimal_locations_dataframe_centroid_dropped])
@@ -514,7 +535,12 @@ def biopsy_optimizer_module_v1(master_structure_reference_dict,
                                                                 important_info,
                                                                 live_display)
 
-            guidance_map_max_planes_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(guidance_map_max_planes_dataframe, threshold=0.25, ignore_types=(np.floating,))
+            guidance_map_max_planes_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+                guidance_map_max_planes_dataframe,
+                threshold=0.25,
+                ignore_types=(np.floating,),
+                do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_GUIDANCE_MAP_MAX_PLANES_NEVER_CATEGORICAL_COLUMNS,
+            )
             specific_dil_structure["Biopsy optimization: guidance map max-planes dataframe"] = guidance_map_max_planes_dataframe
             
 
@@ -556,22 +582,42 @@ def biopsy_optimizer_module_v1(master_structure_reference_dict,
 
 
         # save the full intersection zero points
-        all_zero_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(all_zero_locations_dataframe, threshold=0.25, ignore_types=(np.floating,))
+        all_zero_locations_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+            all_zero_locations_dataframe,
+            threshold=0.25,
+            ignore_types=(np.floating,),
+            do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+        )
         pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: All points outside of DILs (zero points) dataframe"] = all_zero_locations_dataframe
         del all_zero_locations_dataframe
 
         # save the full intersection tested points (ie the points that were actually in the dils)
-        all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe, threshold=0.25, ignore_types=(np.floating,))
+        all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+            all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe,
+            threshold=0.25,
+            ignore_types=(np.floating,),
+            do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+        )
         pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: All points within DILs (tested points) dataframe"] = all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe
         del all_potential_optimal_locations_dataframe_centroid_dropped_all_dils_dataframe
 
         # save the full lattice, this will only be useful (i think) for creating the contour plots at the end, ie. doesnt need to be CSVd!!!
-        entire_overlapped_lattice_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(entire_overlapped_lattice_dataframe, threshold=0.25, ignore_types=(np.floating,))
+        entire_overlapped_lattice_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+            entire_overlapped_lattice_dataframe,
+            threshold=0.25,
+            ignore_types=(np.floating,),
+            do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NEVER_CATEGORICAL_COLUMNS,
+        )
         pydicom_item[all_ref_key]["Multi-structure information dict (not for csv output)"]["Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe"] = entire_overlapped_lattice_dataframe
         del entire_overlapped_lattice_dataframe
 
         # save the cumulative_projection
-        cumulative_projection_optimization_scores_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(cumulative_projection_optimization_scores_dataframe, threshold=0.25, ignore_types=(np.floating,))
+        cumulative_projection_optimization_scores_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+            cumulative_projection_optimization_scores_dataframe,
+            threshold=0.25,
+            ignore_types=(np.floating,),
+            do_not_convert_column_names_to_categorical=dataframe_dtype_policy.OPTIMIZER_V1_CUMULATIVE_PROJECTION_NEVER_CATEGORICAL_COLUMNS,
+        )
         pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Biopsy optimization - Cumulative projection (all points within prostate) dataframe"] = cumulative_projection_optimization_scores_dataframe
         del cumulative_projection_optimization_scores_dataframe
 

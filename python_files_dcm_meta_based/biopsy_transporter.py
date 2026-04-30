@@ -1,5 +1,6 @@
 import centroid_finder
 import numpy as np
+import dataframe_dtype_policy
 
 
 def _find_relative_structure(pydicom_item,
@@ -53,9 +54,34 @@ def _normalize_target_vector(target_vector):
     return np.asarray(target_vector, dtype=float).reshape(3)
 
 
+def _resolve_optimizer_dataframe_numeric_columns(selection_dataframe):
+    numeric_column_names = [
+        column_name
+        for column_name in dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NUMERIC_COLUMNS
+        if column_name in selection_dataframe.columns
+    ]
+
+    if len(numeric_column_names) == 0:
+        return selection_dataframe.copy()
+
+    resolved_selection_dataframe = selection_dataframe.copy()
+    resolved_selection_dataframe[numeric_column_names] = dataframe_dtype_policy.resolve_numeric_columns(
+        selection_dataframe,
+        numeric_column_names,
+    )
+
+    return resolved_selection_dataframe
+
+
 def _resolve_optimal_target_selection(relative_specific_structure):
-    optimal_locations_dataframe = relative_specific_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+    optimal_locations_dataframe = _resolve_optimizer_dataframe_numeric_columns(
+        relative_specific_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+    )
     all_tested_locations_dataframe = relative_specific_structure.get("Biopsy optimization: Optimal biopsy location (all tested lattice points) dataframe")
+    if all_tested_locations_dataframe is not None:
+        all_tested_locations_dataframe = _resolve_optimizer_dataframe_numeric_columns(
+            all_tested_locations_dataframe
+        )
 
     retained_candidates_by_min_distance = optimal_locations_dataframe[
         optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()
