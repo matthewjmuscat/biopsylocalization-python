@@ -104,6 +104,10 @@ from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_b
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
+from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
+from preprocessing.pickled_dataset_tools import export_results_pickle_bundle
+from preprocessing.pickled_dataset_tools import load_pickle_bundle
+from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 
@@ -5382,79 +5386,23 @@ def main():
                     specific_preprocessed_data_dir_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures - '+date_time_now_file_name_format
                     specific_preprocessed_data_dir = preprocessed_data_dir.joinpath(specific_preprocessed_data_dir_name)
                     specific_preprocessed_data_dir.mkdir(parents=False, exist_ok=False)
-
-                    # Prepare to dump the master_structure_reference_dict to file by first making a copy
-                    master_structure_reference_dict_only_picklable = copy.deepcopy(master_structure_reference_dict)
-
-                    # Delete all non-picklable objects from pre-processing
-                    for patientUID,pydicom_item in master_structure_reference_dict_only_picklable.items():
-                        for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                            del specific_bx_structure['Point cloud raw']
-                            #specific_bx_structure['Delaunay triangulation global structure'].delaunay_line_set = None
-                            #for delaunay_obj in specific_bx_structure['Delaunay triangulation zslice-wise list']:
-                            #    delaunay_obj.delaunay_line_set = None
-                            del specific_bx_structure['Interpolated structure point cloud dict']
-                            del specific_bx_structure['Structure OPEN3D triangle mesh object']
-                            del specific_bx_structure['Reconstructed structure point cloud']
-                            specific_bx_structure['Reconstructed structure delaunay global'].delaunay_line_set = None
-                            
-                        for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
-                            del specific_oar_structure['Point cloud raw']
-                            #specific_oar_structure['Delaunay triangulation global structure'].delaunay_line_set = None
-                            #for delaunay_obj in specific_oar_structure['Delaunay triangulation zslice-wise list']:
-                            #    delaunay_obj.delaunay_line_set = None
-                            del specific_oar_structure['Interpolated structure point cloud dict']
-                            del specific_oar_structure['Structure OPEN3D triangle mesh object']
-
-                        for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                            del specific_dil_structure['Point cloud raw']
-                            #del specific_dil_structure['Delaunay triangulation global structure']
-                            #for delaunay_obj in specific_dil_structure['Delaunay triangulation zslice-wise list']:
-                            #    delaunay_obj.delaunay_line_set = None
-                            del specific_dil_structure['Interpolated structure point cloud dict']
-                            del specific_dil_structure['Structure OPEN3D triangle mesh object']
-
-                        for specific_rectum_structure_index, specific_rectum_structure in enumerate(pydicom_item[rectum_ref_key]):
-                            del specific_rectum_structure['Point cloud raw']
-                            #del specific_rectum_structure['Delaunay triangulation global structure']
-                            #for delaunay_obj in specific_rectum_structure['Delaunay triangulation zslice-wise list']:
-                            #    delaunay_obj.delaunay_line_set = None
-                            del specific_rectum_structure['Interpolated structure point cloud dict']
-                            del specific_rectum_structure['Structure OPEN3D triangle mesh object']
-
-                        for specific_urethra_structure_index, specific_urethra_structure in enumerate(pydicom_item[urethra_ref_key]):
-                            del specific_urethra_structure['Point cloud raw']
-                            #del specific_urethra_structure['Delaunay triangulation global structure']
-                            #for delaunay_obj in specific_urethra_structure['Delaunay triangulation zslice-wise list']:
-                            #    delaunay_obj.delaunay_line_set = None
-                            del specific_urethra_structure['Interpolated structure point cloud dict']
-                            del specific_urethra_structure['Structure OPEN3D triangle mesh object']
-
-                        if dose_ref in pydicom_item:
-                            del pydicom_item[dose_ref]['Dose grid point cloud']
-                            del pydicom_item[dose_ref]['Dose grid point cloud thresholded']
-                        if mr_adc_ref in pydicom_item:
-                            del pydicom_item[mr_adc_ref]["MR ADC grid point cloud"]
-                            del pydicom_item[mr_adc_ref]["MR ADC grid point cloud thresholded"]
-
-                    preprocessed_master_structure_ref_dict_path = specific_preprocessed_data_dir.joinpath(preprocessed_master_structure_ref_dict_for_export_name)
-                    with open(preprocessed_master_structure_ref_dict_path, 'wb') as master_structure_reference_dict_file:
-                        pickle.dump(master_structure_reference_dict_only_picklable, master_structure_reference_dict_file)
-                    
-                    del master_structure_reference_dict_only_picklable
-
-                    preprocessed_master_structure_ref_info_path = specific_preprocessed_data_dir.joinpath(preprocessed_master_structure_info_dict_for_export_name)
-                    with open(preprocessed_master_structure_ref_info_path, 'wb') as master_structure_info_dict_file:
-                        pickle.dump(master_structure_info_dict, master_structure_info_dict_file)
-
                     preprocessed_info_file_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures.csv'
-                    preprocessed_info_file_path = specific_preprocessed_data_dir.joinpath(preprocessed_info_file_name)
-                    preprocessed_info_dataframe = dataframe_builders.preprocessed_dataset_summary_dataframe_builder(
+                    export_preprocessed_pickle_bundle(
                         master_structure_reference_dict,
                         master_structure_info_dict,
+                        specific_preprocessed_data_dir,
+                        preprocessed_master_structure_ref_dict_for_export_name,
+                        preprocessed_master_structure_info_dict_for_export_name,
+                        preprocessed_info_file_name,
                         structs_referenced_list,
+                        bx_ref,
+                        oar_ref,
+                        dil_ref,
+                        rectum_ref_key,
+                        urethra_ref_key,
+                        dose_ref,
+                        mr_adc_ref,
                     )
-                    preprocessed_info_dataframe.to_csv(preprocessed_info_file_path, index=False)
 
 
                     indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate, visible = False, refresh = True)
@@ -5483,15 +5431,15 @@ def main():
                         root.withdraw() # these two lines are to get rid of errant tkinter window
                         # this is a user defined quantity
                         preprocessed_master_structure_reference_dict_path_str = fd.askopenfilename(title='Open the master_structure_reference_dict file', initialdir=preprocessed_data_dir)
-                        with open(preprocessed_master_structure_reference_dict_path_str, "rb") as preprocessed_master_structure_reference_dict_file:
-                            master_structure_reference_dict = pickle.load(preprocessed_master_structure_reference_dict_file)
                         
                         print('> Please indicate the location of master_structure_info_dict.')
                         preprocessed_master_structure_reference_dict_path = pathlib.Path(preprocessed_master_structure_reference_dict_path_str)
                         preprocessed_master_structure_reference_dict_path_parent = preprocessed_master_structure_reference_dict_path.parents[0]
                         preprocessed_master_structure_info_dict_path_str = fd.askopenfilename(title='Open the master_structure_info_dict file', initialdir=preprocessed_master_structure_reference_dict_path_parent)
-                        with open(preprocessed_master_structure_info_dict_path_str, "rb") as preprocessed_master_structure_info_dict_file:
-                            master_structure_info_dict = pickle.load(preprocessed_master_structure_info_dict_file)
+                        master_structure_reference_dict, master_structure_info_dict = load_pickle_bundle(
+                            preprocessed_master_structure_reference_dict_path_str,
+                            preprocessed_master_structure_info_dict_path_str,
+                        )
                     else:
                         print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.')
                         stopwatch.stop()
@@ -5551,210 +5499,28 @@ def main():
                     dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
                     dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
                     dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
-
-                    master_structure_reference_dict[patientUID][dose_ref] = dose_ref_dict
-
-                    
-
-                    patients_progress.update(pickling_dose_patients_task, advance=1)
-                    completed_progress.update(pickling_dose_patients_task_completed, advance=1)
-                patients_progress.update(pickling_dose_patients_task, visible=False)
-                completed_progress.update(pickling_dose_patients_task_completed,  visible=True)        
-                
-                # Create non-pickleable objkects concerning MR data
-                patientUID_default = "Initializing"
-                pickling_MR_patients_task_main_description = "[red]Rebuilding non-picklable MR data [{}]...".format(patientUID_default)
-                pickling_MR_patients_task_completed_main_description = "[green]Rebuilding non-picklable MR data"
-                pickling_MR_patients_task = patients_progress.add_task(pickling_MR_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                pickling_MR_patients_task_completed = completed_progress.add_task(pickling_MR_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pickling_MR_patients_task_main_description = "[red]Rebuilding non-picklable MR data [{}]...".format(patientUID)
-                    patients_progress.update(pickling_MR_patients_task, description = pickling_MR_patients_task_main_description)
-
-
-                    if mr_adc_ref not in pydicom_item:
-                        patients_progress.update(pickling_MR_patients_task, advance=1)
-                        completed_progress.update(pickling_MR_patients_task_completed, advance=1)
-                        continue
-                        
-
-                    mr_adc_subdict = pydicom_item[mr_adc_ref]
-
-                    filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = True)
-                    # Don't store this, it is too large, just call the above function if you want to retrieve the MR information lattice
-                    #mr_adc_subdict["MR ADC phys space Nx4 arr (filtered, non-negative)"] = filtered_non_negative_adc_mr_phys_space_arr
-
-
-                    mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                        color_flattening_deg_MR, 
-                                                                                        paint_mr_color = True)
-                    
-                    thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                                                    color_flattening_deg_MR, 
-                                                                                                                    paint_mr_color = True, 
-                                                                                                                    lower_bound = lower_bound_mr_adc_value, 
-                                                                                                                    upper_bound = upper_bound_mr_adc_value 
-                                                                                                                    )
-
-
-                    mr_adc_subdict["MR ADC grid point cloud"] = mr_adc_point_cloud
-                    mr_adc_subdict["MR ADC grid point cloud thresholded"] = thresholded_mr_adc_point_cloud
-
-                    del filtered_non_negative_adc_mr_phys_space_arr
-                    
-
-                    patients_progress.update(pickling_MR_patients_task, advance=1)
-                    completed_progress.update(pickling_MR_patients_task_completed, advance=1)
-                patients_progress.update(pickling_MR_patients_task, visible=False)
-                completed_progress.update(pickling_MR_patients_task_completed,  visible=True)
-
-
-
-                
-                
-
-                
-                patientUID_default = "Initializing"
-                pickling_structure_patients_task_main_description = "[red]Rebuilding non-picklable structure data [{}]...".format(patientUID_default)
-                pickling_structure_patients_task_completed_main_description = "[green]Rebuilding non-picklable structure data"
-                pickling_structure_patients_task = patients_progress.add_task(pickling_structure_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                pickling_structure_patients_task_completed = completed_progress.add_task(pickling_structure_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pickling_structure_patients_task_main_description = "[red]Rebuilding non-picklable structure data [{}]...".format(patientUID)
-                    patients_progress.update(pickling_structure_patients_task, description = pickling_structure_patients_task_main_description)
-                    for structs in structs_referenced_list_generalized:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            specific_structure_roi = specific_structure["ROI"]
-                            ###
-                            # Creating pointcloud dictionary of the interpolation done
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating pcds of interp structures [{}]".format(specific_structure_roi), total = None)
-
-                            interslice_interpolation_information = pydicom_item[structs][specific_structure_index]["Inter-slice interpolation information"]
-                            interpolation_information = pydicom_item[structs][specific_structure_index]["Intra-slice interpolation information"]
-                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                            #pcd_struct_rand_color = np.random.uniform(0, 0.9, size=3)
-                            if structs == bx_ref:
-                                sim_type = specific_structure["Simulated type"]
-                                pcd_struct_color = structs_referenced_dict[structs]['PCD color dict'][sim_type]
-                            else:
-                                pcd_struct_color = structs_referenced_dict[structs]['PCD color']
-                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_struct_color)
-                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_struct_color)
-                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_struct_color)
-                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            ###
-                            # creating pointcloud of the raw contour points
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating pcds of raw structures [{}]".format(specific_structure_roi), total = None)
-
-                            threeDdata_array = pydicom_item[structs][specific_structure_index]["Raw contour pts"]
-                            #threeDdata_pcd_color = np.random.uniform(0, 0.7, size=3)
-                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_struct_color)
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            """ DEPRECATED! No longer need delaunays except for reconstructed biopsies, which even then could be recoded to not need it.
-                            ###
-                            # creating the lineset of the delaunay global convex structure
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating delaunay linesets 1 [{}]".format(specific_structure_roi), total = None)
-
-                            delaunay_global_convex_structure_obj = pydicom_item[structs][specific_structure_index]["Delaunay triangulation global structure"]
-                            delaunay_global_convex_structure_obj.generate_lineset()
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj
-                            
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            ###
-                            # creating lineset of the zslice wise delaunay convex structure
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating delaunay linesets 2 [{}]".format(specific_structure_roi), total = None)
-
-                            delaunay_triangulation_obj_zslicewise_list = pydicom_item[structs][specific_structure_index]["Delaunay triangulation zslice-wise list"]
-                            for delaunay_obj in delaunay_triangulation_obj_zslicewise_list:
-                                delaunay_obj.generate_lineset()
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = delaunay_triangulation_obj_zslicewise_list
-                            
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            """
-                            
-                            ###
-                            # trimesh
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating trimesh [{}]".format(specific_structure_roi), total = None)
-                            live_display.refresh()
-
-                            fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                                interp_intra_slice_dist,
-                                threeDdata_array_fully_interpolated_with_end_caps,
-                                radius_for_normals_estimation,
-                                max_nn_for_normals_estimation
-                                )
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
-                            
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            # For biopsies only
-                            if structs == bx_ref:
-                                ###
-                                # creating pointcloud of the reconstructed biopsy
-                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating pcd of rcn bpsy [{}]".format(specific_structure_roi), total = None)
-
-                                drawn_biopsy_array = pydicom_item[structs][specific_structure_index]["Reconstructed structure pts arr"] 
-                                
-                            
-                                reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, pcd_struct_color)
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure point cloud"] = reconstructed_biopsy_point_cloud
-                                
-                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                                ###
-
-                                ###
-                                # creating lineset of the reconstructed biopsy global delaunay object
-                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating delaunay lineset of rcn bpsy [{}]".format(specific_structure_roi), total = None)
-
-                                reconstructed_bx_delaunay_global_convex_structure_obj = pydicom_item[structs][specific_structure_index]["Reconstructed structure delaunay global"]
-                                reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Reconstructed structure delaunay global"] = reconstructed_bx_delaunay_global_convex_structure_obj
-                                
-                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                                ###
-
-                    patients_progress.update(pickling_structure_patients_task, advance=1)
-                    completed_progress.update(pickling_structure_patients_task_completed, advance=1)
-                patients_progress.update(pickling_structure_patients_task, visible=False)
-                completed_progress.update(pickling_structure_patients_task_completed,  visible=True)  
-
-
-
-
-
-
-
-            rich_preambles.section_completed("Preprocessing", section_start_time, completed_progress, completed_sections_manager)
-
-
-            section_start_time = datetime.now() 
-
-            ### IMPORTANT THAT THIS IS PLACED PRECISELY HERE!!
-            # Create the specific output directory folder
-            date_time_now = datetime.now()
-            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-            specific_output_dir_name = 'MC_sim_out-'+date_time_now_file_name_format
-            specific_output_dir = output_dir.joinpath(specific_output_dir_name)
-            specific_output_dir.mkdir(parents=False, exist_ok=True)
-
-            master_structure_info_dict["Global"]["Specific output dir"] = specific_output_dir
+                    live_display = rebuild_loaded_preprocessed_runtime_objects(
+                        master_structure_reference_dict,
+                        master_structure_info_dict,
+                        structs_referenced_list_generalized,
+                        structs_referenced_dict,
+                        bx_ref,
+                        dose_ref,
+                        mr_adc_ref,
+                        interp_inter_slice_dist,
+                        interp_intra_slice_dist,
+                        radius_for_normals_estimation,
+                        max_nn_for_normals_estimation,
+                        lower_bound_dose_value,
+                        lower_bound_dose_gradient_value,
+                        lower_bound_mr_adc_value,
+                        upper_bound_mr_adc_value,
+                        color_flattening_deg_MR,
+                        patients_progress,
+                        completed_progress,
+                        indeterminate_progress_sub,
+                        live_display,
+                    )
             ###
             
 
@@ -6927,108 +6693,26 @@ def main():
 
                 # copy uncertainty file used for simulation to output folder 
                 shutil.copy(uncertainties_file_filled, specific_output_dir)
-
-                
-                ## PREPARE TO PICKLE MASTER STRUCTURE REFERENCE DICT, DELETE ALL UNPICKLEABLE ITEMS
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
-                        simulated_biopsy_planning_dict = specific_bx_structure.get('Simulated biopsy planning dict')
-                        if simulated_biopsy_planning_dict is not None:
-                            planned_reconstructed_biopsy_model_dict = simulated_biopsy_planning_dict.get('Planned reconstructed biopsy model dict')
-                            if planned_reconstructed_biopsy_model_dict is not None:
-                                planned_reconstructed_biopsy_model_dict['Reconstructed structure point cloud'] = None
-                                planned_reconstructed_biopsy_model_dict['Reconstructed structure delaunay global'] = None
-
-                        #del specific_bx_structure['Intra-slice interpolation information']
-                        #del specific_bx_structure['Inter-slice interpolation information']
-                        del specific_bx_structure['Point cloud raw']
-                        #del specific_bx_structure['Delaunay triangulation global structure']
-                        #del specific_bx_structure['Delaunay triangulation zslice-wise list']
-                        del specific_bx_structure['Interpolated structure point cloud dict']
-                        del specific_bx_structure['Reconstructed structure point cloud']
-                        del specific_bx_structure['Reconstructed structure delaunay global']
-                        del specific_bx_structure['Random uniformly sampled volume pts pcd']
-                        del specific_bx_structure['Random uniformly sampled volume pts bx coord sys pcd']
-                        del specific_bx_structure['Bounding box for random uniformly sampled volume pts']
-                        del specific_bx_structure['Uncertainty data']
-                        del specific_bx_structure['MC data: bx and structure shifted dict']
-                        #del specific_bx_structure['MC data: compiled sim results']
-                        del specific_bx_structure['MC data: bx to dose NN search objects list']
-                        #del specific_bx_structure['MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)']
-                        del specific_bx_structure['FANOVA: sobol indices (containment)']
-                        del specific_bx_structure['FANOVA: sobol indices (dose)']
-                        del specific_bx_structure['FANOVA: sobol indices (DIL tissue)']
-                        #del specific_bx_structure['Structure OPEN3D triangle mesh object']
-                        
-                    for specific_oar_structure_index, specific_oar_structure in enumerate(pydicom_item[oar_ref]):
-                        #del specific_oar_structure['Intra-slice interpolation information']
-                        #del specific_oar_structure['Inter-slice interpolation information']
-                        del specific_oar_structure['Point cloud raw']
-                        #del specific_oar_structure['Delaunay triangulation global structure']
-                        #del specific_oar_structure['Delaunay triangulation zslice-wise list']
-                        del specific_oar_structure['Interpolated structure point cloud dict']
-                        del specific_oar_structure['Uncertainty data']
-                        del specific_oar_structure['Structure OPEN3D triangle mesh object']
-
-                    for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                        #del specific_dil_structure['Intra-slice interpolation information']
-                        #del specific_dil_structure['Inter-slice interpolation information']
-                        del specific_dil_structure['Point cloud raw']
-                        #del specific_dil_structure['Delaunay triangulation global structure']
-                        #del specific_dil_structure['Delaunay triangulation zslice-wise list']
-                        del specific_dil_structure['Interpolated structure point cloud dict']
-                        del specific_dil_structure['Uncertainty data']
-                        del specific_dil_structure['Structure OPEN3D triangle mesh object']
-
-                    for specific_rectum_structure_index, specific_rectum_structure in enumerate(pydicom_item[rectum_ref_key]):
-                        #del specific_rectum_structure['Intra-slice interpolation information']
-                        #del specific_rectum_structure['Inter-slice interpolation information']
-                        del specific_rectum_structure['Point cloud raw']
-                        #del specific_rectum_structure['Delaunay triangulation global structure']
-                        #del specific_rectum_structure['Delaunay triangulation zslice-wise list']
-                        del specific_rectum_structure['Interpolated structure point cloud dict']
-                        del specific_rectum_structure['Uncertainty data']
-                        del specific_rectum_structure['Structure OPEN3D triangle mesh object']
-
-                    for specific_urethra_structure_index, specific_urethra_structure in enumerate(pydicom_item[urethra_ref_key]):
-                        #del specific_urethra_structure['Intra-slice interpolation information']
-                        #del specific_urethra_structure['Inter-slice interpolation information']
-                        del specific_urethra_structure['Point cloud raw']
-                        #del specific_urethra_structure['Delaunay triangulation global structure']
-                        #del specific_urethra_structure['Delaunay triangulation zslice-wise list']
-                        del specific_urethra_structure['Interpolated structure point cloud dict']
-                        del specific_urethra_structure['Uncertainty data']
-                        del specific_urethra_structure['Structure OPEN3D triangle mesh object']
-
-                    if dose_ref in pydicom_item:
-                        del pydicom_item[dose_ref]['Dose grid point cloud']
-                        del pydicom_item[dose_ref]['Dose grid point cloud thresholded']
-                        del pydicom_item[dose_ref]["Dose grid gradient point cloud"]
-                        del pydicom_item[dose_ref]["Dose grid gradient point cloud thresholded"]
-                        del pydicom_item[dose_ref]['KDtree']
-                    if mr_adc_ref in pydicom_item:
-                        del pydicom_item[mr_adc_ref]["MR ADC grid point cloud"]
-                        del pydicom_item[mr_adc_ref]["MR ADC grid point cloud thresholded"]
-                        del pydicom_item[mr_adc_ref]["KDtree"]
-
-
-
-                
-                
                 date_time_now = datetime.now()
                 date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
                 global_num_structures = master_structure_info_dict["Global"]["Num structures"]
                 specific_output_pickle_data_dir_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures - '+date_time_now_file_name_format+' pickled data'
                 specific_output_pickle_data_dir = specific_output_dir.joinpath(specific_output_pickle_data_dir_name)
                 specific_output_pickle_data_dir.mkdir(parents=False, exist_ok=False)
-
-                pickled_output_master_structure_ref_dict_path = specific_output_pickle_data_dir.joinpath(output_master_structure_ref_dict_for_export_name)
-                with open(pickled_output_master_structure_ref_dict_path, 'wb') as master_structure_reference_dict_file:
-                    pickle.dump(master_structure_reference_dict, master_structure_reference_dict_file)
-                
-                pickled_output_master_structure_ref_info_path = specific_output_pickle_data_dir.joinpath(output_master_structure_info_dict_for_export_name)
-                with open(pickled_output_master_structure_ref_info_path, 'wb') as master_structure_info_dict_file:
-                    pickle.dump(master_structure_info_dict, master_structure_info_dict_file)
+                export_results_pickle_bundle(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    specific_output_pickle_data_dir,
+                    output_master_structure_ref_dict_for_export_name,
+                    output_master_structure_info_dict_for_export_name,
+                    bx_ref,
+                    oar_ref,
+                    dil_ref,
+                    rectum_ref_key,
+                    urethra_ref_key,
+                    dose_ref,
+                    mr_adc_ref,
+                )
 
                 if plot_immediately_after_simulation == False:
                     sys.exit('> Programme exited.')
@@ -7050,15 +6734,15 @@ def main():
                         root.withdraw() # these two lines are to get rid of errant tkinter window
                         # this is a user defined quantity
                         results_master_structure_reference_dict_path_str = fd.askopenfilename(title='Open the master_structure_reference_dict_results file', initialdir=output_dir)
-                        with open(results_master_structure_reference_dict_path_str, "rb") as preprocessed_master_structure_reference_dict_file:
-                            master_structure_reference_dict = pickle.load(preprocessed_master_structure_reference_dict_file)
                         
                         print('> Please indicate the location of master_structure_info_dict_results.')
                         results_master_structure_reference_dict_path = pathlib.Path(results_master_structure_reference_dict_path_str)
                         results_master_structure_reference_dict_path_parent = results_master_structure_reference_dict_path.parents[0]
                         results_master_structure_info_dict_path_str = fd.askopenfilename(title='Open the master_structure_info_dict file', initialdir=results_master_structure_reference_dict_path_parent)
-                        with open(results_master_structure_info_dict_path_str, "rb") as results_master_structure_info_dict_file:
-                            master_structure_info_dict = pickle.load(results_master_structure_info_dict_file)
+                        master_structure_reference_dict, master_structure_info_dict = load_pickle_bundle(
+                            results_master_structure_reference_dict_path_str,
+                            results_master_structure_info_dict_path_str,
+                        )
 
                         live_display.start()
                         important_info.add_text_line("Loaded master_structure_reference_dict_results from: "+ results_master_structure_reference_dict_path_str, live_display)
