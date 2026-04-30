@@ -258,6 +258,53 @@ This helper is optional for the first pass. It is useful, but it should not bloc
 
 If implemented, the helper should:
 
+## Adjacent Revisit Items
+
+These are stage-boundary items that are coupled to the simulated-biopsy refactor, but should not be confused with the simulated-geometry contract itself.
+
+### Pickle Provenance And Config Contract
+
+The pickle export path now carries lightweight provenance metadata, but the full load-time contract is still incomplete until the config layer exists.
+
+Still to revisit:
+
+- persist the authoritative configuration payload that generated the dataset,
+- define which configuration fields are immutable on load versus safely overridable,
+- add a proper load-time compatibility/warning layer that compares current runtime settings against exported provenance,
+- include an explicit code-version compatibility policy rather than relying only on git metadata.
+
+For now, exported provenance is useful for inspection, but it is not yet the full reproducibility/configuration contract.
+
+### Render And Debug Surface
+
+The processed-dataset render/debug surface belongs immediately after pickle export/load-rebuild and before biopsy sampling. That ordering should be preserved because it gives a scientific-validation checkpoint on the rebuilt runtime objects before later stochastic steps mutate or derive downstream artifacts.
+
+Current state:
+
+- the active processed-dataset render/debug block has been extracted out of main into a dedicated helper surface,
+- the Open3D structure/dose/MR-ADC render path remains live,
+- the Plotly structure-plus-dose render path remains live,
+- the Plotly MR overlay path is still intentionally deferred.
+
+Still to revisit:
+
+- decide whether this render/debug surface should become an explicit stage module with its own config object,
+- unify debug render flags so this surface is not controlled by scattered booleans in main,
+- support MR rendering as a family rather than treating ADC as the only mature path,
+- add a T2-specific render contract once the T2 pathway is ready enough to validate scientifically,
+- decide whether validation outputs from this stage should be written to disk in a structured way instead of being purely interactive.
+
+### Validation Rhythm
+
+The code-level refactor can continue, but scientific validation should remain frequent. The intended workflow is:
+
+- refactor a local seam,
+- run a validation dataset,
+- inspect outputs for scientific drift,
+- only then continue moving upstream or downstream boundaries.
+
+That validation cadence matters more than perfect code cleanliness for these boundary extractions.
+
 - accept a biopsy z-slice list,
 - run interpolation,
 - reconstruct the biopsy cylinder,

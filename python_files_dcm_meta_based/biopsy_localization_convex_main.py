@@ -108,6 +108,7 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import export_results_pickle_bundle
 from preprocessing.pickled_dataset_tools import load_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
+from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 
@@ -2058,11 +2059,11 @@ def main():
                             structure_reference_number = specific_structure["Ref #"]
                             if structs == bx_ref:
                                 simulated_bool = specific_structure["Simulated bool"]
-                            else: 
+                            else:
                                 simulated_bool = None
                             pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
-                            
+
                             # create points for simulated biopsies to create
                             if simulated_bool == True:
                                 structures_progress.update(pulling_structures_task, advance=1)
@@ -2072,7 +2073,7 @@ def main():
                             # otherwise just read the data from dicoms
                             else:
                                 threeDdata_zslice_list = []
-                                with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item: 
+                                with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item:
                                     for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
                                         if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
                                             structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
@@ -2080,7 +2081,7 @@ def main():
                                         else:
                                             pass
                                 for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                                    contour_slice_points = slice_object.ContourData                       
+                                    contour_slice_points = slice_object.ContourData
                                     threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
                                     threeDdata_zslice_list.append(threeDdata_zslice)
 
@@ -2090,17 +2091,17 @@ def main():
                                 pass
                             elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
                                 total_structure_points = int(total_structure_points)
-                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False: 
+                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False:
                                 raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                            else: 
+                            else:
                                 raise Exception("Something went wrong when calculating total number of points in structure!")
-                            
+
                             # for non-biopsy only
                             if structs != bx_ref:
                             ## THIS WAS INDENTED UNDER THE IF STATEMENT BEFORE
                                 structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
                                 # find zslice-wise centroids
-                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):                           
+                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
                                     structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
                                     structure_centroids_array[index] = structure_zslice_centroid
                                 structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
@@ -2115,9 +2116,8 @@ def main():
                     patients_progress.update(pulling_patients_task, advance=1)
                     completed_progress.update(pulling_patients_task_completed, advance=1)
                 patients_progress.update(pulling_patients_task, visible=False)
-                completed_progress.update(pulling_patients_task_completed,  visible=True)            
+                completed_progress.update(pulling_patients_task_completed,  visible=True)
 
-                
 
 
                 live_display.start()
@@ -2133,7 +2133,7 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     processing_patients_task_main_description = "[red]Selecting unique structures [{}]...".format(patientUID)
                     patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
+
 
                     sp_patient_selected_structure_info_dataframe = pandas.DataFrame()
 
@@ -2142,10 +2142,10 @@ def main():
 
                         selected_structure_info_dataframe, message_string = misc_tools.specific_structure_selector_dataframe_version(pydicom_item,
                                                                                                                                             structure_type,
-                                                                                                                                            structure_type_contour_names_list) 
-                        
+                                                                                                                                            structure_type_contour_names_list)
 
-                        important_info.add_text_line(message_string, live_display) 
+
+                        important_info.add_text_line(message_string, live_display)
 
 
                         sp_patient_selected_structure_info_dataframe = pandas.concat([sp_patient_selected_structure_info_dataframe,selected_structure_info_dataframe], ignore_index = True)
@@ -2156,8 +2156,8 @@ def main():
 
 
 
-                    ### Now delete all the structures that were not chosen from the master ref dict 
-                    ### Note that this was done primarily for the MC simulation section to simplify modifying the code for testing tissue class against 
+                    ### Now delete all the structures that were not chosen from the master ref dict
+                    ### Note that this was done primarily for the MC simulation section to simplify modifying the code for testing tissue class against
                     ### individual structures. Instead of modifying that section of code heavily, I am simply removing the structures
                     ### that weren't selected
 
@@ -2166,20 +2166,20 @@ def main():
                     for row_index, row in sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe.iterrows():
                         struct_selected_type = row["Struct ref type"]
                         struct_selected_index = row["Index number"]
-                        
+
                         updated_sp_structure_list = [pydicom_item[struct_selected_type][struct_selected_index]] if 0 <= struct_selected_index < len(pydicom_item[struct_selected_type]) else []
 
                         pydicom_item[struct_selected_type] = updated_sp_structure_list
-                        
-        
+
+
                         # Update the master patient info record
                         current_num_structs = master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"]
                         updated_num_structs = len(updated_sp_structure_list)
                         difference = current_num_structs - updated_num_structs
                         num_structs_difference += difference
-                    
+
                         master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"] = updated_num_structs
-                        
+
 
                     # Update the master patient info record
                     current_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
@@ -2193,12 +2193,11 @@ def main():
                             total_num_structs_updated += num_structs
 
                     master_structure_info_dict["Global"]["Num structures"] = total_num_structs_updated
-                   
+
                     patients_progress.update(processing_patients_task, advance=1)
                     completed_progress.update(processing_patients_task_completed, advance=1)
                 patients_progress.update(processing_patients_task, visible=False)
                 completed_progress.update(processing_patients_task_completed,  visible=True)
-
 
 
 
@@ -2220,15 +2219,15 @@ def main():
                 for patientUID,pydicom_item in master_structure_reference_dict.items():
                     processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID)
                     patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
+
                     structureID_default = "Initializing"
                     #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
                     num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
-                    
+
                     num_prostates = len(pydicom_item[oar_ref])
 
-                    
+
                     processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
                     processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_prostates)
 
@@ -2249,18 +2248,18 @@ def main():
                         ###
 
                         threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-                        
+
                         total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])                                                       
+                        threeDdata_array = np.empty([total_structure_points,3])
 
                         # build raw threeDdata for non biopsies
-                        lower_bound_index = 0  
+                        lower_bound_index = 0
                         for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
                             current_zslice_num_points = np.size(threeDdata_zslice,0)
                             threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
-                        
-                        
+                            lower_bound_index = lower_bound_index + current_zslice_num_points
+
+
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
                         ###
@@ -2354,177 +2353,6 @@ def main():
                         # plot two point clouds side by side ? 
                         #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
                         #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END INTERPOLATE STRUCTURE
-
-
-                        
-
-                        ### COMPUTE MR STATISTICS
-                        
-                        if mr_adc_ref in pydicom_item:
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
-                            ###
-
-                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
-                                mr_adc_ref,
-                                filter_out_negatives = True)
-
-                            # Prepare data
-                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
-                            zslices_list = interslice_interpolation_information.interpolated_pts_list
-                            mr_adc_value_column_name_str = "MR ADC value"
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
-                                                                zslices_list,
-                                                                structure_info,
-                                                                constant_z_slice_polygons_handler_option, 
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                custom_cuda_kernel_type,
-                                                                associated_value_str = mr_adc_value_column_name_str)
-
-
-                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
-                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                    "Test pt X", 
-                                                    "Test pt Y", 
-                                                    "Test pt Z",
-                                                    "Pt clr R",
-                                                    "Pt clr G",
-                                                    "Pt clr B",
-                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
-                            ###
-
-                            # Create a summary statistics dataframe of the column 
-                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                                                                                                    mr_adc_value_column_name_str,
-                                                                                                                                    filter_column="Pt contained bool", 
-                                                                                                                                    filter_value=True)
-                            
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
-                            ###
-
-                            # Keep track and store onky the points that are contained within the prostate (stored at end of loop)
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true = containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True]                                                                                                        
-                            
-                            # Store it in the master dict 
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true
-                            
-                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
-                            
-                            # if the following dataframe already exists, then merge the above with it by appending rows
-                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                            
-                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                    mr_adc_value_summary_statistics_specific_structure],
-                                                                                                    ignore_index = True)
-                                # Store the dataframe
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                            
-                            # if the following dataframe does not exist, then store the above dataframe
-                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                                # Store the dataframe if it does not exist
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                        
-                        ###### END COMPUTE MR STATISTICS
-
-
-                        ### CALCULATE THE STRUCTURES VOLUME
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                        ###
-                                
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
-
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                            interpolated_zvals_list,
-                            zslices_list,
-                            structure_info,
-                            patientUID,
-                            voxel_size_for_structure_volume_calc_non_bx,
-                            factor_for_voxel_size,
-                            cupy_array_upper_limit_NxN_size_input,
-                            layout_groups,
-                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                            structures_progress,
-                            live_display,
-                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
-                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                            include_edges_in_log_files = include_edges_in_log_files,
-                            custom_cuda_kernel_type = custom_cuda_kernel_type,
-                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
-                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
-                            plot_binary_mask_bool = plot_binary_mask_bool,
-                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                            )
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END STRUCTURE VOLUME CALCULATION
-
-
-
-                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                        ###
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
-
-                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                        interpolated_zvals_list,
-                                                                                                                        zslices_list,
-                                                                                                                        non_bx_structure_global_centroid,
-                                                                                                                        structure_info,
-                                                                                                                        patientUID,
-                                                                                                                        voxel_size_for_structure_dimension_calc,
-                                                                                                                        factor_for_voxel_size,
-                                                                                                                        cupy_array_upper_limit_NxN_size_input,
-                                                                                                                        layout_groups,
-                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                        structures_progress,
-                                                                                                                        live_display,
-                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
-                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
-                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
-                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                                                                                                                        )
 
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
@@ -5564,234 +5392,19 @@ def main():
 
             """
 
-            # displays 3d renderings of patient contour data, dose data and MR data
-            if show_processed_3d_datasets_renderings == True:
-                live_display.stop()
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    print(patientUID)
-                    pcd_list = list()
-
-                    # Include dose pcd
-                    if dose_ref in pydicom_item:
-                        dose_ref_dict = pydicom_item[dose_ref]
-                        dose_grid_pcd = dose_ref_dict["Dose grid point cloud thresholded"]
-                        dose_grid_gradient_pcd = dose_ref_dict["Dose grid gradient point cloud thresholded"]
-
-                    # Include MR pcd if present
-                    if mr_adc_ref in pydicom_item:
-                        mr_adc_subdict = pydicom_item[mr_adc_ref]
-                        thresholded_mr_adc_point_cloud = mr_adc_subdict["MR ADC grid point cloud thresholded"]
-
-                    for structs in structs_referenced_list:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            if structs == bx_ref: 
-                                structure_pcd = specific_structure["Reconstructed structure point cloud"]
-                            else: 
-                                #structure_pcd = specific_structure["Point cloud raw"]
-                                structure_pcd = specific_structure["Interpolated structure point cloud dict"]["Full"]
-                            pcd_list.append(structure_pcd)
-
-                    # Only plot the structures
-                    plotting_funcs.plot_geometries(*pcd_list)
-
-                    # Include the dosimetry
-                    if dose_ref in pydicom_item:
-                        pcd_list_dose = pcd_list + [dose_grid_pcd, dose_grid_gradient_pcd]
-                        plotting_funcs.plot_geometries(*pcd_list_dose)
-                        
-                        del pcd_list_dose
-
-
-                    # Include the MR ADC data
-                    if mr_adc_ref in pydicom_item:
-
-                        pcd_list_MR_ADC = pcd_list + [thresholded_mr_adc_point_cloud]
-                        plotting_funcs.plot_geometries(*pcd_list_MR_ADC)
-                        
-                        del pcd_list_MR_ADC
-
-                    
-                    if (mr_adc_ref in pydicom_item) and (dose_ref in pydicom_item):
-
-                        # Include the MR ADC data and dose
-                        pcd_list_MR_ADC_and_dose = pcd_list + [thresholded_mr_adc_point_cloud, dose_grid_pcd, dose_grid_gradient_pcd]
-                        plotting_funcs.plot_geometries(*pcd_list_MR_ADC_and_dose)
-
-                        del pcd_list_MR_ADC_and_dose
-
-                    del pcd_list
-                    
-                live_display.start()
-
-
-            if show_processed_3d_datasets_renderings_plotly_dict["Plot"] == True:
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    arr_list = []
-                    arr_const_zslice_arrs_list = []
-                    arr_names = []
-                    arr_colors = []
-                    for structs in structs_referenced_list:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            if structs == bx_ref:
-                                color = structs_referenced_dict[structs]['PCD color dict'][specific_structure["Simulated type"]]
-                            else:
-                                color = structs_referenced_dict[structs]['PCD color']
-                            rgb_color = plotting_funcs.rgb_array_to_string(color)
-
-                            arr_names.append(specific_structure["ROI"])
-                            arr_colors.append(rgb_color)
-                            if structs == bx_ref: 
-                                structure_arr = specific_structure["Reconstructed structure pts arr"]
-                                structure_list_of_arr = [structure_arr] # hacky way of doing it 
-                            else: 
-                                # structure_arr = specific_structure["Raw contour pts"]
-                                structure_arr = specific_structure["Intra-slice interpolation information"].interpolated_pts_np_arr
-                                structure_list_of_arr = specific_structure['Equal num zslice contour pts']
-                            arr_list.append(structure_arr)
-                            arr_const_zslice_arrs_list.append(structure_list_of_arr)
-                    #plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays(arr_list, aspect_mode_input = 'data')
-
-                    # Call the function with test data and custom legend labels.
-                    if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True:
-                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
-                            arrays_to_plot_list=arr_list,
-                            colors_for_arrays_list=arr_colors,
-                            legend_labels=arr_names,
-                            title_text=f"Processed 3D structure set for {patientUID}",
-                            xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                            yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                            zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                            marker_size=0.7,
-                            bg_color = "rgb(245,245,245)"
-                        )
-                    if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
-                        plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
-                                arrays_to_plot_list=arr_const_zslice_arrs_list,
-                                colors_for_arrays_list=arr_colors,
-                                legend_labels=arr_names,
-                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
-                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                                marker_size=0.7,
-                                bg_color = "rgb(245,245,245)",
-                                plot_contours = True
-                            )
-
-                    if dose_ref in pydicom_item:
-                        dose_ref_dict = pydicom_item[dose_ref]
-                        phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
-                        if lower_bound_dose_value == None:
-                            try:
-                                lower_bound_dose_value = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
-                            except Exception as e:
-                                lower_bound_dose_value = 0
-                        
-                        if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True: 
-                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
-                                arrays_to_plot_list=arr_list,
-                                colors_for_arrays_list=arr_colors,
-                                legend_labels=arr_names,
-                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
-                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                                marker_size=0.7,
-                                bg_color = "rgb(245,245,245)",
-                                plot_contours = False,
-                                phys_space_dose_map_and_gradient_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr,
-                                dose_threshold= lower_bound_dose_value,
-                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric dose log scale"],
-                                dose_marker_size = 1.2,
-                                colorbar_title = "Dose (Gy)",
-                                dosimetric_render_mode = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric render mode"],
-                                dosimetric_opacity = 0.05,
-                                volume_surface_count = 20,
-                                colorbar_x_offset = 0.9,
-                                colorbar_color = "Picnic",
-                                reversescale = False
-                            )
-                        if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
-                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_dosimetry(
-                                arrays_to_plot_list=arr_const_zslice_arrs_list,
-                                colors_for_arrays_list=arr_colors,
-                                legend_labels=arr_names,
-                                title_text=f"Processed 3D structure set with dosimetry for {patientUID}",
-                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                                marker_size=0.7,
-                                bg_color = "rgb(245,245,245)",
-                                plot_contours = True,
-                                phys_space_dose_map_and_gradient_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr,
-                                dose_threshold= lower_bound_dose_value,
-                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric dose log scale"],
-                                dose_marker_size = 1.2,
-                                colorbar_title = "Dose (Gy)",
-                                dosimetric_render_mode = show_processed_3d_datasets_renderings_plotly_dict["Dosimetric render mode"],
-                                dosimetric_opacity = 0.05,
-                                volume_surface_count = 20,
-                                colorbar_x_offset = 0.9,
-                                colorbar_color = "Picnic",
-                                reversescale = False
-                            )
-                    
-                    ### The MR version of this code doesnt seem to be working, revisit this later if you want...
-                    """
-                    if mr_adc_ref in pydicom_item:
-                        live_display.stop()
-                        mr_adc_subdict = pydicom_item[mr_adc_ref]
-                        filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = False, set_negative_to_value=0)
-
-                        if show_processed_3d_datasets_renderings_plotly_dict["SS Scatter"] == True: 
-                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_MR(
-                                arrays_to_plot_list=arr_list,
-                                colors_for_arrays_list=arr_colors,
-                                legend_labels=arr_names,
-                                title_text=f"Processed 3D structure set with MR ADC for {patientUID}",
-                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                                marker_size=0.7,
-                                bg_color = "rgb(245,245,245)",
-                                plot_contours = False,
-                                phys_space_MR_arr = filtered_non_negative_adc_mr_phys_space_arr,
-                                mr_threshold= lower_bound_mr_adc_value,
-                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["mr log scale"],
-                                mr_marker_size = 1.2,
-                                colorbar_title = "ADC (mm\u00B2/s)", # \u00B2 is a superscript 2!
-                                mr_render_mode = show_processed_3d_datasets_renderings_plotly_dict["mr render mode"],
-                                mr_opacity = 0.05,
-                                volume_surface_count = 20,
-                                colorbar_x_offset = 0.9,
-                                colorbar_color = "Picnic",
-                                reversescale = False
-                            )
-                        if show_processed_3d_datasets_renderings_plotly_dict["SS Contour"] == True:
-                            plotting_funcs.plotly_3dscatter_arbitrary_number_of_arrays_generalized_with_optional_MR(
-                                arrays_to_plot_list=arr_const_zslice_arrs_list,
-                                colors_for_arrays_list=arr_colors,
-                                legend_labels=arr_names,
-                                title_text=f"Processed 3D structure set with MR ADC for {patientUID}",
-                                xaxis_title="Left(+)-Right(-), X Axis (mm)",
-                                yaxis_title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                                zaxis_title="Superior(+)-Inferior(-), Z Axis (mm)",
-                                marker_size=0.7,
-                                bg_color = "rgb(245,245,245)",
-                                plot_contours = True,
-                                phys_space_MR_arr = filtered_non_negative_adc_mr_phys_space_arr,
-                                mr_threshold= lower_bound_mr_adc_value,
-                                log_scale_colors = show_processed_3d_datasets_renderings_plotly_dict["mr log scale"],
-                                mr_marker_size = 1.2,
-                                colorbar_title = "ADC (mm\u00B2/s)", # \u00B2 is a superscript 2!
-                                mr_render_mode = show_processed_3d_datasets_renderings_plotly_dict["mr render mode"],
-                                mr_opacity = 0.05,
-                                volume_surface_count = 20,
-                                colorbar_x_offset = 0.9,
-                                colorbar_color = "Picnic",
-                                reversescale = False
-                            )
-                    """
+            lower_bound_dose_value, live_display = render_processed_dataset_debug_processer(
+                master_structure_reference_dict,
+                structs_referenced_list,
+                structs_referenced_dict,
+                bx_ref,
+                dose_ref,
+                mr_adc_ref,
+                plan_ref,
+                lower_bound_dose_value,
+                show_processed_3d_datasets_renderings,
+                show_processed_3d_datasets_renderings_plotly_dict,
+                live_display,
+            )
 
 
             ## uniformly sample points from biopsies
