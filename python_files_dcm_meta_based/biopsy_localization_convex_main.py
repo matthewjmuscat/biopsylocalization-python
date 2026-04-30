@@ -98,6 +98,7 @@ import mr_localizers
 import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
+from preprocessing.biopsy_processing.biopsy_uncertainty_summary import biopsy_centroid_variation_summary_processer
 from preprocessing.biopsy_processing.realized_biopsy_targeting import realized_biopsy_targeting_processer
 from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_biopsy_planner_processer
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
@@ -4974,6 +4975,16 @@ def main():
                             live_display,
                             )
 
+                _, live_display = biopsy_centroid_variation_summary_processer(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    bx_ref,
+                    patients_progress,
+                    completed_progress,
+                    live_display,
+                    legacy_mean_source="real",
+                )
+
                 if False:
                     ############################ SIMULATED BIOPSY ONLY
 
@@ -5352,44 +5363,6 @@ def main():
                 )
 
 
-
-
-                # CALCULATE MEAN BIOPSY UNCERTAINTY FROM MEAN VARIATION OF CENTROIDS
-                patientUID_default = "Initializing"
-                processing_patient_description = "Determining biopsy uncertainty [{}]...".format(patientUID_default)
-                processing_patients_task = patients_progress.add_task("[red]"+processing_patient_description, total = master_structure_info_dict["Global"]["Num cases"])
-                processing_patient_description_completed = "Determining biopsy uncertainty"
-                processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-                mean_variation_list = []
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-
-                    processing_patient_description = "Determining biopsy uncertainty  [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_description)
-                                        
-                    
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
-                        # only consider non-simulated biopsies
-                        if specific_structure["Simulated bool"] == True:
-                            continue
-                        
-                        mean_variation = specific_structure["Mean centroid variation"]
-                        mean_variation_list.append(mean_variation)
-
-
-                    patients_progress.update(processing_patients_task, advance = 1)
-                    completed_progress.update(processing_patients_completed_task, advance = 1)
-                patients_progress.update(processing_patients_task, visible = False)
-                completed_progress.update(processing_patients_completed_task, visible = True)
-
-
-                # mean variation 
-                mean_variation_arr = np.array(mean_variation_list)
-                mean_variation_of_biopsy_centroids_cohort = np.mean(mean_variation_arr)
-                #master_cohort_patient_data_and_dataframes["Data"]["Mean biopsy centroid variation"] = mean_variation_of_biopsy_centroids_cohort
-                master_structure_info_dict["Global"]["Mean biopsy centroid variation"] = mean_variation_of_biopsy_centroids_cohort
-
-
                 master_structure_info_dict["Global"]['Preprocessing info']["Preprocessing performed"] = True
                 ## END PREPROCESSING             
 
@@ -5476,27 +5449,12 @@ def main():
 
                     preprocessed_info_file_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures.csv'
                     preprocessed_info_file_path = specific_preprocessed_data_dir.joinpath(preprocessed_info_file_name)
-                    #master_structure_info_dict["By patient"]
-                    with open(preprocessed_info_file_path, 'w', newline='') as f:
-                        write = csv.writer(f)
-                        for patientUID,patient_info_dict in master_structure_info_dict["By patient"].items():
-                            write.writerow(['Patient UID (generated)',
-                                            'Patient name',
-                                            'Num biopsies', 
-                                            'Num OARs',
-                                            'Num DILs'
-                                            ])
-                            write.writerow([patient_info_dict["Patient UID (generated)"],
-                                            patient_info_dict["Patient Name"],
-                                            patient_info_dict[structs_referenced_list[0]]["Num structs"],
-                                            patient_info_dict[structs_referenced_list[1]]["Num structs"],
-                                            patient_info_dict[structs_referenced_list[2]]["Num structs"]
-                                            ])
-                            write.writerow([' '])
-                            write.writerow(["Biopsy names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[0]]])
-                            write.writerow(["OAR names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[1]]])
-                            write.writerow(["DIL names:"]+[x["ROI"] for x in master_structure_reference_dict[patientUID][structs_referenced_list[2]]])
-                            write.writerow(['___','___','___'])
+                    preprocessed_info_dataframe = dataframe_builders.preprocessed_dataset_summary_dataframe_builder(
+                        master_structure_reference_dict,
+                        master_structure_info_dict,
+                        structs_referenced_list,
+                    )
+                    preprocessed_info_dataframe.to_csv(preprocessed_info_file_path, index=False)
 
 
                     indeterminate_progress_main.update(export_preprocessed_data_task_indeterminate, visible = False, refresh = True)
@@ -10801,7 +10759,13 @@ def structure_referencer(data_removals_dict_bx,
                                                'Patient specific output figures directory (fanova) dict': None,
                                                "Cohort figures dir": None,
                                                "Specific output dir": None,
-                                               "Mean biopsy centroid variation": None
+                                               "Mean biopsy centroid variation": None,
+                                               "Mean real biopsy centroid variation": None,
+                                               "Mean simulated biopsy centroid variation": None,
+                                               "Mean all biopsy centroid variation": None,
+                                               "Num real biopsies with centroid variation": 0,
+                                               "Num simulated biopsies with centroid variation": 0,
+                                               "Num biopsies with centroid variation": 0
                                                }
     
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict

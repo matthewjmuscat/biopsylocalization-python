@@ -196,6 +196,30 @@ def all_structure_shifts_by_trial_dataframe_builder(master_structure_reference_d
 
     return cohort_all_structure_shifts_pandas_data_frame
 
+
+def preprocessed_dataset_summary_dataframe_builder(master_structure_reference_dict,
+                                                   master_structure_info_dict,
+                                                   structs_referenced_list):
+    rows = []
+
+    bx_ref = structs_referenced_list[0]
+    oar_ref = structs_referenced_list[1]
+    dil_ref = structs_referenced_list[2]
+
+    for patient_uid, patient_info_dict in master_structure_info_dict["By patient"].items():
+        rows.append({
+            "Patient UID (generated)": patient_info_dict["Patient UID (generated)"],
+            "Patient name": patient_info_dict["Patient Name"],
+            "Num biopsies": patient_info_dict[bx_ref]["Num structs"],
+            "Num OARs": patient_info_dict[oar_ref]["Num structs"],
+            "Num DILs": patient_info_dict[dil_ref]["Num structs"],
+            "Biopsy names": " | ".join([x["ROI"] for x in master_structure_reference_dict[patient_uid][bx_ref]]),
+            "OAR names": " | ".join([x["ROI"] for x in master_structure_reference_dict[patient_uid][oar_ref]]),
+            "DIL names": " | ".join([x["ROI"] for x in master_structure_reference_dict[patient_uid][dil_ref]]),
+        })
+
+    return pandas.DataFrame(rows)
+
 # deprecated
 def tissue_probability_dataframe_builder_by_bx_pt(patientUID,
                                                   specific_bx_structure,
