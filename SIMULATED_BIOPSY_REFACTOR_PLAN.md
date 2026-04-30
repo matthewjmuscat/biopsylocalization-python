@@ -834,3 +834,135 @@ The agreed safe path is:
 6. then move transform generation earlier and reuse the same sampler for optimizer v2.
 
 This plan intentionally prefers correctness and reviewability over collapsing multiple architectural moves into one pass.
+
+## Near-Term Scientifically Oriented Next Phases
+
+This is the current intended order after the render/debug extraction.
+
+The main idea is to keep the next passes centered on scientifically meaningful stage boundaries rather than chasing optimizer-v2 completeness too early.
+
+### Phase 6: Freeze The Downstream Biopsy Generator And Parsing Surface
+
+The next major seam is the rest of the downstream biopsy path after realization.
+
+That path should be modularized in stacked layers rather than lifted out as one monolithic processor.
+
+Recommended order inside this phase:
+
+1. extract the current repaired downstream biopsy point generator or sampler into a dedicated shared module,
+2. extract the biopsy-frame conversion surface that maps world-space points into biopsy coordinates,
+3. extract voxel-binning and axial-index assignment,
+4. extract prostate-region and double-sextant classification,
+5. extract the downstream per-biopsy output or dataframe builder surface that consumes those results.
+
+Why this is the correct next scientific phase:
+
+- these layers define the actual analysis contract for realized biopsies,
+- they are exactly the parts we may want to move or reuse later,
+- freezing them in modules first lets us compare outputs before and after each local move,
+- it prevents optimizer-facing work from being entangled with downstream analysis semantics.
+
+The canonical input for this phase must remain the final realized biopsy geometry. Planning geometry should not leak into these modules.
+
+### Phase 6A: Establish The Shared Biopsy Generator Contract
+
+There are really two generator surfaces that matter now:
+
+- the deterministic biopsy point generator built from reconstructed biopsy geometry,
+- the MC transform-parameter generator that produces dilation, rotation, translation, and needle-compartment-shift draws.
+
+For the biopsy point generator specifically, the contract should be:
+
+- same lattice spacing,
+- same apex-to-base traversal convention,
+- same point indexing,
+- same Delaunay-based containment backend,
+- same downstream sampled-point dataframe interpretation.
+
+Once that generator is frozen in one place, it can be reused later on either:
+
+- realized biopsy geometry for downstream scientific outputs,
+- or planned reconstructed biopsy geometry for optimizer-v2 work.
+
+That reuse is the real reason to modularize it now.
+
+### Phase 7: Move Transform-Parameter Generation Earlier Where Safe
+
+After the downstream biopsy generator contract is frozen, continue the upstream work on the MC transform generator.
+
+The goal is not to apply transforms earlier. The goal is to generate the trial-wise transform parameters earlier while leaving point application later.
+
+That means separating:
+
+1. transform-parameter generation,
+2. biopsy-point generation,
+3. later transform application to sampled points.
+
+The remaining scientific blocker is still the same one already identified:
+
+- needle-compartment shift generation currently reads realized biopsy contour length.
+
+That dependency should be rerouted to nominal or planned biopsy length from the preparation or planning layer before the generator is moved upstream.
+
+End-state objective for this phase:
+
+- transform draws are available earlier,
+- realized-geometry-only downstream analysis still reads the same sampled outputs,
+- optimizer-facing work can reuse the same transform bank without changing the late scientific analysis contract.
+
+### Phase 8: Reuse The Shared Generator On Planned Biopsy Geometry
+
+Only after Phases 6 and 7 are stable should the shared biopsy point generator be consumed from the planning namespace.
+
+This is the point where the codebase becomes genuinely movable:
+
+- planning geometry exists upstream,
+- the same generator contract exists in one place,
+- transform draws can be generated earlier,
+- downstream realized analysis remains unchanged.
+
+At that point, planned simulated biopsies can be sampled without inventing a second sampling interpretation.
+
+That is the required architectural precursor to optimizer-v2, not a side quest.
+
+### Phase 9: Resume Optimizer V2 As A Target-Only Stochastic Ranking Lane
+
+Optimizer-v2 should return only after the generator and downstream biopsy surfaces are stable enough to trust.
+
+Its first scientific scope should stay narrow:
+
+- operate on planned biopsy geometry,
+- use the shared deterministic biopsy point generator,
+- use the existing containment backend unless profiling proves otherwise,
+- score target-centric behavior first,
+- avoid rewriting the downstream realized-biopsy analytics at the same time.
+
+In other words, optimizer-v2 should begin as a target-only stochastic ranking lane, not as a simultaneous rewrite of transport, sampling, containment, and downstream reporting.
+
+That keeps the validation question clean:
+
+- did the optimizer improve candidate targeting under the same scientific readout,
+- rather than changing both the optimizer and the readout contract at once.
+
+### Phase 10: Only Then Revisit Broader Optimizer-V2 Expansion
+
+Once the target-only stochastic lane is scientifically stable, later work can expand toward:
+
+- richer retained-candidate contracts,
+- tighter integration with guidance-map candidate ranks,
+- alternate transport families,
+- broader optimizer outputs beyond target-only ranking.
+
+That later work should be treated as genuinely later. It should not be bundled into the current generator and biopsy modularization sequence.
+
+## Operational Cleanup That Should Not Lead The Science Work
+
+These items are worth doing, but they are not the main scientific driver of the next passes.
+
+### Separate Gate For Results Pickle Export
+
+The current `export_pickled_preprocessed_data` flag only gates the early preprocessed snapshot.
+
+The later results pickle export is a separate surface and should eventually have its own explicit gate or a renamed configuration contract.
+
+That cleanup is worth doing because the primary deliverable surface is increasingly CSV and parquet, but it should remain a supporting cleanup item rather than the next main phase.
