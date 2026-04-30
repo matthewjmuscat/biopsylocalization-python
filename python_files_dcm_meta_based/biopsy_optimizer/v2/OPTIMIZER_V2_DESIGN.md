@@ -533,6 +533,77 @@ That is the right way to validate:
 
 This keeps debugging deterministic and avoids trying to render the full hot-path batch.
 
+## Media Export Recommendation
+
+The repo should support file-based rendering directly from code, not only interactive viewing.
+
+The right surface is not a loose collection of `ScreenCamera_*.json` files referenced from main.
+
+The right surface is a named render-job system.
+
+Each render job should specify:
+
+1. scene type,
+2. patient and structure selection,
+3. candidate selector,
+4. trial selector,
+5. camera preset,
+6. frame schedule,
+7. output resolution,
+8. output directory,
+9. packaging mode.
+
+Recommended packaging flow:
+
+1. generate deterministic PNG frames to disk,
+2. write a manifest alongside those frames,
+3. optionally package the frame sequence into MP4 or GIF.
+
+That gives three advantages:
+
+1. reproducible figures without opening windows,
+2. reusable frame sets for publications and social media clips,
+3. clean output organization instead of camera-state files scattered near code.
+
+Recommended output layout:
+
+1. one root such as `output_data/media_exports/`,
+2. one subdirectory per named render job,
+3. one manifest file per export,
+4. one `frames/` directory plus optional packaged video artifacts.
+
+The same visualization-selector object used for debugging should be reusable here, so a render job can say things like:
+
+1. lattice only,
+2. candidate prune only,
+3. candidate `17` and trials `0, 3, 7`,
+4. top `k` ranked candidates over stage transitions.
+
+## Repo Config Surface Recommendation
+
+This repo should move away from the current pattern where many runtime choices live at the top of main.
+
+The first cleanup step should be a typed Python config surface, not a giant immediate migration to YAML or JSON.
+
+The recommended path is:
+
+1. create small config dataclasses grouped by responsibility,
+2. let main build one root config object,
+3. pass narrow config slices to modules,
+4. only later add file-backed loading if that still feels useful.
+
+Recommended config domains:
+
+1. optimizer config,
+2. visualization config,
+3. media export config,
+4. MC/runtime config,
+5. output-path config.
+
+That is safer than trying to externalize every current top-of-main setting at once.
+
+It also fits the current code style better because many options already behave like structured runtime settings rather than true user-facing text configuration.
+
 ## Implementation Phases
 
 The next phases should be treated as separate executable slices.
@@ -558,7 +629,7 @@ Concrete work:
 1. identify the earliest safe upstream location where planned sampled biopsy points and target-relative structures are both available,
 2. generate biopsy self-transform draws up to `max_trials_for_optimizer_v2`,
 3. generate target rigid-transform draws up to the same trial budget,
-4. generate target dilation trial structures up to the same trial budget,
+4. compute the target nominal-plus-trial structure pack at optimizer time, because that pack is not currently stored when optimizer-v2 runs,
 5. store those arrays on the same patient/structure objects used later by downstream MC,
 6. expose a narrow getter surface that returns prefixes of that stored bank.
 
@@ -574,14 +645,38 @@ Goal:
 
 Turn one candidate chunk and one stage trial prefix into the exact batched arrays needed by the containment mother function.
 
+This phase needs a dedicated wrapper surface around the mother-function call.
+
+Do not rely on implicit row ordering alone.
+
 Concrete work:
 
 1. start from one canonical planned sampled biopsy array,
 2. translate it to every candidate centroid in the chunk,
 3. apply biopsy self-transforms for the stage prefix,
 4. apply inverse target rigid transforms for the same stage prefix,
-5. pair those test arrays with the stored target nominal-plus-trial structure pack,
-6. emit bookkeeping arrays that preserve candidate index and trial index identity.
+5. pair those test arrays with the stored target nominal-plus-trial structure pack produced in phase 2,
+6. emit bookkeeping arrays that preserve candidate index and trial index identity,
+7. emit the exact `test_struct_to_relative_struct_1d_mapping_array` needed by the mother function.
+
+Important containment constraint:
+
+The current 3D mother-function path does not require identical point coordinates across all test structures.
+
+The important constraint is only:
+
+1. every test structure in the 3D batch must have the same number of biopsy sample points.
+
+So chunking across candidate points is valid, but only if the wrapper preserves the row mapping cleanly on both sides of the mother-function call.
+
+The wrapper should preserve at least:
+
+1. chunk-local test-structure index,
+2. candidate global index,
+3. candidate chunk index,
+4. trial index,
+5. nominal-vs-trial flag,
+6. mapped target relative-structure index.
 
 Validation:
 

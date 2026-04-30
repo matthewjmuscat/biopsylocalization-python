@@ -108,6 +108,85 @@ class OptimizerV2CandidatePool:
 	containment_results_dataframe: Optional[Any] = None
 
 
+@dataclass(frozen=True)
+class OptimizerV2ChunkLayout:
+	candidate_indices_global: Tuple[int, ...]
+	num_trials: int
+	include_nominal: bool = True
+	nominal_relative_structure_index: int = 0
+	trial_relative_structure_start_index: int = 1
+
+	def __post_init__(self) -> None:
+		if self.num_trials < 0:
+			raise ValueError("num_trials cannot be negative")
+		if self.nominal_relative_structure_index < 0:
+			raise ValueError("nominal_relative_structure_index cannot be negative")
+		if self.trial_relative_structure_start_index < 0:
+			raise ValueError("trial_relative_structure_start_index cannot be negative")
+		for candidate_index in self.candidate_indices_global:
+			if candidate_index < 0:
+				raise ValueError("candidate indices must be non-negative")
+
+	@property
+	def num_candidates(self) -> int:
+		return len(self.candidate_indices_global)
+
+	@property
+	def num_test_structures_per_candidate(self) -> int:
+		return self.num_trials + int(self.include_nominal)
+
+	@property
+	def num_test_structures(self) -> int:
+		return self.num_candidates * self.num_test_structures_per_candidate
+
+	def build_candidate_metadata_arrays(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+		candidate_indices_global = np.empty(self.num_test_structures, dtype=np.int32)
+		trial_indices = np.empty(self.num_test_structures, dtype=np.int32)
+		is_nominal = np.zeros(self.num_test_structures, dtype=bool)
+
+		write_index = 0
+		for candidate_index_global in self.candidate_indices_global:
+			if self.include_nominal:
+				candidate_indices_global[write_index] = candidate_index_global
+				trial_indices[write_index] = -1
+				is_nominal[write_index] = True
+				write_index += 1
+
+			for trial_index in range(self.num_trials):
+				candidate_indices_global[write_index] = candidate_index_global
+				trial_indices[write_index] = trial_index
+				write_index += 1
+
+		return candidate_indices_global, trial_indices, is_nominal
+
+	def build_test_struct_to_relative_struct_mapping(self) -> np.ndarray:
+		test_struct_to_relative_struct = np.empty(self.num_test_structures, dtype=np.int32)
+		write_index = 0
+		for _ in self.candidate_indices_global:
+			if self.include_nominal:
+				test_struct_to_relative_struct[write_index] = self.nominal_relative_structure_index
+				write_index += 1
+
+			for trial_index in range(self.num_trials):
+				test_struct_to_relative_struct[write_index] = self.trial_relative_structure_start_index + trial_index
+				write_index += 1
+
+		return test_struct_to_relative_struct
+
+	def build_metadata_dataframe(self):
+		import pandas
+
+		candidate_indices_global, trial_indices, is_nominal = self.build_candidate_metadata_arrays()
+		return pandas.DataFrame(
+			{
+				"Test struct input index": np.arange(self.num_test_structures, dtype=np.int32),
+				"Candidate global index": candidate_indices_global,
+				"Trial index": trial_indices,
+				"Is nominal": is_nominal,
+			}
+		)
+
+
 def build_default_optimizer_v2_search_config() -> OptimizerV2SearchConfig:
 	return OptimizerV2SearchConfig()
 
