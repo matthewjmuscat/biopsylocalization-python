@@ -579,6 +579,20 @@ The same visualization-selector object used for debugging should be reusable her
 3. candidate `17` and trials `0, 3, 7`,
 4. top `k` ranked candidates over stage transitions.
 
+Backend recommendation:
+
+1. first implementation should keep using Open3D because the repo already stores and manipulates many Open3D-ready geometries,
+2. the render-job surface should still hide the backend behind a small adapter so a later PyVista or VTK renderer can replace it if that produces better publication or social-media output,
+3. do not couple the export system to ad hoc camera JSON files.
+
+So the recommendation is not "Open3D forever".
+
+The recommendation is:
+
+1. Open3D first for minimal integration cost,
+2. renderer abstraction from day one,
+3. deterministic frame export as the real contract.
+
 ## Repo Config Surface Recommendation
 
 This repo should move away from the current pattern where many runtime choices live at the top of main.
@@ -592,6 +606,15 @@ The recommended path is:
 3. pass narrow config slices to modules,
 4. only later add file-backed loading if that still feels useful.
 
+For future GUI work, the most important design property is that the config surface should be pure data.
+
+That means:
+
+1. no progress-bar objects in config,
+2. no file handles or runtime-only objects in config,
+3. no derived arrays cached inside config objects,
+4. one stable serializable schema that a GUI can edit and hand to the pipeline.
+
 Recommended config domains:
 
 1. optimizer config,
@@ -603,6 +626,10 @@ Recommended config domains:
 That is safer than trying to externalize every current top-of-main setting at once.
 
 It also fits the current code style better because many options already behave like structured runtime settings rather than true user-facing text configuration.
+
+Folder reorganization should be done as a controlled follow-up sweep once the new surfaces stabilize.
+
+It should not be mixed aggressively into phase-2 implementation work unless a file move directly improves the seam being built.
 
 ## Implementation Phases
 
@@ -624,14 +651,27 @@ Goal:
 
 Generate one shared uncertainty bank before optimizer scoring and store it where downstream MC can reuse it later.
 
+Clarification:
+
+The random draw generation for both biopsy and relative structures already exists in `MC_prepper_funcs.generate_transformations(...)`.
+
+So phase 2 is not primarily about inventing a new source of random draws.
+
+Phase 2 is about:
+
+1. formalizing those existing arrays as one shared transform-bank contract,
+2. making the target-specific derived geometry pack available early enough for optimizer-v2,
+3. ensuring downstream MC later reads the same stored draws instead of regenerating or reshaping them differently.
+
 Concrete work:
 
-1. identify the earliest safe upstream location where planned sampled biopsy points and target-relative structures are both available,
-2. generate biopsy self-transform draws up to `max_trials_for_optimizer_v2`,
-3. generate target rigid-transform draws up to the same trial budget,
-4. compute the target nominal-plus-trial structure pack at optimizer time, because that pack is not currently stored when optimizer-v2 runs,
-5. store those arrays on the same patient/structure objects used later by downstream MC,
-6. expose a narrow getter surface that returns prefixes of that stored bank.
+1. start from the existing arrays produced in `generate_transformations(...)`,
+2. identify the earliest safe upstream location where planned sampled biopsy points and target-relative structures are both available,
+3. formalize biopsy self-transform draws up to `max_trials_for_optimizer_v2` as a reusable bank surface,
+4. formalize target rigid-transform draws up to the same trial budget as part of that same bank,
+5. compute the target nominal-plus-trial structure pack early, because that pack is not currently stored when optimizer-v2 runs,
+6. store those arrays on the same patient or structure objects used later by downstream MC,
+7. expose a narrow getter surface that returns prefixes of that stored bank.
 
 Validation:
 
@@ -677,6 +717,50 @@ The wrapper should preserve at least:
 4. trial index,
 5. nominal-vs-trial flag,
 6. mapped target relative-structure index.
+
+## Generalized Chunking Recommendation
+
+There is a worthwhile reusable abstraction here, but it should be narrower than optimizer-v2 semantics.
+
+Do not put candidate-ranking logic into the custom containment package.
+
+Do not make the custom containment package understand optimizer-specific concepts like:
+
+1. candidate centroids,
+2. stage schedules,
+3. top-k survivor pruning,
+4. target-only scoring.
+
+The reusable part is a sanitized row-batch executor.
+
+That generalized executor should:
+
+1. accept already-aligned 3D test arrays,
+2. accept the matching relative-structure pack,
+3. accept the `test_struct_to_relative_struct_1d_mapping_array`,
+4. accept one maximum batch budget such as max test structures or max total test points,
+5. slice all aligned inputs consistently,
+6. call the mother function repeatedly when needed,
+7. concatenate results and preserve caller-supplied metadata.
+
+That would make it reusable across:
+
+1. optimizer-v2 candidate chunks,
+2. future batching across biopsies,
+3. other row-aligned containment workloads.
+
+What should stay outside that generalized executor:
+
+1. construction of candidate-trial arrays,
+2. creation of target trial structures,
+3. candidate ranking,
+4. optimizer-specific tie-break logic.
+
+So the recommendation is:
+
+1. yes to a generalized chunk executor in the custom package,
+2. no to pushing optimizer-v2 semantics down into that package,
+3. do it after the optimizer-v2 wrapper has made the required invariants concrete enough to generalize safely.
 
 Validation:
 
