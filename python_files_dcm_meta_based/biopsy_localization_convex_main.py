@@ -108,6 +108,7 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import export_results_pickle_bundle
 from preprocessing.pickled_dataset_tools import load_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
+from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
@@ -1573,6 +1574,11 @@ def main():
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num cases"])+" patients.", live_display)  
                 live_display.refresh()
+
+                specific_output_dir, raw_mc_output_dir = create_run_output_directories(
+                    master_structure_info_dict,
+                    output_dir,
+                )
 
                 #live_display.stop()
                 ### Check if there are more than one ADC MRs for each patient:
@@ -5416,6 +5422,10 @@ def main():
                             preprocessed_master_structure_reference_dict_path_str,
                             preprocessed_master_structure_info_dict_path_str,
                         )
+                        specific_output_dir, raw_mc_output_dir = create_run_output_directories(
+                            master_structure_info_dict,
+                            output_dir,
+                        )
                     else:
                         print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.')
                         stopwatch.stop()
@@ -5500,12 +5510,8 @@ def main():
             ###
             
 
-            ### MAKE ALL DIRECTORIES!
-            raw_mc_output_folder_name = 'Raw MC output'
-            raw_mc_output_dir = specific_output_dir.joinpath(raw_mc_output_folder_name)
-            raw_mc_output_dir.mkdir(parents=True, exist_ok=True)
-
-            master_structure_info_dict["Global"]["Raw MC output dir"] = raw_mc_output_dir
+            specific_output_dir = master_structure_info_dict["Global"]["Specific output dir"]
+            raw_mc_output_dir = master_structure_info_dict["Global"]["Raw MC output dir"]
         
 
             
@@ -6503,6 +6509,10 @@ def main():
                         master_structure_reference_dict, master_structure_info_dict = load_pickle_bundle(
                             results_master_structure_reference_dict_path_str,
                             results_master_structure_info_dict_path_str,
+                        )
+                        specific_output_dir, raw_mc_output_dir = create_run_output_directories(
+                            master_structure_info_dict,
+                            output_dir,
                         )
 
                         live_display.start()
