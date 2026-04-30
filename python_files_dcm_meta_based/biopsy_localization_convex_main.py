@@ -2357,6 +2357,154 @@ def main():
                         ###
                         indeterminate_progress_sub.update(indeterminate_task, visible = False)
                         ###
+                        ###### END INTERPOLATE STRUCTURE
+                        
+                        ### COMPUTE MR STATISTICS
+                        
+                        if mr_adc_ref in pydicom_item:
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            ###
+                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                mr_adc_ref,
+                                filter_out_negatives = True)
+                            # Prepare data
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            mr_adc_value_column_name_str = "MR ADC value"
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                zslices_list,
+                                                                structure_info,
+                                                                constant_z_slice_polygons_handler_option, 
+                                                                remove_consecutive_duplicate_points_in_polygons,
+                                                                custom_cuda_kernel_type,
+                                                                associated_value_str = mr_adc_value_column_name_str)
+                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                    "Test pt X", 
+                                                    "Test pt Y", 
+                                                    "Test pt Z",
+                                                    "Pt clr R",
+                                                    "Pt clr G",
+                                                    "Pt clr B",
+                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            ###
+                            # Create a summary statistics dataframe of the column 
+                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
+                                                                                                                                    mr_adc_value_column_name_str,
+                                                                                                                                    filter_column="Pt contained bool", 
+                                                                                                                                    filter_value=True)
+                            
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                            ###
+                            # Keep track and store onky the points that are contained within the prostate (stored at end of loop)
+                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true = containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True]                                                                                                        
+                            
+                            # Store it in the master dict 
+                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true
+                            
+                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
+                            
+                            # if the following dataframe already exists, then merge the above with it by appending rows
+                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
+                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                    mr_adc_value_summary_statistics_specific_structure],
+                                                                                                    ignore_index = True)
+                                # Store the dataframe
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+                            
+                            # if the following dataframe does not exist, then store the above dataframe
+                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                # Store the dataframe if it does not exist
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                        ###### END COMPUTE MR STATISTICS
+                        
+                        ### CALCULATE THE STRUCTURES VOLUME
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                        ###
+                                
+                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
+                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                            interpolated_zvals_list,
+                            zslices_list,
+                            structure_info,
+                            patientUID,
+                            voxel_size_for_structure_volume_calc_non_bx,
+                            factor_for_voxel_size,
+                            cupy_array_upper_limit_NxN_size_input,
+                            layout_groups,
+                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                            structures_progress,
+                            live_display,
+                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                            include_edges_in_log_files = include_edges_in_log_files,
+                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                            plot_binary_mask_bool = plot_binary_mask_bool,
+                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                            )
+                        
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
+                        ###### END STRUCTURE VOLUME CALCULATION
+                        
+                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                        ###
+                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                        ###
+                        
+                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                        zslices_list = interslice_interpolation_information.interpolated_pts_list
+                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                        interpolated_zvals_list,
+                                                                                                                        zslices_list,
+                                                                                                                        non_bx_structure_global_centroid,
+                                                                                                                        structure_info,
+                                                                                                                        patientUID,
+                                                                                                                        voxel_size_for_structure_dimension_calc,
+                                                                                                                        factor_for_voxel_size,
+                                                                                                                        cupy_array_upper_limit_NxN_size_input,
+                                                                                                                        layout_groups,
+                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                        structures_progress,
+                                                                                                                        live_display,
+                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                        )
+                        ###
+                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                        ###
 
 
 
