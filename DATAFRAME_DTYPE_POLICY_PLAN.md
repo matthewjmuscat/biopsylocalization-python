@@ -113,11 +113,15 @@ Recommended policy shape:
 Recommended implementation direction:
 
 1. create one shared schema-policy module for dataframe families,
-2. store explicit exception lists and precision rules there,
-3. import those named constants at producer call sites,
-4. pass them explicitly to the compression helper.
+2. place that module in a dedicated dataframe-focused subfolder rather than a generic misc module,
+3. if `convert_columns_to_categorical_and_downcast(...)` is relocated, copy it into that new module first and keep a compatibility shim or re-export at the old import path until callers are migrated,
+4. store explicit exception lists and precision rules there,
+5. import those named constants at producer call sites,
+6. pass them explicitly to the compression helper.
 
 This keeps call sites readable while avoiding duplicated ad hoc lists.
+
+The staged move matters because `dataframe_builders.py` is already a dependency surface. A copy-plus-shim migration avoids breaking imports while still letting the repo converge on a cleaner dataframe utilities boundary.
 
 ### Preferred Shape
 
@@ -383,13 +387,15 @@ Desired behavior:
 
 1. add non-mutating resolver helpers,
 2. document their intended usage,
-3. use them in existing consumer sites that already need numeric recovery.
+3. copy the existing compression helper into the new dataframe-utilities module and leave a compatibility shim at the old import path,
+4. use them in existing consumer sites that already need numeric recovery.
 
 ### Phase 3: Producer Enforcement
 
 1. create shared schema-policy constants,
 2. wire them into producer call sites,
 3. keep call sites explicit by passing named lists rather than hiding policy inside the helper.
+4. defer any default heuristic changes in the compression helper until the explicit policy inputs have been rolled out and validated.
 
 ### Phase 4: Consumer Cleanup
 
@@ -414,8 +420,9 @@ Desired behavior:
 6. implement producer-side exceptions for the highest-risk v1 dataframes,
 7. implement consumer-side resolvers for rank/count/index recovery,
 8. update transporter and any similar selection modules to use the standard helper rather than ad hoc local coercion,
-9. decide whether float precision controls are needed in the compression helper,
-10. document final policy next to the helper implementation once code lands.
+9. create the dedicated dataframe-utilities subfolder and move toward it via copy-plus-shim rather than a hard move,
+10. decide whether float precision controls are needed in the compression helper,
+11. document final policy next to the helper implementation once code lands.
 
 ## Working Decision
 
