@@ -494,7 +494,8 @@ It currently provides:
 
 1. stage configuration objects,
 2. fixed-lattice target candidate generation,
-3. immediate target-interior pruning through the existing CUDA containment mother function.
+3. immediate target-interior pruning through the existing CUDA containment mother function,
+4. visualization selectors for lattice, containment, and selected-candidate inspection.
 
 It does not yet provide:
 
@@ -502,6 +503,138 @@ It does not yet provide:
 2. chunked candidate-trial scoring,
 3. ranked candidate dataframe emission,
 4. transport integration.
+
+## Visualization Selector Recommendation
+
+The first implementation should not use a growing pile of ad hoc booleans.
+
+Use one explicit visualization-selector object that can be passed through the v2 pipeline.
+
+That selector object should carry:
+
+1. which surfaces to show,
+2. exact candidate indices to inspect,
+3. random candidate count for spot checks,
+4. exact trial indices to inspect,
+5. random trial count for spot checks,
+6. random seed for reproducibility.
+
+The current v2 module now supports this pattern for the candidate-pool stage.
+
+The scoring stage should reuse the same selector object so that only a small chosen subset of candidate-trial slices gets materialized for plotting.
+
+That is the right way to validate:
+
+1. generated lattice points,
+2. immediate target-interior prune results,
+3. translated candidate biopsy samples,
+4. trialwise transformed biopsy samples,
+5. containment results for a small selected subset.
+
+This keeps debugging deterministic and avoids trying to render the full hot-path batch.
+
+## Implementation Phases
+
+The next phases should be treated as separate executable slices.
+
+### Phase 1: candidate pool
+
+This phase is already in place.
+
+Deliverables:
+
+1. fixed `1.0` mm lattice generation,
+2. target-interior pruning,
+3. candidate-pool visualization.
+
+### Phase 2: upstream transform-bank seam
+
+Goal:
+
+Generate one shared uncertainty bank before optimizer scoring and store it where downstream MC can reuse it later.
+
+Concrete work:
+
+1. identify the earliest safe upstream location where planned sampled biopsy points and target-relative structures are both available,
+2. generate biopsy self-transform draws up to `max_trials_for_optimizer_v2`,
+3. generate target rigid-transform draws up to the same trial budget,
+4. generate target dilation trial structures up to the same trial budget,
+5. store those arrays on the same patient/structure objects used later by downstream MC,
+6. expose a narrow getter surface that returns prefixes of that stored bank.
+
+Validation:
+
+1. optimizer and downstream MC must read the same stored bank,
+2. stage prefixes must be exact leading slices of the full bank,
+3. nominal-plus-trial indexing must be unambiguous.
+
+### Phase 3: candidate-trial batch builder
+
+Goal:
+
+Turn one candidate chunk and one stage trial prefix into the exact batched arrays needed by the containment mother function.
+
+Concrete work:
+
+1. start from one canonical planned sampled biopsy array,
+2. translate it to every candidate centroid in the chunk,
+3. apply biopsy self-transforms for the stage prefix,
+4. apply inverse target rigid transforms for the same stage prefix,
+5. pair those test arrays with the stored target nominal-plus-trial structure pack,
+6. emit bookkeeping arrays that preserve candidate index and trial index identity.
+
+Validation:
+
+1. selected candidate/trial visualizations must match geometric expectations,
+2. one tiny batch must agree with a hand-built reference case,
+3. mapping from `(candidate, trial)` to relative structure must be exact.
+
+### Phase 4: chunked target-only scoring
+
+Goal:
+
+Run the batched containment call for one chunk and compile one target-only objective.
+
+Concrete work:
+
+1. choose candidate chunk size from the combined batch budget,
+2. run one mother-function call for the chunk,
+3. aggregate successes per candidate and per biopsy sample point,
+4. compute the candidate-level mean target binomial estimator,
+5. retain tie-break fields such as distance to target centroid.
+
+Validation:
+
+1. selected candidate/trial containment plots must look correct,
+2. chunked results must agree with a tiny unchunked reference,
+3. larger stage prefixes must refine rather than destabilize ranking.
+
+### Phase 5: staged pruning and ranking
+
+Goal:
+
+Apply the `A -> B -> C` stage schedule using shared trial prefixes.
+
+Concrete work:
+
+1. score all candidates at stage A,
+2. prune survivors,
+3. rescore survivors at stage B using a larger prefix,
+4. prune again,
+5. confirm final ranking at stage C,
+6. emit full and ranked candidate dataframes.
+
+### Phase 6: transport integration
+
+Goal:
+
+Teach transport to consume the ranked v2 candidate dataframe without special-case logic.
+
+Concrete work:
+
+1. map the winning ranked centroid back into the existing transport path,
+2. preserve tie-break metadata,
+3. keep the transport contract generic across v1 and v2 outputs.
 
 ## Immediate Next Coding Pass
 

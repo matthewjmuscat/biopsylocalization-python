@@ -61,6 +61,40 @@ class OptimizerV2SearchConfig:
 			raise ValueError("stage trial counts must increase strictly")
 
 
+@dataclass(frozen=True)
+class OptimizerV2VisualizationConfig:
+	plot_candidate_lattice_bool: bool = False
+	plot_candidate_containment_bool: bool = False
+	plot_selected_candidate_points_bool: bool = False
+	candidate_indices_to_plot: Tuple[int, ...] = ()
+	num_random_candidates_to_plot: int = 0
+	trial_indices_to_plot: Tuple[int, ...] = ()
+	num_random_trials_to_plot: int = 0
+	random_seed: int = 0
+
+	def __post_init__(self) -> None:
+		if self.num_random_candidates_to_plot < 0:
+			raise ValueError("num_random_candidates_to_plot cannot be negative")
+		if self.num_random_trials_to_plot < 0:
+			raise ValueError("num_random_trials_to_plot cannot be negative")
+
+	def resolve_candidate_indices(self, num_candidates: int) -> np.ndarray:
+		return _resolve_visualization_indices(
+			total_count=num_candidates,
+			explicit_indices=self.candidate_indices_to_plot,
+			num_random_indices=self.num_random_candidates_to_plot,
+			random_seed=self.random_seed,
+		)
+
+	def resolve_trial_indices(self, num_trials: int) -> np.ndarray:
+		return _resolve_visualization_indices(
+			total_count=num_trials,
+			explicit_indices=self.trial_indices_to_plot,
+			num_random_indices=self.num_random_trials_to_plot,
+			random_seed=self.random_seed,
+		)
+
+
 @dataclass
 class OptimizerV2CandidatePool:
 	lattice_spacing_mm: float
@@ -76,6 +110,10 @@ class OptimizerV2CandidatePool:
 
 def build_default_optimizer_v2_search_config() -> OptimizerV2SearchConfig:
 	return OptimizerV2SearchConfig()
+
+
+def build_default_optimizer_v2_visualization_config() -> OptimizerV2VisualizationConfig:
+	return OptimizerV2VisualizationConfig()
 
 
 def build_target_candidate_lattice(
@@ -204,6 +242,57 @@ def build_target_candidate_pool(
 	return candidate_pool
 
 
+def visualize_target_candidate_pool(
+	candidate_pool: OptimizerV2CandidatePool,
+	target_points_array: np.ndarray,
+	visualization_config: Optional[OptimizerV2VisualizationConfig] = None,
+	additional_point_clouds: Optional[Sequence[Any]] = None,
+) -> None:
+	resolved_visualization_config = visualization_config or build_default_optimizer_v2_visualization_config()
+	if not (
+		resolved_visualization_config.plot_candidate_lattice_bool
+		or resolved_visualization_config.plot_candidate_containment_bool
+		or resolved_visualization_config.plot_selected_candidate_points_bool
+	):
+		return
+
+	import point_containment_tools
+	import plotting_funcs
+
+	normalized_target_points = _validate_xyz_points_array(target_points_array, "target_points_array")
+	additional_clouds_list = list(additional_point_clouds or [])
+	target_point_cloud = point_containment_tools.create_point_cloud(normalized_target_points, np.array([0.0, 0.0, 1.0]))
+
+	if resolved_visualization_config.plot_candidate_containment_bool:
+		if candidate_pool.containment_results_dataframe is None:
+			raise ValueError("candidate_pool.containment_results_dataframe is required for containment visualization")
+		plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(
+			candidate_pool.containment_results_dataframe,
+			"Test pt X",
+			"Test pt Y",
+			"Test pt Z",
+			"Pt clr R",
+			"Pt clr G",
+			"Pt clr B",
+			additional_point_clouds=[target_point_cloud] + additional_clouds_list,
+		)
+
+	if resolved_visualization_config.plot_candidate_lattice_bool:
+		full_lattice_point_cloud = point_containment_tools.create_point_cloud(candidate_pool.full_lattice_points, np.array([0.0, 0.0, 0.0]))
+		candidate_point_cloud = point_containment_tools.create_point_cloud(candidate_pool.candidate_points, np.array([0.0, 1.0, 0.0]))
+		plotting_funcs.plot_geometries(full_lattice_point_cloud, candidate_point_cloud, target_point_cloud, *additional_clouds_list, label='Unknown')
+
+	if resolved_visualization_config.plot_selected_candidate_points_bool:
+		selected_candidate_indices = resolved_visualization_config.resolve_candidate_indices(candidate_pool.candidate_points.shape[0])
+		if selected_candidate_indices.size == 0:
+			raise ValueError("no candidate indices were selected for visualization")
+
+		selected_candidate_points = candidate_pool.candidate_points[selected_candidate_indices]
+		candidate_point_cloud = point_containment_tools.create_point_cloud(candidate_pool.candidate_points, np.array([0.0, 1.0, 0.0]))
+		selected_candidate_point_cloud = point_containment_tools.create_point_cloud(selected_candidate_points, np.array([1.0, 0.0, 1.0]))
+		plotting_funcs.plot_geometries(candidate_point_cloud, selected_candidate_point_cloud, target_point_cloud, *additional_clouds_list, label='Unknown')
+
+
 def _validate_xyz_points_array(points_array: np.ndarray, array_name: str) -> np.ndarray:
 	normalized_points_array = np.asarray(points_array, dtype=float)
 	if normalized_points_array.ndim != 2 or normalized_points_array.shape[1] != 3:
@@ -223,3 +312,31 @@ def _validate_zslices_list(target_zslices_list: Sequence[np.ndarray]) -> Sequenc
 		normalized_zslices_list.append(normalized_zslice_points)
 
 	return normalized_zslices_list
+
+
+def _resolve_visualization_indices(
+	total_count: int,
+	explicit_indices: Sequence[int],
+	num_random_indices: int,
+	random_seed: int,
+) -> np.ndarray:
+	if total_count < 0:
+		raise ValueError("total_count cannot be negative")
+
+	resolved_indices = []
+	for explicit_index in explicit_indices:
+		if explicit_index < 0 or explicit_index >= total_count:
+			raise ValueError("visualization index {} is out of range for total_count {}".format(explicit_index, total_count))
+		resolved_indices.append(int(explicit_index))
+
+	if num_random_indices > 0 and total_count > 0:
+		remaining_indices = np.setdiff1d(np.arange(total_count, dtype=np.int32), np.array(resolved_indices, dtype=np.int32), assume_unique=False)
+		if remaining_indices.size > 0:
+			random_generator = np.random.default_rng(random_seed)
+			num_random_indices_resolved = min(num_random_indices, remaining_indices.size)
+			resolved_indices.extend(random_generator.choice(remaining_indices, size=num_random_indices_resolved, replace=False).tolist())
+
+	if not resolved_indices:
+		return np.empty(0, dtype=np.int32)
+
+	return np.array(sorted(set(resolved_indices)), dtype=np.int32)
