@@ -53,6 +53,91 @@ Observed current MR export behavior:
 - sampled MR files were exported by `Varian Medical Systems` / `Vitesse`
 - sampled MR files did not expose a visible private creator in the inspected example
 
+## Broader Research Data Bank Assessment
+
+The broader `Data` tree contains multiple input-bank contexts, not just the active `Input data` folder.
+
+The main banks currently present include:
+
+- `Input data`
+- `Input data easy swap (good data)`
+- `Input data (for QA run or tissue class run)`
+- `Input data (for dosim run)`
+- `Input data (for MR ADC run)`
+- `Input data archive (do not delete files from here)` with separate 2024 and 2025 naming conventions and standalone 2025 May ADC and T2 banks
+
+Representative DICOM-file counts by top-level bank at the time of inspection:
+
+- `Input data archive (do not delete files from here)`: `10383`
+- `Input data (for MR ADC run)`: `2895`
+- `Input data (for QA run or tissue class run)`: `2569`
+- `Input data easy swap (good data)`: `2569`
+- `Input data (for dosim run)`: `1326`
+- `Input data`: `286`
+
+## Observed Export Profiles
+
+The current data is not one uniform DICOM-export style.
+
+At least two materially different MR export profiles are present.
+
+### Profile A: Mixed Full-Case Vitesse Export
+
+Seen in:
+
+- `Input data easy swap (good data)`
+- `Input data (for QA run or tissue class run)`
+- `Input data (for dosim run)`
+- much of `2024 naming convention`
+- much of `2025 naming convention`
+
+Observed characteristics:
+
+- includes `RTSTRUCT`, `RTDOSE`, `RTPLAN`, and `MR`
+- MR files are overwhelmingly from `Vitesse`
+- MR `SeriesDescription` is empty
+- MR `MRAcquisitionType` is empty
+- MR `ImageType` is typically `[DERIVED, SECONDARY, OTHER]`
+- RTPLAN consistently carries `FractionGroupSequence[0].FractionGroupNumber`
+
+This profile matches the recent active full-case banks.
+
+It does **not** satisfy the current code path that expects `SeriesDescription == T2` or `SeriesDescription == ADC` for MR classification.
+
+### Profile B: Standalone Diagnostic MR Export
+
+Seen in:
+
+- `Input data archive (do not delete files from here)/2025 May - ADC data`
+- `Input data archive (do not delete files from here)/2025 May - T2 data`
+- the standalone MR additions inside `Input data (for MR ADC run)`
+
+Observed characteristics:
+
+- MR-only banks
+- ADC banks use `SeriesDescription = ADC`
+- T2 banks use `SeriesDescription = T2`
+- `MRAcquisitionType = 2D`
+- `ImageType` is typically `[DERIVED, PRIMARY, AXIAL]`
+- inspected examples came from `Signa HDxt`
+
+This profile **does** satisfy the current code path that classifies T2 and ADC by `SeriesDescription`.
+
+### Hybrid Bank: MR ADC Run
+
+`Input data (for MR ADC run)` is currently a hybrid bank.
+
+It contains:
+
+- full-case Vitesse-style RT plus MR exports with empty MR descriptors,
+- standalone ADC and some T2 MR exports with clean `SeriesDescription` and `MRAcquisitionType` values.
+
+Observed summary:
+
+- MR series counts included both blank series labels and explicit `ADC` and `T2`
+- MR acquisition types included both empty values and `2D`
+- RTPLAN fraction metadata remained present for all sampled plan files in that bank
+
 ## Immediate Consequence
 
 The current hard-coded MR routing does not generalize to the most recent data export shape.
@@ -62,6 +147,14 @@ In the current dataset, the built-in `SeriesDescription == T2` or `SeriesDescrip
 The empty-`MRAcquisitionType` fallback also cannot reliably distinguish true MRI from ultrasound-like data exported as MR if the exporting workflow changes again.
 
 This is the same class of issue discussed earlier when some ultrasound-origin images were effectively being routed through MR-labelled exports.
+
+Across the broader `Data` tree, the deeper problem is now clearer:
+
+- some banks are compatible with the current `SeriesDescription`-based MR classification,
+- some banks are not,
+- and some banks mix both export styles.
+
+That means future ingest logic should support named export profiles or configurable matching rules rather than assuming a single MR-routing heuristic for all banks.
 
 ## What Should Be Standardized
 
@@ -87,6 +180,12 @@ Repo ingest contract:
 The safest generalizable strategy is not to hard-code one export layout into the loader.
 
 Instead, define a config-described export profile that says where each required value should be read from.
+
+The broader `Data` tree inspection reinforces that this config will likely need to support multiple profiles, for example:
+
+- a mixed full-case Vitesse profile,
+- a standalone diagnostic MR profile,
+- and possibly bank-specific overrides when a run mixes both sources.
 
 That config should describe at least:
 
