@@ -657,6 +657,37 @@ The random draw generation for both biopsy and relative structures already exist
 
 So phase 2 is not primarily about inventing a new source of random draws.
 
+Earliest-seam clarification:
+
+There are two different answers here.
+
+As the code works today, the earliest safe place to call `generate_transformations(...)` without changing dependencies is still late in main, after simulated-biopsy geometry has been processed and after uncertainty objects have been attached to all structures.
+
+That is because:
+
+1. `generate_transformations(...)` requires `Uncertainty data` on every structure it touches,
+2. the current uncertainty-builder configuration for biopsies uses per-biopsy variation terms such as `Mean centroid variation`,
+3. simulated biopsies do not get those variation fields until after planned geometry is transported and finalized,
+4. the current biopsy needle-compartment shift generator reads `Reconstructed biopsy cylinder length (from contour data)` directly from each biopsy structure.
+
+So, in the current implementation, `just after multiplicity` is too early.
+
+With a small contract refactor, the pure random-draw bank can move much earlier than it does now.
+
+The realistic early target is:
+
+1. after simulated-biopsy preparation has completed,
+2. after the final per-biopsy row set exists post-multiplicity,
+3. after uncertainty objects are available in a form that does not depend on later simulated-biopsy geometry fields.
+
+That distinction matters because multiplicity alone is not enough for the biopsy-side draw bank when uniform biopsy-compartment shifts are enabled.
+
+Those shifts need an effective biopsy core length.
+
+For real biopsies, the existing reconstructed contour length is already the right source.
+
+For simulated biopsies, phase 2 should stop requiring the later top-level reconstructed contour field and instead read one earlier effective length source, preferably the prepared nominal length from simulated-biopsy preparation, or secondarily the planned model length from simulated-biopsy planning.
+
 Phase 2 is about:
 
 1. formalizing those existing arrays as one shared transform-bank contract,
@@ -666,18 +697,24 @@ Phase 2 is about:
 Concrete work:
 
 1. start from the existing arrays produced in `generate_transformations(...)`,
-2. identify the earliest safe upstream location where planned sampled biopsy points and target-relative structures are both available,
+2. split the seam question into two contracts:
+   - an early pure draw-bank contract,
+   - a later derived-geometry-pack contract,
 3. formalize biopsy self-transform draws up to `max_trials_for_optimizer_v2` as a reusable bank surface,
 4. formalize target rigid-transform draws up to the same trial budget as part of that same bank,
-5. compute the target nominal-plus-trial structure pack early, because that pack is not currently stored when optimizer-v2 runs,
-6. store those arrays on the same patient or structure objects used later by downstream MC,
-7. expose a narrow getter surface that returns prefixes of that stored bank.
+5. move the pure draw bank as early as the dependency contract allows, ideally after simulated-biopsy preparation rather than after downstream MC setup,
+6. compute the target nominal-plus-trial structure pack later, at the first point where the necessary planned biopsy arrays and target-relative geometry are both available, because that pack is not currently stored when optimizer-v2 runs,
+7. if needed, add one small helper that resolves effective biopsy length for draw generation without requiring later reconstructed simulated-biopsy geometry fields,
+8. if needed, split uncertainty-object creation from later geometry-derived biopsy-variation terms so optimizer-v2 can consume the shared draw bank earlier,
+9. store those arrays on the same patient or structure objects used later by downstream MC,
+10. expose a narrow getter surface that returns prefixes of that stored bank.
 
 Validation:
 
 1. optimizer and downstream MC must read the same stored bank,
 2. stage prefixes must be exact leading slices of the full bank,
-3. nominal-plus-trial indexing must be unambiguous.
+3. nominal-plus-trial indexing must be unambiguous,
+4. the early draw-bank seam must not depend on later simulated-biopsy geometry fields unless that dependency is made explicit by contract.
 
 ### Phase 3: candidate-trial batch builder
 
