@@ -20,6 +20,20 @@ Guidance-map top-`k` holes are downstream template-hole choices that reach an al
 
 Optimizer v2 top-`k` is upstream ranking of biopsy centroid candidates in prostate space.
 
+## Scaling Risk
+
+Optimizer v2 is not just a new scoring path.
+
+If it is enabled alongside legacy v1 simulated-core generation, or if it introduces a new family of simulated cores without disabling the old path, the effective biopsy count can grow materially.
+
+That has at least three consequences:
+
+- more per-biopsy preprocessing state to hold in memory,
+- more MC and dataframe output volume,
+- more risk that the current one-run-in-one-process execution model hits memory limits before the scientific logic is wrong.
+
+This should be treated as a first-class design constraint, not a late cleanup item.
+
 ## Hard Decisions
 
 - The optimizer consumes planning-frame biopsy geometry and planning-frame sampled biopsy points.
@@ -154,6 +168,19 @@ This does not mean that `1000` trials is literally free relative to `100`.
 
 It means that, in this architecture, larger `N` can be much cheaper than CPU intuition suggests if it allows fewer total calls and still fits in memory.
 
+The practical limit is still the combined memory footprint of:
+
+- candidate chunks,
+- transform-bank slices,
+- staged biopsy sample arrays,
+- target-structure geometry batches,
+- and all downstream retained results that survive past the scoring stage.
+
+So optimizer-v2 design should explicitly separate:
+
+- throughput packing inside one scoring chunk,
+- and whole-run memory growth from increasing biopsy count and retained outputs.
+
 ## Search Region
 
 The initial search region is the target DIL interior.
@@ -245,6 +272,46 @@ There is also a throughput benefit:
 ## Recommended Stage Schedule
 
 The first implementation should use three stages.
+
+## Whole-Dataset Scaling Strategy
+
+Even if candidate-trial scoring is chunked correctly, larger cohorts or multiple simulated-core families can still push the whole run over memory limits.
+
+The long-run design should therefore support at least one, and preferably both, of these surfaces:
+
+### 1. Dataset chunking
+
+Split a larger cohort into smaller execution batches that can be run independently.
+
+Examples:
+
+- by patient,
+- by patient-fraction,
+- by configured case batches.
+
+This is the simplest way to cap peak memory when the dataset grows.
+
+### 2. Output stitching
+
+Provide a reliable post-run stitching layer that can merge outputs from multiple chunked runs into one cohort-level result surface.
+
+This matters because dataset chunking is only operationally useful if the downstream outputs can be recombined without ad hoc manual work.
+
+The stitching surface should be explicit about:
+
+- which outputs are safe to concatenate directly,
+- which outputs require grouped recomputation of cohort statistics,
+- which outputs should remain chunk-local only,
+- and which manifest fields prove that the stitched runs came from compatible configs.
+
+The likely end state is to support both:
+
+- chunked execution to stay inside memory limits,
+- stitched downstream aggregation to recover one cohort view.
+
+Optimizer-v2 design should stay compatible with that future from the start.
+
+Concretely, that means avoiding hidden assumptions that one process sees the whole cohort at once when emitting run manifests, per-biopsy identifiers, or ranked-candidate outputs.
 
 ### Stage A: coarse prune and coarse score
 

@@ -15,6 +15,10 @@ This design is intentionally biased toward robustness and triage value over soph
 - memory-related failures are hard to localize after the fact,
 - the current monolithic entrypoint makes it difficult to infer the last successful stage unless that state is written to disk.
 
+This becomes more important as optimizer v2 expands the number of simulated cores or biopsy families carried through one run.
+
+Even if the scientific logic is correct, a larger effective biopsy count can increase peak memory enough to trigger silent termination or out-of-memory failure before a Python traceback is surfaced cleanly.
+
 ## Design Goals
 
 - always-on and cheap enough for normal runs,
@@ -194,9 +198,20 @@ A cheap first pass is enough:
 
 - at run start,
 - before and after optimizer-v1,
+- before and after optimizer-v2 stages once that path is live,
 - before and after guidance-map generation,
 - before and after MC simulation,
 - at any warning or exception.
+
+As optimizer v2 grows, it would also be useful to capture lightweight count metadata in the same snapshots, for example:
+
+- current patient count in memory,
+- current biopsy structure count,
+- current simulated-core family count,
+- current active optimizer stage,
+- current candidate and trial chunk sizes.
+
+Those values will make later memory failures much easier to interpret.
 
 ## Flush Strategy
 
@@ -247,6 +262,19 @@ Phase 3:
 - add lightweight log readers or summary scripts,
 - integrate with manifest output,
 - add warning aggregation.
+
+## Future Scaling Hooks
+
+The runtime log should remain compatible with future chunked execution and stitched outputs.
+
+When the dataset is eventually run in chunks, the log and status surfaces should be able to state:
+
+- chunk identifier,
+- chunk membership rule,
+- total number of chunks if known,
+- upstream parent run or stitch group identifier if one exists.
+
+That way a failed chunk is easy to localize and a later stitching process can still reconstruct the full execution history.
 
 ## Recommended Event Schema For `events.jsonl`
 

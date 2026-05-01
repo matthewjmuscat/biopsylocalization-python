@@ -130,6 +130,7 @@ These are future instrumentation tasks, not claims for the current rerun.
 - [ ] add chunked candidate-trial scoring
 - [ ] add ranked candidate dataframe emission
 - [ ] add transport integration
+- [ ] keep v2 activation compatible with memory-safe operation when total simulated biopsy count grows
 
 ### Required Validation Categories
 
@@ -148,6 +149,8 @@ These are future instrumentation tasks, not claims for the current rerun.
 - [ ] add deterministic sampler reuse checks for planning versus realized geometry
 - [ ] add a small serious-drift threshold table so clearly bad numbers are flagged immediately
 - [ ] add a short validation-notes section at the bottom of this file after each important rerun
+- [ ] add a dataset chunking plan for larger cohorts or multi-family simulated-core runs
+- [ ] add an output-stitching surface so chunked runs can be recombined into one cohort result safely
 
 ## Notes To Add During Validation
 
