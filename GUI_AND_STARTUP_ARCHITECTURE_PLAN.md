@@ -54,6 +54,14 @@ That helper owns:
 
 The old in-pipeline results-bundle reload path is being retired. This pipeline should compute, write tables/manifests, and stop. Any later result consumption should be handled by downstream tools or a future GUI surface, not by re-entering the main pipeline in a special results-load mode.
 
+That does not mean post-MC checkpointing is useless. A future GUI may still need a cleaner post-simulation artifact contract for:
+
+- regenerating result summaries without rerunning the full pipeline,
+- regenerating interactive visualizations from one finished run,
+- exporting polished GUI-driven figures or tables.
+
+If that returns, it should be implemented as an explicit post-MC snapshot or manifest/audit artifact surface, not as a legacy-style mutable results pickle that re-enters `main()` mid-pipeline.
+
 ## Architectural Rules
 
 1. `startup/` should orchestrate workflow order, not implement scientific kernels.

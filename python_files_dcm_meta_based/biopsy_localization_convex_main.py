@@ -105,7 +105,6 @@ from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
-from preprocessing.pickled_dataset_tools import export_results_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
@@ -393,8 +392,6 @@ def main():
     preprocessed_data_folder_name = 'Preprocessed data'
     preprocessed_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict'
     preprocessed_master_structure_info_dict_for_export_name = 'master_structure_info_dict'
-    output_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict_results'
-    output_master_structure_info_dict_for_export_name = 'master_structure_info_dict_results'
     lower_bound_dose_value = None # can also set to None and will try to assign by pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
     #lower_bound_dose_percent = 10
     lower_bound_dose_gradient_value = 0
@@ -5474,33 +5471,7 @@ def main():
 
             live_display.refresh()
         
-            """
-            # plot dose point cloud cubic lattice (color only)
-            if show_3d_dose_renderings == True:
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    if dose_ref not in pydicom_item:
-                        continue
-                    
-                    dose_point_cloud = pydicom_item[dose_ref]["Dose grid point cloud"]
-                
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(dose_point_cloud)
-                    stopwatch.start()
-                            
 
-            # plot dose point cloud thresholded cubic lattice (color only)
-            if show_3d_dose_renderings == True:
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    if dose_ref not in pydicom_item:
-                        continue
-
-                    dose_point_cloud_thresholded = pydicom_item[dose_ref]["Dose grid point cloud thresholded"]
-                
-                    stopwatch.stop()
-                    plotting_funcs.plot_geometries(dose_point_cloud_thresholded)
-                    stopwatch.start()
-
-            """
 
             lower_bound_dose_value, live_display = render_processed_dataset_debug_processer(
                 master_structure_reference_dict,
@@ -5518,7 +5489,7 @@ def main():
 
 
             ## uniformly sample points from biopsies
-            #st = time.time()
+
             live_display.stop()
             args_list = []
             master_structure_info_dict["Global"]["MC info"]["BX sample pt lattice spacing (mm)"] = bx_sample_pts_lattice_spacing
@@ -5564,19 +5535,11 @@ def main():
             completed_progress.update(processing_patients_completed_task, visible = True)
 
 
-            #et = time.time()
-            #elapsed_time = et - st
-            #print('\n Execution time (NON PARALLEL):', elapsed_time, 'seconds')
-            
-            
-            #st = time.time()
 
-            # DEBUGGING
-            """
-            for arg in args_list:
-                _ = MC_simulator_convex.grid_point_sampler_rotated_from_global_delaunay_convex_structure_parallel(*arg)  # dry run to avoid pickling overhead in the parallel run
-                _ = biopsy_point_sampler.sample_biopsy_points_from_reconstructed_global_delaunay_convex_structure(*arg)
-            """
+            
+
+
+
 
         
             sampling_points_task_indeterminate = indeterminate_progress_main.add_task("[red]Sampling points from all patient biopsies (parallel)...", total=None)
@@ -5596,9 +5559,7 @@ def main():
 
         
 
-            #et = time.time()
-            #elapsed_time = et - st
-            #print('\n Execution time (PARALLEL):', elapsed_time, 'seconds')
+
 
             global_num_biopsies = master_structure_info_dict["Global"]["Num biopsies"]
             patientUID_default = "Initializing"
@@ -6023,33 +5984,7 @@ def main():
                 master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
 
 
-            """
-            # Transfer read uncertainty data to master_reference
-            num_general_structs_from_uncertainty_file = int(pandas_read_uncertainties.values[1][0])
-            for specific_structure_index in range(num_general_structs_from_uncertainty_file):
-                structure_row_num_start = specific_structure_index*5+3
-                patientUID = pandas_read_uncertainties.values[structure_row_num_start+1][0]
-                structure_type = pandas_read_uncertainties.values[structure_row_num_start+1][1]
-                structure_ROI = pandas_read_uncertainties.values[structure_row_num_start+1][2]
-                structure_ref_num = pandas_read_uncertainties.values[structure_row_num_start+1][3]
-                master_ref_dict_specific_structure_index = int(pandas_read_uncertainties.values[structure_row_num_start+1][4])
-                frame_of_reference = pandas_read_uncertainties.values[structure_row_num_start+1][5]
-                means_arr = np.empty([3], dtype=float)
-                sigmas_arr = np.empty([3], dtype=float)
 
-                means_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][0] # X
-                means_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][2] # Y
-                means_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][4] # Z
-
-                sigmas_arr[0] = pandas_read_uncertainties.values[structure_row_num_start+3][1] # X
-                sigmas_arr[1] = pandas_read_uncertainties.values[structure_row_num_start+3][3] # Y
-                sigmas_arr[2] = pandas_read_uncertainties.values[structure_row_num_start+3][5] # Z
-
-                uncertainty_data_obj = uncertainty_data(patientUID, structure_type, structure_ROI, structure_ref_num, master_ref_dict_specific_structure_index, frame_of_reference)
-                uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr)
-                master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
-
-            """
 
             live_display.start()
 
@@ -6059,10 +5994,7 @@ def main():
             section_start_time = datetime.now() 
 
 
-
-            ######
-            ###### THIS IS WHERE THE IF STATEMENT OF THE FANOVA AND MC SIM WAS WAS MOVED TO! IF CODE BREAKS JUST DELETE THE IF BELOW!
-            ######                
+          
             if (perform_MC_sim == True or perform_fanova == True):
                 
                 master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"] = num_MC_containment_simulations_input
@@ -6416,26 +6348,6 @@ def main():
 
                 # copy uncertainty file used for simulation to output folder 
                 shutil.copy(uncertainties_file_filled, specific_output_dir)
-                date_time_now = datetime.now()
-                date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-                global_num_structures = master_structure_info_dict["Global"]["Num structures"]
-                specific_output_pickle_data_dir_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures - '+date_time_now_file_name_format+' pickled data'
-                specific_output_pickle_data_dir = specific_output_dir.joinpath(specific_output_pickle_data_dir_name)
-                specific_output_pickle_data_dir.mkdir(parents=False, exist_ok=False)
-                export_results_pickle_bundle(
-                    master_structure_reference_dict,
-                    master_structure_info_dict,
-                    specific_output_pickle_data_dir,
-                    output_master_structure_ref_dict_for_export_name,
-                    output_master_structure_info_dict_for_export_name,
-                    bx_ref,
-                    oar_ref,
-                    dil_ref,
-                    rectum_ref_key,
-                    urethra_ref_key,
-                    dose_ref,
-                    mr_adc_ref,
-                )
 
                 if plot_immediately_after_simulation == False:
                     sys.exit('> Programme exited.')
