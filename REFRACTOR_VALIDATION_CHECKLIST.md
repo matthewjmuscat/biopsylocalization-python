@@ -20,6 +20,7 @@ Conventions:
 - [x] output runtime directory lifecycle extracted into a dedicated helper and initialized early for fresh, preprocessed-load, and results-load paths
 - [x] focused syntax validation passed for the latest dtype-policy and output-runtime-directory changes
 - [x] current Apr 30 validation run output directory identified: `MC_sim_out- Date-Apr-30-2026 Time-15,28,21 - 3 patient validation run`
+- [x] current pickle-enabled validation run identified for the next round-trip check: `MC_sim_out- Date-Apr-30-2026 Time-18,22,05`
 - [ ] current fresh validation rerun finishes with no exceptions
 - [ ] current rerun outputs are compared against the Mar 3 reference run for drift
 
@@ -184,3 +185,37 @@ These are future instrumentation tasks, not claims for the current rerun.
 - Initial interpretation:
 	- some deterministic preprocessing surfaces remain stable,
 	- but target-related and optimizer-related preprocessing outputs are still drifting and need deeper inspection before signoff.
+
+### 2026-04-30: Refined Preprocessing Drift Readout
+
+- A refined composite-key comparison on `Nearest DILs info dataframe.csv` used:
+	- `Bx ID`
+	- `Bx refnum`
+	- `Bx index`
+	- `Relative DIL ID`
+	- `Relative DIL ref num`
+	- `Relative DIL index`
+- Under that proper key, there were no left-only or right-only rows across Apr 30 versus Apr 29 for the three current cases.
+- Under that proper key, all changed `Nearest DILs info` rows were `Simulated type == Optimal DIL`.
+- Under that proper key, zero rows changed `Target DIL (by centroids)` or `Target DIL (by surfaces)` flags.
+- The observed `Nearest DILs info` drift is therefore in geometry-derived centroid and surface-distance columns, not in target-identity flag flips.
+- A keyed comparison on `Biopsy basic spatial features dataframe.csv` also found changed rows only in `Simulated type == Optimal DIL`.
+- `DIL centroids optimal targeting dataframe.csv` kept stable centroid target coordinates across Apr 30 versus Apr 29 and only showed small containment-score differences.
+- `Optimal DIL targeting dataframe.csv` is the earliest inspected layer where chosen target coordinates themselves drift.
+- Those target-coordinate changes were discrete lattice-step moves such as:
+	- about `1.0` mm plane-index moves in `X`, `Y`, or `Z`,
+	- and one larger inspected case with about `3.0` mm in `Z`.
+- Current interpretation after the refined readout:
+	- real biopsy rows look stable in the inspected preprocessing CSVs,
+	- centroid-target rows look stable in coordinates and only drift in containment counts,
+	- the remaining drift signal is confined to the stochastic optimizer-v1 optimal-core path.
+
+### 2026-04-30: Optimizer-v1 Stochasticity Note
+
+- The inspected optimizer-v1 helper path is not deterministic unless RNG is explicitly controlled.
+- In `biopsy_optimizer_module_v1_helpers.py`, the optimal-DIL scorer draws containment clouds using `cp.random.normal(...)` and then selects:
+	- maximum `Number of normal dist points contained`,
+	- then minimum `Dist to DIL centroid`,
+	- then `sample()` if ties remain.
+- That means small run-to-run containment-score differences are expected.
+- Because the chosen optimal lattice point is selected from that score surface, discrete optimal-target coordinate drift is also expected when the RNG is uncontrolled.

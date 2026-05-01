@@ -3,7 +3,9 @@
 ## Working Docs
 
 - Input DICOM assessment and future export-contract notes: `INPUT_DICOM_DATA_ASSESSMENT.md`
+- Input-side run provenance artifact design: `INPUT_DATA_MANIFEST_DESIGN.md`
 - Output dataframe cleanup roadmap: `OUTPUT_DATAFRAME_UPGRADE_ROADMAP.md`
+- Crash-localization and runtime event logging design: `RUNTIME_LOGGING_DESIGN.md`
 
 This repository is licensed under a **Non-Commercial Research License**  
 (see the `LICENSE` file for full terms).
