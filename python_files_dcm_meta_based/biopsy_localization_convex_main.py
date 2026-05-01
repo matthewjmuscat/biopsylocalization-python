@@ -40,6 +40,7 @@ import multiprocess
 #from pathos.multiprocessing import ProcessingPool
 import dill
 import math
+import cupy as cp
 from datetime import date, datetime
 import rich
 from rich.progress import Progress, track
@@ -114,7 +115,72 @@ from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
+from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_default_optimizer_v2_search_config
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
+
+
+def resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config):
+    return max(stage_config.num_trials for stage_config in optimizer_v2_search_config.stage_configs)
+
+
+def configure_transform_precompute_settings(master_structure_info_dict,
+                                            optimizer_v2_search_config,
+                                            num_stochastic_targeting_transform_samples_input):
+    mc_info = master_structure_info_dict["Global"].setdefault("MC info", {})
+    mc_info["Num optimizer v2 transform samples"] = resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config)
+    mc_info["Num stochastic targeting transform samples"] = num_stochastic_targeting_transform_samples_input
+
+
+def configure_runtime_random_seed_settings(master_structure_info_dict,
+                                           transform_generation_random_seed,
+                                           optimizer_v1_random_seed):
+    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
+    random_info["Transform generation random seed"] = transform_generation_random_seed
+    random_info["Optimizer v1 random seed"] = optimizer_v1_random_seed
+
+
+def build_transform_generation_rng(master_structure_info_dict):
+    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
+    transform_generation_random_seed = random_info.get("Transform generation random seed")
+    if transform_generation_random_seed is None:
+        return cp.random.RandomState()
+
+    return cp.random.RandomState(transform_generation_random_seed)
+
+
+def apply_optimizer_v1_random_seed(master_structure_info_dict):
+    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
+    optimizer_v1_random_seed = random_info.get("Optimizer v1 random seed")
+    if optimizer_v1_random_seed is None:
+        return
+
+    cp.random.seed(optimizer_v1_random_seed)
+    np.random.seed(optimizer_v1_random_seed)
+
+
+def configure_transform_generation_counts(master_structure_info_dict,
+                                          num_mc_containment_simulations_input,
+                                          num_mc_dose_simulations_input,
+                                          num_mc_mr_simulations_input):
+    mc_info = master_structure_info_dict["Global"]["MC info"]
+
+    mc_info["Num MC containment simulations"] = num_mc_containment_simulations_input
+    mc_info["Num MC dose simulations"] = num_mc_dose_simulations_input
+    mc_info["Num MC MR simulations"] = num_mc_mr_simulations_input
+
+    max_num_mc_simulations = max(num_mc_dose_simulations_input,
+                                 num_mc_containment_simulations_input,
+                                 num_mc_mr_simulations_input)
+    mc_info["Max of num MC simulations"] = max_num_mc_simulations
+
+    num_optimizer_v2_transform_samples = mc_info.get("Num optimizer v2 transform samples") or 0
+    num_stochastic_targeting_transform_samples = mc_info.get("Num stochastic targeting transform samples") or 0
+    max_generated_transform_samples = max(max_num_mc_simulations,
+                                          num_optimizer_v2_transform_samples,
+                                          num_stochastic_targeting_transform_samples)
+    mc_info["Max of generated transform samples"] = max_generated_transform_samples
+
+    return max_num_mc_simulations, max_generated_transform_samples
 
 
 def main():
@@ -447,6 +513,10 @@ def main():
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
     cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
     nn_search_end_cap_grid_factor = 0.1
+    optimizer_v2_search_config = build_default_optimizer_v2_search_config()
+    num_stochastic_targeting_transform_samples_input = 0
+    transform_generation_random_seed = None
+    optimizer_v1_random_seed = None
 
     # custom point containment algorithm options
     generate_cuda_log_files_MC_containment_sim = False
@@ -1575,6 +1645,17 @@ def main():
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num cases"])+" patients.", live_display)  
                 live_display.refresh()
+
+                configure_transform_precompute_settings(
+                    master_structure_info_dict,
+                    optimizer_v2_search_config,
+                    num_stochastic_targeting_transform_samples_input,
+                )
+                configure_runtime_random_seed_settings(
+                    master_structure_info_dict,
+                    transform_generation_random_seed,
+                    optimizer_v1_random_seed,
+                )
 
                 specific_output_dir, raw_mc_output_dir = create_run_output_directories(
                     master_structure_info_dict,
@@ -4459,6 +4540,30 @@ def main():
                             uncertainty_data,
                             )
 
+                max_simulations, max_generated_transform_samples = configure_transform_generation_counts(
+                            master_structure_info_dict,
+                            num_MC_containment_simulations_input,
+                            num_MC_dose_simulations_input,
+                            num_MC_MR_simulations_input,
+                            )
+
+                if max_generated_transform_samples > 0:
+                    indeterminate_task_generating_transforms = indeterminate_progress_main.add_task("[red]Generating transforms", total=None)
+                    indeterminate_task_generating_transforms_completed = completed_progress.add_task("[green]Generating transforms", visible = False, total = 1)
+
+                    transform_sampling_rng = build_transform_generation_rng(master_structure_info_dict)
+                    MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
+                                                    simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                                    bx_ref,
+                                                    biopsy_needle_compartment_length,
+                                                    max_generated_transform_samples,
+                                                    structs_referenced_list,
+                                                    rng=transform_sampling_rng)
+
+                    indeterminate_progress_main.update(indeterminate_task_generating_transforms, visible = False, refresh = True)
+                    completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
+                    live_display.refresh()
+
 
 
 
@@ -4471,6 +4576,7 @@ def main():
                 live_display.stop()
                 ########## PERFORM BIOPSY DIL OPTIMIZATION
                 # modularized!
+                apply_optimizer_v1_random_seed(master_structure_info_dict)
                 live_display = biopsy_optimizer_module_v1(master_structure_reference_dict,
                               master_structure_info_dict,
                               structs_referenced_dict,
@@ -5528,6 +5634,17 @@ def main():
                     indeterminate_progress_sub,
                     live_display,
                 )
+
+                configure_transform_precompute_settings(
+                    master_structure_info_dict,
+                    optimizer_v2_search_config,
+                    num_stochastic_targeting_transform_samples_input,
+                )
+                configure_runtime_random_seed_settings(
+                    master_structure_info_dict,
+                    transform_generation_random_seed,
+                    optimizer_v1_random_seed,
+                )
             ###
             
 
@@ -5955,16 +6072,7 @@ def main():
 
           
             if (perform_MC_sim == True or perform_fanova == True):
-                
-                master_structure_info_dict["Global"]["MC info"]["Num MC containment simulations"] = num_MC_containment_simulations_input
-                master_structure_info_dict["Global"]["MC info"]["Num MC dose simulations"] = num_MC_dose_simulations_input
-                master_structure_info_dict["Global"]["MC info"]["Num MC MR simulations"] = num_MC_MR_simulations_input
-
-                # Determine and store max simulations
-                max_simulations = max(num_MC_dose_simulations_input,
-                                      num_MC_containment_simulations_input, 
-                                      num_MC_MR_simulations_input)
-                master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"] = max_simulations
+                max_simulations = master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"]
 
                 num_biopsies_global = master_structure_info_dict["Global"]["Num biopsies"]
                 #num_OARs_global = master_structure_info_dict["Global"]["Num OARs"]
@@ -5977,27 +6085,6 @@ def main():
                 # Output simulation information
                 simulation_info_important_line_str = f"Simulation data: # MC tissue class sims = {num_MC_containment_simulations_input} | # MC dose sims = {num_MC_dose_simulations_input} | # MC MR sims = {num_MC_MR_simulations_input} | Lattice spacing for BX cores (mm) = {bx_sample_pt_lattice_spacing} | # biopsies = {num_biopsies_global} | # anatomical structures = {num_global_structures-num_biopsies_global} | # cases = {num_cases} | # unique patients {num_unique_patients}."
                 important_info.add_text_line(simulation_info_important_line_str, live_display)
-
-                
-                ### Shift all structures and biopsies the same way for all simulations 
-                indeterminate_task_generating_transforms = indeterminate_progress_main.add_task("[red]Generating transforms", total=None)
-                indeterminate_task_generating_transforms_completed = completed_progress.add_task("[green]Generating transforms", visible = False, total = 1)
-                #indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Generating transforms", total = None)
-
-                #live_display.stop()
-                # Generate transformations
-                MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
-                                                simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
-                                                bx_ref,
-                                                biopsy_needle_compartment_length,
-                                                max_simulations,
-                                                num_MC_containment_simulations_input,
-                                                structs_referenced_list)
-                
-                #indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                indeterminate_progress_main.update(indeterminate_task_generating_transforms, visible = False, refresh = True)
-                completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
-                live_display.refresh()
                 
 
 
@@ -9960,15 +10047,22 @@ def structure_referencer(data_removals_dict_bx,
     mc_info = {"Num MC containment simulations": None, 
                "Num MC dose simulations": None,
                "Num MC MR simulations": None,
+               "Num optimizer v2 transform samples": None,
+               "Num stochastic targeting transform samples": None,
                "Num sample pts per BX core": None, 
                "BX sample pt lattice spacing (mm)": None,
                "BX sample pt volume element (mm^3)": None,
                "Max of num MC simulations": None,
+               "Max of generated transform samples": None,
                'MC sim performed': False,
                'MC containment sim performed': False,
                'MC dose sim performed': False,
                'MC MR sim performed': False,
                }
+
+    random_info = {"Transform generation random seed": None,
+                   "Optimizer v1 random seed": None,
+                   }
     
     fanova_info = {"Num fanova containment simulations": None, 
                    "Num fanova dose simulations": None,
@@ -9995,6 +10089,7 @@ def structure_referencer(data_removals_dict_bx,
                                                "Bx types list": bx_types_list, 
                                                "Preprocessing info": preprocessing_info,
                                                "MC info": mc_info, 
+                                               "Random info": random_info,
                                                "FANOVA info": fanova_info,
                                                'Patient specific output figures directory (pre-processing) dict': None,                        
                                                'Patient specific output figures directory (MC sim) dict': None,
