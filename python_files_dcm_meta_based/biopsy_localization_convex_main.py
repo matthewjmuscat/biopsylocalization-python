@@ -910,7 +910,7 @@ def main():
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
     export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
-    skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
+    skip_preprocessing = True # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
     write_sobol_dose_data_to_file = True
     write_sobol_containment_data_to_file = True
     write_preprocessing_data_to_file = True
@@ -5512,6 +5512,12 @@ def main():
 
             specific_output_dir = master_structure_info_dict["Global"]["Specific output dir"]
             raw_mc_output_dir = master_structure_info_dict["Global"]["Raw MC output dir"]
+
+            no_cohort_mr_adc_flag = True
+            for patientUID, pydicom_item in master_structure_reference_dict.items():
+                if mr_adc_ref in pydicom_item:
+                    no_cohort_mr_adc_flag = False
+                    break
         
 
             
