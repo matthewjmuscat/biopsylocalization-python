@@ -16,6 +16,9 @@ figures
 *.json
 *.gif
 
+# Local tactical planning and private development notes
+.private_notes/
+
 
 
 

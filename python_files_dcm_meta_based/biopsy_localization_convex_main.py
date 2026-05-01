@@ -5435,69 +5435,28 @@ def main():
 
                 #### REBUILD NON-PICKLABLE OBJECTS
 
-                # create non-pickleable objects concerning the background dose data
-                patientUID_default = "Initializing"
-                pickling_dose_patients_task_main_description = "[red]Rebuilding non-picklable dose data [{}]...".format(patientUID_default)
-                pickling_dose_patients_task_completed_main_description = "[green]Rebuilding non-picklable dose data"
-                pickling_dose_patients_task = patients_progress.add_task(pickling_dose_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                pickling_dose_patients_task_completed = completed_progress.add_task(pickling_dose_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pickling_dose_patients_task_main_description = "[red]Rebuilding non-picklable dose data [{}]...".format(patientUID)
-                    patients_progress.update(pickling_dose_patients_task, description = pickling_dose_patients_task_main_description)
-                    
-                    if dose_ref not in pydicom_item:
-                        patients_progress.update(pickling_dose_patients_task, advance=1)
-                        completed_progress.update(pickling_dose_patients_task_completed, advance=1)
-                        continue
-
-                    dose_ref_dict = pydicom_item[dose_ref]
-                    phys_space_dose_map_and_gradient_map_3d_arr = dose_ref_dict["Dose and gradient phys space and pixel 3d arr"]
-                    #phys_space_dose_map_3d_arr = phys_space_dose_map_and_gradient_map_3d_arr[:, :, :7]
-
-                    # create dose point cloud and thresholded dose point cloud
-                    #dose_point_cloud = plotting_funcs.create_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True)
-                    #thresholded_dose_point_cloud = plotting_funcs.create_thresholded_dose_point_cloud(phys_space_dose_map_3d_arr, color_flattening_deg, paint_dose_color = True, lower_bound_percent = lower_bound_dose_percent)
-                    
-                    dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=None,
-                                                                                                                        truncate_below_gradient_norm=None
-                                                                                                                    )
-                    thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=lower_bound_dose_value,
-                                                                                                                        truncate_below_gradient_norm=lower_bound_dose_gradient_value
-                                                                                                                    )
-
-                    dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
-                    dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
-                    live_display = rebuild_loaded_preprocessed_runtime_objects(
-                        master_structure_reference_dict,
-                        master_structure_info_dict,
-                        structs_referenced_list_generalized,
-                        structs_referenced_dict,
-                        bx_ref,
-                        dose_ref,
-                        mr_adc_ref,
-                        interp_inter_slice_dist,
-                        interp_intra_slice_dist,
-                        radius_for_normals_estimation,
-                        max_nn_for_normals_estimation,
-                        lower_bound_dose_value,
-                        lower_bound_dose_gradient_value,
-                        lower_bound_mr_adc_value,
-                        upper_bound_mr_adc_value,
-                        color_flattening_deg_MR,
-                        patients_progress,
-                        completed_progress,
-                        indeterminate_progress_sub,
-                        live_display,
-                    )
+                live_display = rebuild_loaded_preprocessed_runtime_objects(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    structs_referenced_list_generalized,
+                    structs_referenced_dict,
+                    bx_ref,
+                    dose_ref,
+                    mr_adc_ref,
+                    interp_inter_slice_dist,
+                    interp_intra_slice_dist,
+                    radius_for_normals_estimation,
+                    max_nn_for_normals_estimation,
+                    lower_bound_dose_value,
+                    lower_bound_dose_gradient_value,
+                    lower_bound_mr_adc_value,
+                    upper_bound_mr_adc_value,
+                    color_flattening_deg_MR,
+                    patients_progress,
+                    completed_progress,
+                    indeterminate_progress_sub,
+                    live_display,
+                )
             ###
             
 
@@ -6249,80 +6208,80 @@ def main():
                 # Run MC simulation
                 if perform_MC_sim == True:
                     
-                    """
-                    lp = LineProfiler()
-                    lp.add_function(MC_simulator_convex.simulator_parallel)
-                    lp_wrapper = lp(MC_simulator_convex.simulator_parallel)
+                    if False:
+                        lp = LineProfiler()
+                        lp.add_function(MC_simulator_convex.simulator_parallel)
+                        lp_wrapper = lp(MC_simulator_convex.simulator_parallel)
 
 
-                    result = lp_wrapper(parallel_pool, 
-                                        live_display,
-                                        stopwatch, 
-                                        layout_groups, 
-                                        master_structure_reference_dict, 
-                                        structs_referenced_list,
-                                        structs_referenced_dict,
-                                        bx_ref,
-                                        oar_ref,
-                                        dil_ref,
-                                        rectum_ref_key,
-                                        urethra_ref_key, 
-                                        dose_ref,
-                                        plan_ref,
-                                        all_ref_key, 
-                                        master_structure_info_dict, 
-                                        biopsy_z_voxel_length, 
-                                        num_dose_calc_NN, 
-                                        num_dose_NN_to_show_for_animation_plotting,
-                                        dose_views_jsons_paths_list,
-                                        containment_views_jsons_paths_list,
-                                        show_NN_dose_demonstration_plots,
-                                        show_NN_dose_demonstration_plots_all_trials_at_once,
-                                        show_num_containment_demonstration_plots,
-                                        containment_results_structure_types_to_show_per_trial,
-                                        show_num_nearest_neighbour_surface_boundary_demonstration,
-                                        show_num_relative_structure_centroid_demonstration,
-                                        biopsy_needle_compartment_length,
-                                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
-                                        plot_uniform_shifts_to_check_plotly,
-                                        differential_dvh_resolution,
-                                        cumulative_dvh_resolution,
-                                        v_percent_DVH_to_calc_list,
-                                        volume_DVH_quantiles_to_calculate,
-                                        plot_translation_vectors_pointclouds,
-                                        plot_cupy_containment_distribution_results,
-                                        plot_shifted_biopsies,
-                                        structure_miss_probability_roi,
-                                        cancer_tissue_label,
-                                        default_exterior_tissue,
-                                        miss_structure_complement_label,
-                                        tissue_length_above_probability_threshold_list,
-                                        n_bootstraps_for_tissue_length_above_threshold,
-                                        perform_mc_containment_sim,
-                                        perform_mc_dose_sim,
-                                        spinner_type,
-                                        cupy_array_upper_limit_NxN_size_input,
-                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                        idw_power,
-                                        raw_data_mc_dosimetry_dump_bool, 
-                                        raw_data_mc_containment_dump_bool,
-                                        keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
-                                        show_non_bx_relative_structure_z_dilation_bool,
-                                        show_non_bx_relative_structure_xy_dilation_bool,
-                                        generate_cuda_log_files_MC_containment_sim,
-                                        custom_cuda_kernel_type,
-                                        constant_z_slice_polygons_handler_option,
-                                        remove_consecutive_duplicate_points_in_polygons,
-                                        interp_dist_caps,
-                                        cuml_NN_algo,
-                                        check_if_end_caps_filled_proper_NN_num,
-                                        nn_search_end_cap_grid_factor)
+                        result = lp_wrapper(parallel_pool, 
+                                            live_display,
+                                            stopwatch, 
+                                            layout_groups, 
+                                            master_structure_reference_dict, 
+                                            structs_referenced_list,
+                                            structs_referenced_dict,
+                                            bx_ref,
+                                            oar_ref,
+                                            dil_ref,
+                                            rectum_ref_key,
+                                            urethra_ref_key, 
+                                            dose_ref,
+                                            plan_ref,
+                                            all_ref_key, 
+                                            master_structure_info_dict, 
+                                            biopsy_z_voxel_length, 
+                                            num_dose_calc_NN, 
+                                            num_dose_NN_to_show_for_animation_plotting,
+                                            dose_views_jsons_paths_list,
+                                            containment_views_jsons_paths_list,
+                                            show_NN_dose_demonstration_plots,
+                                            show_NN_dose_demonstration_plots_all_trials_at_once,
+                                            show_num_containment_demonstration_plots,
+                                            containment_results_structure_types_to_show_per_trial,
+                                            show_num_nearest_neighbour_surface_boundary_demonstration,
+                                            show_num_relative_structure_centroid_demonstration,
+                                            biopsy_needle_compartment_length,
+                                            simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
+                                            plot_uniform_shifts_to_check_plotly,
+                                            differential_dvh_resolution,
+                                            cumulative_dvh_resolution,
+                                            v_percent_DVH_to_calc_list,
+                                            volume_DVH_quantiles_to_calculate,
+                                            plot_translation_vectors_pointclouds,
+                                            plot_cupy_containment_distribution_results,
+                                            plot_shifted_biopsies,
+                                            structure_miss_probability_roi,
+                                            cancer_tissue_label,
+                                            default_exterior_tissue,
+                                            miss_structure_complement_label,
+                                            tissue_length_above_probability_threshold_list,
+                                            n_bootstraps_for_tissue_length_above_threshold,
+                                            perform_mc_containment_sim,
+                                            perform_mc_dose_sim,
+                                            spinner_type,
+                                            cupy_array_upper_limit_NxN_size_input,
+                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                            idw_power,
+                                            raw_data_mc_dosimetry_dump_bool, 
+                                            raw_data_mc_containment_dump_bool,
+                                            keep_light_containment_and_distances_to_relative_structures_dataframe_bool,
+                                            show_non_bx_relative_structure_z_dilation_bool,
+                                            show_non_bx_relative_structure_xy_dilation_bool,
+                                            generate_cuda_log_files_MC_containment_sim,
+                                            custom_cuda_kernel_type,
+                                            constant_z_slice_polygons_handler_option,
+                                            remove_consecutive_duplicate_points_in_polygons,
+                                            interp_dist_caps,
+                                            cuml_NN_algo,
+                                            check_if_end_caps_filled_proper_NN_num,
+                                            nn_search_end_cap_grid_factor)
 
-                    lp.print_stats()
+                        lp.print_stats()
 
-                    input("Press Enter to continue...")
+                        input("Press Enter to continue...")
 
-                    """
+                    
                     
 
                     master_structure_reference_dict, master_structure_info_dict, live_display = MC_simulator_convex.simulator_parallel(parallel_pool, 
@@ -6480,46 +6439,13 @@ def main():
 
                 if plot_immediately_after_simulation == False:
                     sys.exit('> Programme exited.')
-            
-            
 
             elif (perform_MC_sim == False and perform_fanova == False):
-
-                live_display.stop()
-                live_display.console.print("[bold red]User input required:")
-                results_file_ready = False
-                while results_file_ready == False:
-                    stopwatch.stop()
-                    results_file_ready = ques_funcs.ask_ok('> You indicated to skip fanova and MC sim. Would you like to select the results dataset?') 
-                    stopwatch.start()
-                    if results_file_ready == True:
-                        loaded_results_run = load_selected_pickle_bundle_run(
-                            reference_prompt='> Please indicate the location of master_structure_reference_dict_results.',
-                            reference_title='Open the master_structure_reference_dict_results file',
-                            info_prompt='> Please indicate the location of master_structure_info_dict_results.',
-                            info_title='Open the master_structure_info_dict file',
-                            initialdir=output_dir,
-                            output_dir=output_dir,
-                        )
-                        master_structure_reference_dict = loaded_results_run.master_structure_reference_dict
-                        master_structure_info_dict = loaded_results_run.master_structure_info_dict
-                        specific_output_dir = loaded_results_run.specific_output_dir
-                        raw_mc_output_dir = loaded_results_run.raw_mc_output_dir
-
-                        live_display.start()
-                        important_info.add_text_line("Loaded master_structure_reference_dict_results from: "+ loaded_results_run.reference_dict_path_str, live_display)
-                        important_info.add_text_line("Loaded master_structure_info_dict_results from: "+ loaded_results_run.info_dict_path_str, live_display)
-                    
-                    else:
-                        print('> If you dont, no results will be analysed. Please run the algorithm without skipping the MC simulation or fanova simulation, in order to produce a results dataset.')
-                        stopwatch.stop()
-                        ask_to_continue = ques_funcs.ask_ok('> Would you like to continue without results anyways?')
-                        stopwatch.start()
-                        if ask_to_continue == True:
-                            live_display.start()
-                            break
-                        else:
-                            pass
+                important_info.add_text_line(
+                    "Skipping MC and FANOVA simulation; continuing with current in-memory data only.",
+                    live_display,
+                )
+                live_display.refresh()
                                 
     
 

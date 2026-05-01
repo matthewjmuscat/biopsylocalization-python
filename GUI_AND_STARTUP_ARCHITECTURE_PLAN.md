@@ -43,8 +43,7 @@ python_files_dcm_meta_based/
 
 The first extracted orchestration seam is the shared pickle-bundle startup path used by:
 
-- the preprocessed-dataset load flow,
-- the results-bundle load flow.
+- the preprocessed-dataset load flow.
 
 That helper owns:
 
@@ -52,6 +51,8 @@ That helper owns:
 - loading the reference and info dictionaries,
 - bootstrapping per-run output directories,
 - returning the loaded session state to the caller.
+
+The old in-pipeline results-bundle reload path is being retired. This pipeline should compute, write tables/manifests, and stop. Any later result consumption should be handled by downstream tools or a future GUI surface, not by re-entering the main pipeline in a special results-load mode.
 
 ## Architectural Rules
 
