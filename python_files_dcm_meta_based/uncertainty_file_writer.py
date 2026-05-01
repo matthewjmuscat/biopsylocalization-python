@@ -7,6 +7,9 @@ import pandas
 import math_funcs
 import numpy as np
 
+from preprocessing.biopsy_processing.biopsy_uncertainty_summary import get_biopsy_maximum_projected_distance_value
+from preprocessing.biopsy_processing.biopsy_uncertainty_summary import get_biopsy_mean_centroid_variation_value
+
 def uncertainty_file_preper_global_sigma(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, global_sigma):
     global_header = ['Total num structs']
     headerUID = ['Patient UID']
@@ -247,13 +250,19 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                 ### Biopsy handling
                 if structure_type == structs_referenced_list[0]:
                     if biopsy_variation_uncertainty_setting == "Per biopsy max":
-                        maximum_projected_variation_sp_biopsy = specific_structure['Maximum projected distance between original centroids']
+                        maximum_projected_variation_sp_biopsy = get_biopsy_maximum_projected_distance_value(
+                            specific_structure,
+                            simulated_preference="planned",
+                        )
                         errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [maximum_projected_variation_sp_biopsy])
                         errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [maximum_projected_variation_sp_biopsy])
                         errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [maximum_projected_variation_sp_biopsy])
 
                     elif biopsy_variation_uncertainty_setting == "Per biopsy mean":
-                        mean_projected_variation_sp_biopsy = specific_structure['Mean centroid variation']
+                        mean_projected_variation_sp_biopsy = get_biopsy_mean_centroid_variation_value(
+                            specific_structure,
+                            simulated_preference="planned",
+                        )
                         errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [mean_projected_variation_sp_biopsy])
                         errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [mean_projected_variation_sp_biopsy])
                         errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [mean_projected_variation_sp_biopsy])

@@ -8,22 +8,86 @@ def _mean_or_none(values):
     return float(np.mean(np.array(values, dtype=float)))
 
 
+def _get_simulated_biopsy_metric_value(specific_bx_structure,
+                                       planned_key,
+                                       realized_key,
+                                       simulated_preference="realized"
+                                       ):
+    simulated_biopsy_planning_dict = specific_bx_structure.get("Simulated biopsy planning dict") or {}
+    planned_value = simulated_biopsy_planning_dict.get(planned_key)
+    realized_value = specific_bx_structure.get(realized_key)
+
+    if simulated_preference == "planned":
+        if planned_value is not None:
+            return float(planned_value)
+        if realized_value is not None:
+            return float(realized_value)
+        return None
+
+    if realized_value is not None:
+        return float(realized_value)
+    if planned_value is not None:
+        return float(planned_value)
+
+    return None
+
+
+def get_biopsy_mean_centroid_variation_value(specific_bx_structure,
+                                             simulated_preference="realized"
+                                             ):
+    if specific_bx_structure["Simulated bool"] is True:
+        return _get_simulated_biopsy_metric_value(
+            specific_bx_structure,
+            planned_key="Planned mean centroid variation",
+            realized_key="Mean centroid variation",
+            simulated_preference=simulated_preference,
+        )
+
+    mean_centroid_variation = specific_bx_structure.get("Mean centroid variation")
+    if mean_centroid_variation is None:
+        return None
+
+    return float(mean_centroid_variation)
+
+
+def get_biopsy_maximum_projected_distance_value(specific_bx_structure,
+                                                simulated_preference="realized"
+                                                ):
+    if specific_bx_structure["Simulated bool"] is True:
+        return _get_simulated_biopsy_metric_value(
+            specific_bx_structure,
+            planned_key="Planned maximum projected distance between original centroids",
+            realized_key="Maximum projected distance between original centroids",
+            simulated_preference=simulated_preference,
+        )
+
+    maximum_projected_distance = specific_bx_structure.get("Maximum projected distance between original centroids")
+    if maximum_projected_distance is None:
+        return None
+
+    return float(maximum_projected_distance)
+
+
 def calculate_biopsy_centroid_variation_summary(master_structure_reference_dict,
-                                                bx_ref
+                                                bx_ref,
+                                                simulated_preference="realized"
                                                 ):
     real_mean_variations = []
     simulated_mean_variations = []
 
     for _patient_uid, pydicom_item in master_structure_reference_dict.items():
         for specific_bx_structure in pydicom_item[bx_ref]:
-            mean_centroid_variation = specific_bx_structure.get("Mean centroid variation")
+            mean_centroid_variation = get_biopsy_mean_centroid_variation_value(
+                specific_bx_structure,
+                simulated_preference=simulated_preference,
+            )
             if mean_centroid_variation is None:
                 continue
 
             if specific_bx_structure["Simulated bool"] is True:
-                simulated_mean_variations.append(float(mean_centroid_variation))
+                simulated_mean_variations.append(mean_centroid_variation)
             else:
-                real_mean_variations.append(float(mean_centroid_variation))
+                real_mean_variations.append(mean_centroid_variation)
 
     all_mean_variations = real_mean_variations + simulated_mean_variations
 
@@ -73,7 +137,8 @@ def biopsy_centroid_variation_summary_processer(master_structure_reference_dict,
                                                 patients_progress,
                                                 completed_progress,
                                                 live_display,
-                                                legacy_mean_source="real"
+                                                legacy_mean_source="real",
+                                                simulated_preference="realized"
                                                 ):
     patient_uid_default = "Initializing"
     processing_patient_description = "Determining biopsy uncertainty [{}]...".format(patient_uid_default)
@@ -100,6 +165,7 @@ def biopsy_centroid_variation_summary_processer(master_structure_reference_dict,
     summary_dict = calculate_biopsy_centroid_variation_summary(
         master_structure_reference_dict,
         bx_ref,
+        simulated_preference=simulated_preference,
     )
     apply_biopsy_centroid_variation_summary(
         master_structure_info_dict,

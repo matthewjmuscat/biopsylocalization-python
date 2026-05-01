@@ -98,12 +98,15 @@ import mr_localizers
 import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
+from preprocessing.biopsy_processing.biopsy_uncertainty_summary import apply_biopsy_centroid_variation_summary
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import biopsy_centroid_variation_summary_processer
+from preprocessing.biopsy_processing.biopsy_uncertainty_summary import calculate_biopsy_centroid_variation_summary
 from preprocessing.biopsy_processing.realized_biopsy_targeting import realized_biopsy_targeting_processer
 from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_biopsy_planner_processer
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
+from preprocessing.uncertainty_attachment import prepare_and_attach_uncertainty_data
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.output_runtime_dirs import create_run_output_directories
@@ -4412,6 +4415,7 @@ def main():
                             master_structure_info_dict,
                             bx_ref,
                             bx_sample_pts_lattice_spacing,
+                            parallel_pool,
                             patients_progress,
                             structures_progress,
                             completed_progress,
@@ -4421,6 +4425,37 @@ def main():
                             num_centroids_for_sim_bxs,
                             simulated_bx_rad,
                             plot_simulated_cores_immediately,
+                            )
+
+                early_biopsy_centroid_variation_summary_dict = calculate_biopsy_centroid_variation_summary(
+                            master_structure_reference_dict,
+                            bx_ref,
+                            simulated_preference="planned",
+                            )
+                apply_biopsy_centroid_variation_summary(
+                            master_structure_info_dict,
+                            early_biopsy_centroid_variation_summary_dict,
+                            legacy_mean_source="real",
+                            )
+
+                uncertainties_file, uncertainties_file_filled, read_uncertainties_dataframe, live_display = prepare_and_attach_uncertainty_data(
+                            master_structure_reference_dict,
+                            master_structure_info_dict,
+                            master_cohort_patient_data_and_dataframes,
+                            structs_referenced_list,
+                            structs_referenced_dict,
+                            biopsy_variation_uncertainty_setting,
+                            non_biopsy_variation_uncertainty_setting,
+                            use_added_in_quad_errors_as,
+                            uncertainty_dir,
+                            uncertainty_file_name,
+                            uncertainty_file_extension,
+                            modify_generated_uncertainty_template,
+                            data_dir,
+                            ques_funcs,
+                            stopwatch,
+                            live_display,
+                            uncertainty_data,
                             )
 
 
@@ -4967,6 +5002,7 @@ def main():
                     completed_progress,
                     live_display,
                     legacy_mean_source="real",
+                    simulated_preference="realized",
                 )
 
                 if False:
@@ -5872,122 +5908,7 @@ def main():
             #stopwatch.start()
 
 
-            # generate uncertainty file
-            date_time_now = datetime.now()
-            date_time_now_file_name_format = date_time_now.strftime(" Date-%b-%d-%Y Time-%H,%M,%S")
-            uncertainties_file = uncertainty_dir.joinpath(uncertainty_file_name+date_time_now_file_name_format+uncertainty_file_extension)
-            
-            #num_general_structs = master_structure_info_dict["Global"]["Num structures"]
-
-            """
-            uncertainty_file_writer.uncertainty_file_preper_sigma_by_struct_type(uncertainties_file, 
-                                                                                master_structure_reference_dict, 
-                                                                                structs_referenced_list, 
-                                                                                num_general_structs, 
-                                                                                structs_referenced_dict,
-                                                                                biopsy_variation_uncertainty_setting,
-                                                                                master_structure_info_dict
-                                                                                )
-            """
-            uncertainties_dataframe = uncertainty_file_writer.uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_reference_dict, 
-                                                 structs_referenced_list, 
-                                                 structs_referenced_dict,
-                                                 biopsy_variation_uncertainty_setting,
-                                                 non_biopsy_variation_uncertainty_setting,
-                                                 use_added_in_quad_errors_as,
-                                                 master_structure_info_dict
-                                                 )
-
-            uncertainties_dataframe.to_csv(uncertainties_file)
-            master_cohort_patient_data_and_dataframes["Dataframes"]["Uncertainties dataframe (unedited)"] = uncertainties_dataframe
-            
-            """
-            f = open(uncertainties_file, "w", newline='\n')
-            writer = csv.writer(f)
-            """       
-
-            if modify_generated_uncertainty_template == True:
-                live_display.stop()
-                live_display.console.print("[bold red]User input required:")
-                uncertainty_file_ready = False
-                while uncertainty_file_ready == False:
-                    stopwatch.stop()
-                    uncertainty_file_ready = ques_funcs.ask_ok('>You indicated in launch params that you would like to modify the uncertainty file. Is the uncertainty file prepared/filled out?') 
-                    stopwatch.start()
-                    if uncertainty_file_ready == True:
-                        print('>Please select the file with the dialog box')
-                        root = tk.Tk() # these two lines are to get rid of errant tkinter window
-                        root.withdraw() # these two lines are to get rid of errant tkinter window
-                        # this is a user defined quantity, should be a tab delimited csv file in the future, mu sigma for each uncertainty direction
-                        uncertainties_file_filled = fd.askopenfilename(title='Open the uncertainties data file', initialdir=data_dir, filetypes=[("Excel files", ".xlsx .xls .csv")])
-                        with open(uncertainties_file_filled, "r", newline='\n') as uncertainties_file_filled_csv:
-                            uncertainties_filled = uncertainties_file_filled_csv
-                        read_uncertainties_dataframe = pandas.read_csv(uncertainties_file_filled)  
-                        print(read_uncertainties_dataframe)
-                        
-                    else:
-                        print('>Please fill out the generated uncertainties file generated at ', uncertainties_file)
-                        stopwatch.stop()
-                        ask_to_quit = ques_funcs.ask_ok('>Would you like to quit the programme instead?')
-                        stopwatch.start()
-                        if ask_to_quit == True:
-                            sys.exit(">You have quit the programme.")
-                        else:
-                            pass
-            else:
-                # this is run if the uncertainty file is not to be modified by the user before running the simulation
-                uncertainties_file_filled = uncertainties_file
-                read_uncertainties_dataframe = pandas.read_csv(uncertainties_file_filled)  
-
-
-            ### Save the potentially edited uncertainties file
-            master_cohort_patient_data_and_dataframes["Dataframes"]["Uncertainties dataframe (final)"] = read_uncertainties_dataframe     
-
-            # Transfer read uncertainty data to master_reference
-            for index, row in read_uncertainties_dataframe.iterrows():
-                patientUID = row["Patient UID"]
-                structure_type = row["Structure type"]
-                structure_ROI = row["Structure ID"]
-                structure_ref_num = row["Structure dicom ref num"]
-                master_ref_dict_specific_structure_index = row["Structure index"]
-                frame_of_reference = row["Frame of reference"]
-                # Translations
-                means_arr = np.array([row["mu (X)"],
-                                      row["mu (Y)"],
-                                      row["mu (Z)"]], dtype=float)
-                sigmas_arr = np.array([row["sigma (X)"],
-                                       row["sigma (Y)"],
-                                       row["sigma (Z)"]], dtype=float)
-                # Dilations
-                means_arr_dilations = np.array([row["Dilations mu (XY)"],
-                                                row["Dilations mu (Z)"]], dtype=float)
-                sigmas_arr_dilations = np.array([row["Dilations sigma (XY)"],
-                                                 row["Dilations sigma (Z)"]], dtype=float)
-                # Rotations
-                means_arr_rotations = np.array([row["Rotations mu (X)"],
-                                                row["Rotations mu (Y)"],
-                                                row["Rotations mu (Z)"]], dtype=float)
-                sigmas_arr_rotations = np.array([row["Rotations sigma (X)"],
-                                                 row["Rotations sigma (Y)"],
-                                                 row["Rotations sigma (Z)"]], dtype=float)
-
-
-                uncertainty_data_obj = uncertainty_data(patientUID, 
-                                                        structure_type, 
-                                                        structure_ROI, 
-                                                        structure_ref_num, 
-                                                        master_ref_dict_specific_structure_index, 
-                                                        frame_of_reference
-                                                        )
-                
-                uncertainty_data_obj.fill_means_and_sigmas(means_arr, sigmas_arr, means_arr_dilations, sigmas_arr_dilations, means_arr_rotations, sigmas_arr_rotations)
-                
-                master_structure_reference_dict[patientUID][structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
-
-
-
-
-            live_display.start()
+            # Uncertainty data are prepared and attached earlier after simulated-biopsy planning.
 
             rich_preambles.section_completed("Preparing for simulations", section_start_time, completed_progress, completed_sections_manager)
 
