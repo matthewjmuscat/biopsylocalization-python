@@ -99,6 +99,7 @@ import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import apply_biopsy_centroid_variation_summary
+from preprocessing.biopsy_processing.biopsy_centroid_variation_validation import validate_simulated_biopsy_planned_vs_realized_centroid_variation
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import biopsy_centroid_variation_summary_processer
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import calculate_biopsy_centroid_variation_summary
 from preprocessing.biopsy_processing.realized_biopsy_targeting import realized_biopsy_targeting_processer
@@ -5004,6 +5005,42 @@ def main():
                     legacy_mean_source="real",
                     simulated_preference="realized",
                 )
+
+                simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
+                    master_structure_reference_dict,
+                    bx_ref,
+                )
+                master_cohort_patient_data_and_dataframes["Dataframes"][
+                    "Cohort: Simulated biopsy planned vs realized centroid variation validation"
+                ] = simulated_biopsy_centroid_variation_validation_dataframe
+
+                num_simulated_biopsies_validated = simulated_biopsy_centroid_variation_validation_summary_dict["Num simulated biopsies"]
+                num_missing_validation_values = (
+                    simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned mean centroid variation"]
+                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized mean centroid variation"]
+                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned maximum projected distance"]
+                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized maximum projected distance"]
+                )
+
+                if num_simulated_biopsies_validated > 0:
+                    important_info.add_text_line(
+                        "Simulated biopsy centroid-variation validation: compared {} simulated biopsies | mean abs delta (mean variation) = {} | max abs delta (mean variation) = {} | mean abs delta (max projected distance) = {} | max abs delta (max projected distance) = {}.".format(
+                            num_simulated_biopsies_validated,
+                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean mean-centroid-variation absolute delta"],
+                            simulated_biopsy_centroid_variation_validation_summary_dict["Max mean-centroid-variation absolute delta"],
+                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean max-projected-distance absolute delta"],
+                            simulated_biopsy_centroid_variation_validation_summary_dict["Max max-projected-distance absolute delta"],
+                        ),
+                        live_display,
+                    )
+
+                if num_missing_validation_values > 0:
+                    important_info.add_text_line(
+                        "Notice! Simulated biopsy centroid-variation validation found missing planned or realized comparison values for {} fields across simulated biopsies.".format(
+                            num_missing_validation_values,
+                        ),
+                        live_display,
+                    )
 
                 if False:
                     ############################ SIMULATED BIOPSY ONLY
