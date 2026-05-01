@@ -140,6 +140,7 @@ def get_planned_simulated_biopsy_sampled_points_arr(specific_structure):
 def simulated_biopsy_planner_processer(master_structure_reference_dict,
                                        master_structure_info_dict,
                                        bx_ref,
+                                       bx_sample_pts_lattice_spacing,
                                        patients_progress,
                                        structures_progress,
                                        completed_progress,
@@ -182,6 +183,14 @@ def simulated_biopsy_planner_processer(master_structure_reference_dict,
                 num_centroids_for_sim_bxs,
                 simulated_bx_rad,
                 plot_simulated_cores_immediately,
+            )
+
+            build_simulated_biopsy_planning_sample_state(
+                specific_structure,
+                bx_sample_pts_lattice_spacing,
+                patientUID=patientUID,
+                structure_type=bx_ref,
+                specific_structure_index=specific_structure["Index number"],
             )
 
             structures_progress.update(processing_structures_task, advance=1)

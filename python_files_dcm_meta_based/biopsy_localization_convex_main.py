@@ -4411,6 +4411,7 @@ def main():
                 live_display = simulated_biopsy_planner_processer(master_structure_reference_dict,
                             master_structure_info_dict,
                             bx_ref,
+                            bx_sample_pts_lattice_spacing,
                             patients_progress,
                             structures_progress,
                             completed_progress,
