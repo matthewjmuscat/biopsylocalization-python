@@ -664,12 +664,12 @@ def main():
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
                                         "Biopsy positions relative to target DILs density plots": \
-                                            {"Plot bool": True, # No code behind this method yet
+                                            {"Plot bool": False, # No code behind this method yet
                                              "Plot name": " - biopsy_positions_relative_to_target_DILs_density_plots",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              }, 
                                         "Guidance maps":\
-                                            {"Plot bool": True, 
+                                            {"Plot bool": False, ### guidance maps toggle (this pathway is live development) 
                                              "Plot name": "guidance maps",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },
@@ -909,7 +909,7 @@ def main():
     modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
-    export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
+    export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
     skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
     write_sobol_dose_data_to_file = True
     write_sobol_containment_data_to_file = True

@@ -19,6 +19,7 @@ Conventions:
 - [x] first-pass dtype policy module added and wired for optimizer-v1 plus transporter recovery
 - [x] output runtime directory lifecycle extracted into a dedicated helper and initialized early for fresh, preprocessed-load, and results-load paths
 - [x] focused syntax validation passed for the latest dtype-policy and output-runtime-directory changes
+- [x] current Apr 30 validation run output directory identified: `MC_sim_out- Date-Apr-30-2026 Time-15,28,21 - 3 patient validation run`
 - [ ] current fresh validation rerun finishes with no exceptions
 - [ ] current rerun outputs are compared against the Mar 3 reference run for drift
 
@@ -32,8 +33,9 @@ Conventions:
 ## Current Rerun Checklist
 
 - [ ] confirm the current rerun completes without exceptions or missing-field failures
-- [ ] record the output folder for the current rerun so it can be compared cleanly later
-- [ ] note the matching patient cases that should be compared against the Mar 3 reference run
+- [x] record the output folder for the current rerun so it can be compared cleanly later
+- [x] note the matching patient cases that should be compared against the Mar 3 reference run: `181 (F1)`, `181 (F2)`, `184 (F1)`
+- [x] confirm the Apr 30 run and Apr 29 successful 3-patient run produced the same 101 CSV relative paths
 
 ### Representative Structural Comparisons
 
@@ -148,7 +150,37 @@ These are future instrumentation tasks, not claims for the current rerun.
 
 ## Notes To Add During Validation
 
-- [ ] current rerun notes added
+- [x] current rerun notes added
 - [ ] Mar 3 comparison notes added
 - [ ] pickle round-trip notes added
 - [ ] v2 validation notes added
+
+## Validation Notes
+
+### 2026-04-30: Apr 30 Three-Patient Validation Run
+
+- Run inspected: `MC_sim_out- Date-Apr-30-2026 Time-15,28,21 - 3 patient validation run`
+- User stopped this run during guidance-map production because it was taking too long.
+- Even though the run was stopped, the output surfaces already present include `Output CSVs`, `Output figures`, `Raw MC output`, and a pickled-data subdirectory.
+- The Apr 30 run and the Apr 29 successful 3-patient run have the same 101 CSV relative paths.
+- Only 21 of those 101 common CSVs are hash-identical between Apr 30 and Apr 29.
+- Section-level hash comparison versus Apr 29:
+	- `Preprocessing`: 27 total, 6 identical, 21 changed
+	- `MC simulation`: 51 total, 11 identical, 40 changed
+	- `Cohort`: 23 total, 4 identical, 19 changed
+- Exact preprocessing matches confirmed across Apr 30 versus Apr 29 for all three current cases:
+	- `Selected structures.csv`
+	- `Simulated biopsy preparation dataframe.csv`
+- Mar 3 reference run contains overlapping patient/fraction CSV subtrees for `181 (F1)`, `181 (F2)`, and `184 (F1)` in `Preprocessing`, `MC simulation`, and `FANOVA simulation`.
+- First targeted content check on `Cohort: Nearest DILs to each biopsy.csv`:
+	- Apr 30 versus Apr 29 has the same 78 subset rows for the three current cases and the same merge keys.
+	- Despite that, 24 matched rows show changes in centroid/surface-distance-related fields.
+	- Largest observed absolute diffs in that first pass were about:
+		- `BX to DIL centroid (X)`: `1.00000002`
+		- `BX to DIL centroid (Y)`: `1.240738`
+		- `BX to DIL centroid (Z)`: `3.0`
+		- `BX to DIL centroid distance`: `1.8492993`
+		- `NN surface-surface distance`: `1.5459466`
+- Initial interpretation:
+	- some deterministic preprocessing surfaces remain stable,
+	- but target-related and optimizer-related preprocessing outputs are still drifting and need deeper inspection before signoff.
