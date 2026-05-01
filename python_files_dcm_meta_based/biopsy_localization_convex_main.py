@@ -106,12 +106,12 @@ from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulat
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
 from preprocessing.pickled_dataset_tools import export_results_pickle_bundle
-from preprocessing.pickled_dataset_tools import load_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
+from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 
 
 def main():
@@ -5402,44 +5402,35 @@ def main():
             elif skip_preprocessing == True:
                 live_display.stop()
                 live_display.console.print("[bold red]User input required:")
-                preprocessed_file_ready = False
-                while preprocessed_file_ready == False:
+                
+                preprocessed_file_ready = ques_funcs.provide_choices_question('> You indicated to skip data preprocessing. Load data or quit?', ['yes','quit']) 
+                stopwatch.start()
+                if preprocessed_file_ready == 'yes':
+                    loaded_preprocessed_run = load_selected_pickle_bundle_run(
+                        reference_prompt='> Please indicate the location of master_structure_reference_dict.',
+                        reference_title='Open the master_structure_reference_dict file',
+                        info_prompt='> Please indicate the location of master_structure_info_dict.',
+                        info_title='Open the master_structure_info_dict file',
+                        initialdir=preprocessed_data_dir,
+                        output_dir=output_dir,
+                    )
+                    master_structure_reference_dict = loaded_preprocessed_run.master_structure_reference_dict
+                    master_structure_info_dict = loaded_preprocessed_run.master_structure_info_dict
+                    specific_output_dir = loaded_preprocessed_run.specific_output_dir
+                    raw_mc_output_dir = loaded_preprocessed_run.raw_mc_output_dir
+                elif preprocessed_file_ready == 'quit':
+                    print('> To save a preprocessed dataset to disk, run with preprocessing and pickle data options on.')
                     stopwatch.stop()
-                    preprocessed_file_ready = ques_funcs.ask_ok('> You indicated to skip data preprocessing. Would you like to select the preprocessed dataset?') 
+                    input("[bold red]Press enter to continue:")
                     stopwatch.start()
-                    if preprocessed_file_ready == True:
-                        print('> Please indicate the location of master_structure_reference_dict.')
-                        root = tk.Tk() # these two lines are to get rid of errant tkinter window
-                        root.withdraw() # these two lines are to get rid of errant tkinter window
-                        # this is a user defined quantity
-                        preprocessed_master_structure_reference_dict_path_str = fd.askopenfilename(title='Open the master_structure_reference_dict file', initialdir=preprocessed_data_dir)
-                        
-                        print('> Please indicate the location of master_structure_info_dict.')
-                        preprocessed_master_structure_reference_dict_path = pathlib.Path(preprocessed_master_structure_reference_dict_path_str)
-                        preprocessed_master_structure_reference_dict_path_parent = preprocessed_master_structure_reference_dict_path.parents[0]
-                        preprocessed_master_structure_info_dict_path_str = fd.askopenfilename(title='Open the master_structure_info_dict file', initialdir=preprocessed_master_structure_reference_dict_path_parent)
-                        master_structure_reference_dict, master_structure_info_dict = load_pickle_bundle(
-                            preprocessed_master_structure_reference_dict_path_str,
-                            preprocessed_master_structure_info_dict_path_str,
-                        )
-                        specific_output_dir, raw_mc_output_dir = create_run_output_directories(
-                            master_structure_info_dict,
-                            output_dir,
-                        )
-                    else:
-                        print('> Please run the algorithm without skipping preprocessing, in order to process a dataset. You may store the preprocessed dataset to use this feature.')
-                        stopwatch.stop()
-                        ask_to_quit = ques_funcs.ask_ok('> Would you like to quit the programme?')
-                        stopwatch.start()
-                        if ask_to_quit == True:
-                            sys.exit("> You have quit the programme.")
-                        else:
-                            preprocessed_file_ready = True
+                    
+                    sys.exit("> You have quit the programme.")
+                else:
+                    sys.exit("> You have quit the programme.")
                                 
                 live_display.start()
-                important_info.add_text_line("Loaded master_structure_reference_dict from: "+ preprocessed_master_structure_reference_dict_path_str, live_display)
-                important_info.add_text_line("Loaded master_structure_info_dict from: "+ preprocessed_master_structure_info_dict_path_str, live_display)
-
+                important_info.add_text_line("Loaded master_structure_reference_dict from: "+ loaded_preprocessed_run.reference_dict_path_str, live_display)
+                important_info.add_text_line("Loaded master_structure_info_dict from: "+ loaded_preprocessed_run.info_dict_path_str, live_display)
 
 
                 #### REBUILD NON-PICKLABLE OBJECTS
@@ -6502,28 +6493,22 @@ def main():
                     results_file_ready = ques_funcs.ask_ok('> You indicated to skip fanova and MC sim. Would you like to select the results dataset?') 
                     stopwatch.start()
                     if results_file_ready == True:
-                        print('> Please indicate the location of master_structure_reference_dict_results.')
-                        root = tk.Tk() # these two lines are to get rid of errant tkinter window
-                        root.withdraw() # these two lines are to get rid of errant tkinter window
-                        # this is a user defined quantity
-                        results_master_structure_reference_dict_path_str = fd.askopenfilename(title='Open the master_structure_reference_dict_results file', initialdir=output_dir)
-                        
-                        print('> Please indicate the location of master_structure_info_dict_results.')
-                        results_master_structure_reference_dict_path = pathlib.Path(results_master_structure_reference_dict_path_str)
-                        results_master_structure_reference_dict_path_parent = results_master_structure_reference_dict_path.parents[0]
-                        results_master_structure_info_dict_path_str = fd.askopenfilename(title='Open the master_structure_info_dict file', initialdir=results_master_structure_reference_dict_path_parent)
-                        master_structure_reference_dict, master_structure_info_dict = load_pickle_bundle(
-                            results_master_structure_reference_dict_path_str,
-                            results_master_structure_info_dict_path_str,
+                        loaded_results_run = load_selected_pickle_bundle_run(
+                            reference_prompt='> Please indicate the location of master_structure_reference_dict_results.',
+                            reference_title='Open the master_structure_reference_dict_results file',
+                            info_prompt='> Please indicate the location of master_structure_info_dict_results.',
+                            info_title='Open the master_structure_info_dict file',
+                            initialdir=output_dir,
+                            output_dir=output_dir,
                         )
-                        specific_output_dir, raw_mc_output_dir = create_run_output_directories(
-                            master_structure_info_dict,
-                            output_dir,
-                        )
+                        master_structure_reference_dict = loaded_results_run.master_structure_reference_dict
+                        master_structure_info_dict = loaded_results_run.master_structure_info_dict
+                        specific_output_dir = loaded_results_run.specific_output_dir
+                        raw_mc_output_dir = loaded_results_run.raw_mc_output_dir
 
                         live_display.start()
-                        important_info.add_text_line("Loaded master_structure_reference_dict_results from: "+ results_master_structure_reference_dict_path_str, live_display)
-                        important_info.add_text_line("Loaded master_structure_info_dict_results from: "+ results_master_structure_info_dict_path_str, live_display)
+                        important_info.add_text_line("Loaded master_structure_reference_dict_results from: "+ loaded_results_run.reference_dict_path_str, live_display)
+                        important_info.add_text_line("Loaded master_structure_info_dict_results from: "+ loaded_results_run.info_dict_path_str, live_display)
                     
                     else:
                         print('> If you dont, no results will be analysed. Please run the algorithm without skipping the MC simulation or fanova simulation, in order to produce a results dataset.')
@@ -7317,7 +7302,6 @@ def main():
                                     dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
                                     dataframe.to_parquet(dataframe_file_path, compression='snappy')
                                 else:
-                                    
                                     dataframe_file_name = f"{patientUID}-{bx_type}-{bx_name}-{bx_index_number}-{dataframe_name}.csv"
                                     dataframe_file_path = bx_sp_csv_dir.joinpath(dataframe_file_name)
                                     dataframe.to_csv(dataframe_file_path)

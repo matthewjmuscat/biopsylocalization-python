@@ -18,6 +18,7 @@ Conventions:
 
 - [x] first-pass dtype policy module added and wired for optimizer-v1 plus transporter recovery
 - [x] output runtime directory lifecycle extracted into a dedicated helper and initialized early for fresh, preprocessed-load, and results-load paths
+- [x] shared pickle-bundle startup bootstrap extracted into explicit `startup/` and `ui/` seams for future GUI-facing orchestration
 - [x] focused syntax validation passed for the latest dtype-policy and output-runtime-directory changes
 - [x] current Apr 30 validation run output directory identified: `MC_sim_out- Date-Apr-30-2026 Time-15,28,21 - 3 patient validation run`
 - [x] current pickle-enabled validation run identified for the next round-trip check: `MC_sim_out- Date-Apr-30-2026 Time-18,22,05`
@@ -109,6 +110,7 @@ These are future instrumentation tasks, not claims for the current rerun.
 - [x] simulated biopsy planning is still called through the modular seam in main
 - [x] preprocessed export is routed through the pickle tools module
 - [x] preprocessed load-rebuild is routed through the pickle tools module
+- [x] preprocessed-load and results-load bundle selection/bootstrap are routed through startup/ui helpers instead of duplicated inline Tk setup blocks
 - [x] processed-dataset render/debug is routed through the modular render/debug surface
 - [ ] confirm those seams remain scientifically behavior-neutral on the current validation dataset
 
@@ -121,6 +123,7 @@ These are future instrumentation tasks, not claims for the current rerun.
 - [ ] add transport-selection diagnostics and rank-retention metadata for optimal transports
 - [ ] continue the dataframe utility modularization via dedicated dataframe-focused subfolder and compatibility shim strategy
 - [ ] continue the dtype-policy rollout beyond optimizer-v1 and transporter
+- [ ] continue startup/workflow extraction so future GUI entrypoints call orchestration helpers instead of direct main-branch logic
 
 ## V2 Optimizer Checklist
 
