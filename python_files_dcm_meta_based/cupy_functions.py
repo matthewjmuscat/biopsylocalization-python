@@ -1,6 +1,8 @@
 import cupy as cp
 import plotting_funcs
 
+from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_biopsy_length_for_mc_preparation_mm
+
 
 def MC_simulator_all_structs_dilations_generator_cupy(pydicom_item, structs_referenced_list, max_simulations, num_MC_containment_simulations_input, bx_ref):
     
@@ -59,7 +61,7 @@ def MC_simulator_shift_biopsy_structures_uniform_generator_cupy(patient_dict, bx
     # build args list for parallel computing
     sp_bx_structure_uniform_dist_shift_samples_and_structure_reference_list = []
     for specific_bx_structure_index, specific_bx_structure in enumerate(patient_dict[bx_ref]):
-        bx_core_length = specific_bx_structure['Reconstructed biopsy cylinder length (from contour data)']
+        bx_core_length = get_biopsy_length_for_mc_preparation_mm(specific_bx_structure)
         core_length_compartment_length_difference = biopsy_needle_compartment_length - bx_core_length
         if core_length_compartment_length_difference <= 0:
             core_length_compartment_length_difference = 0.

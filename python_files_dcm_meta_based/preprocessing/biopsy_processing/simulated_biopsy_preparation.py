@@ -125,6 +125,31 @@ def get_prepared_simulated_biopsy_length_mm(specific_structure):
 	return float(nominal_length_mm)
 
 
+def get_biopsy_length_for_mc_preparation_mm(specific_structure):
+	if specific_structure.get("Simulated bool") == True:
+		simulated_biopsy_planning_dict = specific_structure.get("Simulated biopsy planning dict")
+		if simulated_biopsy_planning_dict is not None:
+			planned_biopsy_length_mm = simulated_biopsy_planning_dict.get("Planned biopsy cylinder length mm")
+			if planned_biopsy_length_mm is not None:
+				return float(planned_biopsy_length_mm)
+
+			nominal_length_mm = simulated_biopsy_planning_dict.get("Nominal length mm")
+			if nominal_length_mm is not None:
+				return float(nominal_length_mm)
+
+		return get_prepared_simulated_biopsy_length_mm(specific_structure)
+
+	bx_core_length = specific_structure.get("Reconstructed biopsy cylinder length (from contour data)")
+	if bx_core_length is None:
+		raise ValueError(
+			"Biopsy MC preparation length is missing for {}".format(
+				specific_structure.get("ROI")
+			)
+		)
+
+	return float(bx_core_length)
+
+
 def _set_target_information(specific_structure,
 							target_determined,
 							target_source,

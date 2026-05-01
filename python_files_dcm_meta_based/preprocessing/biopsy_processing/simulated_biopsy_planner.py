@@ -13,8 +13,13 @@ def _create_default_simulated_biopsy_planning_dict():
         "Planned biopsy radius mm": None,
         "Planned centroid count": None,
         "Planned centroid separation mm": None,
+        "Planned biopsy cylinder length mm": None,
         "Planned raw contour pts zslice list": None,
         "Planned reconstructed biopsy model dict": None,
+        "Planned structure global centroid": None,
+        "Planned centroid variation arr": None,
+        "Planned mean centroid variation": None,
+        "Planned maximum projected distance between original centroids": None,
         "Planned sample lattice spacing mm": None,
         "Planned sampled volume pts arr": None,
         "Planned sample bounding box pts arr": None,
@@ -61,10 +66,25 @@ def build_simulated_biopsy_planning_state(specific_structure,
     simulated_biopsy_planning_dict["Planned biopsy radius mm"] = float(simulated_bx_rad)
     simulated_biopsy_planning_dict["Planned centroid count"] = int(num_centroids_for_sim_bxs)
     simulated_biopsy_planning_dict["Planned centroid separation mm"] = float(planned_centroid_separation_mm)
+    simulated_biopsy_planning_dict["Planned biopsy cylinder length mm"] = float(
+        planned_reconstructed_biopsy_model_dict["Reconstructed biopsy cylinder length (from contour data)"]
+    )
     simulated_biopsy_planning_dict["Planned raw contour pts zslice list"] = [
         bx_zslice_arr.copy() for bx_zslice_arr in planned_raw_contour_pts_zslice_list
     ]
     simulated_biopsy_planning_dict["Planned reconstructed biopsy model dict"] = planned_reconstructed_biopsy_model_dict
+    simulated_biopsy_planning_dict["Planned structure global centroid"] = planned_reconstructed_biopsy_model_dict[
+        "Structure global centroid"
+    ]
+    simulated_biopsy_planning_dict["Planned centroid variation arr"] = planned_reconstructed_biopsy_model_dict[
+        "Centroid variation arr"
+    ]
+    simulated_biopsy_planning_dict["Planned mean centroid variation"] = float(
+        planned_reconstructed_biopsy_model_dict["Mean centroid variation"]
+    )
+    simulated_biopsy_planning_dict["Planned maximum projected distance between original centroids"] = float(
+        planned_reconstructed_biopsy_model_dict["Maximum projected distance between original centroids"]
+    )
     simulated_biopsy_planning_dict["Planning source"] = "Prepared simulated biopsy nominal length"
 
     return simulated_biopsy_planning_dict
