@@ -110,6 +110,10 @@ from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_b
 from preprocessing.biopsy_processing.simulated_biopsy_processor import simulated_biopsy_processer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import simulated_biopsy_preparer
 from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
+from preprocessing.transform_bank import MAX_GENERATED_TRANSFORM_SAMPLES_KEY
+from preprocessing.transform_bank import OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY
+from preprocessing.transform_bank import STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY
+from preprocessing.transform_bank import resolve_required_generated_transform_samples
 from preprocessing.uncertainty_attachment import prepare_and_attach_uncertainty_data
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
@@ -129,8 +133,8 @@ def configure_transform_precompute_settings(master_structure_info_dict,
                                             optimizer_v2_search_config,
                                             num_stochastic_targeting_transform_samples_input):
     mc_info = master_structure_info_dict["Global"].setdefault("MC info", {})
-    mc_info["Num optimizer v2 transform samples"] = resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config)
-    mc_info["Num stochastic targeting transform samples"] = num_stochastic_targeting_transform_samples_input
+    mc_info[OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY] = resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config)
+    mc_info[STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY] = num_stochastic_targeting_transform_samples_input
 
 
 def configure_runtime_random_seed_settings(master_structure_info_dict,
@@ -175,12 +179,13 @@ def configure_transform_generation_counts(master_structure_info_dict,
                                  num_mc_mr_simulations_input)
     mc_info["Max of num MC simulations"] = max_num_mc_simulations
 
-    num_optimizer_v2_transform_samples = mc_info.get("Num optimizer v2 transform samples") or 0
-    num_stochastic_targeting_transform_samples = mc_info.get("Num stochastic targeting transform samples") or 0
-    max_generated_transform_samples = max(max_num_mc_simulations,
-                                          num_optimizer_v2_transform_samples,
-                                          num_stochastic_targeting_transform_samples)
-    mc_info["Max of generated transform samples"] = max_generated_transform_samples
+    _, max_generated_transform_samples = resolve_required_generated_transform_samples(
+        mc_info,
+        num_mc_containment_simulations_input,
+        num_mc_dose_simulations_input,
+        num_mc_mr_simulations_input,
+    )
+    mc_info[MAX_GENERATED_TRANSFORM_SAMPLES_KEY] = max_generated_transform_samples
 
     return max_num_mc_simulations, max_generated_transform_samples
 
