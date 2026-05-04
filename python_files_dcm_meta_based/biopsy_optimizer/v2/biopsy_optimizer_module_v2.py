@@ -191,6 +191,30 @@ def build_default_optimizer_v2_search_config() -> OptimizerV2SearchConfig:
 	return OptimizerV2SearchConfig()
 
 
+def build_optimizer_v2_search_config_with_trial_counts(
+	stage_trial_counts: Sequence[int],
+	lattice_spacing_mm: float = 1.0,
+	template_stage_configs: Sequence[OptimizerV2StageConfig] = DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS,
+) -> OptimizerV2SearchConfig:
+	if len(stage_trial_counts) != len(template_stage_configs):
+		raise ValueError("stage_trial_counts must match the number of template stage configs")
+
+	stage_configs = tuple(
+		OptimizerV2StageConfig(
+			template_stage_config.stage_name,
+			int(stage_trial_count),
+			survivor_fraction=template_stage_config.survivor_fraction,
+			survivor_limit=template_stage_config.survivor_limit,
+		)
+		for template_stage_config, stage_trial_count in zip(template_stage_configs, stage_trial_counts)
+	)
+
+	return OptimizerV2SearchConfig(
+		lattice_spacing_mm=lattice_spacing_mm,
+		stage_configs=stage_configs,
+	)
+
+
 def build_default_optimizer_v2_visualization_config() -> OptimizerV2VisualizationConfig:
 	return OptimizerV2VisualizationConfig()
 

@@ -115,7 +115,7 @@ from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
-from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_default_optimizer_v2_search_config
+from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_search_config_with_trial_counts
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 
 
@@ -513,10 +513,11 @@ def main():
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
     cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
     nn_search_end_cap_grid_factor = 0.1
-    optimizer_v2_search_config = build_default_optimizer_v2_search_config()
+    optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
+    optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(optimizer_v2_stage_trial_counts)
     num_stochastic_targeting_transform_samples_input = 0
-    transform_generation_random_seed = None
-    optimizer_v1_random_seed = None
+    transform_generation_random_seed = 51
+    optimizer_v1_random_seed = 51
 
     # custom point containment algorithm options
     generate_cuda_log_files_MC_containment_sim = False
@@ -980,8 +981,8 @@ def main():
     modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
     write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
-    export_pickled_preprocessed_data = True # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
-    skip_preprocessing = True # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
+    export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
+    skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
     write_sobol_dose_data_to_file = True
     write_sobol_containment_data_to_file = True
     write_preprocessing_data_to_file = True
