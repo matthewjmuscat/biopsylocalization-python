@@ -1021,6 +1021,10 @@ That also means the grandmother function should not live inside `biopsy_optimize
 
 It belongs with the shared containment infrastructure or an adjacent shared batching helper module that can be reused by non-v2 callers.
 
+If the custom one-to-one CUDA containment stack is migrated into its own standalone repository, the grandmother executor should move with that stack or target that package boundary from the start.
+
+In that future layout, optimizer v2 should depend on the standalone containment package as a consumer, not as the owner of the batching abstraction.
+
 If a grandmother function is added, its job should be exactly this generalized chunk execution layer.
 
 It should own:
