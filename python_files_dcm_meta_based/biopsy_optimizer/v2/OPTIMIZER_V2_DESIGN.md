@@ -46,6 +46,27 @@ This should be treated as a first-class design constraint, not a late cleanup it
 - Point clouds remain debug and visualization tools only.
 - Relative-structure dilations must be generated and stored early enough that optimizer v2 and downstream MC can reuse the same transform bank.
 
+## Readiness Snapshot
+
+The repo is now ready to start the actual optimizer-v2 implementation.
+
+Completed prerequisites already in code:
+
+1. planning-frame simulated-biopsy geometry is built upstream and stored on each simulated biopsy,
+2. planning-frame simulated-biopsy sampled points are already built upstream,
+3. target-only fixed-lattice candidate generation and immediate target-interior pruning already exist,
+4. main already exposes optimizer-v2 stage trial counts as a main-facing config surface,
+5. main already computes and stores the optimizer-v2 transform-precompute budget,
+6. downstream post-realization biopsy processing is modular enough that optimizer-v2 can hand off to existing realization and downstream MC seams cleanly.
+
+Remaining implementation work is therefore concentrated in:
+
+1. shared transform-bank consumption,
+2. candidate-trial batch construction,
+3. target-only scoring and ranking,
+4. downstream transform-bank reuse and agreement validation,
+5. stage-boundary debug and verification rendering.
+
 ## Canonical Reuse Surfaces
 
 ### Planning geometry and biopsy sampling
@@ -67,6 +88,26 @@ This should be treated as a first-class design constraint, not a late cleanup it
 - `MC_prepper_funcs.biopsy_only_transformer(...)`
 
 The optimizer should reuse the same underlying transform math, even if it calls a narrower helper surface instead of the full downstream writeback path.
+
+### Localization-transformer recommendation
+
+Optimizer v2 should not invent its own localization or uncertainty-transform math.
+
+The correct reusable surface is a narrow localization-transformer layer built from the existing transformation math.
+
+That reusable layer should:
+
+1. consume the shared transform bank,
+2. apply biopsy self-transforms,
+3. apply the corresponding relative-structure transforms,
+4. return aligned array batches ready for the containment mother function,
+5. avoid downstream writeback side effects in the hot path.
+
+This keeps optimizer v2 and downstream stochastic MC on the same uncertainty model even as the uncertainty contract evolves.
+
+That helper should not live inside `biopsy_optimizer/v2` if its contract is genuinely shared.
+
+If the same transformer logic is needed by optimizer v2 and non-optimizer downstream MC, it should live in a shared module near the existing transformation and containment surfaces, with optimizer v2 importing it rather than owning it.
 
 ### Relative-structure transforms
 
@@ -103,6 +144,12 @@ The required design is:
 2. Store it on the same structure objects used later by downstream MC.
 3. Let optimizer v2 consume prefixes or slices of that stored bank.
 4. Let downstream MC consume the same bank later.
+
+The bank-size rule should be:
+
+1. large enough to satisfy the largest effective optimizer-v2 stage prefix that may actually be used,
+2. large enough to support any explicit downstream-comparable winner rescore at `N_stochastic_tissue`,
+3. treated as one shared ceiling rather than regenerated separately for optimizer and downstream MC.
 
 This must include:
 
@@ -273,6 +320,32 @@ There is also a throughput benefit:
 
 The first implementation should use three stages.
 
+## Auto-Packed Stage Budget Recommendation
+
+The optimizer should not throw away explicit stage semantics and replace them with one hardware-dependent chunk-size rule.
+
+A pure "whatever fits in one grandmother chunk" schedule would make:
+
+1. stage meaning opaque,
+2. run-to-run behavior depend too strongly on GPU memory availability,
+3. validation and cross-run comparisons harder.
+
+The better design is:
+
+1. keep stage structure explicit,
+2. treat the user-declared stage trial counts as minimum prefixes,
+3. allow the chunk executor to raise the effective prefix when doing so improves batch utilization,
+4. keep an explicit ceiling or bound so stage meaning does not become hardware-defined,
+5. optionally support an auto mode where each stage declares a min/max prefix and the executor chooses the largest safe prefix within that bound.
+
+So the recommendation is not "hardcoded stage counts forever".
+
+The recommendation is:
+
+1. explicit stage minimums remain the canonical contract,
+2. chunk-capacity-aware auto-packing can be added as a controlled option above those minimums,
+3. any auto-packed effective trial count must be written to the candidate and ranking manifest so results stay auditable.
+
 ## Whole-Dataset Scaling Strategy
 
 Even if candidate-trial scoring is chunked correctly, larger cohorts or multiple simulated-core families can still push the whole run over memory limits.
@@ -433,11 +506,24 @@ Equivalent wording:
 
 This is the clean target-only robust objective.
 
+Main-facing metric selection should expose reducer choices over the same target-only per-point probability surface.
+
+Recommended first config surface:
+
+1. default: `mean_pd`
+2. optional: `max_pd`
+3. optional: `min_pd`
+
+Where `pd` here means the target-DIL probability or binomial-estimator surface computed from the shared trial bank.
+
+The important contract is that optimizer v2 always computes the same underlying target-only per-point probability surface first, and only then applies the selected reducer.
+
 The candidate dataframe should retain enough components to support future alternative objectives, including:
 
 - total successes by biopsy sample point,
 - per-point binomial estimators,
 - candidate-level mean binomial estimator,
+- candidate-level max binomial estimator if configured,
 - candidate-level min and quantiles if later needed,
 - distance to target DIL centroid for tie-breaks.
 
@@ -455,13 +541,41 @@ The ranked dataframe should include at least:
 - candidate rank
 - candidate X, Y, Z in prostate frame
 - objective value
+- objective reducer name
 - stage metadata
 - number of trials used
+- stored transform-bank prefix size used for scoring
+- targeted-DIL nominal score under the same reducer
+- winning-candidate downstream-comparable target score when that rescore is requested
+- downstream-comparable score trial count
 - tie-break fields such as distance to target centroid
 
 Transport should consume this contract generically.
 
 It should not care whether the row came from legacy optimizer v1 or optimizer v2.
+
+## Downstream Agreement Contract
+
+There are two distinct score surfaces once optimizer-v2 trial counts and downstream tissue trial counts are allowed to differ:
+
+1. the optimizer selection score used to rank candidates,
+2. the downstream-comparable winner score computed at the downstream tissue count.
+
+Only the second score needs to agree exactly with downstream MC.
+
+That should become an explicit validation surface.
+
+Recommended first contract:
+
+1. store the optimizer selection score for the winning candidate together with reducer name, target DIL identity, transform-bank metadata, and the optimizer trial count actually used,
+2. if downstream tissue scoring uses a different `N_stochastic_tissue`, force one additional winner-only rescore using that same shared transform bank prefix,
+3. store that downstream-comparable winner score separately together with its own trial count,
+4. when downstream MC later runs with the same `N_stochastic_tissue` and reuses the same stored bank, require exact agreement against the downstream-comparable winner score,
+5. emit both the optimizer selection score and the downstream-comparable agreement result to the manifest surface and the Rich UI.
+
+This gives an early warning if the optimizer path and downstream stochastic path silently diverge even though they claim to share the same uncertainty bank.
+
+It also avoids a false requirement that the optimizer selection score must equal the downstream MC score when the user intentionally chooses different trial counts for ranking versus later tissue analysis.
 
 ## Computation And Memory Strategy
 
@@ -600,6 +714,27 @@ That is the right way to validate:
 
 This keeps debugging deterministic and avoids trying to render the full hot-path batch.
 
+## Stage Candidate Render Recommendation
+
+For debug and verification, optimizer v2 should support at least one simultaneous Open3D render of candidate positions at each stage boundary.
+
+Minimum useful scenes:
+
+1. stage-input candidate positions before scoring,
+2. stage-output survivor positions after pruning,
+3. optional overlay of target DIL geometry and the planned biopsy nominal centroid,
+4. optional highlight of the final winner.
+
+These renders should show all candidates in the stage simultaneously, not one candidate at a time.
+
+Implementation recommendation:
+
+1. reuse the repo's existing Open3D plotting surfaces such as `plotting_funcs.plot_geometries(...)`,
+2. reuse the same Rich pause/resume behavior already used in render/debug paths so stopwatch timing excludes interactive inspection,
+3. keep this visualization outside the hot scoring loop and trigger it only at stage boundaries or for explicitly selected checkpoints.
+
+The existing processed-dataset render/debug surface is a good orchestration model even though the actual scene contents will be optimizer-specific.
+
 ## Media Export Recommendation
 
 The repo should support file-based rendering directly from code, not only interactive viewing.
@@ -660,6 +795,8 @@ The recommendation is:
 2. renderer abstraction from day one,
 3. deterministic frame export as the real contract.
 
+For optimizer-v2 debugging specifically, the first scene adapter should support stage-boundary candidate clouds as a named scene type rather than treating them as ad hoc one-off Open3D calls from main.
+
 ## Repo Config Surface Recommendation
 
 This repo should move away from the current pattern where many runtime choices live at the top of main.
@@ -672,6 +809,14 @@ The recommended path is:
 2. let main build one root config object,
 3. pass narrow config slices to modules,
 4. only later add file-backed loading if that still feels useful.
+
+For optimizer v2 specifically, the first config pass should be treated as preparatory runtime policy only.
+
+It should cover things like search policy, stage policy, scoring policy, visualization policy, and downstream-comparable winner rescore policy.
+
+It should not pretend that the repo already has a fully separate optimizer-v2 biopsy family creation pathway wired end to end.
+
+That family-creation and transport integration work is a later integration pass, not a prerequisite for building the clean config surface now.
 
 For future GUI work, the most important design property is that the config surface should be pure data.
 
@@ -776,6 +921,8 @@ Concrete work:
 9. store those arrays on the same patient or structure objects used later by downstream MC,
 10. expose a narrow getter surface that returns prefixes of that stored bank.
 
+This phase should also define the reusable localization-transformer contract described above, even if the actual helper extraction lands one phase later.
+
 Validation:
 
 1. optimizer and downstream MC must read the same stored bank,
@@ -802,6 +949,10 @@ Concrete work:
 5. pair those test arrays with the stored target nominal-plus-trial structure pack produced in phase 2,
 6. emit bookkeeping arrays that preserve candidate index and trial index identity,
 7. emit the exact `test_struct_to_relative_struct_1d_mapping_array` needed by the mother function.
+
+This is the phase where the first optimizer-facing localization-transformer helper should likely land.
+
+That helper should be responsible for producing aligned candidate-trial biopsy arrays and aligned target-relative structure arrays without performing scoring, ranking, or downstream writeback.
 
 Important containment constraint:
 
@@ -866,6 +1017,26 @@ So the recommendation is:
 2. no to pushing optimizer-v2 semantics down into that package,
 3. do it after the optimizer-v2 wrapper has made the required invariants concrete enough to generalize safely.
 
+That also means the grandmother function should not live inside `biopsy_optimizer/v2`.
+
+It belongs with the shared containment infrastructure or an adjacent shared batching helper module that can be reused by non-v2 callers.
+
+If a grandmother function is added, its job should be exactly this generalized chunk execution layer.
+
+It should own:
+
+1. max safe packed batch sizing,
+2. slicing aligned test arrays and relative-structure packs,
+3. repeated mother-function invocation,
+4. metadata-preserving concatenation.
+
+It should not own:
+
+1. optimizer stage policy,
+2. trial-prefix semantics,
+3. candidate ranking,
+4. target-only reducer selection.
+
 Validation:
 
 1. selected candidate/trial visualizations must match geometric expectations,
@@ -905,7 +1076,8 @@ Concrete work:
 3. rescore survivors at stage B using a larger prefix,
 4. prune again,
 5. confirm final ranking at stage C,
-6. emit full and ranked candidate dataframes.
+6. if requested, force one winner-only rescore at downstream `N_stochastic_tissue` using the same shared bank,
+7. emit full and ranked candidate dataframes.
 
 ### Phase 6: transport integration
 
