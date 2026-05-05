@@ -598,11 +598,13 @@ def main():
     bx_sim_locations_dict = {centroid_dil_sim_key:
                                                             {"Create": True,
                                                             "Relative to struct type": dil_ref,
+                                                            "Transport family": "centroid",
                                                             "Identifier string": 'sim_centroid_dil'}
                                                             ,   
                                                         optimal_dil_sim_key:
                                                             {"Create": True,
                                                             "Relative to struct type": dil_ref,
+                                                            "Transport family": "optimal",
                                                             "Identifier string": 'sim_optimal_dil'}
                                                         }
     simulated_biopsy_fraction_numbers_to_create = 'all'   # [FIRST_PASS_CONFIG] use [2] for legacy F2-only behavior
@@ -5082,8 +5084,6 @@ def main():
                             master_structure_info_dict,
                             structs_referenced_dict,
                             bx_ref,
-                            centroid_dil_sim_key,
-                            optimal_dil_sim_key,
                             parallel_pool,
                             interp_inter_slice_dist,
                             interp_intra_slice_dist,
@@ -9322,6 +9322,7 @@ def structure_referencer(data_removals_dict_bx,
                                 "Struct type": st_ref_list[0],
                                 "Simulated bool": True,
                                 "Simulated type": bx_sim_type_str,
+                                "Transport family": bx_sim_type_dict.get("Transport family", "identity"),
                                 "Relative structure type": bx_sim_type_dict["Relative to struct type"],
                                 "Relative structure name": x.ROIName,
                                 "Relative structure ref #": x.ROINumber, 
@@ -9395,6 +9396,7 @@ def structure_referencer(data_removals_dict_bx,
                                 "FANOVA: sobol indices (containment)": None,
                                 "FANOVA: sobol indices (dose)": None,
                                 'FANOVA: sobol indices (DIL tissue)': None,
+                                "Simulated biopsy transport request dict": None,
                                 "Output csv file paths dict": {}, 
                                 "Output data frames": {"Dose output Z and radius": None,
                                                        "Dose output voxelized": None,

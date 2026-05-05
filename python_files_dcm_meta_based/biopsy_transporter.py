@@ -54,6 +54,43 @@ def _normalize_target_vector(target_vector):
     return np.asarray(target_vector, dtype=float).reshape(3)
 
 
+def _resolve_transport_request(specific_structure,
+                               transport_family=None,
+                               transport_target_vector=None,
+                               transport_source=None,
+                               selection_metadata=None
+                               ):
+    transport_request_dict = specific_structure.get("Simulated biopsy transport request dict") or {}
+
+    resolved_transport_family = transport_family
+    if resolved_transport_family is None:
+        resolved_transport_family = transport_request_dict.get("Transport family")
+    if resolved_transport_family is None:
+        resolved_transport_family = specific_structure.get("Transport family", "identity")
+
+    resolved_transport_target_vector = transport_target_vector
+    if resolved_transport_target_vector is None:
+        resolved_transport_target_vector = transport_request_dict.get("Target vector")
+
+    resolved_transport_source = transport_source
+    if resolved_transport_source is None:
+        resolved_transport_source = transport_request_dict.get("Transport source")
+
+    resolved_selection_metadata = {}
+    request_selection_metadata = transport_request_dict.get("Selection metadata")
+    if isinstance(request_selection_metadata, dict):
+        resolved_selection_metadata.update(request_selection_metadata)
+    if isinstance(selection_metadata, dict):
+        resolved_selection_metadata.update(selection_metadata)
+
+    return (
+        resolved_transport_family,
+        resolved_transport_target_vector,
+        resolved_transport_source,
+        resolved_selection_metadata,
+    )
+
+
 def _resolve_optimizer_dataframe_numeric_columns(selection_dataframe):
     numeric_column_names = [
         column_name
@@ -133,11 +170,30 @@ def _resolve_optimal_target_vector(relative_specific_structure):
 def transport_planned_biopsy_with_metadata(pydicom_item,
                                            specific_structure,
                                            threeDdata_zslice_list,
-                                           transport_family
+                                           transport_family=None,
+                                           transport_target_vector=None,
+                                           transport_source=None,
+                                           selection_metadata=None
                                            ):
 
+    (
+        resolved_transport_family,
+        resolved_transport_target_vector,
+        resolved_transport_source,
+        resolved_selection_metadata,
+    ) = _resolve_transport_request(
+        specific_structure,
+        transport_family=transport_family,
+        transport_target_vector=transport_target_vector,
+        transport_source=transport_source,
+        selection_metadata=selection_metadata,
+    )
+
+    if resolved_transport_target_vector is not None and resolved_transport_family == "identity":
+        resolved_transport_family = "explicit_target_vector"
+
     transport_metadata = {
-        "Transport family": transport_family,
+        "Transport family": resolved_transport_family,
         "Transport source": None,
         "Relative structure ID": specific_structure.get("Relative structure name"),
         "Relative structure type": specific_structure.get("Relative structure type"),
@@ -148,25 +204,24 @@ def transport_planned_biopsy_with_metadata(pydicom_item,
         "Target Z": None,
     }
 
-    if transport_family == "identity":
-        transport_metadata["Transport source"] = "identity"
-        return {
-            "Transported raw contour pts zslice list": threeDdata_zslice_list,
-            "Simulated biopsy transport dict": transport_metadata,
-        }
-
-    relative_specific_structure_index, relative_specific_structure = _find_relative_structure(pydicom_item,
-                                                                                               specific_structure)
-    transport_metadata.update(
-        _build_relative_structure_transport_info(
-            relative_specific_structure_index,
-            relative_specific_structure,
+    relative_specific_structure_index = None
+    relative_specific_structure = None
+    if specific_structure.get("Relative structure type") is not None and specific_structure.get("Relative structure ref #") is not None:
+        relative_specific_structure_index, relative_specific_structure = _find_relative_structure(
+            pydicom_item,
+            specific_structure,
         )
-    )
+        transport_metadata.update(
+            _build_relative_structure_transport_info(
+                relative_specific_structure_index,
+                relative_specific_structure,
+            )
+        )
 
-    if transport_family == "centroid":
-        target_vector = _normalize_target_vector(relative_specific_structure["Structure global centroid"].copy())
-        transport_metadata["Transport source"] = "relative structure centroid"
+    if resolved_transport_target_vector is not None:
+        target_vector = _normalize_target_vector(resolved_transport_target_vector)
+        transport_metadata.update(resolved_selection_metadata)
+        transport_metadata["Transport source"] = resolved_transport_source or "explicit target vector"
         transport_metadata["Target X"] = float(target_vector[0])
         transport_metadata["Target Y"] = float(target_vector[1])
         transport_metadata["Target Z"] = float(target_vector[2])
@@ -178,10 +233,40 @@ def transport_planned_biopsy_with_metadata(pydicom_item,
             "Simulated biopsy transport dict": transport_metadata,
         }
 
-    if transport_family == "optimal":
-        target_vector, selection_metadata = _resolve_optimal_target_selection(relative_specific_structure)
-        transport_metadata.update(selection_metadata)
-        transport_metadata["Transport source"] = "optimal biopsy location dataframe"
+    if resolved_transport_family == "identity":
+        transport_metadata["Transport source"] = "identity"
+        return {
+            "Transported raw contour pts zslice list": threeDdata_zslice_list,
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    if relative_specific_structure is None:
+        raise ValueError(
+            "Transport family {} requires a relative structure on {}.".format(
+                resolved_transport_family,
+                specific_structure.get("ROI"),
+            )
+        )
+
+    if resolved_transport_family == "centroid":
+        target_vector = _normalize_target_vector(relative_specific_structure["Structure global centroid"].copy())
+        transport_metadata["Transport source"] = resolved_transport_source or "relative structure centroid"
+        transport_metadata["Target X"] = float(target_vector[0])
+        transport_metadata["Target Y"] = float(target_vector[1])
+        transport_metadata["Target Z"] = float(target_vector[2])
+        return {
+            "Transported raw contour pts zslice list": _translate_biopsy_zslice_list_to_target_vector(
+                threeDdata_zslice_list,
+                target_vector,
+            ),
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    if resolved_transport_family == "optimal":
+        target_vector, resolved_optimal_selection_metadata = _resolve_optimal_target_selection(relative_specific_structure)
+        transport_metadata.update(resolved_optimal_selection_metadata)
+        transport_metadata.update(resolved_selection_metadata)
+        transport_metadata["Transport source"] = resolved_transport_source or "optimal biopsy location dataframe"
         transport_metadata["Target X"] = float(target_vector[0])
         transport_metadata["Target Y"] = float(target_vector[1])
         transport_metadata["Target Z"] = float(target_vector[2])
@@ -195,7 +280,7 @@ def transport_planned_biopsy_with_metadata(pydicom_item,
 
     raise ValueError(
         "Unsupported simulated biopsy transport family: {}".format(
-            transport_family,
+            resolved_transport_family,
         )
     )
 

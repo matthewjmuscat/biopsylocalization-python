@@ -5,24 +5,12 @@ from preprocessing.biopsy_processing.simulated_biopsy_planner import get_planned
 
 def _transport_planned_simulated_biopsy(pydicom_item,
                                         specific_structure,
-                                        planned_threeDdata_zslice_list,
-                                        centroid_dil_sim_key,
-                                        optimal_dil_sim_key
+                                        planned_threeDdata_zslice_list
                                         ):
-    simulated_type = specific_structure["Simulated type"]
-    transport_family = "identity"
-
-    if simulated_type == centroid_dil_sim_key:
-        transport_family = "centroid"
-
-    elif simulated_type == optimal_dil_sim_key:
-        transport_family = "optimal"
-
     return biopsy_transporter.transport_planned_biopsy_with_metadata(
         pydicom_item,
         specific_structure,
         planned_threeDdata_zslice_list,
-        transport_family=transport_family,
     )
 
 
@@ -91,8 +79,6 @@ def simulated_biopsy_processer(master_structure_reference_dict,
                                master_structure_info_dict,
                                structs_referenced_dict,
                                bx_ref,
-                               centroid_dil_sim_key,
-                               optimal_dil_sim_key,
                                parallel_pool,
                                interp_inter_slice_dist,
                                interp_intra_slice_dist,
@@ -136,7 +122,6 @@ def simulated_biopsy_processer(master_structure_reference_dict,
         for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
             structureID = specific_structure["ROI"]
             simulated_bool = specific_structure["Simulated bool"]
-            sim_type = specific_structure["Simulated type"]
 
             if simulated_bool == False:
                 continue
@@ -149,8 +134,6 @@ def simulated_biopsy_processer(master_structure_reference_dict,
                 pydicom_item,
                 specific_structure,
                 planned_threeDdata_zslice_list,
-                centroid_dil_sim_key,
-                optimal_dil_sim_key,
             )
             threeDdata_zslice_list = transport_result_dict["Transported raw contour pts zslice list"]
             specific_structure["Simulated biopsy transport dict"] = transport_result_dict["Simulated biopsy transport dict"]
