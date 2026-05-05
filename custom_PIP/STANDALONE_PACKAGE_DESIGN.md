@@ -82,6 +82,56 @@ Recommended first-class surfaces:
 
 The package should prefer explicit typed contracts and shape assumptions over convenience magic.
 
+## Current Input Contract Reminder
+
+The active mother-function contract already supports two distinct input modes for the test structures.
+
+1. aligned 3D array input:
+   shape `(num_test_structures, num_points_per_structure, 3)`
+2. ragged list input:
+   Python `list` of `(N_i, 3)` arrays where each test structure may have a different point count
+
+These are not two unrelated APIs. They are two input shapes for the same high-level containment contract.
+
+They exist because they serve different needs.
+
+The aligned 3D path is the preferred fast path when every test structure has the same point count.
+
+That path feeds the 3D prep/output surface and, when the optimized kernel type is selected, routes into the more memory- and launch-efficient stacked-structure kernel wrapper.
+
+The ragged list path is the general path when test structures have unequal point counts or when preserving native per-structure arrays is more natural than padding or repacking.
+
+That path feeds the 2D prep/output surface, flattening the points together with an indices array that reconstructs the original per-structure grouping.
+
+Recommended preparation rule:
+
+1. if all test structures are naturally equal-length, prepare one aligned 3D array,
+2. if test structures are ragged, keep them as a list of 2D arrays,
+3. do not pad ragged structures into a fake aligned 3D input unless there is a measured reason to do so.
+
+## Current Audit Of Live Callers
+
+As of this audit, the current repo still uses both supported input modes.
+
+Observed active ragged/list users:
+
+1. [python_files_dcm_meta_based/polygon_dilation_helpers_numpy.py](python_files_dcm_meta_based/polygon_dilation_helpers_numpy.py#L1099)
+2. [python_files_dcm_meta_based/MC_simulator_convex.py](python_files_dcm_meta_based/MC_simulator_convex.py#L1130)
+
+Observed active aligned-3D direct mother-function callers include:
+
+1. [python_files_dcm_meta_based/biopsy_optimizer/v2/candidate_pool.py](python_files_dcm_meta_based/biopsy_optimizer/v2/candidate_pool.py#L68)
+2. [python_files_dcm_meta_based/preprocessing/interpolation/interpolation.py](python_files_dcm_meta_based/preprocessing/interpolation/interpolation.py#L209)
+3. [python_files_dcm_meta_based/preprocessing/interpolation/interpolation.py](python_files_dcm_meta_based/preprocessing/interpolation/interpolation.py#L295)
+4. [python_files_dcm_meta_based/misc_tools.py](python_files_dcm_meta_based/misc_tools.py#L220)
+5. [python_files_dcm_meta_based/misc_tools.py](python_files_dcm_meta_based/misc_tools.py#L482)
+6. [python_files_dcm_meta_based/mr_localizers.py](python_files_dcm_meta_based/mr_localizers.py#L150)
+7. [python_files_dcm_meta_based/mr_localizers.py](python_files_dcm_meta_based/mr_localizers.py#L179)
+8. [python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py](python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py#L178)
+9. [python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py](python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py#L485)
+
+This matters for packaging because the future standalone package should preserve both surfaces, not silently collapse to the aligned 3D case just because that path is currently more common.
+
 ## Testing Plan
 
 The extraction should preserve the existing trusted behavior and make that trust easier to demonstrate.
@@ -144,6 +194,21 @@ Recommended low-risk sequence:
 5. only after that stabilize the package API and publish it.
 
 This keeps current project momentum while avoiding a rushed packaging job.
+
+## Optional Sidequest: Grandmother Adoption Audit
+
+The new grandmother surface now exists in [python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.py](python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.py#L19).
+
+The next optional sidequest is not to expand the API again, but to audit direct mother-function callers and selectively migrate the ones that benefit from chunking while leaving trivial or already-stable direct calls alone.
+
+Recommended order if this sidequest is taken up later:
+
+1. migrate the aligned 3D callers with the largest expected batch sizes first,
+2. leave already-correct ragged/list callers alone unless chunking is actually needed there,
+3. preserve the mother-function contract as the stable lower boundary,
+4. add regression checks showing grandmother chunked results match direct mother-function results for both input modes.
+
+This is an optional cleanup/performance follow-up, not required for the current optimizer-v2 staging work.
 
 ## Relationship To This Repo
 

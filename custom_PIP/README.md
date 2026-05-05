@@ -31,7 +31,8 @@ That makes it a reusable infrastructure asset, not just an internal helper.
 1. leave the existing containment implementation in place for now,
 2. avoid risky runtime refactors while optimizer-v2 work is active,
 3. keep new shared batching abstractions designed against the future standalone package boundary,
-4. when extraction starts, split the current monolithic containment file into kernels, wrappers, batching, adapters, and diagnostics.
+4. keep a running adoption audit of direct mother-function callers so grandmother migrations can be done later without rediscovering the boundary,
+5. when extraction starts, split the current monolithic containment file into kernels, wrappers, batching, adapters, and diagnostics.
 
 ## Packaging Direction
 
@@ -44,6 +45,8 @@ Recommended long-term shape:
 5. this repo importing that package rather than vendoring the implementation.
 
 See [STANDALONE_PACKAGE_DESIGN.md](STANDALONE_PACKAGE_DESIGN.md) for the fuller extraction and licensing plan.
+
+That design note now also records the current two-mode input contract and the current grandmother-adoption audit.
 
 ## License Note
 
