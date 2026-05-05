@@ -109,7 +109,25 @@ class OptimizerV2ChunkLayout:
         )
 
 
+@dataclass
+class OptimizerV2ChunkScoreResult:
+    """Target-only scoring outputs for one candidate chunk."""
+
+    chunk_layout: OptimizerV2ChunkLayout
+    candidate_indices_global: np.ndarray
+    candidate_centroids: np.ndarray
+    objective_reducer_name: str
+    structured_containment_result: Any
+    stochastic_success_counts: np.ndarray
+    point_probabilities: np.ndarray
+    candidate_scores: np.ndarray
+    candidate_nominal_scores: np.ndarray
+    distance_to_target_centroid_mm: np.ndarray
+    tested_candidate_dataframe: Optional[Any] = None
+
+
 __all__ = [
     "OptimizerV2CandidatePool",
     "OptimizerV2ChunkLayout",
+    "OptimizerV2ChunkScoreResult",
 ]

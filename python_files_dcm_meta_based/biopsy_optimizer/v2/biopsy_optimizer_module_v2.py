@@ -10,11 +10,17 @@ from biopsy_optimizer.v2.config import (
 from biopsy_optimizer.v2.contracts import (
 	OptimizerV2CandidatePool,
 	OptimizerV2ChunkLayout,
+	OptimizerV2ChunkScoreResult,
 )
 from biopsy_optimizer.v2.candidate_pool import (
 	build_target_candidate_lattice,
 	prune_candidate_lattice_to_target_interior,
 	build_target_candidate_pool,
 	visualize_target_candidate_pool,
+)
+from biopsy_optimizer.v2.scoring import (
+	DEFAULT_CONTAINMENT_KERNEL_TYPE,
+	build_tested_candidate_dataframe_from_chunk_score_result,
+	score_target_candidate_chunk,
 )
 

@@ -621,6 +621,36 @@ That would answer a different question: robustness under a different uncertainty
 
 If that is ever useful, it should be treated as a separate stress-test or sensitivity-analysis mode, not as the normal winner-resolution policy.
 
+## Optional Sidequest: Sensitivity-Robustness Review Path
+
+If this model later needs a stronger reviewer-facing validation story, a useful sidequest is to add one explicit sensitivity-analysis pathway that perturbs the uncertainty model itself and checks whether the optimizer winner is stable.
+
+This is a worthwhile question, but it should remain clearly separated from the main winner-selection path.
+
+Recommended framing:
+
+1. keep the main optimizer winner defined under one fixed declared uncertainty model,
+2. run one optional sensitivity mode afterward under altered uncertainty settings,
+3. report whether the winner or top-ranked set is stable under that altered model,
+4. do not use that altered-model run as the normal tie-break mechanism.
+
+Examples of altered-model sensitivity runs that may be interesting later:
+
+1. larger perturbation magnitudes with the same sampling family,
+2. alternate reducer choice over the same target-only probability surface,
+3. different biopsy-only versus target-only uncertainty emphasis,
+4. stability of the winner under larger transform-bank prefixes.
+
+If implemented, this should emit reviewer-friendly metadata such as:
+
+1. baseline winner,
+2. sensitivity-mode winner,
+3. overlap of the top-ranked candidate set,
+4. magnitude of score movement,
+5. whether the baseline winner remains operationally acceptable.
+
+This can strengthen the validation story, but it is not required for the first executable optimizer-v2 slice.
+
 Transport should consume this contract generically.
 
 It should not care whether the row came from legacy optimizer v1 or optimizer v2.
