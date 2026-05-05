@@ -151,6 +151,16 @@ The bank-size rule should be:
 2. large enough to support any explicit downstream-comparable winner rescore at `N_stochastic_tissue`,
 3. treated as one shared ceiling rather than regenerated separately for optimizer and downstream MC.
 
+With final-winner tie-break rescoring enabled, item 1 means more than the raw stage-C trial count.
+
+It must include the largest score-based tie-break prefix that may actually be requested before any geometric fallback is allowed.
+
+So the practical bank-generation rule is:
+
+1. compute the highest optimizer-side prefix implied by the stage-C trial count plus the configured tie-break rescore attempts,
+2. compare that against any requested downstream-comparable winner rescore count,
+3. generate one shared bank large enough for the larger of those two values.
+
 This must include:
 
 - biopsy self translations,
@@ -576,6 +586,12 @@ Recommended first policy:
 
 This keeps the selection metric score-based first and geometric only as a last resort.
 
+Those larger tie-break prefixes must come from new draws in the shared bank beyond the earlier stage-C prefix.
+
+They should not be produced by reusing the exact same fixed `N` draws, because that cannot change the score estimate.
+
+They also should not be produced by changing the perturbation magnitudes just for tie-breaking, because that would change the optimization objective and break comparability with downstream MC.
+
 The recommended default escalation rule is:
 
 1. start from the stage-C trial prefix,
@@ -589,6 +605,21 @@ The ranked or winner manifest should retain enough metadata to audit this later,
 2. how many additional tie-break rescoring attempts were needed,
 3. the final trial count actually used for winner resolution,
 4. whether geometric fallback was invoked.
+
+The intended interpretation of the shared bank here is:
+
+1. stage C might score at prefix `0:N`,
+2. the first tie-break attempt might score at prefix `0:2N`,
+3. the second tie-break attempt might score at prefix `0:4N`,
+4. the additional trials are genuinely new IID draws already present in the larger pre-generated bank.
+
+This is still one shared bank. It is not a fresh independently generated bank per tie-break attempt.
+
+Changing the perturbation scale for tie-breaking is not recommended.
+
+That would answer a different question: robustness under a different uncertainty model.
+
+If that is ever useful, it should be treated as a separate stress-test or sensitivity-analysis mode, not as the normal winner-resolution policy.
 
 Transport should consume this contract generically.
 

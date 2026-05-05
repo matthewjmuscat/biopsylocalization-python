@@ -77,6 +77,20 @@ class OptimizerV2TieBreakConfig:
         if self.fallback_policy != "nearest_target_centroid":
             raise ValueError("unsupported fallback_policy: {}".format(self.fallback_policy))
 
+    def resolve_max_tie_break_trial_count(self, base_trial_count: int) -> int:
+        """Return the largest trial prefix needed by tie-break rescoring.
+
+        This is the highest prefix the optimizer may need if the final stage
+        remains tied through every configured score-based rescore attempt.
+        """
+        if base_trial_count <= 0:
+            raise ValueError("base_trial_count must be positive")
+
+        resolved_trial_count = int(base_trial_count)
+        for _ in range(self.max_additional_rescore_attempts):
+            resolved_trial_count = int(math.ceil(resolved_trial_count * self.rescore_trial_count_multiplier))
+        return resolved_trial_count
+
 
 @dataclass(frozen=True)
 class OptimizerV2SearchConfig:
@@ -95,6 +109,30 @@ class OptimizerV2SearchConfig:
         trial_counts = [stage_config.num_trials for stage_config in self.stage_configs]
         if any(next_count <= current_count for current_count, next_count in zip(trial_counts, trial_counts[1:])):
             raise ValueError("stage trial counts must increase strictly")
+
+    def resolve_max_optimizer_trial_prefix(self) -> int:
+        """Return the largest optimizer-side prefix that may actually be used.
+
+        This includes the final stage's score-based tie-break escalation budget,
+        not just the declared stage trial counts.
+        """
+        final_stage_trial_count = self.stage_configs[-1].num_trials
+        return self.tie_break_config.resolve_max_tie_break_trial_count(final_stage_trial_count)
+
+    def resolve_required_transform_bank_size(self, downstream_trial_count: Optional[int] = None) -> int:
+        """Return the minimum shared transform-bank size required by policy.
+
+        The bank must be large enough for:
+
+        1. the largest optimizer-side prefix that may actually be used,
+        2. any explicit downstream-comparable winner rescore.
+        """
+        required_sizes = [self.resolve_max_optimizer_trial_prefix()]
+        if downstream_trial_count is not None:
+            if downstream_trial_count <= 0:
+                raise ValueError("downstream_trial_count must be positive when provided")
+            required_sizes.append(int(downstream_trial_count))
+        return max(required_sizes)
 
 
 @dataclass(frozen=True)
