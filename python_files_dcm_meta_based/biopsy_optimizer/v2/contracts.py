@@ -126,8 +126,50 @@ class OptimizerV2ChunkScoreResult:
     tested_candidate_dataframe: Optional[Any] = None
 
 
+@dataclass
+class OptimizerV2StageRunResult:
+    """Outputs for one staged ranking pass."""
+
+    stage_name: str
+    num_trials: int
+    input_candidate_indices_global: np.ndarray
+    survivor_candidate_indices_global: np.ndarray
+    chunk_score_results: Tuple[OptimizerV2ChunkScoreResult, ...]
+    tested_candidate_dataframe: Any
+    ranked_candidate_dataframe: Any
+
+
+@dataclass
+class OptimizerV2SearchRunResult:
+    """Top-level staged search outputs prior to winner tie-break validation."""
+
+    stage_results: Tuple[OptimizerV2StageRunResult, ...]
+    tested_candidate_dataframe: Any
+    ranked_candidate_dataframe: Any
+    operational_winner_candidate_index_global: Optional[int] = None
+    winner_validation_result: Optional[Any] = None
+
+
+@dataclass
+class OptimizerV2WinnerValidationResult:
+    """Winner-only downstream-comparable rescore metadata."""
+
+    candidate_index_global: int
+    objective_reducer_name: str
+    optimizer_selection_score: float
+    optimizer_selection_trial_count: int
+    downstream_comparable_target_score: float
+    downstream_comparable_trial_count: int
+    downstream_comparable_nominal_target_score: float
+    used_additional_rescore: bool
+    chunk_score_result: Optional[OptimizerV2ChunkScoreResult] = None
+
+
 __all__ = [
     "OptimizerV2CandidatePool",
     "OptimizerV2ChunkLayout",
     "OptimizerV2ChunkScoreResult",
+    "OptimizerV2StageRunResult",
+    "OptimizerV2SearchRunResult",
+    "OptimizerV2WinnerValidationResult",
 ]

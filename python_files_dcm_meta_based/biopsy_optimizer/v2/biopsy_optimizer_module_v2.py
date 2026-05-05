@@ -11,6 +11,9 @@ from biopsy_optimizer.v2.contracts import (
 	OptimizerV2CandidatePool,
 	OptimizerV2ChunkLayout,
 	OptimizerV2ChunkScoreResult,
+	OptimizerV2SearchRunResult,
+	OptimizerV2StageRunResult,
+	OptimizerV2WinnerValidationResult,
 )
 from biopsy_optimizer.v2.candidate_pool import (
 	build_target_candidate_lattice,
@@ -22,5 +25,14 @@ from biopsy_optimizer.v2.scoring import (
 	DEFAULT_CONTAINMENT_KERNEL_TYPE,
 	build_tested_candidate_dataframe_from_chunk_score_result,
 	score_target_candidate_chunk,
+)
+from biopsy_optimizer.v2.runner import (
+	DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD,
+	run_target_staged_candidate_search,
+)
+from biopsy_optimizer.v2.render import (
+	OptimizerV2StageBoundaryRenderJob,
+	build_stage_boundary_render_jobs,
+	render_stage_boundary_candidate_clouds,
 )
 
