@@ -32,6 +32,7 @@ from biopsy_optimizer.v2.runner import (
 	run_target_staged_candidate_search,
 )
 from biopsy_optimizer.v2.render import (
+	OptimizerV2RenderCameraConfig,
 	OptimizerV2RenderLayer,
 	OptimizerV2StageBoundaryRenderJob,
 	build_geometry_render_layer,
@@ -40,5 +41,9 @@ from biopsy_optimizer.v2.render import (
 	build_stage_boundary_render_jobs,
 	render_scene_render_jobs,
 	render_stage_boundary_candidate_clouds,
+)
+from biopsy_optimizer.v2.output import (
+	build_target_dil_optimization_summary_dataframe,
+	build_target_dil_ranked_candidate_output_dataframe,
 )
 

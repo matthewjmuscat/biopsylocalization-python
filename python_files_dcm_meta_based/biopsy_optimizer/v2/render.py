@@ -22,6 +22,16 @@ class OptimizerV2RenderLayer:
 
 
 @dataclass(frozen=True)
+class OptimizerV2RenderCameraConfig:
+    """Optional camera/view contract for replayable optimizer-v2 scenes."""
+
+    lookat: np.ndarray
+    up: np.ndarray
+    front: np.ndarray
+    zoom: float
+
+
+@dataclass(frozen=True)
 class OptimizerV2StageBoundaryRenderJob:
     """Geometry-free render job description for one optimizer stage boundary."""
 
@@ -31,6 +41,7 @@ class OptimizerV2StageBoundaryRenderJob:
     survivor_candidate_points: np.ndarray
     target_points: np.ndarray
     render_layers: Tuple[OptimizerV2RenderLayer, ...]
+    camera_config: Optional[OptimizerV2RenderCameraConfig] = None
     nominal_biopsy_centroid: Optional[np.ndarray] = None
     winner_candidate_points: Optional[np.ndarray] = None
 
@@ -44,6 +55,7 @@ def build_stage_boundary_render_jobs(
     include_final_winner: bool = True,
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
+    camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build one render-job description per selected stage boundary."""
     normalized_candidate_points = _validate_xyz_points_array(
@@ -128,6 +140,7 @@ def build_stage_boundary_render_jobs(
                 ],
                 target_points=normalized_target_points,
                 render_layers=tuple(render_layers),
+                camera_config=_validate_camera_config(camera_config),
                 nominal_biopsy_centroid=normalized_nominal_biopsy_centroid,
                 winner_candidate_points=winner_candidate_points,
             )
@@ -145,6 +158,7 @@ def render_stage_boundary_candidate_clouds(
     include_final_winner: bool = True,
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
+    camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build and render one Open3D scene per selected stage boundary."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
@@ -156,6 +170,7 @@ def render_stage_boundary_candidate_clouds(
         include_final_winner=include_final_winner,
         additional_render_layers=additional_render_layers,
         additional_point_clouds=additional_point_clouds,
+        camera_config=camera_config,
     )
     return render_scene_render_jobs(stage_boundary_render_jobs)
 
@@ -186,6 +201,10 @@ def render_scene_render_jobs(
         plotting_funcs.plot_geometries(
             *geometries_to_plot,
             label=render_job.scene_name,
+            lookat_inp=None if render_job.camera_config is None else render_job.camera_config.lookat,
+            up_inp=None if render_job.camera_config is None else render_job.camera_config.up,
+            front_inp=None if render_job.camera_config is None else render_job.camera_config.front,
+            zoom_inp=None if render_job.camera_config is None else render_job.camera_config.zoom,
         )
 
     return resolved_render_jobs
@@ -304,6 +323,20 @@ def _validate_color_vector(color: np.ndarray, color_name: str) -> np.ndarray:
     return normalized_color
 
 
+def _validate_camera_config(
+    camera_config: Optional[OptimizerV2RenderCameraConfig],
+) -> Optional[OptimizerV2RenderCameraConfig]:
+    if camera_config is None:
+        return None
+
+    return OptimizerV2RenderCameraConfig(
+        lookat=_validate_single_xyz_point(camera_config.lookat, "camera_config.lookat"),
+        up=_validate_single_xyz_point(camera_config.up, "camera_config.up"),
+        front=_validate_single_xyz_point(camera_config.front, "camera_config.front"),
+        zoom=float(camera_config.zoom),
+    )
+
+
 def _coerce_points_to_numpy(points):
     if hasattr(points, "get"):
         return points.get()
@@ -311,6 +344,7 @@ def _coerce_points_to_numpy(points):
 
 
 __all__ = [
+    "OptimizerV2RenderCameraConfig",
     "OptimizerV2RenderLayer",
     "OptimizerV2StageBoundaryRenderJob",
     "build_geometry_render_layer",
