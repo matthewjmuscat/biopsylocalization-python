@@ -2445,7 +2445,7 @@ def test_points_against_polygons_cupy_2d_arr_version(nearest_zslice_index_and_va
     poly_indices = cp.array(poly_indices)
     
     # Test each point against the corresponding polygon
-    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log, kernel_type=kernel_type, return_array_as="cupy")
+    valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver1(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log, kernel_type=kernel_type, return_array_as="cupy")
     
     # Map the valid results back to the original result array
     result_cp_arr_flat = result_cp_arr.flatten()

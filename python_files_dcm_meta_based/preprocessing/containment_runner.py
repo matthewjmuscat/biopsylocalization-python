@@ -1,9 +1,8 @@
-"""Shared aligned containment execution helpers.
+"""Shared containment execution helpers.
 
-This module stops at the mother-function boundary. It accepts an aligned batch
-of test structures plus the structure-mapping array, calls the custom CUDA
-containment stack, and returns the result in a reshaped form that later scoring
-layers can consume.
+This module is a thin preprocessing-facing adapter on top of the general-use
+custom-PIP containment surfaces. It reshapes aligned 3D batches for scoring
+consumers without owning the generalized grandmother execution logic.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ import cupy as cp
 import numpy as np
 
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother
 from preprocessing.localization_transformer import AlignedContainmentTestBatch
 
 
@@ -41,8 +41,9 @@ def run_aligned_containment_batch(
     structure_info: Optional[dict] = None,
     create_containment_results_dataframe: bool = False,
     return_array_as: str = "cupy",
+    max_test_structures_per_call: Optional[int] = None,
 ) -> AlignedContainmentRunResult:
-    """Run the custom CUDA containment mother function on an aligned batch."""
+    """Run an aligned batch through the general-use custom-PIP grandmother surface."""
     _validate_return_array_as(return_array_as)
     _validate_aligned_containment_test_batch(aligned_containment_test_batch)
 
@@ -50,16 +51,17 @@ def run_aligned_containment_batch(
         raise ValueError("structure_info is required when create_containment_results_dataframe is True")
 
     raw_containment_result_cp_arr, prepper_output_tuple = (
-        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays,
-            aligned_containment_test_batch.test_structures,
-            aligned_containment_test_batch.test_struct_to_relative_struct_mapping,
-            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
-            log_sub_dirs_list=list(log_sub_dirs_list or []),
-            log_file_name=log_file_name,
-            include_edges_in_log=include_edges_in_log,
-            kernel_type=kernel_type,
+        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.custom_point_containment_grandmother_function(
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+        aligned_containment_test_batch.test_structures,
+        aligned_containment_test_batch.test_struct_to_relative_struct_mapping,
+        max_test_structures_per_call=max_test_structures_per_call,
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
+        log_sub_dirs_list=log_sub_dirs_list,
+        log_file_name=log_file_name,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
         )
     )
 
