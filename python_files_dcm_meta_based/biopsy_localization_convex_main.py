@@ -528,6 +528,8 @@ def main():
     optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
     optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(optimizer_v2_stage_trial_counts)
     optimizer_v2_max_candidates_per_chunk = 8
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-boundary scene per rendered stage for each v2 biopsy.
+    optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
     num_stochastic_targeting_transform_samples_input = 0
     transform_generation_random_seed = 51
     optimizer_v1_random_seed = 51
@@ -4657,6 +4659,8 @@ def main():
                               completed_progress,
                               live_display,
                               max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
+                              render_stage_boundary_candidate_clouds_bool=optimizer_v2_render_stage_boundary_candidate_clouds_bool,
+                              render_stage_names_to_render=optimizer_v2_render_stage_names,
                               )
 
                 

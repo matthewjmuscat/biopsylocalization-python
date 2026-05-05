@@ -56,6 +56,7 @@ def build_stage_boundary_render_jobs(
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
     camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
+    scene_name_prefix: Optional[str] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build one render-job description per selected stage boundary."""
     normalized_candidate_points = _validate_xyz_points_array(
@@ -130,7 +131,10 @@ def build_stage_boundary_render_jobs(
 
         stage_boundary_render_jobs.append(
             OptimizerV2StageBoundaryRenderJob(
-                scene_name="optimizer_v2_{}".format(stage_result.stage_name),
+                scene_name=_build_stage_boundary_scene_name(
+                    stage_result.stage_name,
+                    scene_name_prefix=scene_name_prefix,
+                ),
                 stage_name=stage_result.stage_name,
                 input_candidate_points=normalized_candidate_points[
                     np.asarray(stage_result.input_candidate_indices_global, dtype=np.int32)
@@ -159,6 +163,7 @@ def render_stage_boundary_candidate_clouds(
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
     camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
+    scene_name_prefix: Optional[str] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build and render one Open3D scene per selected stage boundary."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
@@ -171,8 +176,19 @@ def render_stage_boundary_candidate_clouds(
         additional_render_layers=additional_render_layers,
         additional_point_clouds=additional_point_clouds,
         camera_config=camera_config,
+        scene_name_prefix=scene_name_prefix,
     )
     return render_scene_render_jobs(stage_boundary_render_jobs)
+
+
+def _build_stage_boundary_scene_name(
+    stage_name: str,
+    scene_name_prefix: Optional[str] = None,
+) -> str:
+    resolved_scene_name = "optimizer_v2_{}".format(stage_name)
+    if scene_name_prefix:
+        resolved_scene_name = "{}__{}".format(scene_name_prefix, resolved_scene_name)
+    return resolved_scene_name
 
 
 def render_scene_render_jobs(

@@ -13,6 +13,10 @@ from biopsy_optimizer.v2.output import (
     build_target_dil_optimization_summary_dataframe,
     build_target_dil_ranked_candidate_output_dataframe,
 )
+from biopsy_optimizer.v2.render import (
+    build_stage_boundary_render_jobs,
+    render_scene_render_jobs,
+)
 from biopsy_optimizer.v2.runner import run_target_staged_candidate_search
 from preprocessing.biopsy_processing.simulated_biopsy_planner import (
     get_planned_simulated_biopsy_model_dict,
@@ -30,6 +34,9 @@ TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY = (
 )
 TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY = (
     "Biopsy optimization - Target DIL optimizer v2 ranked candidates dataframe"
+)
+TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY = (
+    "Biopsy optimization - Target DIL optimizer v2 stage boundary render jobs"
 )
 
 
@@ -51,6 +58,8 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     completed_progress,
     live_display,
     max_candidates_per_chunk=8,
+    render_stage_boundary_candidate_clouds_bool=False,
+    render_stage_names_to_render=None,
 ):
     patientUID_default = "Initializing"
     processing_patients_task_main_description = "[red]Running optimizer-v2 sim-bx targeting [{}]...".format(
@@ -195,6 +204,28 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 downstream_comparable_trial_count=None,
                 return_array_as="numpy",
             )
+
+            stage_boundary_render_jobs = build_stage_boundary_render_jobs(
+                search_result=search_result,
+                candidate_pool=candidate_pool,
+                target_points_array=np.asarray(
+                    target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
+                    dtype=float,
+                ),
+                nominal_biopsy_centroid=nominal_biopsy_centroid,
+                stage_names_to_render=render_stage_names_to_render,
+                scene_name_prefix="{}__{}".format(patientUID, structureID),
+            )
+            specific_structure[
+                TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
+            ] = stage_boundary_render_jobs
+            if render_stage_boundary_candidate_clouds_bool and stage_boundary_render_jobs:
+                live_display.stop()
+                try:
+                    render_scene_render_jobs(stage_boundary_render_jobs)
+                finally:
+                    live_display.start(refresh=True)
+                    live_display.refresh()
 
             metadata = _build_search_metadata(
                 patientUID,
