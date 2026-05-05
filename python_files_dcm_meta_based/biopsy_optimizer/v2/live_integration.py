@@ -14,6 +14,7 @@ from biopsy_optimizer.v2.output import (
     build_target_dil_ranked_candidate_output_dataframe,
 )
 from biopsy_optimizer.v2.render import (
+    build_point_cloud_render_layer,
     build_stage_boundary_render_jobs,
     render_scene_render_jobs,
 )
@@ -58,8 +59,19 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     completed_progress,
     live_display,
     max_candidates_per_chunk=8,
+    downstream_comparable_trial_count=None,
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
+    render_patient_whitelist=None,
+    render_roi_whitelist=None,
+    render_include_planned_sampled_points_bool=True,
+    render_include_planned_core_structure_bool=True,
+    render_include_planned_centroid_line_bool=True,
+    render_include_target_surface_bool=False,
+    render_include_selected_anatomy_bool=True,
+    oar_ref=None,
+    rectum_ref=None,
+    urethra_ref=None,
 ):
     patientUID_default = "Initializing"
     processing_patients_task_main_description = "[red]Running optimizer-v2 sim-bx targeting [{}]...".format(
@@ -201,8 +213,28 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 max_candidates_per_chunk=max_candidates_per_chunk,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
-                downstream_comparable_trial_count=None,
+                downstream_comparable_trial_count=downstream_comparable_trial_count,
                 return_array_as="numpy",
+            )
+
+            winner_candidate_point = _resolve_operational_winner_candidate_point(
+                search_result,
+                candidate_pool,
+            )
+            additional_render_layers = _build_additional_stage_boundary_render_layers(
+                pydicom_item=pydicom_item,
+                specific_structure=specific_structure,
+                nominal_biopsy_centroid=nominal_biopsy_centroid,
+                winner_candidate_point=winner_candidate_point,
+                target_structure=target_structure,
+                render_include_planned_sampled_points_bool=render_include_planned_sampled_points_bool,
+                render_include_planned_core_structure_bool=render_include_planned_core_structure_bool,
+                render_include_planned_centroid_line_bool=render_include_planned_centroid_line_bool,
+                render_include_target_surface_bool=render_include_target_surface_bool,
+                render_include_selected_anatomy_bool=render_include_selected_anatomy_bool,
+                oar_ref=oar_ref,
+                rectum_ref=rectum_ref,
+                urethra_ref=urethra_ref,
             )
 
             stage_boundary_render_jobs = build_stage_boundary_render_jobs(
@@ -214,12 +246,23 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 ),
                 nominal_biopsy_centroid=nominal_biopsy_centroid,
                 stage_names_to_render=render_stage_names_to_render,
+                additional_render_layers=additional_render_layers,
                 scene_name_prefix="{}__{}".format(patientUID, structureID),
             )
             specific_structure[
                 TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
             ] = stage_boundary_render_jobs
-            if render_stage_boundary_candidate_clouds_bool and stage_boundary_render_jobs:
+            should_render_structure = _should_render_structure_stage_boundary_candidate_clouds(
+                patientUID,
+                structureID,
+                render_patient_whitelist,
+                render_roi_whitelist,
+            )
+            if (
+                render_stage_boundary_candidate_clouds_bool
+                and should_render_structure
+                and stage_boundary_render_jobs
+            ):
                 live_display.stop()
                 try:
                     render_scene_render_jobs(stage_boundary_render_jobs)
@@ -426,12 +469,22 @@ def _build_target_centroid_fallback_summary_dataframe(
         "Target optimizer tie-break warning flag": False,
         "Target optimizer centroid fallback flag": True,
         "Target optimizer final resolution trial count": np.nan,
+        "Target optimizer selection score trial count": np.nan,
         "Target optimizer additional rescore attempts used": np.nan,
         "Target optimizer final tie candidate count": np.nan,
         "Target optimizer resolved objective value": np.nan,
         "Target optimizer resolved nominal objective value": np.nan,
+        "Target optimizer selected winner optimizer-side target score": np.nan,
+        "Target optimizer selected winner optimizer-side trial count": np.nan,
         "Target optimizer downstream comparable target score": np.nan,
         "Target optimizer downstream comparable trial count": np.nan,
+        "Target optimizer selected winner downstream-comparable target score": np.nan,
+        "Target optimizer selected winner downstream-comparable trial count": np.nan,
+        "Target optimizer selected winner downstream MC target score": np.nan,
+        "Target optimizer selected winner downstream MC trial count": np.nan,
+        "Target optimizer selected winner downstream MC agreement delta": np.nan,
+        "Target optimizer downstream comparable score trial count": np.nan,
+        "Target optimizer selected winner score-surface delta": np.nan,
         "Target optimizer agreement delta": np.nan,
         "Target optimizer fallback reason": "no_ranked_candidates",
     }
@@ -439,6 +492,237 @@ def _build_target_centroid_fallback_summary_dataframe(
     for key, value in metadata.items():
         summary_dataframe[key] = value
     return summary_dataframe
+
+
+def _should_render_structure_stage_boundary_candidate_clouds(
+    patient_uid,
+    roi_name,
+    render_patient_whitelist,
+    render_roi_whitelist,
+):
+    normalized_patient_uid = str(patient_uid).strip().lower()
+    normalized_roi_name = str(roi_name).strip().lower()
+
+    patient_allowed = _matches_render_whitelist(
+        normalized_patient_uid,
+        render_patient_whitelist,
+        require_exact_match=True,
+    )
+    roi_allowed = _matches_render_whitelist(
+        normalized_roi_name,
+        render_roi_whitelist,
+        require_exact_match=False,
+    )
+
+    return patient_allowed and roi_allowed
+
+
+def _normalize_render_whitelist(raw_whitelist):
+    return tuple(
+        str(raw_item).strip().lower()
+        for raw_item in raw_whitelist
+        if str(raw_item).strip() != ""
+    )
+
+
+def _matches_render_whitelist(
+    normalized_candidate_name,
+    raw_whitelist,
+    require_exact_match,
+):
+    if raw_whitelist is None:
+        return True
+
+    normalized_whitelist = _normalize_render_whitelist(raw_whitelist)
+    if len(normalized_whitelist) == 0:
+        return False
+
+    if require_exact_match:
+        return normalized_candidate_name in normalized_whitelist
+
+    return any(
+        whitelist_entry == normalized_candidate_name or whitelist_entry in normalized_candidate_name
+        for whitelist_entry in normalized_whitelist
+    )
+
+
+def _resolve_operational_winner_candidate_point(
+    search_result,
+    candidate_pool,
+):
+    winner_candidate_index_global = search_result.operational_winner_candidate_index_global
+    if winner_candidate_index_global is None:
+        return None
+
+    candidate_points = np.asarray(candidate_pool.candidate_points, dtype=float)
+    if winner_candidate_index_global < 0 or winner_candidate_index_global >= candidate_points.shape[0]:
+        return None
+
+    return candidate_points[int(winner_candidate_index_global)].reshape(3)
+
+
+def _build_additional_stage_boundary_render_layers(
+    pydicom_item,
+    specific_structure,
+    nominal_biopsy_centroid,
+    winner_candidate_point,
+    target_structure,
+    render_include_planned_sampled_points_bool,
+    render_include_planned_core_structure_bool,
+    render_include_planned_centroid_line_bool,
+    render_include_target_surface_bool,
+    render_include_selected_anatomy_bool,
+    oar_ref,
+    rectum_ref,
+    urethra_ref,
+):
+    additional_render_layers = []
+    planned_translation_vec = _resolve_planned_to_winner_translation_vector(
+        nominal_biopsy_centroid,
+        winner_candidate_point,
+    )
+
+    if render_include_planned_sampled_points_bool:
+        planned_sampled_points = _coerce_optional_points_array(
+            get_planned_simulated_biopsy_sampled_points_arr(specific_structure)
+        )
+        if planned_sampled_points is not None:
+            additional_render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="planned_sampled_points",
+                    points=planned_sampled_points + planned_translation_vec,
+                    color=np.array([0.0, 0.8, 0.8]),
+                )
+            )
+
+    planned_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
+    if render_include_planned_core_structure_bool:
+        planned_core_structure_points = _coerce_optional_points_array(
+            planned_biopsy_model_dict.get("Reconstructed structure pts arr")
+        )
+        if planned_core_structure_points is not None:
+            additional_render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="planned_core_structure",
+                    points=planned_core_structure_points + planned_translation_vec,
+                    color=np.array([0.7, 0.7, 0.7]),
+                )
+            )
+
+    if render_include_planned_centroid_line_bool:
+        planned_centroid_line = _coerce_optional_points_array(
+            planned_biopsy_model_dict.get("Best fit line of centroid pts")
+        )
+        if planned_centroid_line is not None:
+            additional_render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="planned_centroid_line",
+                    points=planned_centroid_line + planned_translation_vec,
+                    color=np.array([0.4, 0.0, 0.8]),
+                )
+            )
+
+    if render_include_target_surface_bool:
+        target_structure_surface_points = _coerce_optional_points_array(
+            target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr
+        )
+        if target_structure_surface_points is not None:
+            additional_render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="target_structure_surface",
+                    points=target_structure_surface_points,
+                    color=np.array([0.1, 0.1, 0.6]),
+                )
+            )
+
+    if render_include_selected_anatomy_bool:
+        additional_render_layers.extend(
+            _build_selected_anatomy_render_layers(
+                pydicom_item,
+                oar_ref=oar_ref,
+                rectum_ref=rectum_ref,
+                urethra_ref=urethra_ref,
+            )
+        )
+
+    return tuple(additional_render_layers)
+
+
+def _resolve_planned_to_winner_translation_vector(
+    nominal_biopsy_centroid,
+    winner_candidate_point,
+):
+    if winner_candidate_point is None:
+        return np.zeros(3, dtype=float)
+
+    return np.asarray(winner_candidate_point, dtype=float).reshape(3) - np.asarray(
+        nominal_biopsy_centroid,
+        dtype=float,
+    ).reshape(3)
+
+
+def _build_selected_anatomy_render_layers(
+    pydicom_item,
+    oar_ref,
+    rectum_ref,
+    urethra_ref,
+):
+    anatomy_specs = (
+        ("prostate_structure", oar_ref, ("prostate",), np.array([0.55, 0.55, 0.55])),
+        ("urethra_structure", urethra_ref, ("urethra", "ureth"), np.array([1.0, 0.85, 0.0])),
+        ("rectum_structure", rectum_ref, ("rectum", "rect"), np.array([0.8, 0.35, 0.0])),
+    )
+    resolved_render_layers = []
+
+    for layer_name, structure_ref_key, roi_fragments, layer_color in anatomy_specs:
+        if structure_ref_key is None or structure_ref_key not in pydicom_item:
+            continue
+
+        resolved_structure = _resolve_structure_by_roi_fragments(
+            pydicom_item[structure_ref_key],
+            roi_fragments,
+        )
+        if resolved_structure is None:
+            continue
+
+        interpolation_information = resolved_structure.get("Inter-slice interpolation information")
+        if interpolation_information is None:
+            continue
+
+        anatomy_points = _coerce_optional_points_array(interpolation_information.interpolated_pts_np_arr)
+        if anatomy_points is None:
+            continue
+
+        resolved_render_layers.append(
+            build_point_cloud_render_layer(
+                layer_name=layer_name,
+                points=anatomy_points,
+                color=layer_color,
+            )
+        )
+
+    return tuple(resolved_render_layers)
+
+
+def _resolve_structure_by_roi_fragments(structure_list, roi_fragments):
+    normalized_roi_fragments = tuple(str(fragment).strip().lower() for fragment in roi_fragments)
+    for candidate_structure in structure_list:
+        candidate_roi_name = str(candidate_structure.get("ROI", "")).strip().lower()
+        if any(roi_fragment in candidate_roi_name for roi_fragment in normalized_roi_fragments):
+            return candidate_structure
+
+    return None
+
+
+def _coerce_optional_points_array(points_like):
+    if points_like is None:
+        return None
+
+    normalized_points = np.asarray(points_like, dtype=float)
+    if normalized_points.size == 0:
+        return None
+
+    return normalized_points
 
 
 def _build_transport_selection_metadata(summary_dataframe):

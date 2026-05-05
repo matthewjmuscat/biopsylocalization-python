@@ -528,9 +528,11 @@ def main():
     optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
     optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(optimizer_v2_stage_trial_counts)
     optimizer_v2_max_candidates_per_chunk = 8
-    optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-boundary scene per rendered stage for each v2 biopsy.
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
-    num_stochastic_targeting_transform_samples_input = 0
+    optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
+    optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
+    num_stochastic_targeting_transform_samples_input = 0 # Placeholder budget for a future stochastic-targeting stage before simulated-biopsy planning; currently only used when sizing shared transform precompute.
     transform_generation_random_seed = 51
     optimizer_v1_random_seed = 51
 
@@ -4659,8 +4661,18 @@ def main():
                               completed_progress,
                               live_display,
                               max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
+                              downstream_comparable_trial_count=(
+                                  int(num_MC_containment_simulations_input)
+                                  if num_MC_containment_simulations_input > 0
+                                  else None
+                              ),
                               render_stage_boundary_candidate_clouds_bool=optimizer_v2_render_stage_boundary_candidate_clouds_bool,
                               render_stage_names_to_render=optimizer_v2_render_stage_names,
+                              render_patient_whitelist=optimizer_v2_render_patient_whitelist,
+                              render_roi_whitelist=optimizer_v2_render_roi_whitelist,
+                              oar_ref=oar_ref,
+                              rectum_ref=rectum_ref_key,
+                              urethra_ref=urethra_ref_key,
                               )
 
                 

@@ -16,7 +16,10 @@ def build_target_dil_optimization_summary_dataframe(
 ) -> pandas.DataFrame:
     """Build one carry-down winner summary row for the target-DIL optimizer lane."""
     if search_result.ranked_candidate_dataframe.empty:
-        return _apply_metadata_to_dataframe(pandas.DataFrame(), metadata)
+        return _apply_metadata_to_dataframe(
+            _initialize_downstream_mc_placeholder_columns(pandas.DataFrame()),
+            metadata,
+        )
 
     winner_row = search_result.ranked_candidate_dataframe.iloc[0]
     summary_row = {
@@ -41,6 +44,10 @@ def build_target_dil_optimization_summary_dataframe(
         "Target optimizer tie-break warning flag": winner_row.get("Tie-break warning flag", np.nan),
         "Target optimizer centroid fallback flag": winner_row.get("Tie-break fallback flag", np.nan),
         "Target optimizer final resolution trial count": winner_row.get("Final winner resolution trial count", np.nan),
+        "Target optimizer selection score trial count": winner_row.get(
+            "Final winner resolution trial count",
+            np.nan,
+        ),
         "Target optimizer additional rescore attempts used": winner_row.get(
             "Final winner additional rescore attempts used",
             np.nan,
@@ -51,6 +58,14 @@ def build_target_dil_optimization_summary_dataframe(
             "Final winner resolved nominal objective value",
             np.nan,
         ),
+        "Target optimizer selected winner optimizer-side target score": winner_row.get(
+            "Final winner resolved objective value",
+            np.nan,
+        ),
+        "Target optimizer selected winner optimizer-side trial count": winner_row.get(
+            "Final winner resolution trial count",
+            np.nan,
+        ),
         "Target optimizer downstream comparable target score": winner_row.get(
             "Winning-candidate downstream-comparable target score",
             np.nan,
@@ -59,9 +74,29 @@ def build_target_dil_optimization_summary_dataframe(
             "Downstream-comparable score trial count",
             np.nan,
         ),
-        "Target optimizer agreement delta": _resolve_agreement_delta(winner_row),
+        "Target optimizer selected winner downstream-comparable target score": winner_row.get(
+            "Winning-candidate downstream-comparable target score",
+            np.nan,
+        ),
+        "Target optimizer selected winner downstream-comparable trial count": winner_row.get(
+            "Downstream-comparable score trial count",
+            np.nan,
+        ),
+        "Target optimizer selected winner downstream MC target score": np.nan,
+        "Target optimizer selected winner downstream MC trial count": np.nan,
+        "Target optimizer selected winner downstream MC agreement delta": np.nan,
+        "Target optimizer downstream comparable score trial count": winner_row.get(
+            "Downstream-comparable score trial count",
+            np.nan,
+        ),
+        "Target optimizer selected winner score-surface delta": _resolve_selected_winner_score_surface_delta(
+            winner_row
+        ),
+        "Target optimizer agreement delta": _resolve_selected_winner_score_surface_delta(winner_row),
     }
-    summary_dataframe = pandas.DataFrame([summary_row])
+    summary_dataframe = _initialize_downstream_mc_placeholder_columns(
+        pandas.DataFrame([summary_row])
+    )
     return _apply_metadata_to_dataframe(summary_dataframe, metadata)
 
 
@@ -72,7 +107,10 @@ def build_target_dil_ranked_candidate_output_dataframe(
     """Build the ranked optimizer-candidate table with carry-down metadata stamped on it."""
     ranked_candidate_dataframe = search_result.ranked_candidate_dataframe.copy()
     if ranked_candidate_dataframe.empty:
-        return _apply_metadata_to_dataframe(ranked_candidate_dataframe, metadata)
+        return _apply_metadata_to_dataframe(
+            _initialize_downstream_mc_placeholder_columns(ranked_candidate_dataframe),
+            metadata,
+        )
 
     ranked_candidate_dataframe["Target optimizer lane"] = "target_dil_optimizer_v2"
     ranked_candidate_dataframe["Target optimizer final stage name"] = _resolve_final_stage_name(search_result)
@@ -83,9 +121,9 @@ def build_target_dil_ranked_candidate_output_dataframe(
     ranked_candidate_dataframe["Target optimizer num final ranked candidates"] = np.int32(
         len(search_result.ranked_candidate_dataframe)
     )
-    ranked_candidate_dataframe["Target optimizer agreement delta"] = ranked_candidate_dataframe.apply(
-        _resolve_agreement_delta,
-        axis=1,
+    ranked_candidate_dataframe["Target optimizer selection score trial count"] = ranked_candidate_dataframe.get(
+        "Final winner resolution trial count",
+        np.nan,
     )
     ranked_candidate_dataframe.rename(
         columns={
@@ -99,6 +137,57 @@ def build_target_dil_ranked_candidate_output_dataframe(
         },
         inplace=True,
     )
+    ranked_candidate_dataframe[
+        "Target optimizer downstream comparable score trial count"
+    ] = ranked_candidate_dataframe.get(
+        "Target optimizer downstream comparable trial count",
+        np.nan,
+    )
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner optimizer-side target score"
+    ] = ranked_candidate_dataframe.get(
+        "Final winner resolved objective value",
+        np.nan,
+    )
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner optimizer-side trial count"
+    ] = ranked_candidate_dataframe.get(
+        "Final winner resolution trial count",
+        np.nan,
+    )
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner downstream-comparable target score"
+    ] = ranked_candidate_dataframe.get(
+        "Target optimizer downstream comparable target score",
+        np.nan,
+    )
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner downstream-comparable trial count"
+    ] = ranked_candidate_dataframe.get(
+        "Target optimizer downstream comparable trial count",
+        np.nan,
+    )
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner downstream MC target score"
+    ] = np.nan
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner downstream MC trial count"
+    ] = np.nan
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner downstream MC agreement delta"
+    ] = np.nan
+    ranked_candidate_dataframe[
+        "Target optimizer selected winner score-surface delta"
+    ] = ranked_candidate_dataframe.apply(
+        _resolve_selected_winner_score_surface_delta,
+        axis=1,
+    )
+    ranked_candidate_dataframe["Target optimizer agreement delta"] = ranked_candidate_dataframe[
+        "Target optimizer selected winner score-surface delta"
+    ]
+    ranked_candidate_dataframe = _initialize_downstream_mc_placeholder_columns(
+        ranked_candidate_dataframe
+    )
     return _apply_metadata_to_dataframe(ranked_candidate_dataframe, metadata)
 
 
@@ -108,15 +197,42 @@ def _resolve_final_stage_name(search_result: OptimizerV2SearchRunResult) -> str:
     return str(search_result.stage_results[-1].stage_name)
 
 
-def _resolve_agreement_delta(row) -> float:
-    retained_score = row.get("Objective value", row.get("Target optimizer retained score", np.nan))
+def _initialize_downstream_mc_placeholder_columns(
+    dataframe: pandas.DataFrame,
+) -> pandas.DataFrame:
+    updated_dataframe = dataframe.copy()
+    placeholder_columns = (
+        "Target optimizer selected winner downstream MC target score",
+        "Target optimizer selected winner downstream MC trial count",
+        "Target optimizer selected winner downstream MC agreement delta",
+    )
+    for column_name in placeholder_columns:
+        if column_name not in updated_dataframe.columns:
+            updated_dataframe[column_name] = np.nan
+    return updated_dataframe
+
+
+def _resolve_selected_winner_score_surface_delta(row) -> float:
+    optimizer_side_score = row.get(
+        "Final winner resolved objective value",
+        row.get(
+            "Target optimizer selected winner optimizer-side target score",
+            row.get("Target optimizer resolved objective value", np.nan),
+        ),
+    )
+    if pandas.isna(optimizer_side_score):
+        optimizer_side_score = row.get("Objective value", row.get("Target optimizer retained score", np.nan))
+
     downstream_score = row.get(
         "Winning-candidate downstream-comparable target score",
-        row.get("Target optimizer downstream comparable target score", np.nan),
+        row.get(
+            "Target optimizer selected winner downstream-comparable target score",
+            row.get("Target optimizer downstream comparable target score", np.nan),
+        ),
     )
-    if pandas.isna(retained_score) or pandas.isna(downstream_score):
+    if pandas.isna(optimizer_side_score) or pandas.isna(downstream_score):
         return np.nan
-    return float(downstream_score) - float(retained_score)
+    return float(downstream_score) - float(optimizer_side_score)
 
 
 def _apply_metadata_to_dataframe(

@@ -195,35 +195,284 @@ def render_scene_render_jobs(
     render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Render prebuilt scene jobs so they can be replayed or exported later."""
-    import plotting_funcs
+    import open3d as o3d
     import point_containment_tools
 
     resolved_render_jobs = tuple(render_jobs)
+    if len(resolved_render_jobs) == 0:
+        return resolved_render_jobs
+
+    stage_geometries_by_name = {}
+    layer_visibility_by_name = {}
+    ordered_stage_names = []
     for render_job in resolved_render_jobs:
-        geometries_to_plot = []
+        ordered_stage_names.append(render_job.stage_name)
+        stage_geometries = {}
         for render_layer in render_job.render_layers:
             if render_layer.layer_kind == "point_cloud":
-                geometries_to_plot.append(
-                    point_containment_tools.create_point_cloud(
-                        render_layer.points,
-                        np.asarray(render_layer.color, dtype=float),
-                    )
+                geometry = point_containment_tools.create_point_cloud(
+                    render_layer.points,
+                    np.asarray(render_layer.color, dtype=float),
                 )
             elif render_layer.layer_kind == "geometry":
-                geometries_to_plot.append(render_layer.geometry)
+                geometry = render_layer.geometry
             else:
                 raise ValueError("unsupported render layer kind: {}".format(render_layer.layer_kind))
 
-        plotting_funcs.plot_geometries(
-            *geometries_to_plot,
-            label=render_job.scene_name,
-            lookat_inp=None if render_job.camera_config is None else render_job.camera_config.lookat,
-            up_inp=None if render_job.camera_config is None else render_job.camera_config.up,
-            front_inp=None if render_job.camera_config is None else render_job.camera_config.front,
-            zoom_inp=None if render_job.camera_config is None else render_job.camera_config.zoom,
-        )
+            stage_geometries[render_layer.layer_name] = geometry
+            layer_visibility_by_name.setdefault(render_layer.layer_name, True)
+
+        stage_geometries_by_name[render_job.stage_name] = stage_geometries
+
+    visualizer = o3d.visualization.VisualizerWithKeyCallback()
+    visualizer.create_window(window_name=_build_multistage_scene_name(resolved_render_jobs))
+    render_option = visualizer.get_render_option()
+    render_option.show_coordinate_frame = True
+    render_option.background_color = np.asarray([1.0, 1.0, 1.0])
+
+    active_stage_name_ref = {"value": ordered_stage_names[0]}
+    _sync_stage_geometries_to_viewer(
+        visualizer,
+        stage_geometries_by_name[active_stage_name_ref["value"]],
+        layer_visibility_by_name,
+        add_visible_layers=True,
+    )
+
+    initial_camera_config = resolved_render_jobs[0].camera_config
+    if initial_camera_config is not None:
+        view_control = visualizer.get_view_control()
+        view_control.set_lookat(np.asarray(initial_camera_config.lookat, dtype=float))
+        view_control.set_up(np.asarray(initial_camera_config.up, dtype=float))
+        view_control.set_front(np.asarray(initial_camera_config.front, dtype=float))
+        view_control.set_zoom(float(initial_camera_config.zoom))
+    else:
+        visualizer.reset_view_point(True)
+
+    _register_render_layer_toggle_callbacks(
+        visualizer,
+        stage_geometries_by_name,
+        active_stage_name_ref,
+        layer_visibility_by_name,
+        ordered_stage_names,
+    )
+    _print_render_layer_toggle_help(
+        _build_multistage_scene_name(resolved_render_jobs),
+        ordered_stage_names,
+    )
+    visualizer.run()
+    visualizer.destroy_window()
 
     return resolved_render_jobs
+
+
+def _register_render_layer_toggle_callbacks(
+    visualizer,
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    ordered_stage_names,
+):
+    key_to_layer_names = {
+        ord("I"): ("stage_input_candidates",),
+        ord("S"): ("stage_survivors",),
+        ord("T"): ("target_points",),
+        ord("N"): ("nominal_biopsy_centroid",),
+        ord("W"): ("operational_winner",),
+        ord("P"): ("planned_sampled_points",),
+        ord("C"): ("planned_core_structure",),
+        ord("L"): ("planned_centroid_line",),
+        ord("O"): ("prostate_structure",),
+        ord("U"): ("urethra_structure",),
+        ord("R"): ("rectum_structure",),
+        ord("D"): ("target_structure_surface",),
+    }
+
+    for key_code, layer_names in key_to_layer_names.items():
+        visualizer.register_key_callback(
+            key_code,
+            _build_toggle_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                layer_names,
+            ),
+        )
+
+    for stage_index, stage_name in enumerate(ordered_stage_names[:9], start=1):
+        visualizer.register_key_callback(
+            ord(str(stage_index)),
+            _build_stage_switch_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                stage_name,
+            ),
+        )
+
+    visualizer.register_key_callback(
+        ord("A"),
+        _build_set_all_visible_callback(
+            stage_geometries_by_name,
+            active_stage_name_ref,
+            layer_visibility_by_name,
+            visible=True,
+        ),
+    )
+    visualizer.register_key_callback(
+        ord("X"),
+        _build_set_all_visible_callback(
+            stage_geometries_by_name,
+            active_stage_name_ref,
+            layer_visibility_by_name,
+            visible=False,
+        ),
+    )
+    visualizer.register_key_callback(
+        ord("H"),
+        _build_help_callback(ordered_stage_names),
+    )
+
+
+def _build_toggle_callback(
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    layer_names,
+):
+    resolved_layer_names = tuple(layer_names)
+
+    def _toggle_callback(visualizer):
+        did_toggle = False
+        active_stage_geometries = stage_geometries_by_name[active_stage_name_ref["value"]]
+        for layer_name in resolved_layer_names:
+            geometry = active_stage_geometries.get(layer_name)
+            if geometry is None:
+                continue
+
+            if layer_visibility_by_name.get(layer_name, True):
+                visualizer.remove_geometry(geometry, reset_bounding_box=False)
+                layer_visibility_by_name[layer_name] = False
+            else:
+                visualizer.add_geometry(geometry, reset_bounding_box=False)
+                layer_visibility_by_name[layer_name] = True
+            did_toggle = True
+
+        if did_toggle:
+            visualizer.update_renderer()
+        return False
+
+    return _toggle_callback
+
+
+def _build_stage_switch_callback(
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    target_stage_name,
+):
+    def _stage_switch_callback(visualizer):
+        current_stage_name = active_stage_name_ref["value"]
+        if target_stage_name == current_stage_name:
+            return False
+
+        _sync_stage_geometries_to_viewer(
+            visualizer,
+            stage_geometries_by_name[current_stage_name],
+            layer_visibility_by_name,
+            add_visible_layers=False,
+        )
+        _sync_stage_geometries_to_viewer(
+            visualizer,
+            stage_geometries_by_name[target_stage_name],
+            layer_visibility_by_name,
+            add_visible_layers=True,
+        )
+        active_stage_name_ref["value"] = target_stage_name
+        visualizer.update_renderer()
+        print("[optimizer-v2 render] switched to {}".format(target_stage_name))
+        return False
+
+    return _stage_switch_callback
+
+
+def _build_set_all_visible_callback(
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    visible,
+):
+    def _set_all_visible_callback(visualizer):
+        active_stage_geometries = stage_geometries_by_name[active_stage_name_ref["value"]]
+        for layer_name in tuple(layer_visibility_by_name.keys()):
+            geometry = active_stage_geometries.get(layer_name)
+            currently_visible = layer_visibility_by_name[layer_name]
+            if visible and not currently_visible:
+                if geometry is not None:
+                    visualizer.add_geometry(geometry, reset_bounding_box=False)
+                layer_visibility_by_name[layer_name] = True
+            elif not visible and currently_visible:
+                if geometry is not None:
+                    visualizer.remove_geometry(geometry, reset_bounding_box=False)
+                layer_visibility_by_name[layer_name] = False
+
+        visualizer.update_renderer()
+        return False
+
+    return _set_all_visible_callback
+
+
+def _build_help_callback(ordered_stage_names):
+    def _help_callback(_visualizer):
+        _print_render_layer_toggle_help("Current optimizer-v2 scene", ordered_stage_names)
+        return False
+
+    return _help_callback
+
+
+def _print_render_layer_toggle_help(
+    scene_name: str,
+    ordered_stage_names: Sequence[str],
+) -> None:
+    print("[optimizer-v2 render] {} controls:".format(scene_name))
+    if ordered_stage_names:
+        print(
+            "  stage keys: {}".format(
+                ", ".join(
+                    "{}={}".format(stage_index, stage_name)
+                    for stage_index, stage_name in enumerate(ordered_stage_names[:9], start=1)
+                )
+            )
+        )
+    print("  I=input candidates, S=survivors, T=target points, N=nominal centroid, W=winner")
+    print("  P=planned sampled points, C=planned core structure, L=planned centroid line")
+    print("  O=prostate, U=urethra, R=rectum, D=target surface cloud")
+    print("  A=show all, X=hide all, H=print help, Q/Esc=close window")
+
+
+def _sync_stage_geometries_to_viewer(
+    visualizer,
+    stage_geometries,
+    layer_visibility_by_name,
+    add_visible_layers,
+):
+    for layer_name, geometry in stage_geometries.items():
+        if not layer_visibility_by_name.get(layer_name, True):
+            continue
+
+        if add_visible_layers:
+            visualizer.add_geometry(geometry, reset_bounding_box=False)
+        else:
+            visualizer.remove_geometry(geometry, reset_bounding_box=False)
+
+
+def _build_multistage_scene_name(
+    render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+) -> str:
+    first_scene_name = render_jobs[0].scene_name
+    stage_suffix = "__optimizer_v2_{}".format(render_jobs[0].stage_name)
+    if first_scene_name.endswith(stage_suffix):
+        return first_scene_name[: -len(stage_suffix)] + "__optimizer_v2"
+    return first_scene_name
 
 
 def build_point_cloud_render_layer(
