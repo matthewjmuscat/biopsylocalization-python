@@ -122,11 +122,16 @@ from preprocessing.render_debug_surface import render_processed_dataset_debug_pr
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_search_config_with_trial_counts
+from biopsy_optimizer.v2.live_integration import (
+    TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
+    TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
+    run_target_dil_optimizer_v2_for_live_simulated_family,
+)
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 
 
 def resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config):
-    return max(stage_config.num_trials for stage_config in optimizer_v2_search_config.stage_configs)
+    return optimizer_v2_search_config.resolve_required_transform_bank_size()
 
 
 def configure_transform_precompute_settings(master_structure_info_dict,
@@ -522,6 +527,7 @@ def main():
     nn_search_end_cap_grid_factor = 0.1
     optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
     optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(optimizer_v2_stage_trial_counts)
+    optimizer_v2_max_candidates_per_chunk = 8
     num_stochastic_targeting_transform_samples_input = 0
     transform_generation_random_seed = 51
     optimizer_v1_random_seed = 51
@@ -595,6 +601,7 @@ def main():
     # for simulated biopsies
     centroid_dil_sim_key = 'Centroid DIL'
     optimal_dil_sim_key = 'Optimal DIL'
+    target_dil_v2_sim_key = 'Target DIL v2'
     bx_sim_locations_dict = {centroid_dil_sim_key:
                                                             {"Create": True,
                                                             "Relative to struct type": dil_ref,
@@ -606,14 +613,20 @@ def main():
                                                             "Relative to struct type": dil_ref,
                                                             "Transport family": "optimal",
                                                             "Identifier string": 'sim_optimal_dil'}
+                                                            ,
+                                                        target_dil_v2_sim_key:
+                                                            {"Create": True,
+                                                            "Relative to struct type": dil_ref,
+                                                            "Transport family": "identity",
+                                                            "Identifier string": 'sim_target_dil_v2'}
                                                         }
     simulated_biopsy_fraction_numbers_to_create = 'all'   # [FIRST_PASS_CONFIG] use [2] for legacy F2-only behavior
     simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' (ie. 19mm), 
                                                     #'real normal' (samples from a normal distribution with mu=real_mean, std = real_std), 
                                                     # 'real mean' (all sim biopsy lengths are equal to real_mean),
                                                     # 'match real' (each sim biopsy length is equal to the real biopsy length for the same DIL the real biopsy was targetting, if there is more than one real biopsy targetting that dil it takes the mean of them for the simulated biopsy, and if no real biopsy targetted that dil it takes the mean of all biopsies)
-    color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)'}
-    biopsy_pcd_colors_dict = {'Real': np.array([0.5, 0.0, 0.5]), centroid_dil_sim_key: np.array([1.0, 0.55, 0.0]), optimal_dil_sim_key: np.array([0.0, 0.8, 0.6])} # real: purple, centroid: deep orange, optimal: light teal
+    color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)', target_dil_v2_sim_key: 'rgba(26, 71, 42, 1)'}
+    biopsy_pcd_colors_dict = {'Real': np.array([0.5, 0.0, 0.5]), centroid_dil_sim_key: np.array([1.0, 0.55, 0.0]), optimal_dil_sim_key: np.array([0.0, 0.8, 0.6]), target_dil_v2_sim_key: np.array([0.1, 0.65, 0.2])} # real: purple, centroid: deep orange, optimal: light teal, target-v2: deep green
 
     #bx_sim_locations = ['centroid'] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
     #bx_sim_ref_identifier = "sim"
@@ -4624,6 +4637,26 @@ def main():
                               important_info,
                               completed_progress,
                               live_display,
+                              )
+
+                live_display = run_target_dil_optimizer_v2_for_live_simulated_family(
+                              master_structure_reference_dict,
+                              master_structure_info_dict,
+                              bx_ref,
+                              dil_ref,
+                              all_ref_key,
+                              target_dil_v2_sim_key,
+                              optimizer_v2_search_config,
+                              parallel_pool,
+                              constant_z_slice_polygons_handler_option,
+                              remove_consecutive_duplicate_points_in_polygons,
+                              include_edges_in_log_files,
+                              custom_cuda_kernel_type,
+                              patients_progress,
+                              structures_progress,
+                              completed_progress,
+                              live_display,
+                              max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
                               )
 
                 
@@ -9444,6 +9477,8 @@ def structure_referencer(data_removals_dict_bx,
                                                                                   "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting dataframe": None,
                                                                                   "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None,
+                                                                                  TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY: None,
+                                                                                  TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY: None,
                                                                                   "Biopsy optimization - Guidance-map firing depth recommendations dataframe": None,
                                                                                   "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
                                                                                   "MR - ADC - summary statistics by structure dataframe": None},    
