@@ -39,6 +39,7 @@ def score_target_candidate_chunk(
     objective_reducer_name: str = "mean_pd",
     max_test_structures_per_call: Optional[int] = None,
     create_tested_candidate_dataframe: bool = True,
+    include_relative_structure_localized_points_for_debug: bool = False,
     containment_log_sub_dirs_list: Optional[Sequence[str]] = None,
     containment_log_file_name: Optional[str] = None,
     include_edges_in_log: bool = False,
@@ -65,10 +66,14 @@ def score_target_candidate_chunk(
         include_nominal=chunk_layout.include_nominal,
         return_array_as="cupy",
     )
-    aligned_containment_test_batch = localization_transformer.build_candidate_relative_structure_containment_batch(
+    relative_structure_localized_biopsy_batch = localization_transformer.build_relative_structure_localized_biopsy_batch(
         candidate_biopsy_self_transform_batch=candidate_biopsy_self_transform_batch,
         relative_structure_centroid=target_structure_centroid,
         relative_structure_transform_bank_prefix=target_transform_bank_prefix,
+        return_array_as="cupy",
+    )
+    aligned_containment_test_batch = localization_transformer.flatten_relative_structure_localized_batch_for_containment(
+        relative_structure_localized_biopsy_batch=relative_structure_localized_biopsy_batch,
         nominal_relative_structure_index=chunk_layout.nominal_relative_structure_index,
         trial_relative_structure_start_index=chunk_layout.trial_relative_structure_start_index,
         return_array_as="numpy",
@@ -134,6 +139,11 @@ def score_target_candidate_chunk(
         candidate_scores=candidate_scores_np_arr,
         candidate_nominal_scores=candidate_nominal_scores_np_arr,
         distance_to_target_centroid_mm=distance_to_target_centroid_mm,
+        relative_structure_localized_points=(
+            _coerce_output_array(relative_structure_localized_biopsy_batch.transformed_points, return_array_as)
+            if include_relative_structure_localized_points_for_debug
+            else None
+        ),
         tested_candidate_dataframe=tested_candidate_dataframe,
     )
 

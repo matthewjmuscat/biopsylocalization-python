@@ -14,6 +14,7 @@ from biopsy_optimizer.v2.contracts import (
     OptimizerV2ChunkScoreResult,
     OptimizerV2SearchRunResult,
     OptimizerV2StageRunResult,
+    OptimizerV2WinnerResolutionResult,
     OptimizerV2WinnerValidationResult,
 )
 from biopsy_optimizer.v2.scoring import (
@@ -24,6 +25,9 @@ from preprocessing.transform_bank import SharedTransformBankPrefix
 
 
 DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD = "score_desc_distance_candidate_index__provisional"
+FINAL_WINNER_METHOD_SCORE_UNIQUE = "score_unique_stage_c"
+FINAL_WINNER_METHOD_SCORE_RESCORE = "score_rescore_prefix_unique"
+FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK = "nearest_target_centroid_fallback"
 
 
 def run_target_staged_candidate_search(
@@ -107,17 +111,63 @@ def run_target_staged_candidate_search(
 
     combined_tested_candidate_dataframe = pandas.concat(stage_tested_candidate_dataframes, ignore_index=True)
     final_ranked_candidate_dataframe = stage_results[-1].ranked_candidate_dataframe.copy()
-    operational_winner_candidate_index_global = None
-    if not final_ranked_candidate_dataframe.empty:
-        operational_winner_candidate_index_global = int(final_ranked_candidate_dataframe.iloc[0]["Candidate global index"])
-
-    winner_validation_result = _build_winner_validation_result(
+    winner_resolution_result = _resolve_final_winner(
         candidate_pool=candidate_pool,
+        search_config=search_config,
         final_ranked_candidate_dataframe=final_ranked_candidate_dataframe,
         final_stage_result=stage_results[-1],
         nominal_biopsy_points=nominal_biopsy_points,
         nominal_biopsy_centroid=nominal_biopsy_centroid,
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+        target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+        target_structure_centroid=target_structure_centroid,
+        target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+        objective_reducer_name=objective_reducer_name,
+        include_nominal=include_nominal,
+        nominal_relative_structure_index=nominal_relative_structure_index,
+        trial_relative_structure_start_index=trial_relative_structure_start_index,
+        max_test_structures_per_call=max_test_structures_per_call,
+        containment_log_sub_dirs_list=containment_log_sub_dirs_list,
+        containment_log_file_name=containment_log_file_name,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+        return_array_as=return_array_as,
+    )
+    if winner_resolution_result is not None:
+        final_ranked_candidate_dataframe = _move_operational_winner_to_top(
+            final_ranked_candidate_dataframe,
+            winner_resolution_result.candidate_index_global,
+        )
+        final_ranked_candidate_dataframe = _apply_winner_resolution_to_candidate_dataframe(
+            final_ranked_candidate_dataframe,
+            stage_name=None,
+            winner_resolution_result=winner_resolution_result,
+        )
+        stage_results[-1].ranked_candidate_dataframe = final_ranked_candidate_dataframe.copy()
+        stage_results[-1].tested_candidate_dataframe = _apply_winner_resolution_to_candidate_dataframe(
+            stage_results[-1].tested_candidate_dataframe,
+            stage_name=stage_results[-1].stage_name,
+            winner_resolution_result=winner_resolution_result,
+        )
+        combined_tested_candidate_dataframe = _apply_winner_resolution_to_candidate_dataframe(
+            combined_tested_candidate_dataframe,
+            stage_name=stage_results[-1].stage_name,
+            winner_resolution_result=winner_resolution_result,
+        )
+    operational_winner_candidate_index_global = None
+    if winner_resolution_result is not None:
+        operational_winner_candidate_index_global = winner_resolution_result.candidate_index_global
+    elif not final_ranked_candidate_dataframe.empty:
+        operational_winner_candidate_index_global = int(final_ranked_candidate_dataframe.iloc[0]["Candidate global index"])
+
+    winner_validation_result = _build_winner_validation_result(
+        final_ranked_candidate_dataframe=final_ranked_candidate_dataframe,
+        winner_resolution_result=winner_resolution_result,
+        nominal_biopsy_points=nominal_biopsy_points,
+        nominal_biopsy_centroid=nominal_biopsy_centroid,
+        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        candidate_pool=candidate_pool,
         biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
         target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
         target_structure_centroid=target_structure_centroid,
@@ -157,6 +207,7 @@ def run_target_staged_candidate_search(
         tested_candidate_dataframe=combined_tested_candidate_dataframe,
         ranked_candidate_dataframe=final_ranked_candidate_dataframe,
         operational_winner_candidate_index_global=operational_winner_candidate_index_global,
+        winner_resolution_result=winner_resolution_result,
         winner_validation_result=winner_validation_result,
     )
 
@@ -364,12 +415,12 @@ def _resolve_stage_containment_log_sub_dirs(
 
 
 def _build_winner_validation_result(
-    candidate_pool: OptimizerV2CandidatePool,
     final_ranked_candidate_dataframe,
-    final_stage_result: OptimizerV2StageRunResult,
+    winner_resolution_result: Optional[OptimizerV2WinnerResolutionResult],
     nominal_biopsy_points: np.ndarray,
     nominal_biopsy_centroid: np.ndarray,
     nominal_biopsy_centroid_line: np.ndarray,
+    candidate_pool: OptimizerV2CandidatePool,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
     target_structure_centroid: np.ndarray,
@@ -386,15 +437,14 @@ def _build_winner_validation_result(
     kernel_type: str,
     return_array_as: str,
 ) -> Optional[OptimizerV2WinnerValidationResult]:
-    if final_ranked_candidate_dataframe.empty or downstream_comparable_trial_count is None:
+    if winner_resolution_result is None or final_ranked_candidate_dataframe.empty or downstream_comparable_trial_count is None:
         return None
     if downstream_comparable_trial_count <= 0:
         raise ValueError("downstream_comparable_trial_count must be positive when provided")
 
-    winner_row = final_ranked_candidate_dataframe.iloc[0]
-    winner_candidate_index_global = int(winner_row["Candidate global index"])
-    optimizer_selection_score = float(winner_row["Objective value"])
-    optimizer_selection_trial_count = int(final_stage_result.num_trials)
+    winner_candidate_index_global = int(winner_resolution_result.candidate_index_global)
+    optimizer_selection_score = float(winner_resolution_result.resolved_objective_value)
+    optimizer_selection_trial_count = int(winner_resolution_result.final_resolution_trial_count)
     if downstream_comparable_trial_count == optimizer_selection_trial_count:
         return OptimizerV2WinnerValidationResult(
             candidate_index_global=winner_candidate_index_global,
@@ -403,7 +453,7 @@ def _build_winner_validation_result(
             optimizer_selection_trial_count=optimizer_selection_trial_count,
             downstream_comparable_target_score=optimizer_selection_score,
             downstream_comparable_trial_count=optimizer_selection_trial_count,
-            downstream_comparable_nominal_target_score=float(winner_row["Nominal objective value"]),
+            downstream_comparable_nominal_target_score=float(winner_resolution_result.resolved_nominal_objective_value),
             used_additional_rescore=False,
             chunk_score_result=None,
         )
@@ -475,7 +525,273 @@ def _apply_winner_validation_to_candidate_dataframe(
     return updated_candidate_dataframe
 
 
+def _resolve_final_winner(
+    candidate_pool: OptimizerV2CandidatePool,
+    search_config: OptimizerV2SearchConfig,
+    final_ranked_candidate_dataframe,
+    final_stage_result: OptimizerV2StageRunResult,
+    nominal_biopsy_points: np.ndarray,
+    nominal_biopsy_centroid: np.ndarray,
+    nominal_biopsy_centroid_line: np.ndarray,
+    biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    target_structure_centroid: np.ndarray,
+    target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    objective_reducer_name: str,
+    include_nominal: bool,
+    nominal_relative_structure_index: int,
+    trial_relative_structure_start_index: int,
+    max_test_structures_per_call: Optional[int],
+    containment_log_sub_dirs_list: Optional[Sequence[str]],
+    containment_log_file_name: Optional[str],
+    include_edges_in_log: bool,
+    kernel_type: str,
+    return_array_as: str,
+) -> Optional[OptimizerV2WinnerResolutionResult]:
+    if final_ranked_candidate_dataframe.empty:
+        return None
+
+    score_tolerance = search_config.tie_break_config.score_tolerance
+    tied_candidate_dataframe = _select_tied_final_candidates(
+        final_ranked_candidate_dataframe,
+        score_tolerance,
+    )
+    winner_row = final_ranked_candidate_dataframe.iloc[0]
+    if len(tied_candidate_dataframe) == 1:
+        return OptimizerV2WinnerResolutionResult(
+            candidate_index_global=int(winner_row["Candidate global index"]),
+            objective_reducer_name=objective_reducer_name,
+            resolution_method=FINAL_WINNER_METHOD_SCORE_UNIQUE,
+            tie_warning_flag=False,
+            tie_break_fallback_flag=False,
+            num_tied_candidates_at_stage_c=1,
+            num_additional_rescore_attempts_used=0,
+            final_resolution_trial_count=int(final_stage_result.num_trials),
+            resolved_objective_value=float(winner_row["Objective value"]),
+            resolved_nominal_objective_value=float(winner_row["Nominal objective value"]),
+            chunk_score_result=None,
+            tied_candidate_dataframe=tied_candidate_dataframe.copy(),
+        )
+
+    current_tied_candidate_dataframe = tied_candidate_dataframe.copy()
+    current_trial_count = int(final_stage_result.num_trials)
+    last_rescore_chunk_score_result = None
+    num_additional_rescore_attempts_used = 0
+
+    for _ in range(search_config.tie_break_config.max_additional_rescore_attempts):
+        next_trial_count = int(
+            np.ceil(
+                current_trial_count * search_config.tie_break_config.rescore_trial_count_multiplier
+            )
+        )
+        rescore_chunk_score_result, rescored_ranked_candidate_dataframe = _score_candidate_subset_for_winner_resolution(
+            candidate_pool=candidate_pool,
+            candidate_indices_global=current_tied_candidate_dataframe["Candidate global index"].to_numpy(dtype=np.int32),
+            trial_count=next_trial_count,
+            nominal_biopsy_points=nominal_biopsy_points,
+            nominal_biopsy_centroid=nominal_biopsy_centroid,
+            nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+            biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+            target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+            target_structure_centroid=target_structure_centroid,
+            target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+            objective_reducer_name=objective_reducer_name,
+            include_nominal=include_nominal,
+            nominal_relative_structure_index=nominal_relative_structure_index,
+            trial_relative_structure_start_index=trial_relative_structure_start_index,
+            max_test_structures_per_call=max_test_structures_per_call,
+            containment_log_sub_dirs_list=_resolve_stage_containment_log_sub_dirs(
+                containment_log_sub_dirs_list,
+                "winner_tie_break",
+            ),
+            containment_log_file_name=containment_log_file_name,
+            include_edges_in_log=include_edges_in_log,
+            kernel_type=kernel_type,
+            return_array_as=return_array_as,
+        )
+        last_rescore_chunk_score_result = rescore_chunk_score_result
+        num_additional_rescore_attempts_used += 1
+        current_trial_count = next_trial_count
+        current_tied_candidate_dataframe = _select_tied_final_candidates(
+            rescored_ranked_candidate_dataframe,
+            score_tolerance,
+        )
+
+        if len(current_tied_candidate_dataframe) == 1:
+            winner_row = rescored_ranked_candidate_dataframe.iloc[0]
+            return OptimizerV2WinnerResolutionResult(
+                candidate_index_global=int(winner_row["Candidate global index"]),
+                objective_reducer_name=objective_reducer_name,
+                resolution_method=FINAL_WINNER_METHOD_SCORE_RESCORE,
+                tie_warning_flag=True,
+                tie_break_fallback_flag=False,
+                num_tied_candidates_at_stage_c=len(tied_candidate_dataframe),
+                num_additional_rescore_attempts_used=num_additional_rescore_attempts_used,
+                final_resolution_trial_count=current_trial_count,
+                resolved_objective_value=float(winner_row["Objective value"]),
+                resolved_nominal_objective_value=float(winner_row["Nominal objective value"]),
+                chunk_score_result=rescore_chunk_score_result,
+                tied_candidate_dataframe=rescored_ranked_candidate_dataframe.copy(),
+            )
+
+    fallback_ranked_candidate_dataframe = current_tied_candidate_dataframe.sort_values(
+        by=["Distance to target centroid mm", "Candidate global index"],
+        ascending=[True, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+    winner_row = fallback_ranked_candidate_dataframe.iloc[0]
+    return OptimizerV2WinnerResolutionResult(
+        candidate_index_global=int(winner_row["Candidate global index"]),
+        objective_reducer_name=objective_reducer_name,
+        resolution_method=FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK,
+        tie_warning_flag=True,
+        tie_break_fallback_flag=True,
+        num_tied_candidates_at_stage_c=len(tied_candidate_dataframe),
+        num_additional_rescore_attempts_used=num_additional_rescore_attempts_used,
+        final_resolution_trial_count=current_trial_count,
+        resolved_objective_value=float(winner_row["Objective value"]),
+        resolved_nominal_objective_value=float(winner_row["Nominal objective value"]),
+        chunk_score_result=last_rescore_chunk_score_result,
+        tied_candidate_dataframe=fallback_ranked_candidate_dataframe.copy(),
+    )
+
+
+def _score_candidate_subset_for_winner_resolution(
+    candidate_pool: OptimizerV2CandidatePool,
+    candidate_indices_global: np.ndarray,
+    trial_count: int,
+    nominal_biopsy_points: np.ndarray,
+    nominal_biopsy_centroid: np.ndarray,
+    nominal_biopsy_centroid_line: np.ndarray,
+    biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    target_structure_centroid: np.ndarray,
+    target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    objective_reducer_name: str,
+    include_nominal: bool,
+    nominal_relative_structure_index: int,
+    trial_relative_structure_start_index: int,
+    max_test_structures_per_call: Optional[int],
+    containment_log_sub_dirs_list: Optional[Sequence[str]],
+    containment_log_file_name: Optional[str],
+    include_edges_in_log: bool,
+    kernel_type: str,
+    return_array_as: str,
+):
+    chunk_layout = OptimizerV2ChunkLayout(
+        candidate_indices_global=tuple(int(candidate_index) for candidate_index in candidate_indices_global.tolist()),
+        num_trials=trial_count,
+        include_nominal=include_nominal,
+        nominal_relative_structure_index=nominal_relative_structure_index,
+        trial_relative_structure_start_index=trial_relative_structure_start_index,
+    )
+    chunk_score_result = score_target_candidate_chunk(
+        candidate_pool=candidate_pool,
+        chunk_layout=chunk_layout,
+        nominal_biopsy_points=nominal_biopsy_points,
+        nominal_biopsy_centroid=nominal_biopsy_centroid,
+        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        biopsy_transform_bank_prefix=biopsy_transform_bank_prefix_provider(trial_count),
+        target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials_provider(trial_count),
+        target_structure_centroid=target_structure_centroid,
+        target_transform_bank_prefix=target_transform_bank_prefix_provider(trial_count),
+        objective_reducer_name=objective_reducer_name,
+        max_test_structures_per_call=max_test_structures_per_call,
+        create_tested_candidate_dataframe=True,
+        containment_log_sub_dirs_list=containment_log_sub_dirs_list,
+        containment_log_file_name=containment_log_file_name,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+        return_array_as=return_array_as,
+    )
+    ranked_candidate_dataframe = chunk_score_result.tested_candidate_dataframe.sort_values(
+        by=["Objective value", "Distance to target centroid mm", "Candidate global index"],
+        ascending=[False, True, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+    return chunk_score_result, ranked_candidate_dataframe
+
+
+def _select_tied_final_candidates(candidate_dataframe, score_tolerance: float):
+    best_objective_value = float(candidate_dataframe.iloc[0]["Objective value"])
+    tied_mask = np.abs(candidate_dataframe["Objective value"].to_numpy(dtype=float) - best_objective_value) <= score_tolerance
+    return candidate_dataframe.loc[tied_mask].copy().reset_index(drop=True)
+
+
+def _move_operational_winner_to_top(candidate_dataframe, winner_candidate_index_global: int):
+    winner_mask = candidate_dataframe["Candidate global index"] == winner_candidate_index_global
+    if winner_mask.sum() != 1:
+        return candidate_dataframe.copy()
+
+    updated_candidate_dataframe = pandas.concat(
+        [candidate_dataframe.loc[winner_mask], candidate_dataframe.loc[~winner_mask]],
+        ignore_index=True,
+    )
+    if "Candidate rank" in updated_candidate_dataframe.columns:
+        updated_candidate_dataframe["Candidate rank"] = np.arange(
+            1,
+            len(updated_candidate_dataframe) + 1,
+            dtype=np.int32,
+        )
+    if "Stage output survivor count" in updated_candidate_dataframe.columns:
+        survivor_count = int(updated_candidate_dataframe.iloc[0]["Stage output survivor count"])
+        updated_candidate_dataframe["Is survivor"] = False
+        if survivor_count > 0:
+            updated_candidate_dataframe.loc[: survivor_count - 1, "Is survivor"] = True
+    return updated_candidate_dataframe
+
+
+def _apply_winner_resolution_to_candidate_dataframe(
+    candidate_dataframe,
+    stage_name: Optional[str],
+    winner_resolution_result: OptimizerV2WinnerResolutionResult,
+):
+    updated_candidate_dataframe = candidate_dataframe.copy()
+    resolution_mask = np.ones(len(updated_candidate_dataframe), dtype=bool)
+    if stage_name is not None and "Stage name" in updated_candidate_dataframe.columns:
+        resolution_mask &= updated_candidate_dataframe["Stage name"] == stage_name
+
+    updated_candidate_dataframe.loc[resolution_mask, "Tie-break resolution method"] = winner_resolution_result.resolution_method
+    updated_candidate_dataframe.loc[resolution_mask, "Winner determination method"] = winner_resolution_result.resolution_method
+    updated_candidate_dataframe.loc[resolution_mask, "Tie-break warning flag"] = winner_resolution_result.tie_warning_flag
+    updated_candidate_dataframe.loc[resolution_mask, "Tie-break fallback flag"] = winner_resolution_result.tie_break_fallback_flag
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Final winner additional rescore attempts used",
+    ] = np.int32(winner_resolution_result.num_additional_rescore_attempts_used)
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Final winner resolution trial count",
+    ] = np.int32(winner_resolution_result.final_resolution_trial_count)
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Final winner tie candidate count",
+    ] = np.int32(winner_resolution_result.num_tied_candidates_at_stage_c)
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Final winner resolved objective value",
+    ] = winner_resolution_result.resolved_objective_value
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Final winner resolved nominal objective value",
+    ] = winner_resolution_result.resolved_nominal_objective_value
+    updated_candidate_dataframe.loc[
+        resolution_mask,
+        "Operational winner candidate index",
+    ] = np.int32(winner_resolution_result.candidate_index_global)
+
+    operational_winner_mask = updated_candidate_dataframe["Candidate global index"] == winner_resolution_result.candidate_index_global
+    if stage_name is not None and "Stage name" in updated_candidate_dataframe.columns:
+        operational_winner_mask &= updated_candidate_dataframe["Stage name"] == stage_name
+    updated_candidate_dataframe["Is operational winner"] = False
+    updated_candidate_dataframe.loc[operational_winner_mask, "Is operational winner"] = True
+    return updated_candidate_dataframe
+
+
 __all__ = [
     "DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD",
+    "FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK",
+    "FINAL_WINNER_METHOD_SCORE_RESCORE",
+    "FINAL_WINNER_METHOD_SCORE_UNIQUE",
     "run_target_staged_candidate_search",
 ]

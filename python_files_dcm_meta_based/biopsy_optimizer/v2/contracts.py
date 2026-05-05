@@ -123,6 +123,7 @@ class OptimizerV2ChunkScoreResult:
     candidate_scores: np.ndarray
     candidate_nominal_scores: np.ndarray
     distance_to_target_centroid_mm: np.ndarray
+    relative_structure_localized_points: Optional[Any] = None
     tested_candidate_dataframe: Optional[Any] = None
 
 
@@ -147,7 +148,26 @@ class OptimizerV2SearchRunResult:
     tested_candidate_dataframe: Any
     ranked_candidate_dataframe: Any
     operational_winner_candidate_index_global: Optional[int] = None
+    winner_resolution_result: Optional[Any] = None
     winner_validation_result: Optional[Any] = None
+
+
+@dataclass
+class OptimizerV2WinnerResolutionResult:
+    """Final winner-resolution metadata for optimizer v2."""
+
+    candidate_index_global: int
+    objective_reducer_name: str
+    resolution_method: str
+    tie_warning_flag: bool
+    tie_break_fallback_flag: bool
+    num_tied_candidates_at_stage_c: int
+    num_additional_rescore_attempts_used: int
+    final_resolution_trial_count: int
+    resolved_objective_value: float
+    resolved_nominal_objective_value: float
+    chunk_score_result: Optional[OptimizerV2ChunkScoreResult] = None
+    tied_candidate_dataframe: Optional[Any] = None
 
 
 @dataclass
@@ -171,5 +191,6 @@ __all__ = [
     "OptimizerV2ChunkScoreResult",
     "OptimizerV2StageRunResult",
     "OptimizerV2SearchRunResult",
+    "OptimizerV2WinnerResolutionResult",
     "OptimizerV2WinnerValidationResult",
 ]

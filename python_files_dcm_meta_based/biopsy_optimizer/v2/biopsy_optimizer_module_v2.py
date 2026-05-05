@@ -13,6 +13,7 @@ from biopsy_optimizer.v2.contracts import (
 	OptimizerV2ChunkScoreResult,
 	OptimizerV2SearchRunResult,
 	OptimizerV2StageRunResult,
+	OptimizerV2WinnerResolutionResult,
 	OptimizerV2WinnerValidationResult,
 )
 from biopsy_optimizer.v2.candidate_pool import (
@@ -31,8 +32,13 @@ from biopsy_optimizer.v2.runner import (
 	run_target_staged_candidate_search,
 )
 from biopsy_optimizer.v2.render import (
+	OptimizerV2RenderLayer,
 	OptimizerV2StageBoundaryRenderJob,
+	build_geometry_render_layer,
+	build_point_cloud_render_layer,
+	build_success_failure_render_layers_from_chunk_score_result,
 	build_stage_boundary_render_jobs,
+	render_scene_render_jobs,
 	render_stage_boundary_candidate_clouds,
 )
 

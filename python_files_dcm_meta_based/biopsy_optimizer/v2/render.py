@@ -11,13 +11,26 @@ from biopsy_optimizer.v2.contracts import OptimizerV2CandidatePool, OptimizerV2S
 
 
 @dataclass(frozen=True)
+class OptimizerV2RenderLayer:
+    """One replayable render layer for a scene."""
+
+    layer_name: str
+    layer_kind: str
+    points: Optional[np.ndarray] = None
+    color: Optional[np.ndarray] = None
+    geometry: Optional[Any] = None
+
+
+@dataclass(frozen=True)
 class OptimizerV2StageBoundaryRenderJob:
     """Geometry-free render job description for one optimizer stage boundary."""
 
+    scene_name: str
     stage_name: str
     input_candidate_points: np.ndarray
     survivor_candidate_points: np.ndarray
     target_points: np.ndarray
+    render_layers: Tuple[OptimizerV2RenderLayer, ...]
     nominal_biopsy_centroid: Optional[np.ndarray] = None
     winner_candidate_points: Optional[np.ndarray] = None
 
@@ -29,6 +42,8 @@ def build_stage_boundary_render_jobs(
     nominal_biopsy_centroid: Optional[np.ndarray] = None,
     stage_names_to_render: Optional[Sequence[str]] = None,
     include_final_winner: bool = True,
+    additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
+    additional_point_clouds: Optional[Sequence[Any]] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build one render-job description per selected stage boundary."""
     normalized_candidate_points = _validate_xyz_points_array(
@@ -44,6 +59,13 @@ def build_stage_boundary_render_jobs(
         )
 
     resolved_stage_names_to_render = _resolve_stage_names_to_render(search_result, stage_names_to_render)
+    resolved_additional_render_layers = tuple(additional_render_layers or ()) + tuple(
+        build_geometry_render_layer(
+            layer_name="additional_geometry_{}".format(geometry_index),
+            geometry=geometry,
+        )
+        for geometry_index, geometry in enumerate(additional_point_clouds or ())
+    )
     winner_candidate_points = None
     if include_final_winner and search_result.operational_winner_candidate_index_global is not None:
         winner_candidate_points = normalized_candidate_points[
@@ -55,8 +77,48 @@ def build_stage_boundary_render_jobs(
         if stage_result.stage_name not in resolved_stage_names_to_render:
             continue
 
+        render_layers = [
+            build_point_cloud_render_layer(
+                layer_name="stage_input_candidates",
+                points=normalized_candidate_points[
+                    np.asarray(stage_result.input_candidate_indices_global, dtype=np.int32)
+                ],
+                color=np.array([1.0, 0.6, 0.0]),
+            ),
+            build_point_cloud_render_layer(
+                layer_name="stage_survivors",
+                points=normalized_candidate_points[
+                    np.asarray(stage_result.survivor_candidate_indices_global, dtype=np.int32)
+                ],
+                color=np.array([0.0, 1.0, 0.0]),
+            ),
+            build_point_cloud_render_layer(
+                layer_name="target_points",
+                points=normalized_target_points,
+                color=np.array([0.0, 0.0, 1.0]),
+            ),
+        ]
+        if normalized_nominal_biopsy_centroid is not None:
+            render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="nominal_biopsy_centroid",
+                    points=normalized_nominal_biopsy_centroid[np.newaxis, :],
+                    color=np.array([1.0, 0.0, 0.0]),
+                )
+            )
+        if winner_candidate_points is not None:
+            render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="operational_winner",
+                    points=winner_candidate_points,
+                    color=np.array([1.0, 0.0, 1.0]),
+                )
+            )
+        render_layers.extend(resolved_additional_render_layers)
+
         stage_boundary_render_jobs.append(
             OptimizerV2StageBoundaryRenderJob(
+                scene_name="optimizer_v2_{}".format(stage_result.stage_name),
                 stage_name=stage_result.stage_name,
                 input_candidate_points=normalized_candidate_points[
                     np.asarray(stage_result.input_candidate_indices_global, dtype=np.int32)
@@ -65,6 +127,7 @@ def build_stage_boundary_render_jobs(
                     np.asarray(stage_result.survivor_candidate_indices_global, dtype=np.int32)
                 ],
                 target_points=normalized_target_points,
+                render_layers=tuple(render_layers),
                 nominal_biopsy_centroid=normalized_nominal_biopsy_centroid,
                 winner_candidate_points=winner_candidate_points,
             )
@@ -80,12 +143,10 @@ def render_stage_boundary_candidate_clouds(
     nominal_biopsy_centroid: Optional[np.ndarray] = None,
     stage_names_to_render: Optional[Sequence[str]] = None,
     include_final_winner: bool = True,
+    additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
-    """Render one Open3D scene per selected stage boundary."""
-    import plotting_funcs
-    import point_containment_tools
-
+    """Build and render one Open3D scene per selected stage boundary."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
         search_result=search_result,
         candidate_pool=candidate_pool,
@@ -93,50 +154,114 @@ def render_stage_boundary_candidate_clouds(
         nominal_biopsy_centroid=nominal_biopsy_centroid,
         stage_names_to_render=stage_names_to_render,
         include_final_winner=include_final_winner,
+        additional_render_layers=additional_render_layers,
+        additional_point_clouds=additional_point_clouds,
     )
-    additional_point_clouds_list = list(additional_point_clouds or [])
+    return render_scene_render_jobs(stage_boundary_render_jobs)
 
-    for render_job in stage_boundary_render_jobs:
-        stage_input_point_cloud = point_containment_tools.create_point_cloud(
-            render_job.input_candidate_points,
-            np.array([1.0, 0.6, 0.0]),
-        )
-        survivor_point_cloud = point_containment_tools.create_point_cloud(
-            render_job.survivor_candidate_points,
-            np.array([0.0, 1.0, 0.0]),
-        )
-        target_point_cloud = point_containment_tools.create_point_cloud(
-            render_job.target_points,
-            np.array([0.0, 0.0, 1.0]),
-        )
-        geometries_to_plot = [
-            stage_input_point_cloud,
-            survivor_point_cloud,
-            target_point_cloud,
-            *additional_point_clouds_list,
-        ]
 
-        if render_job.nominal_biopsy_centroid is not None:
-            geometries_to_plot.append(
-                point_containment_tools.create_point_cloud(
-                    render_job.nominal_biopsy_centroid[np.newaxis, :],
-                    np.array([1.0, 0.0, 0.0]),
+def render_scene_render_jobs(
+    render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
+    """Render prebuilt scene jobs so they can be replayed or exported later."""
+    import plotting_funcs
+    import point_containment_tools
+
+    resolved_render_jobs = tuple(render_jobs)
+    for render_job in resolved_render_jobs:
+        geometries_to_plot = []
+        for render_layer in render_job.render_layers:
+            if render_layer.layer_kind == "point_cloud":
+                geometries_to_plot.append(
+                    point_containment_tools.create_point_cloud(
+                        render_layer.points,
+                        np.asarray(render_layer.color, dtype=float),
+                    )
                 )
-            )
-        if render_job.winner_candidate_points is not None:
-            geometries_to_plot.append(
-                point_containment_tools.create_point_cloud(
-                    render_job.winner_candidate_points,
-                    np.array([1.0, 0.0, 1.0]),
-                )
-            )
+            elif render_layer.layer_kind == "geometry":
+                geometries_to_plot.append(render_layer.geometry)
+            else:
+                raise ValueError("unsupported render layer kind: {}".format(render_layer.layer_kind))
 
         plotting_funcs.plot_geometries(
             *geometries_to_plot,
-            label="optimizer_v2_{}".format(render_job.stage_name),
+            label=render_job.scene_name,
         )
 
-    return stage_boundary_render_jobs
+    return resolved_render_jobs
+
+
+def build_point_cloud_render_layer(
+    layer_name: str,
+    points: np.ndarray,
+    color: np.ndarray,
+) -> OptimizerV2RenderLayer:
+    return OptimizerV2RenderLayer(
+        layer_name=layer_name,
+        layer_kind="point_cloud",
+        points=_validate_xyz_points_array(points, layer_name),
+        color=_validate_color_vector(color, "{}.color".format(layer_name)),
+    )
+
+
+def build_geometry_render_layer(
+    layer_name: str,
+    geometry: Any,
+) -> OptimizerV2RenderLayer:
+    return OptimizerV2RenderLayer(
+        layer_name=layer_name,
+        layer_kind="geometry",
+        geometry=geometry,
+    )
+
+
+def build_success_failure_render_layers_from_chunk_score_result(
+    chunk_score_result,
+    candidate_local_chunk_index: int = 0,
+    include_nominal_slice: bool = False,
+    success_color: np.ndarray = np.array([0.0, 1.0, 0.0]),
+    failure_color: np.ndarray = np.array([1.0, 0.0, 0.0]),
+) -> Tuple[OptimizerV2RenderLayer, ...]:
+    """Build success/failure point-cloud layers from one scored candidate chunk."""
+    if chunk_score_result.relative_structure_localized_points is None:
+        raise ValueError(
+            "chunk_score_result.relative_structure_localized_points is missing; rerun scoring with include_relative_structure_localized_points_for_debug=True"
+        )
+
+    localized_points = _coerce_points_to_numpy(chunk_score_result.relative_structure_localized_points)
+    containment_result = _coerce_points_to_numpy(chunk_score_result.structured_containment_result).astype(bool)
+    if candidate_local_chunk_index < 0 or candidate_local_chunk_index >= localized_points.shape[0]:
+        raise ValueError("candidate_local_chunk_index is out of range for this chunk score result")
+
+    candidate_localized_points = localized_points[candidate_local_chunk_index]
+    candidate_containment_result = containment_result[candidate_local_chunk_index]
+    if chunk_score_result.chunk_layout.include_nominal and not include_nominal_slice:
+        candidate_localized_points = candidate_localized_points[1:]
+        candidate_containment_result = candidate_containment_result[1:]
+
+    successful_points = candidate_localized_points[candidate_containment_result]
+    failed_points = candidate_localized_points[~candidate_containment_result]
+    render_layers = []
+    candidate_index_global = int(chunk_score_result.candidate_indices_global[candidate_local_chunk_index])
+
+    if successful_points.size > 0:
+        render_layers.append(
+            build_point_cloud_render_layer(
+                layer_name="candidate_{}_success_points".format(candidate_index_global),
+                points=successful_points.reshape(-1, 3),
+                color=success_color,
+            )
+        )
+    if failed_points.size > 0:
+        render_layers.append(
+            build_point_cloud_render_layer(
+                layer_name="candidate_{}_failure_points".format(candidate_index_global),
+                points=failed_points.reshape(-1, 3),
+                color=failure_color,
+            )
+        )
+
+    return tuple(render_layers)
 
 
 def _resolve_stage_names_to_render(
@@ -172,8 +297,26 @@ def _validate_single_xyz_point(point: np.ndarray, point_name: str) -> np.ndarray
     return normalized_point
 
 
+def _validate_color_vector(color: np.ndarray, color_name: str) -> np.ndarray:
+    normalized_color = np.asarray(color, dtype=float).reshape(-1)
+    if normalized_color.shape != (3,):
+        raise ValueError("{} must have shape (3,)".format(color_name))
+    return normalized_color
+
+
+def _coerce_points_to_numpy(points):
+    if hasattr(points, "get"):
+        return points.get()
+    return np.asarray(points)
+
+
 __all__ = [
+    "OptimizerV2RenderLayer",
     "OptimizerV2StageBoundaryRenderJob",
+    "build_geometry_render_layer",
+    "build_point_cloud_render_layer",
+    "build_success_failure_render_layers_from_chunk_score_result",
     "build_stage_boundary_render_jobs",
+    "render_scene_render_jobs",
     "render_stage_boundary_candidate_clouds",
 ]
