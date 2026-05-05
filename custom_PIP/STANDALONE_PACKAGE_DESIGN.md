@@ -111,12 +111,11 @@ Recommended preparation rule:
 
 ## Current Audit Of Live Callers
 
-As of this audit, the current repo still uses both supported input modes.
+As of this audit, current direct repo call sites appear to pass aligned 3D arrays as the second argument to the mother function.
 
-Observed active ragged/list users:
+The earlier audit draft conflated the first argument, which is normally a list of relative-structure z-slice arrays, with the second argument, which is the optional test-structure input mode.
 
-1. [python_files_dcm_meta_based/polygon_dilation_helpers_numpy.py](python_files_dcm_meta_based/polygon_dilation_helpers_numpy.py#L1099)
-2. [python_files_dcm_meta_based/MC_simulator_convex.py](python_files_dcm_meta_based/MC_simulator_convex.py#L1130)
+The list-based second-argument path remains part of the supported contract and should be preserved, but I did not find a current direct repo caller that statically passes a ragged list of test structures into the mother function.
 
 Observed active aligned-3D direct mother-function callers include:
 
@@ -130,7 +129,7 @@ Observed active aligned-3D direct mother-function callers include:
 8. [python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py](python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py#L178)
 9. [python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py](python_files_dcm_meta_based/biopsy_optimizer/v1/biopsy_optimizer_module_v1_helpers.py#L485)
 
-This matters for packaging because the future standalone package should preserve both surfaces, not silently collapse to the aligned 3D case just because that path is currently more common.
+This matters for packaging because the future standalone package should preserve both surfaces even if the current repo mostly exercises the aligned 3D case.
 
 ## Testing Plan
 
