@@ -48,24 +48,25 @@ This should be treated as a first-class design constraint, not a late cleanup it
 
 ## Readiness Snapshot
 
-The repo is now ready to start the actual optimizer-v2 implementation.
+The repo now contains the first executable optimizer-v2 library slice.
 
-Completed prerequisites already in code:
+Completed implementation already in code:
 
 1. planning-frame simulated-biopsy geometry is built upstream and stored on each simulated biopsy,
 2. planning-frame simulated-biopsy sampled points are already built upstream,
 3. target-only fixed-lattice candidate generation and immediate target-interior pruning already exist,
-4. main already exposes optimizer-v2 stage trial counts as a main-facing config surface,
-5. main already computes and stores the optimizer-v2 transform-precompute budget,
-6. downstream post-realization biopsy processing is modular enough that optimizer-v2 can hand off to existing realization and downstream MC seams cleanly.
+4. shared transform-bank accessors, localization, and containment seams now exist outside optimizer v2,
+5. chunked target-only scoring, staged search, winner resolution, and winner-only downstream-comparable validation are implemented in `biopsy_optimizer/v2`,
+6. stage-boundary replayable render jobs and carry-down in-memory output dataframe builders are implemented,
+7. downstream post-realization biopsy processing is modular enough that optimizer-v2 can hand off to existing realization and downstream MC seams once the live integration layer is wired.
 
 Remaining implementation work is therefore concentrated in:
 
-1. shared transform-bank consumption,
-2. candidate-trial batch construction,
-3. target-only scoring and ranking,
-4. downstream transform-bank reuse and agreement validation,
-5. stage-boundary debug and verification rendering.
+1. live family declaration and creation in the main simulated-biopsy flow,
+2. planner and transport integration for a v2 optimizer family,
+3. legacy export-block wiring for the new sidecar outputs,
+4. downstream shared-bank reuse validation on real cases,
+5. memory-safe activation policy when v2 materially increases simulated biopsy count.
 
 ## Canonical Reuse Surfaces
 
@@ -770,21 +771,27 @@ Required validation categories:
 
 ## Current Implementation Status
 
-The first narrow v2 slice is now in `biopsy_optimizer_module_v2.py`.
+The active v2 slice is now the code under `python_files_dcm_meta_based/biopsy_optimizer/v2/`.
 
 It currently provides:
 
-1. stage configuration objects,
+1. stage configuration objects and bank-size policy,
 2. fixed-lattice target candidate generation,
 3. immediate target-interior pruning through the existing CUDA containment mother function,
-4. visualization selectors for lattice, containment, and selected-candidate inspection.
+4. shared transform-bank, localization, and containment seams outside optimizer v2,
+5. chunked target-only candidate-trial scoring,
+6. staged A -> B -> C search with final winner resolution and winner-only downstream-comparable validation,
+7. tested and ranked candidate dataframe emission,
+8. replayable render-job construction for stage-boundary and success/failure debug surfaces,
+9. carry-down in-memory output dataframe builders for the target lane.
 
 It does not yet provide:
 
-1. shared transform-bank generation,
-2. chunked candidate-trial scoring,
-3. ranked candidate dataframe emission,
-4. transport integration.
+1. live simulated-family declaration through `bx_sim_locations_dict` or an equivalent family registry,
+2. planner and transport integration through `simulated_biopsy_planner_processer(...)` and `simulated_biopsy_processer(...)`,
+3. legacy export-block wiring for the new target-lane sidecar outputs,
+4. full real-case validation of shared-bank reuse and transport handoff,
+5. a finalized memory-safe activation policy when total simulated biopsy count grows.
 
 ## Visualization Selector Recommendation
 
@@ -1200,7 +1207,7 @@ Concrete work:
 
 The next pass should do two narrow things:
 
-1. add the shared pre-optimizer transform-bank generation seam,
-2. add target-only chunked candidate-trial scoring on top of the already-implemented candidate-pool surface.
+1. wire one live optimizer-v2 simulated family into the planning and transport flow,
+2. export the new target-lane sidecar dataframes without mutating legacy CSV contracts.
 
-That keeps the first executable slice small and makes the downstream MC agreement problem solvable from the start instead of retrofitted later.
+That turns the already-implemented library slice into a real end-to-end pipeline lane while keeping the export migration additive.
