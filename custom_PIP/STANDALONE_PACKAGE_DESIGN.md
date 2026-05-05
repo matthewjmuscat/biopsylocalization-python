@@ -196,7 +196,7 @@ This keeps current project momentum while avoiding a rushed packaging job.
 
 ## Optional Sidequest: Grandmother Adoption Audit
 
-The new grandmother surface now exists in [python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.py](python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.py#L19).
+The new grandmother and grandfather surfaces now exist in [python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.py](python_files_dcm_meta_based/custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.py#L1).
 
 The next optional sidequest is not to expand the API again, but to audit direct mother-function callers and selectively migrate the ones that benefit from chunking while leaving trivial or already-stable direct calls alone.
 

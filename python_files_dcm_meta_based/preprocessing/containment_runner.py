@@ -14,7 +14,7 @@ import cupy as cp
 import numpy as np
 
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
-import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents
 from preprocessing.localization_transformer import AlignedContainmentTestBatch
 
 
@@ -51,7 +51,7 @@ def run_aligned_containment_batch(
         raise ValueError("structure_info is required when create_containment_results_dataframe is True")
 
     raw_containment_result_cp_arr, prepper_output_tuple = (
-        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandmother.custom_point_containment_grandmother_function(
+        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.custom_point_containment_grandmother_function(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays,
         aligned_containment_test_batch.test_structures,
         aligned_containment_test_batch.test_struct_to_relative_struct_mapping,
