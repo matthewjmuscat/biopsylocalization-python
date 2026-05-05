@@ -422,6 +422,7 @@ The real control rule is to pack the mother-function call near the safe batch ce
 - evaluate only the final small survivor set
 - use the large intended MC budget
 - emit ranked candidate outputs
+- carry only one operational winner into downstream transport by default
 
 Example only:
 
@@ -429,6 +430,12 @@ Example only:
 - trials equal to the intended robust scoring budget
 
 The exact numeric defaults should remain configurable.
+
+The important distinction is:
+
+1. stage-C should score and rank the final small survivor set,
+2. the ranked output may retain more than one row for audit or review,
+3. but the default carry-down into transport should be exactly one winning candidate.
 
 ## Call Minimization Rule
 
@@ -549,6 +556,39 @@ The ranked dataframe should include at least:
 - winning-candidate downstream-comparable target score when that rescore is requested
 - downstream-comparable score trial count
 - tie-break fields such as distance to target centroid
+- tie-break resolution method
+- tie-break warning and fallback flags
+
+## Final Winner Tie-Break Policy
+
+The optimizer should remain score-first.
+
+Nearest-to-centroid should not be the normal selector when multiple candidates share the best final score.
+
+Recommended first policy:
+
+1. detect a final-winner tie using the configured score tolerance,
+2. emit a warning to the log and manifest that the final winner is still tied at the current trial prefix,
+3. rerun only the tied final candidates with a larger shared trial prefix,
+4. allow this tie-break rescore escalation a small fixed number of times, with `2` additional attempts as the recommended default,
+5. if the tie still persists after those score-based attempts, fall back to nearest target-DIL centroid,
+6. record explicitly that the geometric fallback was used.
+
+This keeps the selection metric score-based first and geometric only as a last resort.
+
+The recommended default escalation rule is:
+
+1. start from the stage-C trial prefix,
+2. multiply the trial prefix for each tie-break attempt using the shared transform bank,
+3. clip each attempt to the actually available shared-bank ceiling,
+4. stop early as soon as the winner becomes unique.
+
+The ranked or winner manifest should retain enough metadata to audit this later, including:
+
+1. whether a tie was detected,
+2. how many additional tie-break rescoring attempts were needed,
+3. the final trial count actually used for winner resolution,
+4. whether geometric fallback was invoked.
 
 Transport should consume this contract generically.
 
@@ -1079,7 +1119,7 @@ Concrete work:
 2. prune survivors,
 3. rescore survivors at stage B using a larger prefix,
 4. prune again,
-5. confirm final ranking at stage C,
+5. confirm final ranking at stage C and carry one operational winner forward by default,
 6. if requested, force one winner-only rescore at downstream `N_stochastic_tissue` using the same shared bank,
 7. emit full and ranked candidate dataframes.
 

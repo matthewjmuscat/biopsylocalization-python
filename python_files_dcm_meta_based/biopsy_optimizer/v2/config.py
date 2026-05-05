@@ -7,7 +7,7 @@ Shared geometry, transform, and containment helpers belong outside
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from typing import Optional, Sequence, Tuple
 
@@ -50,8 +50,32 @@ class OptimizerV2StageConfig:
 DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS = (
     OptimizerV2StageConfig("stage_a", 16, survivor_fraction=0.10, survivor_limit=256),
     OptimizerV2StageConfig("stage_b", 64, survivor_fraction=0.20, survivor_limit=64),
-    OptimizerV2StageConfig("stage_c", 256, survivor_limit=16),
+    OptimizerV2StageConfig("stage_c", 256, survivor_limit=1),
 )
+
+
+@dataclass(frozen=True)
+class OptimizerV2TieBreakConfig:
+    """Score-first winner-resolution policy for optimizer v2.
+
+    The optimizer should prefer breaking ties by increasing the shared trial
+    prefix before falling back to a geometric heuristic.
+    """
+
+    score_tolerance: float = 1e-12
+    max_additional_rescore_attempts: int = 2
+    rescore_trial_count_multiplier: float = 2.0
+    fallback_policy: str = "nearest_target_centroid"
+
+    def __post_init__(self) -> None:
+        if self.score_tolerance < 0.0:
+            raise ValueError("score_tolerance must be non-negative")
+        if self.max_additional_rescore_attempts < 0:
+            raise ValueError("max_additional_rescore_attempts cannot be negative")
+        if self.rescore_trial_count_multiplier <= 1.0:
+            raise ValueError("rescore_trial_count_multiplier must be greater than 1.0")
+        if self.fallback_policy != "nearest_target_centroid":
+            raise ValueError("unsupported fallback_policy: {}".format(self.fallback_policy))
 
 
 @dataclass(frozen=True)
@@ -60,6 +84,7 @@ class OptimizerV2SearchConfig:
 
     lattice_spacing_mm: float = 1.0
     stage_configs: Tuple[OptimizerV2StageConfig, ...] = DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS
+    tie_break_config: OptimizerV2TieBreakConfig = field(default_factory=OptimizerV2TieBreakConfig)
 
     def __post_init__(self) -> None:
         if self.lattice_spacing_mm <= 0.0:
@@ -190,6 +215,7 @@ __all__ = [
     "DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS",
     "OptimizerV2SearchConfig",
     "OptimizerV2StageConfig",
+    "OptimizerV2TieBreakConfig",
     "OptimizerV2VisualizationConfig",
     "build_default_optimizer_v2_search_config",
     "build_default_optimizer_v2_visualization_config",
