@@ -50,6 +50,7 @@ TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY = (
 def run_target_dil_optimizer_v2_for_live_simulated_family(
     master_structure_reference_dict,
     master_structure_info_dict,
+    structs_referenced_dict,
     bx_ref,
     dil_ref,
     all_ref_key,
@@ -229,10 +230,12 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 candidate_pool,
             )
             additional_render_layers = _build_additional_stage_boundary_render_layers(
+                structs_referenced_dict=structs_referenced_dict,
                 pydicom_item=pydicom_item,
                 specific_structure=specific_structure,
                 nominal_biopsy_centroid=nominal_biopsy_centroid,
                 winner_candidate_point=winner_candidate_point,
+                bx_ref=bx_ref,
                 target_structure=target_structure,
                 render_include_planned_sampled_points_bool=render_include_planned_sampled_points_bool,
                 render_include_planned_core_structure_bool=render_include_planned_core_structure_bool,
@@ -697,10 +700,12 @@ def _resolve_operational_winner_candidate_point(
 
 
 def _build_additional_stage_boundary_render_layers(
+    structs_referenced_dict,
     pydicom_item,
     specific_structure,
     nominal_biopsy_centroid,
     winner_candidate_point,
+    bx_ref,
     target_structure,
     render_include_planned_sampled_points_bool,
     render_include_planned_core_structure_bool,
@@ -716,6 +721,17 @@ def _build_additional_stage_boundary_render_layers(
         nominal_biopsy_centroid,
         winner_candidate_point,
     )
+    biopsy_render_color = _resolve_biopsy_render_color(
+        structs_referenced_dict,
+        bx_ref,
+        specific_structure,
+        fallback_color=np.array([0.7, 0.7, 0.7]),
+    )
+    target_structure_render_color = _resolve_structure_render_color(
+        structs_referenced_dict,
+        specific_structure.get("Relative structure type"),
+        fallback_color=np.array([0.1, 0.1, 0.6]),
+    )
 
     if render_include_planned_sampled_points_bool:
         planned_sampled_points = _coerce_optional_points_array(
@@ -726,7 +742,7 @@ def _build_additional_stage_boundary_render_layers(
                 build_point_cloud_render_layer(
                     layer_name="planned_sampled_points",
                     points=planned_sampled_points + planned_translation_vec,
-                    color=np.array([0.0, 0.8, 0.8]),
+                    color=_lighten_color(biopsy_render_color, factor=0.25),
                 )
             )
 
@@ -742,7 +758,7 @@ def _build_additional_stage_boundary_render_layers(
                 build_contour_line_render_layer(
                     layer_name="planned_core_structure",
                     point_groups=planned_core_structure_contours,
-                    color=np.array([0.7, 0.7, 0.7]),
+                    color=biopsy_render_color,
                 )
             )
         else:
@@ -754,7 +770,7 @@ def _build_additional_stage_boundary_render_layers(
                     build_point_cloud_render_layer(
                         layer_name="planned_core_structure",
                         points=planned_core_structure_points + planned_translation_vec,
-                        color=np.array([0.7, 0.7, 0.7]),
+                        color=biopsy_render_color,
                     )
                 )
 
@@ -767,7 +783,7 @@ def _build_additional_stage_boundary_render_layers(
                 build_point_cloud_render_layer(
                     layer_name="planned_centroid_line",
                     points=planned_centroid_line + planned_translation_vec,
-                    color=np.array([0.4, 0.0, 0.8]),
+                    color=_darken_color(biopsy_render_color, factor=0.35),
                 )
             )
 
@@ -780,7 +796,7 @@ def _build_additional_stage_boundary_render_layers(
                 build_contour_line_render_layer(
                     layer_name="target_structure_surface",
                     point_groups=target_structure_contours,
-                    color=np.array([0.1, 0.1, 0.6]),
+                    color=target_structure_render_color,
                 )
             )
         else:
@@ -792,13 +808,14 @@ def _build_additional_stage_boundary_render_layers(
                     build_point_cloud_render_layer(
                         layer_name="target_structure_surface",
                         points=target_structure_surface_points,
-                        color=np.array([0.1, 0.1, 0.6]),
+                        color=target_structure_render_color,
                     )
                 )
 
     if render_include_selected_anatomy_bool:
         additional_render_layers.extend(
             _build_selected_anatomy_render_layers(
+                structs_referenced_dict,
                 pydicom_item,
                 oar_ref=oar_ref,
                 rectum_ref=rectum_ref,
@@ -823,21 +840,28 @@ def _resolve_planned_to_winner_translation_vector(
 
 
 def _build_selected_anatomy_render_layers(
+    structs_referenced_dict,
     pydicom_item,
     oar_ref,
     rectum_ref,
     urethra_ref,
 ):
     anatomy_specs = (
-        ("prostate_structure", oar_ref, ("prostate",), np.array([0.55, 0.55, 0.55])),
-        ("urethra_structure", urethra_ref, ("urethra", "ureth"), np.array([1.0, 0.85, 0.0])),
-        ("rectum_structure", rectum_ref, ("rectum", "rect"), np.array([0.8, 0.35, 0.0])),
+        ("prostate_structure", oar_ref, ("prostate",)),
+        ("urethra_structure", urethra_ref, ("urethra", "ureth")),
+        ("rectum_structure", rectum_ref, ("rectum", "rect")),
     )
     resolved_render_layers = []
 
-    for layer_name, structure_ref_key, roi_fragments, layer_color in anatomy_specs:
+    for layer_name, structure_ref_key, roi_fragments in anatomy_specs:
         if structure_ref_key is None or structure_ref_key not in pydicom_item:
             continue
+
+        layer_color = _resolve_structure_render_color(
+            structs_referenced_dict,
+            structure_ref_key,
+            fallback_color=np.array([0.55, 0.55, 0.55]),
+        )
 
         resolved_structure = _resolve_structure_by_roi_fragments(
             pydicom_item[structure_ref_key],
@@ -931,6 +955,48 @@ def _coerce_optional_point_groups(
         return None
 
     return tuple(normalized_point_groups)
+
+
+def _resolve_biopsy_render_color(
+    structs_referenced_dict,
+    bx_ref,
+    specific_structure,
+    fallback_color,
+):
+    try:
+        sim_type = specific_structure.get("Simulated type")
+        if sim_type is None:
+            sim_type = "Real"
+        return np.asarray(
+            structs_referenced_dict[bx_ref]["PCD color dict"][sim_type],
+            dtype=float,
+        ).reshape(3)
+    except Exception:
+        return np.asarray(fallback_color, dtype=float).reshape(3)
+
+
+def _resolve_structure_render_color(
+    structs_referenced_dict,
+    structure_ref_key,
+    fallback_color,
+):
+    try:
+        return np.asarray(
+            structs_referenced_dict[structure_ref_key]["PCD color"],
+            dtype=float,
+        ).reshape(3)
+    except Exception:
+        return np.asarray(fallback_color, dtype=float).reshape(3)
+
+
+def _lighten_color(color, factor):
+    normalized_color = np.asarray(color, dtype=float).reshape(3)
+    return np.clip(normalized_color + (1.0 - normalized_color) * float(factor), 0.0, 1.0)
+
+
+def _darken_color(color, factor):
+    normalized_color = np.asarray(color, dtype=float).reshape(3)
+    return np.clip(normalized_color * (1.0 - float(factor)), 0.0, 1.0)
 
 
 def _build_transport_selection_metadata(summary_dataframe):
