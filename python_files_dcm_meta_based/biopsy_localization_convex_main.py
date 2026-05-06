@@ -486,6 +486,7 @@ def main():
     interp_intra_slice_dist = 0.5 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
     interp_dist_caps = 0.25
     biopsy_radius = 0.5
+    simulated_biopsy_planning_radius_mm = biopsy_radius # Keep planned sim-biopsy geometry aligned with finalized biopsy geometry and optimizer-v2 sampling.
     biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
     biopsy_fire_travel_distances = [15,22] # how far the needle tip travels from unfired to fired position, for the magnum bard there were two penetration depth settings
     biopsy_needle_tip_length = 6 # tip to compartment distance
@@ -2148,7 +2149,7 @@ def main():
                     centroid_first_pos_list = [0,0,0]
                     num_centroids_for_sim_bxs = 10
                     centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                    simulated_bx_rad = 2
+                    simulated_bx_rad = simulated_biopsy_planning_radius_mm
                     plot_simulated_cores_immediately = False
                 """
 
@@ -4517,7 +4518,7 @@ def main():
                 centroid_line_vec_sim_list = [0,0,1]
                 centroid_first_pos_sim_list = [0,0,0]
                 num_centroids_for_sim_bxs = 10
-                simulated_bx_rad = 2
+                simulated_bx_rad = simulated_biopsy_planning_radius_mm
                 plot_simulated_cores_immediately = False
                 # note that the length of the simulated biopsy is determined on a per biopsy basis in the below code!
 
