@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -33,6 +34,20 @@ class OptimizerV2RenderCameraConfig:
     up: np.ndarray
     front: np.ndarray
     zoom: float
+
+
+@dataclass(frozen=True)
+class OptimizerV2PlotlyExportConfig:
+    """Static-export contract for publication-oriented Plotly renders."""
+
+    output_dir: Path
+    file_formats: Tuple[str, ...] = ("svg", "pdf")
+    width: int = 1920
+    height: int = 1080
+    scale: float = 1.0
+    camera_eye: Tuple[float, float, float] = (1.6, -1.8, 1.15)
+    camera_center: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    camera_up: Tuple[float, float, float] = (0.0, 0.0, 1.0)
 
 
 @dataclass(frozen=True)
@@ -231,6 +246,7 @@ def render_stage_boundary_candidate_clouds(
     scene_name_prefix: Optional[str] = None,
     render_backend: str = "open3d",
     render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    plotly_export_config: Optional[OptimizerV2PlotlyExportConfig] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build and render one scene per selected stage boundary using the selected backend."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
@@ -249,6 +265,7 @@ def render_stage_boundary_candidate_clouds(
     return render_scene_render_jobs(
         stage_boundary_render_jobs,
         render_backend=render_backend,
+        plotly_export_config=plotly_export_config,
     )
 
 
@@ -265,6 +282,7 @@ def _build_stage_boundary_scene_name(
 def render_scene_render_jobs(
     render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
     render_backend: str = "open3d",
+    plotly_export_config: Optional[OptimizerV2PlotlyExportConfig] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Render prebuilt scene jobs so they can be replayed or exported later."""
     resolved_render_jobs = tuple(render_jobs)
@@ -274,8 +292,13 @@ def render_scene_render_jobs(
     resolved_render_backend = _normalize_render_backend(render_backend)
     if resolved_render_backend in ("open3d", "both"):
         _render_scene_render_jobs_open3d(resolved_render_jobs)
-    if resolved_render_backend in ("plotly", "both"):
-        _render_scene_render_jobs_plotly(resolved_render_jobs)
+    should_show_plotly_figures = resolved_render_backend in ("plotly", "both")
+    if should_show_plotly_figures or plotly_export_config is not None:
+        _render_scene_render_jobs_plotly(
+            resolved_render_jobs,
+            show_figures=should_show_plotly_figures,
+            plotly_export_config=plotly_export_config,
+        )
 
     return resolved_render_jobs
 
@@ -357,51 +380,146 @@ def _render_scene_render_jobs_open3d(
 
 def _render_scene_render_jobs_plotly(
     render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+    show_figures: bool = True,
+    plotly_export_config: Optional[OptimizerV2PlotlyExportConfig] = None,
 ) -> None:
     """Render scene jobs as Plotly figures for scientific review and export-oriented follow-on work."""
+    for render_job in render_jobs:
+        figure = _build_plotly_figure_for_render_job(
+            render_job,
+            plotly_export_config=plotly_export_config,
+        )
+        if plotly_export_config is not None:
+            _export_plotly_figure_for_render_job(
+                figure,
+                render_job,
+                plotly_export_config,
+            )
+        if show_figures:
+            figure.show()
+
+
+def _build_plotly_figure_for_render_job(
+    render_job: OptimizerV2StageBoundaryRenderJob,
+    plotly_export_config: Optional[OptimizerV2PlotlyExportConfig] = None,
+):
     import plotly.graph_objects as go
 
-    for render_job in render_jobs:
-        figure = go.Figure()
-        for render_layer in render_job.render_layers:
-            plotly_trace = _build_plotly_trace_for_render_layer(render_layer)
-            if plotly_trace is None:
-                continue
-            figure.add_trace(plotly_trace)
+    figure = go.Figure()
+    for render_layer in render_job.render_layers:
+        plotly_trace = _build_plotly_trace_for_render_layer(render_layer)
+        if plotly_trace is None:
+            continue
+        figure.add_trace(plotly_trace)
 
-        figure.update_layout(
-            title=dict(text=render_job.scene_name),
-            template="plotly_white",
-            paper_bgcolor="white",
-            plot_bgcolor="white",
-            legend=dict(title="Optimizer V2 Layers"),
-            scene=dict(
-                bgcolor="white",
-                aspectmode="data",
-                xaxis=dict(
-                    title="Left(+)-Right(-), X Axis (mm)",
-                    backgroundcolor="rgb(245,245,245)",
-                    gridcolor="black",
-                    showbackground=True,
-                    zerolinecolor="black",
-                ),
-                yaxis=dict(
-                    title="Posterior(+)-Anterior(-), Y Axis (mm)",
-                    backgroundcolor="rgb(245,245,245)",
-                    gridcolor="black",
-                    showbackground=True,
-                    zerolinecolor="black",
-                ),
-                zaxis=dict(
-                    title="Superior(+)-Inferior(-), Z Axis (mm)",
-                    backgroundcolor="rgb(245,245,245)",
-                    gridcolor="black",
-                    showbackground=True,
-                    zerolinecolor="black",
-                ),
+    figure.update_layout(
+        title=dict(text=render_job.scene_name),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        legend=dict(title="Optimizer V2 Layers"),
+        scene=dict(
+            bgcolor="white",
+            aspectmode="data",
+            camera=_resolve_plotly_scene_camera(plotly_export_config),
+            xaxis=dict(
+                title="Left(+)-Right(-), X Axis (mm)",
+                backgroundcolor="rgb(245,245,245)",
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black",
             ),
+            yaxis=dict(
+                title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                backgroundcolor="rgb(245,245,245)",
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black",
+            ),
+            zaxis=dict(
+                title="Superior(+)-Inferior(-), Z Axis (mm)",
+                backgroundcolor="rgb(245,245,245)",
+                gridcolor="black",
+                showbackground=True,
+                zerolinecolor="black",
+            ),
+        ),
+    )
+    return figure
+
+
+def _resolve_plotly_scene_camera(
+    plotly_export_config: Optional[OptimizerV2PlotlyExportConfig],
+):
+    resolved_camera_eye = (1.6, -1.8, 1.15)
+    resolved_camera_center = (0.0, 0.0, 0.0)
+    resolved_camera_up = (0.0, 0.0, 1.0)
+    if plotly_export_config is not None:
+        resolved_camera_eye = tuple(float(value) for value in plotly_export_config.camera_eye)
+        resolved_camera_center = tuple(float(value) for value in plotly_export_config.camera_center)
+        resolved_camera_up = tuple(float(value) for value in plotly_export_config.camera_up)
+
+    return {
+        "eye": {
+            "x": resolved_camera_eye[0],
+            "y": resolved_camera_eye[1],
+            "z": resolved_camera_eye[2],
+        },
+        "center": {
+            "x": resolved_camera_center[0],
+            "y": resolved_camera_center[1],
+            "z": resolved_camera_center[2],
+        },
+        "up": {
+            "x": resolved_camera_up[0],
+            "y": resolved_camera_up[1],
+            "z": resolved_camera_up[2],
+        },
+    }
+
+
+def _export_plotly_figure_for_render_job(
+    figure,
+    render_job: OptimizerV2StageBoundaryRenderJob,
+    plotly_export_config: OptimizerV2PlotlyExportConfig,
+) -> None:
+    resolved_output_dir = Path(plotly_export_config.output_dir)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    file_stem = _sanitize_output_path_fragment(render_job.scene_name)
+    resolved_file_formats = tuple(
+        str(file_format).strip().lower().lstrip(".")
+        for file_format in plotly_export_config.file_formats
+        if str(file_format).strip() != ""
+    )
+    if len(resolved_file_formats) == 0:
+        raise ValueError("plotly_export_config.file_formats cannot be empty")
+
+    for file_format in resolved_file_formats:
+        if file_format not in ("svg", "pdf"):
+            raise ValueError(
+                "unsupported optimizer-v2 Plotly export format: {}".format(file_format)
+            )
+        figure.write_image(
+            resolved_output_dir.joinpath("{}.{}".format(file_stem, file_format)),
+            format=file_format,
+            width=int(plotly_export_config.width),
+            height=int(plotly_export_config.height),
+            scale=float(plotly_export_config.scale),
         )
-        figure.show()
+
+
+def _sanitize_output_path_fragment(raw_fragment: str) -> str:
+    sanitized_characters = []
+    for character in str(raw_fragment):
+        if character.isalnum() or character in ("-", "_", "."):
+            sanitized_characters.append(character)
+        else:
+            sanitized_characters.append("_")
+
+    sanitized_fragment = "".join(sanitized_characters).strip("_")
+    if sanitized_fragment == "":
+        return "optimizer_v2_render"
+    return sanitized_fragment
 
 
 def _register_render_layer_toggle_callbacks(
@@ -857,7 +975,7 @@ def _build_open3d_lineset_from_point_groups(
 
 def _normalize_render_backend(render_backend: str) -> str:
     normalized_render_backend = str(render_backend).strip().lower()
-    if normalized_render_backend not in ("open3d", "plotly", "both"):
+    if normalized_render_backend not in ("open3d", "plotly", "both", "none"):
         raise ValueError(
             "unsupported optimizer-v2 render backend: {}".format(render_backend)
         )
@@ -1043,6 +1161,7 @@ def _coerce_points_to_numpy(points):
 
 __all__ = [
     "OptimizerV2RenderCameraConfig",
+    "OptimizerV2PlotlyExportConfig",
     "OptimizerV2RenderLayer",
     "OptimizerV2StageBoundaryRenderJob",
     "build_contour_line_render_layer",

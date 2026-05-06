@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas
 
 import polygon_dilation_helpers_numpy
+from biopsy_optimizer.v2.contracts import OptimizerV2ChunkLayout
 from biopsy_optimizer.v2.candidate_pool import build_target_candidate_pool
 from biopsy_optimizer.v2.output import (
     annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit,
@@ -16,12 +18,16 @@ from biopsy_optimizer.v2.output import (
     build_target_dil_ranked_candidate_output_dataframe,
 )
 from biopsy_optimizer.v2.render import (
+    OptimizerV2PlotlyExportConfig,
+    OptimizerV2StageBoundaryRenderJob,
+    build_success_failure_render_layers_from_chunk_score_result,
     build_contour_line_render_layer,
     build_point_cloud_render_layer,
     build_stage_boundary_render_jobs,
     render_scene_render_jobs,
 )
 from biopsy_optimizer.v2.runner import run_target_staged_candidate_search
+from biopsy_optimizer.v2.scoring import score_target_candidate_chunk
 from preprocessing.biopsy_processing.simulated_biopsy_planner import (
     get_planned_simulated_biopsy_model_dict,
     get_planned_simulated_biopsy_sampled_points_arr,
@@ -71,6 +77,16 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     render_stage_names_to_render=None,
     render_backend="open3d",
     render_layer_style_by_name=None,
+    render_plotly_export_bool=False,
+    render_plotly_export_formats=("svg", "pdf"),
+    render_plotly_export_width=1920,
+    render_plotly_export_height=1080,
+    render_plotly_export_scale=1.0,
+    render_plotly_export_camera_eye=(1.6, -1.8, 1.15),
+    render_plotly_export_camera_center=(0.0, 0.0, 0.0),
+    render_plotly_export_camera_up=(0.0, 0.0, 1.0),
+    render_winner_containment_debug_bool=False,
+    render_winner_containment_backend=None,
     render_patient_whitelist=None,
     render_roi_whitelist=None,
     render_include_planned_sampled_points_bool=True,
@@ -271,20 +287,115 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 render_patient_whitelist,
                 render_roi_whitelist,
             )
-            if (
+            plotly_export_config = None
+            if render_plotly_export_bool and should_render_structure and stage_boundary_render_jobs:
+                plotly_export_config = _build_plotly_export_config_for_scene_group(
+                    master_structure_info_dict,
+                    patientUID,
+                    structureID,
+                    "stage_boundary",
+                    render_plotly_export_formats,
+                    render_plotly_export_width,
+                    render_plotly_export_height,
+                    render_plotly_export_scale,
+                    render_plotly_export_camera_eye,
+                    render_plotly_export_camera_center,
+                    render_plotly_export_camera_up,
+                )
+
+            should_render_interactively = (
                 render_stage_boundary_candidate_clouds_bool
                 and should_render_structure
                 and stage_boundary_render_jobs
-            ):
-                live_display.stop()
+            )
+            should_export_structure = (
+                plotly_export_config is not None and bool(stage_boundary_render_jobs)
+            )
+            if should_render_interactively or should_export_structure:
+                effective_render_backend = render_backend if should_render_interactively else "none"
+                if should_render_interactively:
+                    live_display.stop()
                 try:
                     render_scene_render_jobs(
                         stage_boundary_render_jobs,
-                        render_backend=render_backend,
+                        render_backend=effective_render_backend,
+                        plotly_export_config=plotly_export_config,
                     )
                 finally:
-                    live_display.start(refresh=True)
-                    live_display.refresh()
+                    if should_render_interactively:
+                        live_display.start(refresh=True)
+                        live_display.refresh()
+
+            resolved_winner_containment_backend = render_backend
+            if render_winner_containment_backend is not None:
+                resolved_winner_containment_backend = render_winner_containment_backend
+            if render_winner_containment_debug_bool and should_render_structure:
+                winner_containment_render_job, winner_containment_chunk_score_result = (
+                    _build_winner_containment_debug_render_job(
+                        patientUID=patientUID,
+                        structureID=structureID,
+                        search_result=search_result,
+                        candidate_pool=candidate_pool,
+                        nominal_biopsy_points=nominal_biopsy_points,
+                        nominal_biopsy_centroid=nominal_biopsy_centroid,
+                        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+                        target_structure=target_structure,
+                        target_structure_centroid=target_structure_centroid,
+                        biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                        target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+                        target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+                        downstream_comparable_trial_count=downstream_comparable_trial_count,
+                        additional_render_layers=additional_render_layers,
+                        render_layer_style_by_name=render_layer_style_by_name,
+                        max_test_structures_per_call=max_candidates_per_chunk,
+                        include_edges_in_log=include_edges_in_log,
+                        kernel_type=kernel_type,
+                    )
+                )
+                if winner_containment_render_job is not None:
+                    _print_winner_containment_debug_summary(
+                        patientUID,
+                        structureID,
+                        winner_containment_chunk_score_result,
+                    )
+                    winner_containment_export_config = None
+                    if render_plotly_export_bool:
+                        winner_containment_export_config = _build_plotly_export_config_for_scene_group(
+                            master_structure_info_dict,
+                            patientUID,
+                            structureID,
+                            "winner_containment",
+                            render_plotly_export_formats,
+                            render_plotly_export_width,
+                            render_plotly_export_height,
+                            render_plotly_export_scale,
+                            render_plotly_export_camera_eye,
+                            render_plotly_export_camera_center,
+                            render_plotly_export_camera_up,
+                        )
+
+                    should_render_winner_interactively = (
+                        _normalize_requested_render_backend(resolved_winner_containment_backend) != "none"
+                    )
+                    should_export_winner = winner_containment_export_config is not None
+                    if should_render_winner_interactively or should_export_winner:
+                        effective_winner_backend = (
+                            resolved_winner_containment_backend
+                            if should_render_winner_interactively
+                            else "none"
+                        )
+                        if should_render_winner_interactively:
+                            live_display.stop()
+                        try:
+                            render_scene_render_jobs(
+                                (winner_containment_render_job,),
+                                render_backend=effective_winner_backend,
+                                plotly_export_config=winner_containment_export_config,
+                            )
+                        finally:
+                            if should_render_winner_interactively:
+                                live_display.start(refresh=True)
+                                live_display.refresh()
 
             metadata = _build_search_metadata(
                 patientUID,
@@ -685,6 +796,239 @@ def _matches_render_whitelist(
         whitelist_entry == normalized_candidate_name or whitelist_entry in normalized_candidate_name
         for whitelist_entry in normalized_whitelist
     )
+
+
+def _build_plotly_export_config_for_scene_group(
+    master_structure_info_dict,
+    patient_uid,
+    roi_name,
+    scene_group_name,
+    file_formats,
+    width,
+    height,
+    scale,
+    camera_eye,
+    camera_center,
+    camera_up,
+):
+    global_info = master_structure_info_dict.get("Global") or {}
+    specific_output_dir = global_info.get("Specific output dir")
+    if specific_output_dir is None:
+        return None
+
+    export_dir = Path(specific_output_dir).joinpath(
+        "scientific_communication",
+        "optimizer_v2",
+        _sanitize_output_path_fragment(scene_group_name),
+        _sanitize_output_path_fragment(patient_uid),
+        _sanitize_output_path_fragment(roi_name),
+        "plotly_vector",
+    )
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return OptimizerV2PlotlyExportConfig(
+        output_dir=export_dir,
+        file_formats=tuple(file_formats),
+        width=int(width),
+        height=int(height),
+        scale=float(scale),
+        camera_eye=tuple(float(value) for value in camera_eye),
+        camera_center=tuple(float(value) for value in camera_center),
+        camera_up=tuple(float(value) for value in camera_up),
+    )
+
+
+def _sanitize_output_path_fragment(raw_fragment):
+    sanitized_characters = []
+    for character in str(raw_fragment):
+        if character.isalnum() or character in ("-", "_", "."):
+            sanitized_characters.append(character)
+        else:
+            sanitized_characters.append("_")
+
+    sanitized_fragment = "".join(sanitized_characters).strip("_")
+    if sanitized_fragment == "":
+        return "optimizer_v2"
+    return sanitized_fragment
+
+
+def _build_winner_containment_debug_render_job(
+    patientUID,
+    structureID,
+    search_result,
+    candidate_pool,
+    nominal_biopsy_points,
+    nominal_biopsy_centroid,
+    nominal_biopsy_centroid_line,
+    target_structure,
+    target_structure_centroid,
+    biopsy_transform_bank_prefix_provider,
+    target_relative_structures_nominal_plus_trials_provider,
+    target_transform_bank_prefix_provider,
+    downstream_comparable_trial_count,
+    additional_render_layers,
+    render_layer_style_by_name,
+    max_test_structures_per_call,
+    include_edges_in_log,
+    kernel_type,
+):
+    winner_candidate_index_global = search_result.operational_winner_candidate_index_global
+    if winner_candidate_index_global is None:
+        return None, None
+
+    resolved_trial_count = _resolve_winner_containment_trial_count(
+        search_result,
+        downstream_comparable_trial_count,
+    )
+    winner_chunk_layout = OptimizerV2ChunkLayout(
+        candidate_indices_global=(int(winner_candidate_index_global),),
+        num_trials=resolved_trial_count,
+        include_nominal=True,
+        nominal_relative_structure_index=0,
+        trial_relative_structure_start_index=1,
+    )
+    winner_chunk_score_result = score_target_candidate_chunk(
+        candidate_pool=candidate_pool,
+        chunk_layout=winner_chunk_layout,
+        nominal_biopsy_points=nominal_biopsy_points,
+        nominal_biopsy_centroid=nominal_biopsy_centroid,
+        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        biopsy_transform_bank_prefix=biopsy_transform_bank_prefix_provider(resolved_trial_count),
+        target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials_provider(
+            resolved_trial_count
+        ),
+        target_structure_centroid=target_structure_centroid,
+        target_transform_bank_prefix=target_transform_bank_prefix_provider(resolved_trial_count),
+        objective_reducer_name="mean_pd",
+        max_test_structures_per_call=max_test_structures_per_call,
+        create_tested_candidate_dataframe=True,
+        include_relative_structure_localized_points_for_debug=True,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+        return_array_as="numpy",
+    )
+    containment_render_layers = build_success_failure_render_layers_from_chunk_score_result(
+        winner_chunk_score_result,
+        candidate_local_chunk_index=0,
+        include_nominal_slice=False,
+    )
+
+    winner_candidate_point = np.asarray(
+        candidate_pool.candidate_points[int(winner_candidate_index_global)],
+        dtype=float,
+    ).reshape(1, 3)
+    render_layers = [
+        build_point_cloud_render_layer(
+            layer_name="target_points",
+            points=np.asarray(
+                target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
+                dtype=float,
+            ),
+            color=_resolve_layer_style_color(
+                render_layer_style_by_name,
+                "target_points",
+                np.array([0.0, 0.0, 1.0]),
+            ),
+            marker_size=_resolve_layer_style_float(
+                render_layer_style_by_name,
+                "target_points",
+                "marker_size",
+            ),
+            opacity=_resolve_layer_style_float(
+                render_layer_style_by_name,
+                "target_points",
+                "opacity",
+            ),
+        ),
+        build_point_cloud_render_layer(
+            layer_name="operational_winner",
+            points=winner_candidate_point,
+            color=_resolve_layer_style_color(
+                render_layer_style_by_name,
+                "operational_winner",
+                np.array([1.0, 0.0, 1.0]),
+            ),
+            marker_size=_resolve_layer_style_float(
+                render_layer_style_by_name,
+                "operational_winner",
+                "marker_size",
+            ),
+            opacity=_resolve_layer_style_float(
+                render_layer_style_by_name,
+                "operational_winner",
+                "opacity",
+            ),
+        ),
+    ]
+    render_layers.extend(additional_render_layers)
+    render_layers.extend(containment_render_layers)
+
+    render_job = OptimizerV2StageBoundaryRenderJob(
+        scene_name="{}__{}__optimizer_v2_winner_containment".format(patientUID, structureID),
+        stage_name="winner_containment",
+        input_candidate_points=winner_candidate_point.copy(),
+        survivor_candidate_points=winner_candidate_point.copy(),
+        target_points=np.asarray(
+            target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
+            dtype=float,
+        ),
+        render_layers=tuple(render_layers),
+    )
+    return render_job, winner_chunk_score_result
+
+
+def _resolve_winner_containment_trial_count(
+    search_result,
+    downstream_comparable_trial_count,
+):
+    if downstream_comparable_trial_count is not None and int(downstream_comparable_trial_count) > 0:
+        return int(downstream_comparable_trial_count)
+
+    winner_resolution_result = getattr(search_result, "winner_resolution_result", None)
+    if winner_resolution_result is not None:
+        resolved_trial_count = int(winner_resolution_result.final_resolution_trial_count)
+        if resolved_trial_count > 0:
+            return resolved_trial_count
+
+    if len(search_result.stage_results) == 0:
+        raise ValueError("winner containment debug requires at least one optimizer-v2 stage result")
+    return int(search_result.stage_results[-1].num_trials)
+
+
+def _print_winner_containment_debug_summary(
+    patient_uid,
+    roi_name,
+    winner_chunk_score_result,
+):
+    tested_candidate_dataframe = winner_chunk_score_result.tested_candidate_dataframe
+    if tested_candidate_dataframe is None or tested_candidate_dataframe.empty:
+        return
+
+    winner_row = tested_candidate_dataframe.iloc[0]
+    num_trials_used = int(winner_row["Num trials used"])
+    num_biopsy_sample_points = int(winner_row["Num biopsy sample points"])
+    total_successes = int(winner_row["Total successes all points"])
+    total_possible_successes = max(1, num_trials_used * num_biopsy_sample_points)
+    print(
+        "[optimizer-v2 containment] patient={} roi={} candidate={} trials={} score={:.6f} nominal={:.6f} distance_mm={:.3f} bx_pts={} total_successes={} success_rate={:.6f}".format(
+            patient_uid,
+            roi_name,
+            int(winner_row["Candidate global index"]),
+            num_trials_used,
+            float(winner_row["Objective value"]),
+            float(winner_row["Nominal objective value"]),
+            float(winner_row["Distance to target centroid mm"]),
+            num_biopsy_sample_points,
+            total_successes,
+            float(total_successes) / float(total_possible_successes),
+        )
+    )
+
+
+def _normalize_requested_render_backend(render_backend):
+    normalized_render_backend = str(render_backend).strip().lower()
+    if normalized_render_backend == "":
+        return "none"
+    return normalized_render_backend
 
 
 def _resolve_operational_winner_candidate_point(

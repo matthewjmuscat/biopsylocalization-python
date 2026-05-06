@@ -534,6 +534,16 @@ def main():
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
+    optimizer_v2_render_plotly_export_bool = True # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
+    optimizer_v2_render_plotly_export_formats = ("svg", "pdf")
+    optimizer_v2_render_plotly_export_width = svg_image_width
+    optimizer_v2_render_plotly_export_height = svg_image_height
+    optimizer_v2_render_plotly_export_scale = svg_image_scale
+    optimizer_v2_render_plotly_export_camera_eye = (1.6, -1.8, 1.15)
+    optimizer_v2_render_plotly_export_camera_center = (0.0, 0.0, 0.0)
+    optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
+    optimizer_v2_render_winner_containment_debug_bool = True # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
+    optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
     optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
     optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
@@ -4691,6 +4701,16 @@ def main():
                               render_stage_names_to_render=optimizer_v2_render_stage_names,
                               render_backend=optimizer_v2_render_backend,
                               render_layer_style_by_name=optimizer_v2_render_layer_style_by_name,
+                              render_plotly_export_bool=optimizer_v2_render_plotly_export_bool,
+                              render_plotly_export_formats=optimizer_v2_render_plotly_export_formats,
+                              render_plotly_export_width=optimizer_v2_render_plotly_export_width,
+                              render_plotly_export_height=optimizer_v2_render_plotly_export_height,
+                              render_plotly_export_scale=optimizer_v2_render_plotly_export_scale,
+                              render_plotly_export_camera_eye=optimizer_v2_render_plotly_export_camera_eye,
+                              render_plotly_export_camera_center=optimizer_v2_render_plotly_export_camera_center,
+                              render_plotly_export_camera_up=optimizer_v2_render_plotly_export_camera_up,
+                              render_winner_containment_debug_bool=optimizer_v2_render_winner_containment_debug_bool,
+                              render_winner_containment_backend=optimizer_v2_render_winner_containment_backend,
                               render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,
                               render_patient_whitelist=optimizer_v2_render_patient_whitelist,
                               render_roi_whitelist=optimizer_v2_render_roi_whitelist,
