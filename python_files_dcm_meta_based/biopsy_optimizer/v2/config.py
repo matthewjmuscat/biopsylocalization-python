@@ -26,8 +26,6 @@ class OptimizerV2StageConfig:
     def __post_init__(self) -> None:
         if self.num_trials <= 0:
             raise ValueError("num_trials must be positive")
-        if self.survivor_fraction is None and self.survivor_limit is None:
-            raise ValueError("at least one survivor control must be provided")
         if self.survivor_fraction is not None and not (0.0 < self.survivor_fraction <= 1.0):
             raise ValueError("survivor_fraction must be in (0, 1]")
         if self.survivor_limit is not None and self.survivor_limit <= 0:
@@ -37,6 +35,8 @@ class OptimizerV2StageConfig:
         """Resolve the number of candidates that survive this stage."""
         if num_candidates <= 0:
             return 0
+        if self.survivor_fraction is None and self.survivor_limit is None:
+            return int(num_candidates)
 
         resolved_counts = []
         if self.survivor_fraction is not None:
@@ -52,6 +52,105 @@ DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS = (
     OptimizerV2StageConfig("stage_b", 64, survivor_fraction=0.20, survivor_limit=64),
     OptimizerV2StageConfig("stage_c", 256, survivor_limit=1),
 )
+
+
+@dataclass(frozen=True)
+class OptimizerV2AdaptiveBlockConfig:
+    """Adaptive block-round policy for mean_pd-first pruning.
+
+    `initial_trial_prefix` and `trial_block_size` are minimum floors.
+    If `max_test_structures_per_call` is provided, the runner may choose a
+    larger cumulative trial prefix for a round when the current chunk size can
+    still fit within that per-call structure budget.
+    """
+
+    initial_trial_prefix: int
+    trial_block_size: int
+    max_total_trials: int
+    round_name_prefix: str = "round"
+    max_test_structures_per_call: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.initial_trial_prefix <= 0:
+            raise ValueError("initial_trial_prefix must be positive")
+        if self.trial_block_size <= 0:
+            raise ValueError("trial_block_size must be positive")
+        if self.max_total_trials < self.initial_trial_prefix:
+            raise ValueError("max_total_trials must be greater than or equal to initial_trial_prefix")
+        if str(self.round_name_prefix).strip() == "":
+            raise ValueError("round_name_prefix cannot be empty")
+        if self.max_test_structures_per_call is not None and self.max_test_structures_per_call <= 0:
+            raise ValueError("max_test_structures_per_call must be positive when provided")
+
+    def resolve_trial_prefixes(self) -> Tuple[int, ...]:
+        """Return the minimum-floor cumulative trial-prefix schedule."""
+        resolved_trial_prefixes = [int(self.initial_trial_prefix)]
+        current_trial_prefix = int(self.initial_trial_prefix)
+        while current_trial_prefix < int(self.max_total_trials):
+            current_trial_prefix = min(
+                int(self.max_total_trials),
+                current_trial_prefix + int(self.trial_block_size),
+            )
+            resolved_trial_prefixes.append(current_trial_prefix)
+        return tuple(resolved_trial_prefixes)
+
+    def build_stage_configs(self) -> Tuple[OptimizerV2StageConfig, ...]:
+        return tuple(
+            OptimizerV2StageConfig(
+                "{}_{:03d}_n{:04d}".format(str(self.round_name_prefix).strip(), round_index, trial_prefix),
+                int(trial_prefix),
+            )
+            for round_index, trial_prefix in enumerate(self.resolve_trial_prefixes(), start=1)
+        )
+
+    def build_round_name(self, round_index: int, cumulative_trial_prefix: int) -> str:
+        return "{}_{:03d}_n{:04d}".format(
+            str(self.round_name_prefix).strip(),
+            int(round_index),
+            int(cumulative_trial_prefix),
+        )
+
+    def resolve_minimum_next_trial_prefix(self, current_trial_prefix: int) -> int:
+        if current_trial_prefix < 0:
+            raise ValueError("current_trial_prefix cannot be negative")
+        if current_trial_prefix == 0:
+            return min(int(self.max_total_trials), int(self.initial_trial_prefix))
+        return min(
+            int(self.max_total_trials),
+            int(current_trial_prefix) + int(self.trial_block_size),
+        )
+
+    def resolve_capacity_packed_trial_prefix(
+        self,
+        current_trial_prefix: int,
+        active_candidate_count: int,
+        max_candidates_per_chunk: int,
+        include_nominal: bool,
+        max_test_structures_per_call: Optional[int] = None,
+    ) -> Optional[int]:
+        if current_trial_prefix < 0:
+            raise ValueError("current_trial_prefix cannot be negative")
+        if active_candidate_count <= 0:
+            return None
+        if max_candidates_per_chunk <= 0:
+            raise ValueError("max_candidates_per_chunk must be positive")
+
+        resolved_structure_budget = self.max_test_structures_per_call
+        if max_test_structures_per_call is not None:
+            resolved_structure_budget = int(max_test_structures_per_call)
+        if resolved_structure_budget is None:
+            return None
+        if resolved_structure_budget <= 0:
+            raise ValueError("max_test_structures_per_call must be positive when provided")
+
+        effective_chunk_candidate_count = min(int(active_candidate_count), int(max_candidates_per_chunk))
+        nominal_rows_per_candidate = int(bool(include_nominal))
+        max_cumulative_trial_prefix = (
+            int(resolved_structure_budget) // int(effective_chunk_candidate_count)
+        ) - nominal_rows_per_candidate
+        if max_cumulative_trial_prefix <= int(current_trial_prefix):
+            return int(current_trial_prefix)
+        return min(int(self.max_total_trials), int(max_cumulative_trial_prefix))
 
 
 @dataclass(frozen=True)
@@ -98,23 +197,34 @@ class OptimizerV2SearchConfig:
 
     lattice_spacing_mm: float = 1.0
     stage_configs: Tuple[OptimizerV2StageConfig, ...] = DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS
+    adaptive_block_config: Optional[OptimizerV2AdaptiveBlockConfig] = None
     tie_break_config: OptimizerV2TieBreakConfig = field(default_factory=OptimizerV2TieBreakConfig)
     mean_pd_stage_prune_std_dev_threshold: Optional[float] = 1.0
 
     def __post_init__(self) -> None:
         if self.lattice_spacing_mm <= 0.0:
             raise ValueError("lattice_spacing_mm must be positive")
-        if not self.stage_configs:
-            raise ValueError("stage_configs cannot be empty")
+        if self.adaptive_block_config is None and not self.stage_configs:
+            raise ValueError("either stage_configs or adaptive_block_config must be provided")
+        if self.adaptive_block_config is not None and self.stage_configs:
+            raise ValueError("stage_configs and adaptive_block_config are mutually exclusive")
         if (
             self.mean_pd_stage_prune_std_dev_threshold is not None
             and self.mean_pd_stage_prune_std_dev_threshold < 0.0
         ):
             raise ValueError("mean_pd_stage_prune_std_dev_threshold must be non-negative when provided")
 
-        trial_counts = [stage_config.num_trials for stage_config in self.stage_configs]
+        trial_counts = [stage_config.num_trials for stage_config in self.resolve_pruning_round_configs()]
         if any(next_count <= current_count for current_count, next_count in zip(trial_counts, trial_counts[1:])):
             raise ValueError("stage trial counts must increase strictly")
+
+    def uses_adaptive_block_rounds(self) -> bool:
+        return self.adaptive_block_config is not None
+
+    def resolve_pruning_round_configs(self) -> Tuple[OptimizerV2StageConfig, ...]:
+        if self.adaptive_block_config is not None:
+            return self.adaptive_block_config.build_stage_configs()
+        return tuple(self.stage_configs)
 
     def resolve_max_optimizer_trial_prefix(self) -> int:
         """Return the largest optimizer-side prefix that may actually be used.
@@ -122,7 +232,10 @@ class OptimizerV2SearchConfig:
         This includes the final stage's score-based tie-break escalation budget,
         not just the declared stage trial counts.
         """
-        final_stage_trial_count = self.stage_configs[-1].num_trials
+        if self.adaptive_block_config is not None:
+            final_stage_trial_count = int(self.adaptive_block_config.max_total_trials)
+        else:
+            final_stage_trial_count = self.resolve_pruning_round_configs()[-1].num_trials
         return self.tie_break_config.resolve_max_tie_break_trial_count(final_stage_trial_count)
 
     def resolve_required_transform_bank_size(self, downstream_trial_count: Optional[int] = None) -> int:
@@ -211,6 +324,32 @@ def build_optimizer_v2_search_config_with_trial_counts(
     )
 
 
+def build_optimizer_v2_adaptive_block_search_config(
+    initial_trial_prefix: int,
+    trial_block_size: int,
+    max_total_trials: int,
+    lattice_spacing_mm: float = 1.0,
+    mean_pd_stage_prune_std_dev_threshold: Optional[float] = 1.0,
+    round_name_prefix: str = "round",
+    max_test_structures_per_call: Optional[int] = None,
+) -> OptimizerV2SearchConfig:
+    """Build a search config that prunes after each appended shared trial block floor."""
+    return OptimizerV2SearchConfig(
+        lattice_spacing_mm=lattice_spacing_mm,
+        stage_configs=tuple(),
+        adaptive_block_config=OptimizerV2AdaptiveBlockConfig(
+            initial_trial_prefix=int(initial_trial_prefix),
+            trial_block_size=int(trial_block_size),
+            max_total_trials=int(max_total_trials),
+            round_name_prefix=round_name_prefix,
+            max_test_structures_per_call=(
+                int(max_test_structures_per_call) if max_test_structures_per_call is not None else None
+            ),
+        ),
+        mean_pd_stage_prune_std_dev_threshold=mean_pd_stage_prune_std_dev_threshold,
+    )
+
+
 def build_default_optimizer_v2_visualization_config() -> OptimizerV2VisualizationConfig:
     """Return the default visualization policy used by optimizer v2."""
     return OptimizerV2VisualizationConfig()
@@ -259,10 +398,12 @@ def _resolve_visualization_indices(
 
 __all__ = [
     "DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS",
+    "OptimizerV2AdaptiveBlockConfig",
     "OptimizerV2SearchConfig",
     "OptimizerV2StageConfig",
     "OptimizerV2TieBreakConfig",
     "OptimizerV2VisualizationConfig",
+    "build_optimizer_v2_adaptive_block_search_config",
     "build_default_optimizer_v2_search_config",
     "build_default_optimizer_v2_visualization_config",
     "build_optimizer_v2_search_config_with_trial_counts",

@@ -1,8 +1,10 @@
 from biopsy_optimizer.v2.config import (
 	DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS,
+	OptimizerV2AdaptiveBlockConfig,
 	OptimizerV2SearchConfig,
 	OptimizerV2StageConfig,
 	OptimizerV2VisualizationConfig,
+	build_optimizer_v2_adaptive_block_search_config,
 	build_default_optimizer_v2_search_config,
 	build_default_optimizer_v2_visualization_config,
 	build_optimizer_v2_search_config_with_trial_counts,

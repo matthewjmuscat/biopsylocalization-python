@@ -637,7 +637,29 @@ It should be allowed to grow wider and include stage-level prune and uncertainty
 
 ## Adaptive Uncertainty-Aware Staged Pruning Upgrade
 
-The current executable implementation uses fixed stage trial counts and top-ranked survivor retention within each stage.
+The repo now has two optimizer-v2 search-policy lanes.
+
+1. legacy fixed `stage_configs`,
+2. adaptive `adaptive_block_config`.
+
+The current live default should be the adaptive `mean_pd` lane.
+
+That lane uses:
+
+1. an explicit `initial_trial_prefix` floor,
+2. an explicit appended `trial_block_size` floor,
+3. an explicit `max_total_trials` hard ceiling,
+4. an optional `max_test_structures_per_call` packing budget that can raise the cumulative round prefix above those floors,
+5. one prune decision after each cumulative shared-prefix round,
+6. no fixed raw survivor-count boundary inside those adaptive rounds.
+
+The current executable adaptive pass is intentionally a control-flow upgrade first.
+
+It still rescored the active candidate set on the full cumulative prefix at each round.
+
+It does not yet use retained appended-block sufficient statistics to avoid rescoring the earlier prefix.
+
+That retained-block-only update path remains the next upgrade on top of the adaptive control flow.
 
 The agreed completed design should keep the staged and chunked structure, but change the pruning rule.
 
@@ -655,6 +677,12 @@ The intended rule is:
 6. continue to the next pruning round with a larger shared prefix.
 
 This preserves the throughput advantage of staged batched scoring while avoiding premature elimination of candidates that only appear worse because `N` is still small.
+
+The current executable policy now treats `initial_trial_prefix` and `trial_block_size` as minimums, not rigid per-round counts.
+
+If `max_test_structures_per_call` is configured, the runner computes the largest cumulative shared prefix that still fits the current candidate chunk inside one containment call and uses that larger `N` whenever it exceeds the floor.
+
+If the floor itself already exceeds the per-call structure budget, the floor still wins and the lower-level containment path simply splits the work across multiple mother-function calls.
 
 ### Statistical comparison rule
 
@@ -768,25 +796,26 @@ For the current repo, this exact incremental statistical-pruning story should th
 
 For `max_pd` and `min_pd`, the current reducer is applied after trial-averaging pointwise probabilities, so the same simple linear trialwise decomposition does not hold in the same way.
 
-Those reducers can remain supported for fixed-stage ranking, but the first uncertainty-aware staged-pruning implementation should target `mean_pd` explicitly.
+Those reducers can remain supported in the legacy fixed-stage lane, but the first adaptive uncertainty-aware pruning implementation should target `mean_pd` explicitly.
 
 ### Transform-bank growth and stopping rule
 
-The current code uses a fixed precomputed shared transform bank.
+The current code still uses a fixed precomputed shared transform bank.
 
-It requests leading prefixes from that bank and raises an error if a later request exceeds the available number of stored trials.
+It requests cumulative leading prefixes from that bank and raises an error if a later request exceeds the available number of stored trials.
 
-That is acceptable for the current fixed-stage implementation, but the adaptive pruning upgrade should make the growth policy explicit.
+That is acceptable for the current adaptive block-round implementation as long as the precomputed bank already covers the declared hard ceiling, but the growth policy should still remain explicit.
 
 The recommended contract is:
 
-1. keep an explicit `initial_trial_prefix`,
-2. keep an explicit `trial_block_size` for each appended pruning round,
+1. keep an explicit `initial_trial_prefix` floor,
+2. keep an explicit `trial_block_size` floor for each appended pruning round,
 3. keep an explicit `max_total_trials` hard ceiling,
-4. allow the bank to grow only by appending new contiguous shared trial blocks,
-5. never replace earlier draws with a fresh unrelated bank,
-6. stop early when one candidate is unique or when the active ambiguity set is small enough for final winner resolution,
-7. stop at the hard ceiling if statistical separation is still not achieved.
+4. optionally use a `max_test_structures_per_call` budget to pack a larger cumulative prefix when the current chunk size permits,
+5. allow the bank to grow only by appending new contiguous shared trial blocks,
+6. never replace earlier draws with a fresh unrelated bank,
+7. stop early when one candidate is unique or when the active ambiguity set is small enough for final winner resolution,
+8. stop at the hard ceiling if statistical separation is still not achieved.
 
 If the hard ceiling is reached without a unique statistically separated winner, the optimizer should not silently pretend certainty.
 
@@ -879,6 +908,21 @@ The preferred rule is:
 4. otherwise accept winner-only recomputation for debug rendering.
 
 That means recomputing the winner-only containment debug scene remains an acceptable default behavior.
+
+### Multiround render navigation contract
+
+When stage-boundary or round-boundary debug scenes are rendered for optimizer v2, the default live behavior should render all available pruning rounds unless an explicit stage-name filter is provided.
+
+The multiround Open3D viewer should remain usable even when the adaptive search emits more than the old three legacy stages.
+
+The intended navigation contract is:
+
+1. direct digit keys `1-9` for the first nine available rounds,
+2. left and right arrow keys for previous and next round navigation,
+3. home and end for first and last round navigation,
+4. the same layer-toggle keys staying valid regardless of which round is active.
+
+This keeps the render surface aligned with adaptive pruning rounds instead of drifting back toward a fixed three-stage mental model.
 
 ### Audit and output contract for pruning rounds
 

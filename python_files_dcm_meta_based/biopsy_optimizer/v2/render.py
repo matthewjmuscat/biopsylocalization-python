@@ -12,6 +12,12 @@ import numpy as np
 from biopsy_optimizer.v2.contracts import OptimizerV2CandidatePool, OptimizerV2SearchRunResult
 
 
+OPEN3D_KEY_RIGHT_ARROW = 262
+OPEN3D_KEY_LEFT_ARROW = 263
+OPEN3D_KEY_HOME = 268
+OPEN3D_KEY_END = 269
+
+
 @dataclass(frozen=True)
 class OptimizerV2RenderLayer:
     """One replayable render layer for a scene."""
@@ -655,6 +661,46 @@ def _register_render_layer_toggle_callbacks(
             ),
         )
 
+    if len(ordered_stage_names) > 1:
+        visualizer.register_key_callback(
+            OPEN3D_KEY_LEFT_ARROW,
+            _build_relative_stage_switch_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                ordered_stage_names,
+                stage_step=-1,
+            ),
+        )
+        visualizer.register_key_callback(
+            OPEN3D_KEY_RIGHT_ARROW,
+            _build_relative_stage_switch_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                ordered_stage_names,
+                stage_step=1,
+            ),
+        )
+        visualizer.register_key_callback(
+            OPEN3D_KEY_HOME,
+            _build_stage_switch_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                ordered_stage_names[0],
+            ),
+        )
+        visualizer.register_key_callback(
+            OPEN3D_KEY_END,
+            _build_stage_switch_callback(
+                stage_geometries_by_name,
+                active_stage_name_ref,
+                layer_visibility_by_name,
+                ordered_stage_names[-1],
+            ),
+        )
+
     visualizer.register_key_callback(
         ord("A"),
         _build_set_all_visible_callback(
@@ -717,28 +763,72 @@ def _build_stage_switch_callback(
     target_stage_name,
 ):
     def _stage_switch_callback(visualizer):
-        current_stage_name = active_stage_name_ref["value"]
-        if target_stage_name == current_stage_name:
-            return False
-
-        _sync_stage_geometries_to_viewer(
+        return _switch_active_stage(
             visualizer,
-            stage_geometries_by_name[current_stage_name],
+            stage_geometries_by_name,
+            active_stage_name_ref,
             layer_visibility_by_name,
-            add_visible_layers=False,
+            target_stage_name,
         )
-        _sync_stage_geometries_to_viewer(
-            visualizer,
-            stage_geometries_by_name[target_stage_name],
-            layer_visibility_by_name,
-            add_visible_layers=True,
-        )
-        active_stage_name_ref["value"] = target_stage_name
-        visualizer.update_renderer()
-        print("[optimizer-v2 render] switched to {}".format(target_stage_name))
-        return False
 
     return _stage_switch_callback
+
+
+def _build_relative_stage_switch_callback(
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    ordered_stage_names,
+    stage_step: int,
+):
+    resolved_stage_names = tuple(ordered_stage_names)
+
+    def _relative_stage_switch_callback(visualizer):
+        current_stage_name = active_stage_name_ref["value"]
+        current_stage_index = resolved_stage_names.index(current_stage_name)
+        target_stage_index = min(
+            max(current_stage_index + int(stage_step), 0),
+            len(resolved_stage_names) - 1,
+        )
+        target_stage_name = resolved_stage_names[target_stage_index]
+        return _switch_active_stage(
+            visualizer,
+            stage_geometries_by_name,
+            active_stage_name_ref,
+            layer_visibility_by_name,
+            target_stage_name,
+        )
+
+    return _relative_stage_switch_callback
+
+
+def _switch_active_stage(
+    visualizer,
+    stage_geometries_by_name,
+    active_stage_name_ref,
+    layer_visibility_by_name,
+    target_stage_name,
+):
+    current_stage_name = active_stage_name_ref["value"]
+    if target_stage_name == current_stage_name:
+        return False
+
+    _sync_stage_geometries_to_viewer(
+        visualizer,
+        stage_geometries_by_name[current_stage_name],
+        layer_visibility_by_name,
+        add_visible_layers=False,
+    )
+    _sync_stage_geometries_to_viewer(
+        visualizer,
+        stage_geometries_by_name[target_stage_name],
+        layer_visibility_by_name,
+        add_visible_layers=True,
+    )
+    active_stage_name_ref["value"] = target_stage_name
+    visualizer.update_renderer()
+    print("[optimizer-v2 render] switched to {}".format(target_stage_name))
+    return False
 
 
 def _build_set_all_visible_callback(
@@ -789,6 +879,8 @@ def _print_render_layer_toggle_help(
                 )
             )
         )
+        if len(ordered_stage_names) > 1:
+            print("  Left/Right=previous/next stage, Home/End=first/last stage")
     print("  I=input candidates, S=survivors, T=target points, G=target centroid, N=nominal centroid, W=winner")
     print("  P=planned sampled points, C=planned core structure, L=planned centroid line")
     print("  O=prostate, U=urethra, R=rectum, D=target surface contours")

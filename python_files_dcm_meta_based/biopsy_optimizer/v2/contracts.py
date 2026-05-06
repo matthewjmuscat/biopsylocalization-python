@@ -139,6 +139,8 @@ class OptimizerV2StageRunResult:
     chunk_score_results: Tuple[OptimizerV2ChunkScoreResult, ...]
     tested_candidate_dataframe: Any
     ranked_candidate_dataframe: Any
+    round_index: int = 1
+    appended_trial_block_size: int = 0
 
 
 @dataclass
@@ -162,7 +164,7 @@ class OptimizerV2WinnerResolutionResult:
     resolution_method: str
     tie_warning_flag: bool
     tie_break_fallback_flag: bool
-    num_tied_candidates_at_stage_c: int
+    num_tied_candidates_at_final_round: int
     num_additional_rescore_attempts_used: int
     final_resolution_trial_count: int
     resolved_objective_value: float

@@ -121,7 +121,7 @@ from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
-from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_search_config_with_trial_counts
+from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_adaptive_block_search_config
 from biopsy_optimizer.v2.live_integration import (
     TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
     TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
@@ -528,15 +528,21 @@ def main():
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
     cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
     nn_search_end_cap_grid_factor = 0.1
-    optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
-    optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # None disables mean_pd statistical pruning and reverts to legacy stage survivor cutoffs.
-    optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(
-        optimizer_v2_stage_trial_counts,
+    optimizer_v2_initial_trial_prefix = 16 # minimum shared trial prefix used before the first adaptive prune round
+    optimizer_v2_trial_block_size = 16 # minimum appended shared trial block per adaptive prune round
+    optimizer_v2_max_total_trials = 256 # hard optimizer ceiling before final winner-resolution rescoring
+    optimizer_v2_max_test_structures_per_call = None # Optional kernel-call structure budget. When set, adaptive rounds pack cumulative N upward to fill this budget for the current chunk size.
+    optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # Adaptive mean_pd rounds require a non-None threshold; tune this to prune more or less aggressively.
+    optimizer_v2_search_config = build_optimizer_v2_adaptive_block_search_config(
+        initial_trial_prefix=optimizer_v2_initial_trial_prefix,
+        trial_block_size=optimizer_v2_trial_block_size,
+        max_total_trials=optimizer_v2_max_total_trials,
         mean_pd_stage_prune_std_dev_threshold=optimizer_v2_mean_pd_stage_prune_std_dev_threshold,
+        max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = 8
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
-    optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
+    optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
     optimizer_v2_render_plotly_export_bool = True # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
     optimizer_v2_render_plotly_export_formats = ("svg", "pdf")
@@ -4696,6 +4702,7 @@ def main():
                               completed_progress,
                               live_display,
                               max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
+                              max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
                               downstream_comparable_trial_count=(
                                   int(num_MC_containment_simulations_input)
                                   if num_MC_containment_simulations_input > 0

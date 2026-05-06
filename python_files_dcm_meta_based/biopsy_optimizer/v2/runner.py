@@ -29,7 +29,7 @@ STAGE_PRUNE_METHOD_LEGACY_SURVIVOR_CUTOFF = "legacy_survivor_cutoff"
 STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_THRESHOLD = "paired_mean_pd_leader_threshold"
 STAGE_PRUNE_REASON_PAIRED_MEAN_PD_DOMINATED = "paired_mean_pd_dominated"
 STAGE_PRUNE_REASON_STATISTICALLY_COMPETITIVE = "statistically_competitive"
-FINAL_WINNER_METHOD_SCORE_UNIQUE = "score_unique_stage_c"
+FINAL_WINNER_METHOD_SCORE_UNIQUE = "score_unique_final_round"
 FINAL_WINNER_METHOD_SCORE_RESCORE = "score_rescore_prefix_unique"
 FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK = "nearest_target_centroid_fallback"
 
@@ -58,9 +58,9 @@ def run_target_staged_candidate_search(
     kernel_type: str = DEFAULT_CONTAINMENT_KERNEL_TYPE,
     return_array_as: str = "numpy",
 ) -> OptimizerV2SearchRunResult:
-    """Run the staged A -> B -> C target-only optimizer-v2 search.
+    """Run the configured target-only optimizer-v2 pruning rounds.
 
-    The runner remains orchestration-only. Stage-specific target structure packs
+    The runner remains orchestration-only. Round-specific target structure packs
     and transform-bank prefixes are supplied by providers so geometry generation
     stays outside optimizer-v2.
     """
@@ -81,15 +81,16 @@ def run_target_staged_candidate_search(
             operational_winner_candidate_index_global=None,
         )
 
-    stage_results = []
-    stage_tested_candidate_dataframes = []
-    current_candidate_indices_global = normalized_candidate_indices_global
+    _validate_search_policy_for_objective(
+        search_config=search_config,
+        objective_reducer_name=objective_reducer_name,
+    )
 
-    for stage_config in search_config.stage_configs:
-        stage_result = _run_target_candidate_stage(
+    if search_config.uses_adaptive_block_rounds():
+        stage_results, stage_tested_candidate_dataframes = _run_target_adaptive_candidate_rounds(
             candidate_pool=candidate_pool,
-            stage_config=stage_config,
-            candidate_indices_global=current_candidate_indices_global,
+            search_config=search_config,
+            initial_candidate_indices_global=normalized_candidate_indices_global,
             nominal_biopsy_points=nominal_biopsy_points,
             nominal_biopsy_centroid=nominal_biopsy_centroid,
             nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
@@ -98,8 +99,7 @@ def run_target_staged_candidate_search(
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
             objective_reducer_name=objective_reducer_name,
-            mean_pd_stage_prune_std_dev_threshold=search_config.mean_pd_stage_prune_std_dev_threshold,
-            max_candidates_per_chunk=resolved_max_candidates_per_chunk,
+            resolved_max_candidates_per_chunk=resolved_max_candidates_per_chunk,
             include_nominal=include_nominal,
             nominal_relative_structure_index=nominal_relative_structure_index,
             trial_relative_structure_start_index=trial_relative_structure_start_index,
@@ -110,9 +110,45 @@ def run_target_staged_candidate_search(
             kernel_type=kernel_type,
             return_array_as=return_array_as,
         )
-        stage_results.append(stage_result)
-        stage_tested_candidate_dataframes.append(stage_result.tested_candidate_dataframe)
-        current_candidate_indices_global = stage_result.survivor_candidate_indices_global
+    else:
+        stage_results = []
+        stage_tested_candidate_dataframes = []
+        current_candidate_indices_global = normalized_candidate_indices_global
+        previous_round_trial_count = 0
+
+        for round_index, stage_config in enumerate(search_config.resolve_pruning_round_configs(), start=1):
+            stage_result = _run_target_candidate_stage(
+                candidate_pool=candidate_pool,
+                stage_config=stage_config,
+                round_index=round_index,
+                appended_trial_block_size=int(stage_config.num_trials) - int(previous_round_trial_count),
+                candidate_indices_global=current_candidate_indices_global,
+                nominal_biopsy_points=nominal_biopsy_points,
+                nominal_biopsy_centroid=nominal_biopsy_centroid,
+                nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+                biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+                target_structure_centroid=target_structure_centroid,
+                target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+                objective_reducer_name=objective_reducer_name,
+                mean_pd_stage_prune_std_dev_threshold=search_config.mean_pd_stage_prune_std_dev_threshold,
+                max_candidates_per_chunk=resolved_max_candidates_per_chunk,
+                include_nominal=include_nominal,
+                nominal_relative_structure_index=nominal_relative_structure_index,
+                trial_relative_structure_start_index=trial_relative_structure_start_index,
+                max_test_structures_per_call=max_test_structures_per_call,
+                containment_log_sub_dirs_list=containment_log_sub_dirs_list,
+                containment_log_file_name=containment_log_file_name,
+                include_edges_in_log=include_edges_in_log,
+                kernel_type=kernel_type,
+                return_array_as=return_array_as,
+            )
+            stage_results.append(stage_result)
+            stage_tested_candidate_dataframes.append(stage_result.tested_candidate_dataframe)
+            current_candidate_indices_global = stage_result.survivor_candidate_indices_global
+            previous_round_trial_count = int(stage_config.num_trials)
+            if current_candidate_indices_global.size <= 1:
+                break
 
     combined_tested_candidate_dataframe = pandas.concat(stage_tested_candidate_dataframes, ignore_index=True)
     final_ranked_candidate_dataframe = stage_results[-1].ranked_candidate_dataframe.copy()
@@ -220,6 +256,8 @@ def run_target_staged_candidate_search(
 def _run_target_candidate_stage(
     candidate_pool: OptimizerV2CandidatePool,
     stage_config: OptimizerV2StageConfig,
+    round_index: int,
+    appended_trial_block_size: int,
     candidate_indices_global: np.ndarray,
     nominal_biopsy_points: np.ndarray,
     nominal_biopsy_centroid: np.ndarray,
@@ -240,6 +278,9 @@ def _run_target_candidate_stage(
     include_edges_in_log: bool,
     kernel_type: str,
     return_array_as: str,
+    minimum_trial_prefix_floor: Optional[int] = None,
+    capacity_packed_trial_prefix_target: Optional[int] = None,
+    max_test_structures_per_call_budget: Optional[int] = None,
 ) -> OptimizerV2StageRunResult:
     biopsy_transform_bank_prefix = biopsy_transform_bank_prefix_provider(stage_config.num_trials)
     target_transform_bank_prefix = target_transform_bank_prefix_provider(stage_config.num_trials)
@@ -294,9 +335,14 @@ def _run_target_candidate_stage(
             _annotate_stage_tested_candidate_dataframe(
                 chunk_score_result.tested_candidate_dataframe,
                 stage_config=stage_config,
+                round_index=round_index,
+                appended_trial_block_size=appended_trial_block_size,
                 stage_input_candidate_count=candidate_indices_global.size,
                 biopsy_transform_bank_prefix=biopsy_transform_bank_prefix,
                 target_transform_bank_prefix=target_transform_bank_prefix,
+                minimum_trial_prefix_floor=minimum_trial_prefix_floor,
+                capacity_packed_trial_prefix_target=capacity_packed_trial_prefix_target,
+                max_test_structures_per_call_budget=max_test_structures_per_call_budget,
             )
         )
 
@@ -316,18 +362,27 @@ def _run_target_candidate_stage(
         chunk_score_results=tuple(chunk_score_results),
         tested_candidate_dataframe=stage_ranked_candidate_dataframe.copy(),
         ranked_candidate_dataframe=stage_ranked_candidate_dataframe,
+        round_index=int(round_index),
+        appended_trial_block_size=int(appended_trial_block_size),
     )
 
 
 def _annotate_stage_tested_candidate_dataframe(
     tested_candidate_dataframe,
     stage_config: OptimizerV2StageConfig,
+    round_index: int,
+    appended_trial_block_size: int,
     stage_input_candidate_count: int,
     biopsy_transform_bank_prefix: SharedTransformBankPrefix,
     target_transform_bank_prefix: SharedTransformBankPrefix,
+    minimum_trial_prefix_floor: Optional[int] = None,
+    capacity_packed_trial_prefix_target: Optional[int] = None,
+    max_test_structures_per_call_budget: Optional[int] = None,
 ):
     annotated_dataframe = tested_candidate_dataframe.copy()
     annotated_dataframe["Stage name"] = stage_config.stage_name
+    annotated_dataframe["Stage round index"] = np.int32(round_index)
+    annotated_dataframe["Stage appended trial block size"] = np.int32(appended_trial_block_size)
     annotated_dataframe["Stage input candidate count"] = np.int32(stage_input_candidate_count)
     annotated_dataframe["Biopsy transform bank prefix size used"] = np.int32(
         biopsy_transform_bank_prefix.requested_num_trials
@@ -341,6 +396,22 @@ def _annotate_stage_tested_candidate_dataframe(
     annotated_dataframe["Available shared target transform samples"] = np.int32(
         target_transform_bank_prefix.available_num_trials
     )
+    if minimum_trial_prefix_floor is None:
+        annotated_dataframe["Stage minimum cumulative trial prefix floor"] = np.nan
+    else:
+        annotated_dataframe["Stage minimum cumulative trial prefix floor"] = np.int32(minimum_trial_prefix_floor)
+    if capacity_packed_trial_prefix_target is None:
+        annotated_dataframe["Stage capacity-packed cumulative trial prefix target"] = np.nan
+    else:
+        annotated_dataframe["Stage capacity-packed cumulative trial prefix target"] = np.int32(
+            capacity_packed_trial_prefix_target
+        )
+    if max_test_structures_per_call_budget is None:
+        annotated_dataframe["Stage max test structures per call budget"] = np.nan
+    else:
+        annotated_dataframe["Stage max test structures per call budget"] = np.int32(
+            max_test_structures_per_call_budget
+        )
     annotated_dataframe["Tie-break resolution method"] = DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD
     annotated_dataframe["Tie-break warning flag"] = False
     annotated_dataframe["Tie-break fallback flag"] = False
@@ -569,6 +640,113 @@ def _yield_candidate_index_chunks(candidate_indices_global: np.ndarray, max_cand
         yield candidate_indices_global[start_index : start_index + max_candidates_per_chunk]
 
 
+def _run_target_adaptive_candidate_rounds(
+    candidate_pool: OptimizerV2CandidatePool,
+    search_config: OptimizerV2SearchConfig,
+    initial_candidate_indices_global: np.ndarray,
+    nominal_biopsy_points: np.ndarray,
+    nominal_biopsy_centroid: np.ndarray,
+    nominal_biopsy_centroid_line: np.ndarray,
+    biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    target_structure_centroid: np.ndarray,
+    target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    objective_reducer_name: str,
+    resolved_max_candidates_per_chunk: int,
+    include_nominal: bool,
+    nominal_relative_structure_index: int,
+    trial_relative_structure_start_index: int,
+    max_test_structures_per_call: Optional[int],
+    containment_log_sub_dirs_list: Optional[Sequence[str]],
+    containment_log_file_name: Optional[str],
+    include_edges_in_log: bool,
+    kernel_type: str,
+    return_array_as: str,
+):
+    adaptive_block_config = search_config.adaptive_block_config
+    if adaptive_block_config is None:
+        raise ValueError("adaptive_block_config is required for adaptive block rounds")
+
+    stage_results = []
+    stage_tested_candidate_dataframes = []
+    current_candidate_indices_global = initial_candidate_indices_global
+    previous_round_trial_count = 0
+    round_index = 1
+    resolved_structure_budget = adaptive_block_config.max_test_structures_per_call
+    if max_test_structures_per_call is not None:
+        resolved_structure_budget = int(max_test_structures_per_call)
+
+    while (
+        current_candidate_indices_global.size > 0
+        and previous_round_trial_count < int(adaptive_block_config.max_total_trials)
+    ):
+        minimum_trial_prefix_floor = adaptive_block_config.resolve_minimum_next_trial_prefix(
+            previous_round_trial_count
+        )
+        capacity_packed_trial_prefix_target = adaptive_block_config.resolve_capacity_packed_trial_prefix(
+            current_trial_prefix=previous_round_trial_count,
+            active_candidate_count=current_candidate_indices_global.size,
+            max_candidates_per_chunk=resolved_max_candidates_per_chunk,
+            include_nominal=include_nominal,
+            max_test_structures_per_call=max_test_structures_per_call,
+        )
+        next_round_trial_count = int(minimum_trial_prefix_floor)
+        if capacity_packed_trial_prefix_target is not None:
+            next_round_trial_count = max(
+                next_round_trial_count,
+                int(capacity_packed_trial_prefix_target),
+            )
+        next_round_trial_count = min(
+            int(adaptive_block_config.max_total_trials),
+            int(next_round_trial_count),
+        )
+        if next_round_trial_count <= previous_round_trial_count:
+            break
+
+        stage_config = OptimizerV2StageConfig(
+            adaptive_block_config.build_round_name(round_index, next_round_trial_count),
+            int(next_round_trial_count),
+        )
+        stage_result = _run_target_candidate_stage(
+            candidate_pool=candidate_pool,
+            stage_config=stage_config,
+            round_index=round_index,
+            appended_trial_block_size=int(next_round_trial_count) - int(previous_round_trial_count),
+            candidate_indices_global=current_candidate_indices_global,
+            nominal_biopsy_points=nominal_biopsy_points,
+            nominal_biopsy_centroid=nominal_biopsy_centroid,
+            nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+            biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+            target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+            target_structure_centroid=target_structure_centroid,
+            target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+            objective_reducer_name=objective_reducer_name,
+            mean_pd_stage_prune_std_dev_threshold=search_config.mean_pd_stage_prune_std_dev_threshold,
+            max_candidates_per_chunk=resolved_max_candidates_per_chunk,
+            include_nominal=include_nominal,
+            nominal_relative_structure_index=nominal_relative_structure_index,
+            trial_relative_structure_start_index=trial_relative_structure_start_index,
+            max_test_structures_per_call=max_test_structures_per_call,
+            containment_log_sub_dirs_list=containment_log_sub_dirs_list,
+            containment_log_file_name=containment_log_file_name,
+            include_edges_in_log=include_edges_in_log,
+            kernel_type=kernel_type,
+            return_array_as=return_array_as,
+            minimum_trial_prefix_floor=minimum_trial_prefix_floor,
+            capacity_packed_trial_prefix_target=capacity_packed_trial_prefix_target,
+            max_test_structures_per_call_budget=resolved_structure_budget,
+        )
+        stage_results.append(stage_result)
+        stage_tested_candidate_dataframes.append(stage_result.tested_candidate_dataframe)
+        current_candidate_indices_global = stage_result.survivor_candidate_indices_global
+        previous_round_trial_count = int(next_round_trial_count)
+        if current_candidate_indices_global.size <= 1:
+            break
+        round_index += 1
+
+    return stage_results, stage_tested_candidate_dataframes
+
+
 def _validate_stage_transform_bank_prefix(
     stage_config: OptimizerV2StageConfig,
     transform_bank_prefix: SharedTransformBankPrefix,
@@ -744,7 +922,7 @@ def _resolve_final_winner(
             resolution_method=FINAL_WINNER_METHOD_SCORE_UNIQUE,
             tie_warning_flag=False,
             tie_break_fallback_flag=False,
-            num_tied_candidates_at_stage_c=1,
+            num_tied_candidates_at_final_round=1,
             num_additional_rescore_attempts_used=0,
             final_resolution_trial_count=int(final_stage_result.num_trials),
             resolved_objective_value=float(winner_row["Objective value"]),
@@ -805,7 +983,7 @@ def _resolve_final_winner(
                 resolution_method=FINAL_WINNER_METHOD_SCORE_RESCORE,
                 tie_warning_flag=True,
                 tie_break_fallback_flag=False,
-                num_tied_candidates_at_stage_c=len(tied_candidate_dataframe),
+                num_tied_candidates_at_final_round=len(tied_candidate_dataframe),
                 num_additional_rescore_attempts_used=num_additional_rescore_attempts_used,
                 final_resolution_trial_count=current_trial_count,
                 resolved_objective_value=float(winner_row["Objective value"]),
@@ -826,7 +1004,7 @@ def _resolve_final_winner(
         resolution_method=FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK,
         tie_warning_flag=True,
         tie_break_fallback_flag=True,
-        num_tied_candidates_at_stage_c=len(tied_candidate_dataframe),
+        num_tied_candidates_at_final_round=len(tied_candidate_dataframe),
         num_additional_rescore_attempts_used=num_additional_rescore_attempts_used,
         final_resolution_trial_count=current_trial_count,
         resolved_objective_value=float(winner_row["Objective value"]),
@@ -941,7 +1119,7 @@ def _apply_winner_resolution_to_candidate_dataframe(
     updated_candidate_dataframe.loc[
         resolution_mask,
         "Final winner tie candidate count",
-    ] = np.int32(winner_resolution_result.num_tied_candidates_at_stage_c)
+    ] = np.int32(winner_resolution_result.num_tied_candidates_at_final_round)
     updated_candidate_dataframe.loc[
         resolution_mask,
         "Final winner resolved objective value",
@@ -970,3 +1148,21 @@ __all__ = [
     "FINAL_WINNER_METHOD_SCORE_UNIQUE",
     "run_target_staged_candidate_search",
 ]
+
+
+def _validate_search_policy_for_objective(
+    search_config: OptimizerV2SearchConfig,
+    objective_reducer_name: str,
+) -> None:
+    if not search_config.uses_adaptive_block_rounds():
+        return
+    if objective_reducer_name != "mean_pd":
+        raise ValueError(
+            "adaptive_block_config currently supports only objective_reducer_name='mean_pd'; use legacy stage_configs for '{}'".format(
+                objective_reducer_name
+            )
+        )
+    if search_config.mean_pd_stage_prune_std_dev_threshold is None:
+        raise ValueError(
+            "adaptive_block_config requires mean_pd_stage_prune_std_dev_threshold to be configured"
+        )
