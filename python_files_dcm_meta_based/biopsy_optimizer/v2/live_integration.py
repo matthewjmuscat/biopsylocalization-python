@@ -16,6 +16,7 @@ from biopsy_optimizer.v2.output import (
     build_target_dil_ranked_candidate_output_dataframe,
 )
 from biopsy_optimizer.v2.render import (
+    build_contour_line_render_layer,
     build_point_cloud_render_layer,
     build_stage_boundary_render_jobs,
     render_scene_render_jobs,
@@ -729,19 +730,33 @@ def _build_additional_stage_boundary_render_layers(
                 )
             )
 
+    simulated_biopsy_planning_dict = specific_structure.get("Simulated biopsy planning dict") or {}
     planned_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
     if render_include_planned_core_structure_bool:
-        planned_core_structure_points = _coerce_optional_points_array(
-            planned_biopsy_model_dict.get("Reconstructed structure pts arr")
+        planned_core_structure_contours = _coerce_optional_point_groups(
+            simulated_biopsy_planning_dict.get("Planned raw contour pts zslice list"),
+            translation_vec=planned_translation_vec,
         )
-        if planned_core_structure_points is not None:
+        if planned_core_structure_contours is not None:
             additional_render_layers.append(
-                build_point_cloud_render_layer(
+                build_contour_line_render_layer(
                     layer_name="planned_core_structure",
-                    points=planned_core_structure_points + planned_translation_vec,
+                    point_groups=planned_core_structure_contours,
                     color=np.array([0.7, 0.7, 0.7]),
                 )
             )
+        else:
+            planned_core_structure_points = _coerce_optional_points_array(
+                planned_biopsy_model_dict.get("Reconstructed structure pts arr")
+            )
+            if planned_core_structure_points is not None:
+                additional_render_layers.append(
+                    build_point_cloud_render_layer(
+                        layer_name="planned_core_structure",
+                        points=planned_core_structure_points + planned_translation_vec,
+                        color=np.array([0.7, 0.7, 0.7]),
+                    )
+                )
 
     if render_include_planned_centroid_line_bool:
         planned_centroid_line = _coerce_optional_points_array(
@@ -757,17 +772,29 @@ def _build_additional_stage_boundary_render_layers(
             )
 
     if render_include_target_surface_bool:
-        target_structure_surface_points = _coerce_optional_points_array(
-            target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr
+        target_structure_contours = _coerce_optional_point_groups(
+            target_structure.get("Equal num zslice contour pts")
         )
-        if target_structure_surface_points is not None:
+        if target_structure_contours is not None:
             additional_render_layers.append(
-                build_point_cloud_render_layer(
+                build_contour_line_render_layer(
                     layer_name="target_structure_surface",
-                    points=target_structure_surface_points,
+                    point_groups=target_structure_contours,
                     color=np.array([0.1, 0.1, 0.6]),
                 )
             )
+        else:
+            target_structure_surface_points = _coerce_optional_points_array(
+                target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr
+            )
+            if target_structure_surface_points is not None:
+                additional_render_layers.append(
+                    build_point_cloud_render_layer(
+                        layer_name="target_structure_surface",
+                        points=target_structure_surface_points,
+                        color=np.array([0.1, 0.1, 0.6]),
+                    )
+                )
 
     if render_include_selected_anatomy_bool:
         additional_render_layers.extend(
@@ -823,6 +850,19 @@ def _build_selected_anatomy_render_layers(
         if interpolation_information is None:
             continue
 
+        anatomy_contours = _coerce_optional_point_groups(
+            resolved_structure.get("Equal num zslice contour pts")
+        )
+        if anatomy_contours is not None:
+            resolved_render_layers.append(
+                build_contour_line_render_layer(
+                    layer_name=layer_name,
+                    point_groups=anatomy_contours,
+                    color=layer_color,
+                )
+            )
+            continue
+
         anatomy_points = _coerce_optional_points_array(interpolation_information.interpolated_pts_np_arr)
         if anatomy_points is None:
             continue
@@ -857,6 +897,40 @@ def _coerce_optional_points_array(points_like):
         return None
 
     return normalized_points
+
+
+def _coerce_optional_point_groups(
+    point_groups_like,
+    translation_vec=None,
+):
+    if point_groups_like is None:
+        return None
+
+    if isinstance(point_groups_like, np.ndarray):
+        point_group_iterable = (point_groups_like,)
+    else:
+        point_group_iterable = point_groups_like
+
+    resolved_translation_vec = np.zeros(3, dtype=float)
+    if translation_vec is not None:
+        resolved_translation_vec = np.asarray(translation_vec, dtype=float).reshape(3)
+
+    normalized_point_groups = []
+    for point_group in point_group_iterable:
+        if point_group is None:
+            continue
+
+        normalized_group = np.asarray(point_group, dtype=float)
+        if normalized_group.size == 0:
+            continue
+        if normalized_group.ndim != 2 or normalized_group.shape[1] != 3:
+            continue
+        normalized_point_groups.append(normalized_group + resolved_translation_vec)
+
+    if len(normalized_point_groups) == 0:
+        return None
+
+    return tuple(normalized_point_groups)
 
 
 def _build_transport_selection_metadata(summary_dataframe):

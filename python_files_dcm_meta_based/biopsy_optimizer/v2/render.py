@@ -17,6 +17,7 @@ class OptimizerV2RenderLayer:
     layer_name: str
     layer_kind: str
     points: Optional[np.ndarray] = None
+    point_groups: Optional[Tuple[np.ndarray, ...]] = None
     color: Optional[np.ndarray] = None
     geometry: Optional[Any] = None
 
@@ -233,6 +234,11 @@ def _render_scene_render_jobs_open3d(
                 geometry = point_containment_tools.create_point_cloud(
                     render_layer.points,
                     np.asarray(render_layer.color, dtype=float),
+                )
+            elif render_layer.layer_kind == "contour_lines":
+                geometry = _build_open3d_lineset_from_point_groups(
+                    render_layer.point_groups,
+                    render_layer.color,
                 )
             elif render_layer.layer_kind == "geometry":
                 geometry = render_layer.geometry
@@ -547,6 +553,21 @@ def _build_plotly_trace_for_render_layer(
 ):
     import plotly.graph_objects as go
 
+    if render_layer.layer_kind == "contour_lines":
+        x_values, y_values, z_values = _flatten_point_groups_for_plotly(render_layer.point_groups)
+        return go.Scatter3d(
+            x=x_values,
+            y=y_values,
+            z=z_values,
+            mode="lines",
+            name=_humanize_render_layer_name(render_layer.layer_name),
+            opacity=_resolve_plotly_layer_opacity(render_layer.layer_name),
+            line={
+                "color": _rgb_color_string(render_layer.color),
+                "width": _resolve_plotly_line_width(render_layer.layer_name),
+            },
+        )
+
     if render_layer.layer_kind != "point_cloud":
         print(
             "[optimizer-v2 render] skipping unsupported Plotly layer '{}' of kind '{}'".format(
@@ -619,6 +640,18 @@ def _resolve_plotly_layer_opacity(layer_name: str) -> float:
     return float(opacity_by_layer.get(layer_name, 0.9))
 
 
+def _resolve_plotly_line_width(layer_name: str) -> float:
+    line_width_by_layer = {
+        "planned_core_structure": 4.5,
+        "target_structure_surface": 2.8,
+        "prostate_structure": 2.0,
+        "urethra_structure": 3.0,
+        "rectum_structure": 2.0,
+        "planned_centroid_line": 5.5,
+    }
+    return float(line_width_by_layer.get(layer_name, 3.0))
+
+
 def _humanize_render_layer_name(layer_name: str) -> str:
     return str(layer_name).replace("_", " ")
 
@@ -626,6 +659,59 @@ def _humanize_render_layer_name(layer_name: str) -> str:
 def _rgb_color_string(color: np.ndarray) -> str:
     red, green, blue = (np.asarray(color, dtype=float).reshape(3) * 255).astype(int)
     return "rgb({}, {}, {})".format(red, green, blue)
+
+
+def _flatten_point_groups_for_plotly(
+    point_groups: Sequence[np.ndarray],
+) -> Tuple[list[Optional[float]], list[Optional[float]], list[Optional[float]]]:
+    x_values = []
+    y_values = []
+    z_values = []
+
+    for point_group in point_groups:
+        normalized_group = np.asarray(point_group, dtype=float)
+        if normalized_group.shape[0] > 2 and not np.allclose(normalized_group[0], normalized_group[-1]):
+            normalized_group = np.vstack((normalized_group, normalized_group[0]))
+
+        x_values.extend(normalized_group[:, 0].tolist())
+        y_values.extend(normalized_group[:, 1].tolist())
+        z_values.extend(normalized_group[:, 2].tolist())
+        x_values.append(None)
+        y_values.append(None)
+        z_values.append(None)
+
+    return x_values, y_values, z_values
+
+
+def _build_open3d_lineset_from_point_groups(
+    point_groups: Sequence[np.ndarray],
+    color: np.ndarray,
+):
+    import open3d as o3d
+
+    normalized_color = np.asarray(color, dtype=float).reshape(3)
+    all_points = []
+    all_lines = []
+    point_offset = 0
+    for point_group in point_groups:
+        normalized_group = np.asarray(point_group, dtype=float)
+        all_points.append(normalized_group)
+        num_points = normalized_group.shape[0]
+        all_lines.extend(
+            [point_offset + point_index, point_offset + point_index + 1]
+            for point_index in range(num_points - 1)
+        )
+        if num_points > 2 and not np.allclose(normalized_group[0], normalized_group[-1]):
+            all_lines.append([point_offset + num_points - 1, point_offset])
+        point_offset += num_points
+
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(np.vstack(all_points))
+    line_set.lines = o3d.utility.Vector2iVector(np.asarray(all_lines, dtype=np.int32))
+    line_set.colors = o3d.utility.Vector3dVector(
+        np.repeat(normalized_color[np.newaxis, :], len(all_lines), axis=0)
+    )
+    return line_set
 
 
 def _normalize_render_backend(render_backend: str) -> str:
@@ -646,6 +732,19 @@ def build_point_cloud_render_layer(
         layer_name=layer_name,
         layer_kind="point_cloud",
         points=_validate_xyz_points_array(points, layer_name),
+        color=_validate_color_vector(color, "{}.color".format(layer_name)),
+    )
+
+
+def build_contour_line_render_layer(
+    layer_name: str,
+    point_groups: Sequence[np.ndarray],
+    color: np.ndarray,
+) -> OptimizerV2RenderLayer:
+    return OptimizerV2RenderLayer(
+        layer_name=layer_name,
+        layer_kind="contour_lines",
+        point_groups=_validate_xyz_point_groups(point_groups, "{}.point_groups".format(layer_name)),
         color=_validate_color_vector(color, "{}.color".format(layer_name)),
     )
 
@@ -736,6 +835,29 @@ def _validate_xyz_points_array(points_array: np.ndarray, array_name: str) -> np.
     return normalized_points_array
 
 
+def _validate_xyz_point_groups(
+    point_groups: Sequence[np.ndarray],
+    point_groups_name: str,
+) -> Tuple[np.ndarray, ...]:
+    normalized_point_groups = []
+    for group_index, point_group in enumerate(point_groups):
+        normalized_group = np.asarray(point_group, dtype=float)
+        if normalized_group.ndim != 2 or normalized_group.shape[1] != 3:
+            raise ValueError(
+                "{}[{}] must have shape (num_points, 3)".format(point_groups_name, group_index)
+            )
+        if normalized_group.shape[0] < 2:
+            raise ValueError(
+                "{}[{}] must contain at least 2 points".format(point_groups_name, group_index)
+            )
+        normalized_point_groups.append(normalized_group)
+
+    if len(normalized_point_groups) == 0:
+        raise ValueError("{} cannot be empty".format(point_groups_name))
+
+    return tuple(normalized_point_groups)
+
+
 def _validate_single_xyz_point(point: np.ndarray, point_name: str) -> np.ndarray:
     normalized_point = np.asarray(point, dtype=float).reshape(-1)
     if normalized_point.shape != (3,):
@@ -774,6 +896,7 @@ __all__ = [
     "OptimizerV2RenderCameraConfig",
     "OptimizerV2RenderLayer",
     "OptimizerV2StageBoundaryRenderJob",
+    "build_contour_line_render_layer",
     "build_geometry_render_layer",
     "build_point_cloud_render_layer",
     "build_success_failure_render_layers_from_chunk_score_result",
