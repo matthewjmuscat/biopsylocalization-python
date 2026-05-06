@@ -256,6 +256,7 @@ def build_target_dil_tested_candidate_output_dataframe(
             "Stage prune flag": "Target optimizer stage prune flag",
             "Stage prune reason": "Target optimizer stage prune reason",
             "Stage statistical leader candidate global index": "Target optimizer stage statistical leader candidate global index",
+            "Stage statistical prune std dev threshold": "Target optimizer stage statistical prune std dev threshold",
             "Stage paired mean deficit vs leader": "Target optimizer stage paired mean deficit vs leader",
             "Stage paired standard error vs leader": "Target optimizer stage paired standard error vs leader",
             "Stage paired z score vs leader": "Target optimizer stage paired z score vs leader",

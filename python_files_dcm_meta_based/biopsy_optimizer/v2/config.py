@@ -99,12 +99,18 @@ class OptimizerV2SearchConfig:
     lattice_spacing_mm: float = 1.0
     stage_configs: Tuple[OptimizerV2StageConfig, ...] = DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS
     tie_break_config: OptimizerV2TieBreakConfig = field(default_factory=OptimizerV2TieBreakConfig)
+    mean_pd_stage_prune_std_dev_threshold: Optional[float] = 1.0
 
     def __post_init__(self) -> None:
         if self.lattice_spacing_mm <= 0.0:
             raise ValueError("lattice_spacing_mm must be positive")
         if not self.stage_configs:
             raise ValueError("stage_configs cannot be empty")
+        if (
+            self.mean_pd_stage_prune_std_dev_threshold is not None
+            and self.mean_pd_stage_prune_std_dev_threshold < 0.0
+        ):
+            raise ValueError("mean_pd_stage_prune_std_dev_threshold must be non-negative when provided")
 
         trial_counts = [stage_config.num_trials for stage_config in self.stage_configs]
         if any(next_count <= current_count for current_count, next_count in zip(trial_counts, trial_counts[1:])):
@@ -181,6 +187,7 @@ def build_default_optimizer_v2_search_config() -> OptimizerV2SearchConfig:
 def build_optimizer_v2_search_config_with_trial_counts(
     stage_trial_counts: Sequence[int],
     lattice_spacing_mm: float = 1.0,
+    mean_pd_stage_prune_std_dev_threshold: Optional[float] = 1.0,
     template_stage_configs: Sequence[OptimizerV2StageConfig] = DEFAULT_OPTIMIZER_V2_STAGE_CONFIGS,
 ) -> OptimizerV2SearchConfig:
     """Build a search config by replacing only the stage trial counts."""
@@ -200,6 +207,7 @@ def build_optimizer_v2_search_config_with_trial_counts(
     return OptimizerV2SearchConfig(
         lattice_spacing_mm=lattice_spacing_mm,
         stage_configs=stage_configs,
+        mean_pd_stage_prune_std_dev_threshold=mean_pd_stage_prune_std_dev_threshold,
     )
 
 

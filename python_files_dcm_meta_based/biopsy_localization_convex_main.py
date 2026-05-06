@@ -529,7 +529,11 @@ def main():
     cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
     nn_search_end_cap_grid_factor = 0.1
     optimizer_v2_stage_trial_counts = (16, 64, 256) # num trials for each of the three stages per biopsy candidate
-    optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(optimizer_v2_stage_trial_counts)
+    optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # None disables mean_pd statistical pruning and reverts to legacy stage survivor cutoffs.
+    optimizer_v2_search_config = build_optimizer_v2_search_config_with_trial_counts(
+        optimizer_v2_stage_trial_counts,
+        mean_pd_stage_prune_std_dev_threshold=optimizer_v2_mean_pd_stage_prune_std_dev_threshold,
+    )
     optimizer_v2_max_candidates_per_chunk = 8
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")

@@ -25,10 +25,9 @@ from preprocessing.transform_bank import SharedTransformBankPrefix
 
 
 DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD = "score_desc_distance_candidate_index__provisional"
-DEFAULT_STAGE_STATISTICAL_PRUNE_STD_DEV_THRESHOLD = 1.0
 STAGE_PRUNE_METHOD_LEGACY_SURVIVOR_CUTOFF = "legacy_survivor_cutoff"
-STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_1SIGMA = "paired_mean_pd_leader_1sigma"
-STAGE_PRUNE_REASON_PAIRED_MEAN_PD_DOMINATED = "paired_mean_pd_dominance_1sigma"
+STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_THRESHOLD = "paired_mean_pd_leader_threshold"
+STAGE_PRUNE_REASON_PAIRED_MEAN_PD_DOMINATED = "paired_mean_pd_dominated"
 STAGE_PRUNE_REASON_STATISTICALLY_COMPETITIVE = "statistically_competitive"
 FINAL_WINNER_METHOD_SCORE_UNIQUE = "score_unique_stage_c"
 FINAL_WINNER_METHOD_SCORE_RESCORE = "score_rescore_prefix_unique"
@@ -99,6 +98,7 @@ def run_target_staged_candidate_search(
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
             objective_reducer_name=objective_reducer_name,
+            mean_pd_stage_prune_std_dev_threshold=search_config.mean_pd_stage_prune_std_dev_threshold,
             max_candidates_per_chunk=resolved_max_candidates_per_chunk,
             include_nominal=include_nominal,
             nominal_relative_structure_index=nominal_relative_structure_index,
@@ -229,6 +229,7 @@ def _run_target_candidate_stage(
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
+    mean_pd_stage_prune_std_dev_threshold: Optional[float],
     max_candidates_per_chunk: int,
     include_nominal: bool,
     nominal_relative_structure_index: int,
@@ -305,6 +306,7 @@ def _run_target_candidate_stage(
         stage_config,
         chunk_score_results=chunk_score_results,
         objective_reducer_name=objective_reducer_name,
+        mean_pd_stage_prune_std_dev_threshold=mean_pd_stage_prune_std_dev_threshold,
     )
     return OptimizerV2StageRunResult(
         stage_name=stage_config.stage_name,
@@ -352,6 +354,7 @@ def _build_stage_ranked_candidate_dataframe(
     stage_config: OptimizerV2StageConfig,
     chunk_score_results: Sequence[OptimizerV2ChunkScoreResult],
     objective_reducer_name: str,
+    mean_pd_stage_prune_std_dev_threshold: Optional[float],
 ):
     ranked_candidate_dataframe = stage_tested_candidate_dataframe.sort_values(
         by=["Objective value", "Distance to target centroid mm", "Candidate global index"],
@@ -365,6 +368,7 @@ def _build_stage_ranked_candidate_dataframe(
         ranked_candidate_dataframe=ranked_candidate_dataframe,
         chunk_score_results=chunk_score_results,
         objective_reducer_name=objective_reducer_name,
+        mean_pd_stage_prune_std_dev_threshold=mean_pd_stage_prune_std_dev_threshold,
     )
     if statistical_prune_result is None:
         survivor_mask = np.zeros(len(ranked_candidate_dataframe), dtype=bool)
@@ -376,6 +380,7 @@ def _build_stage_ranked_candidate_dataframe(
             dtype=object,
         )
         statistical_leader_candidate_index = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
+        statistical_prune_std_dev_threshold = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
         paired_mean_deficit = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
         paired_standard_error = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
         paired_z_score = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
@@ -385,12 +390,16 @@ def _build_stage_ranked_candidate_dataframe(
     else:
         survivor_mask = statistical_prune_result["survivor_mask"]
         prune_method = pandas.Series(
-            STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_1SIGMA,
+            STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_THRESHOLD,
             index=ranked_candidate_dataframe.index,
             dtype=object,
         )
         statistical_leader_candidate_index = pandas.Series(
             np.int32(statistical_prune_result["leader_candidate_index_global"]),
+            index=ranked_candidate_dataframe.index,
+        )
+        statistical_prune_std_dev_threshold = pandas.Series(
+            float(statistical_prune_result["mean_pd_stage_prune_std_dev_threshold"]),
             index=ranked_candidate_dataframe.index,
         )
         paired_mean_deficit = pandas.Series(statistical_prune_result["paired_mean_deficit"], index=ranked_candidate_dataframe.index)
@@ -412,6 +421,7 @@ def _build_stage_ranked_candidate_dataframe(
     ranked_candidate_dataframe["Stage output survivor count"] = np.int32(survivor_count)
     ranked_candidate_dataframe["Stage prune method"] = prune_method
     ranked_candidate_dataframe["Stage statistical leader candidate global index"] = statistical_leader_candidate_index
+    ranked_candidate_dataframe["Stage statistical prune std dev threshold"] = statistical_prune_std_dev_threshold
     ranked_candidate_dataframe["Stage paired mean deficit vs leader"] = paired_mean_deficit
     ranked_candidate_dataframe["Stage paired standard error vs leader"] = paired_standard_error
     ranked_candidate_dataframe["Stage paired z score vs leader"] = paired_z_score
@@ -439,8 +449,11 @@ def _resolve_stage_statistical_prune_result(
     ranked_candidate_dataframe,
     chunk_score_results: Sequence[OptimizerV2ChunkScoreResult],
     objective_reducer_name: str,
+    mean_pd_stage_prune_std_dev_threshold: Optional[float],
 ):
     if objective_reducer_name != "mean_pd":
+        return None
+    if mean_pd_stage_prune_std_dev_threshold is None:
         return None
     if len(ranked_candidate_dataframe) == 0:
         return None
@@ -471,12 +484,13 @@ def _resolve_stage_statistical_prune_result(
     paired_z_score[zero_standard_error_positive_deficit_mask] = np.inf
 
     dominance_prune_flag = paired_mean_deficit > (
-        np.float32(DEFAULT_STAGE_STATISTICAL_PRUNE_STD_DEV_THRESHOLD) * paired_standard_error
+        np.float32(mean_pd_stage_prune_std_dev_threshold) * paired_standard_error
     )
     dominance_prune_flag[0] = False
 
     return {
         "leader_candidate_index_global": int(ranked_candidate_dataframe.iloc[0]["Candidate global index"]),
+        "mean_pd_stage_prune_std_dev_threshold": float(mean_pd_stage_prune_std_dev_threshold),
         "survivor_mask": (~dominance_prune_flag).astype(bool),
         "paired_mean_deficit": paired_mean_deficit,
         "paired_standard_error": paired_standard_error,
