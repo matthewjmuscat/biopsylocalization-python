@@ -570,6 +570,205 @@ The ranked dataframe should include at least:
 - tie-break resolution method
 - tie-break warning and fallback flags
 
+## Current Output Surfaces
+
+At the contract level, optimizer v2 already carries two distinct dataframe surfaces with different meanings.
+
+1. `tested_candidate_dataframe` is the concatenation of all scored candidate rows across all stages in the `A -> B -> C` run, after any winner-resolution or downstream-comparable annotations are carried down.
+2. `ranked_candidate_dataframe` is the final retained set from the last stage after operational winner resolution has been applied.
+
+The live bridge and the current public sidecar-output path do not emit both of those surfaces yet.
+
+They currently emit:
+
+1. a winner summary dataframe,
+2. a ranked candidate dataframe built from the final retained set.
+
+That means the current public ranked CSV is not the full candidate-history table.
+
+It is only the final review surface.
+
+Stage-A and stage-B losers already exist in memory during the run, and they are already counted in summary metadata through fields such as `Target optimizer num tested candidate rows`, but those earlier-stage rows are not yet exported as their own standalone audit table.
+
+The completed optimizer-v2 export contract should therefore keep two distinct public tables:
+
+1. a ranked final-candidate table for transport and quick review,
+2. a tested-candidate audit table containing every candidate row that was actually scored at every stage.
+
+The ranked final-candidate table should stay intentionally narrow.
+
+It should remain the surface used for transport, operational review, and winner-level downstream comparisons.
+
+The tested-candidate audit table should instead become the main research and debugging surface.
+
+It should be allowed to grow wider and include stage-level prune and uncertainty metadata.
+
+## Adaptive Uncertainty-Aware Staged Pruning Upgrade
+
+The current executable implementation uses fixed stage trial counts and top-ranked survivor retention within each stage.
+
+The agreed completed design should keep the staged and chunked structure, but change the pruning rule.
+
+The optimizer should no longer prune candidates only because they fall outside a raw top-k or top-fraction boundary at a small trial prefix.
+
+Instead, it should prune only candidates that are statistically dominated at that pruning round.
+
+The intended rule is:
+
+1. score the active candidate set using one shared trial prefix or one appended shared trial block,
+2. update each candidate's cumulative score summaries,
+3. compare candidates using uncertainty-aware score differences,
+4. prune only those candidates whose score deficit is large enough that they are no longer statistically competitive,
+5. keep statistically indistinguishable candidates alive even when their current point estimate is lower,
+6. continue to the next pruning round with a larger shared prefix.
+
+This preserves the throughput advantage of staged batched scoring while avoiding premature elimination of candidates that only appear worse because `N` is still small.
+
+### Statistical comparison rule
+
+The intended comparison is not an independent-samples comparison between candidate means.
+
+Because all active candidates in one pruning round are evaluated against the same shared transform-bank prefix, the right first comparison object is the paired score difference under shared randomness.
+
+The recommended implementation contract is:
+
+1. partition the stochastic evaluation into appended shared trial blocks,
+2. record one block-level score contribution per active candidate per block,
+3. compare the current leader set against each active challenger using paired block differences,
+4. prune only when the challenger's upper bound is still below the leader's lower bound, or equivalently when the paired difference is decisively unfavorable under the configured confidence rule.
+
+This gives exact cumulative updating relative to the retained block summaries.
+
+It also means older trial blocks do not need to be rescored once their sufficient statistics have been retained.
+
+### Transform-bank growth and stopping rule
+
+The current code uses a fixed precomputed shared transform bank.
+
+It requests leading prefixes from that bank and raises an error if a later request exceeds the available number of stored trials.
+
+That is acceptable for the current fixed-stage implementation, but the adaptive pruning upgrade should make the growth policy explicit.
+
+The recommended contract is:
+
+1. keep an explicit `initial_trial_prefix`,
+2. keep an explicit `trial_block_size` for each appended pruning round,
+3. keep an explicit `max_total_trials` hard ceiling,
+4. allow the bank to grow only by appending new contiguous shared trial blocks,
+5. never replace earlier draws with a fresh unrelated bank,
+6. stop early when one candidate is unique or when the active ambiguity set is small enough for final winner resolution,
+7. stop at the hard ceiling if statistical separation is still not achieved.
+
+If the hard ceiling is reached without a unique statistically separated winner, the optimizer should not silently pretend certainty.
+
+It should emit an explicit unresolved-ambiguity flag together with the forced-stop trial count and the operational fallback that was used.
+
+Two implementation strategies are acceptable here:
+
+1. provision a conservative full bank up front that already covers `max_total_trials`,
+2. append new trial blocks on demand and extend the stored bank in place.
+
+The second strategy is more flexible.
+
+The first is simpler operationally.
+
+Either way, the completed design should still preserve a declared hard ceiling.
+
+An unbounded while-loop with no maximum trial policy is not recommended for production runs.
+
+### Retained history and debug replay rule
+
+The reason to retain history is not to keep renderer objects.
+
+The real reason is to avoid recomputing stochastic evidence that may be needed later for pruning audits or winner-only debug scenes.
+
+The agreed memory policy should separate three different history classes.
+
+1. lightweight scalar history that should be retained broadly,
+2. late-stage finalist debug payload that may be retained selectively,
+3. full localized point geometry for the whole search space, which should not be retained.
+
+The lightweight scalar history should be the default retained surface.
+
+That history should include, at minimum:
+
+1. candidate global index,
+2. prune round or stage name,
+3. cumulative trial count,
+4. appended block size,
+5. block-level score contribution,
+6. cumulative score,
+7. uncertainty summary or enough information to reconstruct it,
+8. survivor flag,
+9. prune reason.
+
+This scalar history is cheap enough to retain for the full active search surface and is the right substrate for later audit tables and reviewer-facing methods summaries.
+
+The winner-containment render path is different.
+
+That path needs localized stochastic success/failure geometry.
+
+The completed design should not retain that full geometry for every candidate across every stage.
+
+That is unnecessary and scales badly.
+
+The preferred rule is:
+
+1. do not retain full localized point geometry for the full candidate space,
+2. do not retain Open3D or Plotly objects at all,
+3. allow winner-only or late-finalist localized payload retention only for a very small finalist subset if replay avoidance later proves worth the memory cost,
+4. otherwise accept winner-only recomputation for debug rendering.
+
+That means recomputing the winner-only containment debug scene remains an acceptable default behavior.
+
+### Audit and output contract for pruning rounds
+
+The completed optimizer-v2 output contract should make pruning auditable without requiring re-execution.
+
+That means the tested-candidate audit surface should record not only scores but also pruning decisions.
+
+Recommended additional columns include:
+
+1. prune round index,
+2. last stage reached,
+3. pruned-at stage or pruning round,
+4. prune reason,
+5. active-set size before prune,
+6. active-set size after prune,
+7. survivor threshold for that round,
+8. statistical-separation metric used for the decision,
+9. whether the candidate remained ambiguity-active,
+10. whether the run terminated because of a hard ceiling rather than clean separation.
+
+The final ranked table should remain concise, but it should still carry summary prune metadata that helps interpret the winning set quickly.
+
+Recommended carry-down columns for the final ranked table include:
+
+1. last stage reached,
+2. number of pruning rounds survived,
+3. final winner-resolution trial count,
+4. whether the final decision was statistically unique,
+5. whether a forced hard-boundary stop was used.
+
+### Bayesian sidequest recommendation
+
+There is a separate Bayesian-posterior idea that is conceptually related to the same uncertainty-reduction story.
+
+That is interesting, and the repo already contains at least one small Bayesian demo script, but it should not become the first implementation path for the optimizer upgrade.
+
+The first upgrade should remain a paired-difference frequentist pruning rule on top of the existing Monte Carlo score surface.
+
+That recommendation is driven by engineering clarity rather than a claim that Bayesian updating is invalid.
+
+The reasons are:
+
+1. the current optimizer already exposes a Monte Carlo score surface that can be updated exactly from retained block summaries,
+2. introducing priors creates new policy questions that are unrelated to the immediate pruning bugbear,
+3. a paired-difference rule is easier to audit against downstream MC and easier to explain in manifests and sidecar CSVs,
+4. the Bayesian path can remain a later methodological sidequest or reviewer-facing appendix if it becomes scientifically useful.
+
+If a Bayesian pathway is explored later, it should be treated as an optional alternate inference layer over the same retained scalar history rather than as the default operational pruning rule.
+
 ## Final Winner Tie-Break Policy
 
 The optimizer should remain score-first.
