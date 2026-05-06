@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -19,6 +19,9 @@ class OptimizerV2RenderLayer:
     points: Optional[np.ndarray] = None
     point_groups: Optional[Tuple[np.ndarray, ...]] = None
     color: Optional[np.ndarray] = None
+    marker_size: Optional[float] = None
+    line_width: Optional[float] = None
+    opacity: Optional[float] = None
     geometry: Optional[Any] = None
 
 
@@ -58,6 +61,7 @@ def build_stage_boundary_render_jobs(
     additional_point_clouds: Optional[Sequence[Any]] = None,
     camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
     scene_name_prefix: Optional[str] = None,
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build one render-job description per selected stage boundary."""
     normalized_candidate_points = _validate_xyz_points_array(
@@ -97,19 +101,55 @@ def build_stage_boundary_render_jobs(
                 points=normalized_candidate_points[
                     np.asarray(stage_result.input_candidate_indices_global, dtype=np.int32)
                 ],
-                color=np.array([1.0, 0.6, 0.0]),
+                color=_resolve_layer_color(
+                    render_layer_style_by_name,
+                    "stage_input_candidates",
+                    np.array([1.0, 0.6, 0.0]),
+                ),
+                marker_size=_resolve_layer_marker_size(
+                    render_layer_style_by_name,
+                    "stage_input_candidates",
+                ),
+                opacity=_resolve_layer_opacity(
+                    render_layer_style_by_name,
+                    "stage_input_candidates",
+                ),
             ),
             build_point_cloud_render_layer(
                 layer_name="stage_survivors",
                 points=normalized_candidate_points[
                     np.asarray(stage_result.survivor_candidate_indices_global, dtype=np.int32)
                 ],
-                color=np.array([0.0, 1.0, 0.0]),
+                color=_resolve_layer_color(
+                    render_layer_style_by_name,
+                    "stage_survivors",
+                    np.array([0.0, 1.0, 0.0]),
+                ),
+                marker_size=_resolve_layer_marker_size(
+                    render_layer_style_by_name,
+                    "stage_survivors",
+                ),
+                opacity=_resolve_layer_opacity(
+                    render_layer_style_by_name,
+                    "stage_survivors",
+                ),
             ),
             build_point_cloud_render_layer(
                 layer_name="target_points",
                 points=normalized_target_points,
-                color=np.array([0.0, 0.0, 1.0]),
+                color=_resolve_layer_color(
+                    render_layer_style_by_name,
+                    "target_points",
+                    np.array([0.0, 0.0, 1.0]),
+                ),
+                marker_size=_resolve_layer_marker_size(
+                    render_layer_style_by_name,
+                    "target_points",
+                ),
+                opacity=_resolve_layer_opacity(
+                    render_layer_style_by_name,
+                    "target_points",
+                ),
             ),
         ]
         if normalized_nominal_biopsy_centroid is not None:
@@ -117,7 +157,19 @@ def build_stage_boundary_render_jobs(
                 build_point_cloud_render_layer(
                     layer_name="nominal_biopsy_centroid",
                     points=normalized_nominal_biopsy_centroid[np.newaxis, :],
-                    color=np.array([1.0, 0.0, 0.0]),
+                    color=_resolve_layer_color(
+                        render_layer_style_by_name,
+                        "nominal_biopsy_centroid",
+                        np.array([1.0, 0.0, 0.0]),
+                    ),
+                    marker_size=_resolve_layer_marker_size(
+                        render_layer_style_by_name,
+                        "nominal_biopsy_centroid",
+                    ),
+                    opacity=_resolve_layer_opacity(
+                        render_layer_style_by_name,
+                        "nominal_biopsy_centroid",
+                    ),
                 )
             )
         if winner_candidate_points is not None:
@@ -125,7 +177,19 @@ def build_stage_boundary_render_jobs(
                 build_point_cloud_render_layer(
                     layer_name="operational_winner",
                     points=winner_candidate_points,
-                    color=np.array([1.0, 0.0, 1.0]),
+                    color=_resolve_layer_color(
+                        render_layer_style_by_name,
+                        "operational_winner",
+                        np.array([1.0, 0.0, 1.0]),
+                    ),
+                    marker_size=_resolve_layer_marker_size(
+                        render_layer_style_by_name,
+                        "operational_winner",
+                    ),
+                    opacity=_resolve_layer_opacity(
+                        render_layer_style_by_name,
+                        "operational_winner",
+                    ),
                 )
             )
         render_layers.extend(resolved_additional_render_layers)
@@ -166,6 +230,7 @@ def render_stage_boundary_candidate_clouds(
     camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
     scene_name_prefix: Optional[str] = None,
     render_backend: str = "open3d",
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Build and render one scene per selected stage boundary using the selected backend."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
@@ -179,6 +244,7 @@ def render_stage_boundary_candidate_clouds(
         additional_point_clouds=additional_point_clouds,
         camera_config=camera_config,
         scene_name_prefix=scene_name_prefix,
+        render_layer_style_by_name=render_layer_style_by_name,
     )
     return render_scene_render_jobs(
         stage_boundary_render_jobs,
@@ -518,7 +584,7 @@ def _print_render_layer_toggle_help(
         )
     print("  I=input candidates, S=survivors, T=target points, N=nominal centroid, W=winner")
     print("  P=planned sampled points, C=planned core structure, L=planned centroid line")
-    print("  O=prostate, U=urethra, R=rectum, D=target surface cloud")
+    print("  O=prostate, U=urethra, R=rectum, D=target surface contours")
     print("  A=show all, X=hide all, H=print help, Q/Esc=close window")
 
 
@@ -561,10 +627,18 @@ def _build_plotly_trace_for_render_layer(
             z=z_values,
             mode="lines",
             name=_humanize_render_layer_name(render_layer.layer_name),
-            opacity=_resolve_plotly_layer_opacity(render_layer.layer_name),
+            opacity=(
+                render_layer.opacity
+                if render_layer.opacity is not None
+                else _resolve_plotly_layer_opacity(render_layer.layer_name)
+            ),
             line={
                 "color": _rgb_color_string(render_layer.color),
-                "width": _resolve_plotly_line_width(render_layer.layer_name),
+                "width": (
+                    render_layer.line_width
+                    if render_layer.line_width is not None
+                    else _resolve_plotly_line_width(render_layer.layer_name)
+                ),
             },
         )
 
@@ -581,8 +655,16 @@ def _build_plotly_trace_for_render_layer(
     layer_color = _rgb_color_string(render_layer.color)
     layer_name = _humanize_render_layer_name(render_layer.layer_name)
     layer_mode = _resolve_plotly_layer_mode(render_layer.layer_name, layer_points)
-    layer_opacity = _resolve_plotly_layer_opacity(render_layer.layer_name)
-    layer_marker_size = _resolve_plotly_layer_marker_size(render_layer.layer_name)
+    layer_opacity = (
+        render_layer.opacity
+        if render_layer.opacity is not None
+        else _resolve_plotly_layer_opacity(render_layer.layer_name)
+    )
+    layer_marker_size = (
+        render_layer.marker_size
+        if render_layer.marker_size is not None
+        else _resolve_plotly_layer_marker_size(render_layer.layer_name)
+    )
 
     trace_kwargs = {
         "x": layer_points[:, 0],
@@ -661,6 +743,62 @@ def _rgb_color_string(color: np.ndarray) -> str:
     return "rgb({}, {}, {})".format(red, green, blue)
 
 
+def _resolve_layer_style_value(
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]],
+    layer_name: str,
+    style_key: str,
+):
+    if render_layer_style_by_name is None:
+        return None
+
+    layer_style = render_layer_style_by_name.get(layer_name)
+    if layer_style is None:
+        return None
+
+    return layer_style.get(style_key)
+
+
+def _resolve_layer_color(
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]],
+    layer_name: str,
+    default_color: np.ndarray,
+) -> np.ndarray:
+    override_color = _resolve_layer_style_value(render_layer_style_by_name, layer_name, "color")
+    if override_color is None:
+        return np.asarray(default_color, dtype=float).reshape(3)
+    return np.asarray(override_color, dtype=float).reshape(3)
+
+
+def _resolve_layer_marker_size(
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]],
+    layer_name: str,
+) -> Optional[float]:
+    marker_size = _resolve_layer_style_value(render_layer_style_by_name, layer_name, "marker_size")
+    if marker_size is None:
+        return None
+    return float(marker_size)
+
+
+def _resolve_layer_line_width(
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]],
+    layer_name: str,
+) -> Optional[float]:
+    line_width = _resolve_layer_style_value(render_layer_style_by_name, layer_name, "line_width")
+    if line_width is None:
+        return None
+    return float(line_width)
+
+
+def _resolve_layer_opacity(
+    render_layer_style_by_name: Optional[Mapping[str, Mapping[str, Any]]],
+    layer_name: str,
+) -> Optional[float]:
+    opacity = _resolve_layer_style_value(render_layer_style_by_name, layer_name, "opacity")
+    if opacity is None:
+        return None
+    return float(opacity)
+
+
 def _flatten_point_groups_for_plotly(
     point_groups: Sequence[np.ndarray],
 ) -> Tuple[list[Optional[float]], list[Optional[float]], list[Optional[float]]]:
@@ -727,12 +865,16 @@ def build_point_cloud_render_layer(
     layer_name: str,
     points: np.ndarray,
     color: np.ndarray,
+    marker_size: Optional[float] = None,
+    opacity: Optional[float] = None,
 ) -> OptimizerV2RenderLayer:
     return OptimizerV2RenderLayer(
         layer_name=layer_name,
         layer_kind="point_cloud",
         points=_validate_xyz_points_array(points, layer_name),
         color=_validate_color_vector(color, "{}.color".format(layer_name)),
+        marker_size=float(marker_size) if marker_size is not None else None,
+        opacity=float(opacity) if opacity is not None else None,
     )
 
 
@@ -740,12 +882,16 @@ def build_contour_line_render_layer(
     layer_name: str,
     point_groups: Sequence[np.ndarray],
     color: np.ndarray,
+    line_width: Optional[float] = None,
+    opacity: Optional[float] = None,
 ) -> OptimizerV2RenderLayer:
     return OptimizerV2RenderLayer(
         layer_name=layer_name,
         layer_kind="contour_lines",
         point_groups=_validate_xyz_point_groups(point_groups, "{}.point_groups".format(layer_name)),
         color=_validate_color_vector(color, "{}.color".format(layer_name)),
+        line_width=float(line_width) if line_width is not None else None,
+        opacity=float(opacity) if opacity is not None else None,
     )
 
 

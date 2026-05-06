@@ -534,8 +534,23 @@ def main():
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
+    optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
     optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
     optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
+    optimizer_v2_render_layer_style_by_name = {
+        "stage_input_candidates": {"color": np.array([0.88, 0.53, 0.10]), "marker_size": 2.0, "opacity": 0.28},
+        "stage_survivors": {"color": np.array([0.14, 0.68, 0.24]), "marker_size": 3.2, "opacity": 0.88},
+        "target_points": {"color": np.array([0.33, 0.63, 0.33]), "marker_size": 0.7, "opacity": 0.10},
+        "nominal_biopsy_centroid": {"color": np.array([0.85, 0.20, 0.20]), "marker_size": 7.0, "opacity": 1.0},
+        "operational_winner": {"color": np.array([0.86, 0.12, 0.68]), "marker_size": 8.0, "opacity": 1.0},
+        "planned_sampled_points": {"marker_size": 1.4, "opacity": 0.32},
+        "planned_core_structure": {"line_width": 5.0, "opacity": 0.98},
+        "planned_centroid_line": {"line_width": 8.0, "opacity": 1.0},
+        "target_structure_surface": {"line_width": 4.8, "opacity": 0.96},
+        "prostate_structure": {"line_width": 4.0, "opacity": 0.90},
+        "urethra_structure": {"line_width": 4.5, "opacity": 1.0},
+        "rectum_structure": {"line_width": 3.8, "opacity": 0.88},
+    }
     num_stochastic_targeting_transform_samples_input = 0 # Placeholder budget for a future stochastic-targeting stage before simulated-biopsy planning; currently only used when sizing shared transform precompute.
     transform_generation_random_seed = 51
     optimizer_v1_random_seed = 51
@@ -4674,6 +4689,8 @@ def main():
                               render_stage_boundary_candidate_clouds_bool=optimizer_v2_render_stage_boundary_candidate_clouds_bool,
                               render_stage_names_to_render=optimizer_v2_render_stage_names,
                               render_backend=optimizer_v2_render_backend,
+                              render_layer_style_by_name=optimizer_v2_render_layer_style_by_name,
+                              render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,
                               render_patient_whitelist=optimizer_v2_render_patient_whitelist,
                               render_roi_whitelist=optimizer_v2_render_roi_whitelist,
                               oar_ref=oar_ref,

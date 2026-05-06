@@ -70,12 +70,13 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
     render_backend="open3d",
+    render_layer_style_by_name=None,
     render_patient_whitelist=None,
     render_roi_whitelist=None,
     render_include_planned_sampled_points_bool=True,
     render_include_planned_core_structure_bool=True,
     render_include_planned_centroid_line_bool=True,
-    render_include_target_surface_bool=False,
+    render_include_target_surface_bool=True,
     render_include_selected_anatomy_bool=True,
     oar_ref=None,
     rectum_ref=None,
@@ -242,6 +243,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 render_include_planned_centroid_line_bool=render_include_planned_centroid_line_bool,
                 render_include_target_surface_bool=render_include_target_surface_bool,
                 render_include_selected_anatomy_bool=render_include_selected_anatomy_bool,
+                render_layer_style_by_name=render_layer_style_by_name,
                 oar_ref=oar_ref,
                 rectum_ref=rectum_ref,
                 urethra_ref=urethra_ref,
@@ -258,6 +260,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 stage_names_to_render=render_stage_names_to_render,
                 additional_render_layers=additional_render_layers,
                 scene_name_prefix="{}__{}".format(patientUID, structureID),
+                render_layer_style_by_name=render_layer_style_by_name,
             )
             specific_structure[
                 TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
@@ -712,6 +715,7 @@ def _build_additional_stage_boundary_render_layers(
     render_include_planned_centroid_line_bool,
     render_include_target_surface_bool,
     render_include_selected_anatomy_bool,
+    render_layer_style_by_name,
     oar_ref,
     rectum_ref,
     urethra_ref,
@@ -742,7 +746,21 @@ def _build_additional_stage_boundary_render_layers(
                 build_point_cloud_render_layer(
                     layer_name="planned_sampled_points",
                     points=planned_sampled_points + planned_translation_vec,
-                    color=_lighten_color(biopsy_render_color, factor=0.25),
+                    color=_resolve_layer_style_color(
+                        render_layer_style_by_name,
+                        "planned_sampled_points",
+                        _lighten_color(biopsy_render_color, factor=0.25),
+                    ),
+                    marker_size=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_sampled_points",
+                        "marker_size",
+                    ),
+                    opacity=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_sampled_points",
+                        "opacity",
+                    ),
                 )
             )
 
@@ -758,7 +776,21 @@ def _build_additional_stage_boundary_render_layers(
                 build_contour_line_render_layer(
                     layer_name="planned_core_structure",
                     point_groups=planned_core_structure_contours,
-                    color=biopsy_render_color,
+                    color=_resolve_layer_style_color(
+                        render_layer_style_by_name,
+                        "planned_core_structure",
+                        biopsy_render_color,
+                    ),
+                    line_width=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_core_structure",
+                        "line_width",
+                    ),
+                    opacity=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_core_structure",
+                        "opacity",
+                    ),
                 )
             )
         else:
@@ -770,7 +802,21 @@ def _build_additional_stage_boundary_render_layers(
                     build_point_cloud_render_layer(
                         layer_name="planned_core_structure",
                         points=planned_core_structure_points + planned_translation_vec,
-                        color=biopsy_render_color,
+                        color=_resolve_layer_style_color(
+                            render_layer_style_by_name,
+                            "planned_core_structure",
+                            biopsy_render_color,
+                        ),
+                        marker_size=_resolve_layer_style_float(
+                            render_layer_style_by_name,
+                            "planned_core_structure",
+                            "marker_size",
+                        ),
+                        opacity=_resolve_layer_style_float(
+                            render_layer_style_by_name,
+                            "planned_core_structure",
+                            "opacity",
+                        ),
                     )
                 )
 
@@ -780,10 +826,24 @@ def _build_additional_stage_boundary_render_layers(
         )
         if planned_centroid_line is not None:
             additional_render_layers.append(
-                build_point_cloud_render_layer(
+                build_contour_line_render_layer(
                     layer_name="planned_centroid_line",
-                    points=planned_centroid_line + planned_translation_vec,
-                    color=_darken_color(biopsy_render_color, factor=0.35),
+                    point_groups=(planned_centroid_line + planned_translation_vec,),
+                    color=_resolve_layer_style_color(
+                        render_layer_style_by_name,
+                        "planned_centroid_line",
+                        _darken_color(biopsy_render_color, factor=0.35),
+                    ),
+                    line_width=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_centroid_line",
+                        "line_width",
+                    ),
+                    opacity=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "planned_centroid_line",
+                        "opacity",
+                    ),
                 )
             )
 
@@ -796,7 +856,21 @@ def _build_additional_stage_boundary_render_layers(
                 build_contour_line_render_layer(
                     layer_name="target_structure_surface",
                     point_groups=target_structure_contours,
-                    color=target_structure_render_color,
+                    color=_resolve_layer_style_color(
+                        render_layer_style_by_name,
+                        "target_structure_surface",
+                        target_structure_render_color,
+                    ),
+                    line_width=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "target_structure_surface",
+                        "line_width",
+                    ),
+                    opacity=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        "target_structure_surface",
+                        "opacity",
+                    ),
                 )
             )
         else:
@@ -808,7 +882,21 @@ def _build_additional_stage_boundary_render_layers(
                     build_point_cloud_render_layer(
                         layer_name="target_structure_surface",
                         points=target_structure_surface_points,
-                        color=target_structure_render_color,
+                        color=_resolve_layer_style_color(
+                            render_layer_style_by_name,
+                            "target_structure_surface",
+                            target_structure_render_color,
+                        ),
+                        marker_size=_resolve_layer_style_float(
+                            render_layer_style_by_name,
+                            "target_structure_surface",
+                            "marker_size",
+                        ),
+                        opacity=_resolve_layer_style_float(
+                            render_layer_style_by_name,
+                            "target_structure_surface",
+                            "opacity",
+                        ),
                     )
                 )
 
@@ -817,6 +905,7 @@ def _build_additional_stage_boundary_render_layers(
             _build_selected_anatomy_render_layers(
                 structs_referenced_dict,
                 pydicom_item,
+                render_layer_style_by_name,
                 oar_ref=oar_ref,
                 rectum_ref=rectum_ref,
                 urethra_ref=urethra_ref,
@@ -842,6 +931,7 @@ def _resolve_planned_to_winner_translation_vector(
 def _build_selected_anatomy_render_layers(
     structs_referenced_dict,
     pydicom_item,
+    render_layer_style_by_name,
     oar_ref,
     rectum_ref,
     urethra_ref,
@@ -882,7 +972,21 @@ def _build_selected_anatomy_render_layers(
                 build_contour_line_render_layer(
                     layer_name=layer_name,
                     point_groups=anatomy_contours,
-                    color=layer_color,
+                    color=_resolve_layer_style_color(
+                        render_layer_style_by_name,
+                        layer_name,
+                        layer_color,
+                    ),
+                    line_width=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        layer_name,
+                        "line_width",
+                    ),
+                    opacity=_resolve_layer_style_float(
+                        render_layer_style_by_name,
+                        layer_name,
+                        "opacity",
+                    ),
                 )
             )
             continue
@@ -895,7 +999,21 @@ def _build_selected_anatomy_render_layers(
             build_point_cloud_render_layer(
                 layer_name=layer_name,
                 points=anatomy_points,
-                color=layer_color,
+                color=_resolve_layer_style_color(
+                    render_layer_style_by_name,
+                    layer_name,
+                    layer_color,
+                ),
+                marker_size=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    layer_name,
+                    "marker_size",
+                ),
+                opacity=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    layer_name,
+                    "opacity",
+                ),
             )
         )
 
@@ -997,6 +1115,32 @@ def _lighten_color(color, factor):
 def _darken_color(color, factor):
     normalized_color = np.asarray(color, dtype=float).reshape(3)
     return np.clip(normalized_color * (1.0 - float(factor)), 0.0, 1.0)
+
+
+def _resolve_layer_style_color(render_layer_style_by_name, layer_name, default_color):
+    if render_layer_style_by_name is None:
+        return np.asarray(default_color, dtype=float).reshape(3)
+
+    layer_style = render_layer_style_by_name.get(layer_name)
+    if layer_style is None or layer_style.get("color") is None:
+        return np.asarray(default_color, dtype=float).reshape(3)
+
+    return np.asarray(layer_style["color"], dtype=float).reshape(3)
+
+
+def _resolve_layer_style_float(render_layer_style_by_name, layer_name, style_key):
+    if render_layer_style_by_name is None:
+        return None
+
+    layer_style = render_layer_style_by_name.get(layer_name)
+    if layer_style is None:
+        return None
+
+    style_value = layer_style.get(style_key)
+    if style_value is None:
+        return None
+
+    return float(style_value)
 
 
 def _build_transport_selection_metadata(summary_dataframe):
