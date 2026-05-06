@@ -684,6 +684,214 @@ If `max_test_structures_per_call` is configured, the runner computes the largest
 
 If the floor itself already exceeds the per-call structure budget, the floor still wins and the lower-level containment path simply splits the work across multiple mother-function calls.
 
+### Detailed implementation plan for dynamic packed-call calibration
+
+The next implementation pass should make the per-call packing budget dynamic, but it should do so at one clean package boundary.
+
+The calibrated quantity should be exactly:
+
+`safe_max_test_structures_per_call`
+
+That is the right abstraction because it is already meaningful to the containment package and does not encode optimizer-specific semantics.
+
+The calibration work should not try to solve optimizer-v2 policy directly.
+
+It should solve only the lower-level question:
+
+"For this kernel, this device, this test-structure point count, and this relative-structure complexity, how many test structures can one containment call hold safely?"
+
+#### Ownership boundary
+
+The standalone custom containment package should own:
+
+1. memory estimation for one proposed aligned containment batch,
+2. optional empirical verification of a proposed batch size,
+3. caching or reuse of verified safe call-size results,
+4. the generalized meaning of `max_test_structures_per_call`,
+5. internal splitting of oversized aligned batches,
+6. any batch-shape metadata needed to verify that a cached capacity result still applies.
+
+Optimizer-v2 should own:
+
+1. candidate chunk size,
+2. trial floors such as `initial_trial_prefix` and `trial_block_size`,
+3. the conversion from structure-budget capacity to packed cumulative `N`,
+4. adaptive pruning policy,
+5. tie-break policy,
+6. transform-bank sizing policy,
+7. manifest and audit reporting.
+
+The package should never need to understand:
+
+1. candidate centroids,
+2. pruning rounds,
+3. leader-challenger comparisons,
+4. tie-break rounds,
+5. winner resolution,
+6. `mean_pd` versus other reducers.
+
+That separation is required if the custom CUDA containment stack is going to migrate cleanly into a standalone repository.
+
+#### Proposed package-level calibration contract
+
+The package-facing calibration API should take only generalized containment inputs.
+
+Recommended inputs:
+
+1. kernel type,
+2. one representative relative-structure pack or a compact geometry signature derived from it,
+3. one representative test-structure shape with the real points-per-test-structure count,
+4. input mode metadata such as aligned 3D versus any future ragged mode,
+5. an optional safety factor,
+6. optional lower and upper search bounds,
+7. optional cache policy controls.
+
+Recommended outputs:
+
+1. `safe_max_test_structures_per_call`,
+2. whether the result was estimated only or estimated plus verified,
+3. the device and kernel identifiers used,
+4. the geometry signature used for the cache key,
+5. the safety factor applied,
+6. any warnings, such as "verification skipped" or "used conservative fallback".
+
+The package should return one capacity result that optimizer-v2 can consume without reinterpreting package internals.
+
+#### Calibration algorithm
+
+The calibration algorithm should be conservative and should avoid using repeated hard OOM failures as control flow.
+
+Recommended sequence:
+
+1. build one representative aligned test-structure prototype using the true points-per-test-structure count that the optimizer will use,
+2. estimate the memory footprint of one proposed call using package-owned knowledge of prep arrays, nearest-z arrays, masks, flattened valid-point buffers, and kernel-side output surfaces,
+3. derive a conservative initial upper bound from available GPU memory multiplied by a safety factor,
+4. search within that conservative region using a small number of real containment-package verification calls,
+5. keep the largest verified stable structure count,
+6. apply one final haircut before publishing the result as `safe_max_test_structures_per_call`,
+7. cache that result for reuse.
+
+The verification search should be bounded and should stop early once the package has enough evidence for a stable safe value.
+
+The preferred search pattern is:
+
+1. conservative estimate first,
+2. bounded upward probing if the estimate is likely too small,
+3. binary or bracketed refinement,
+4. no repeated intentional OOM events.
+
+#### Cache key and reuse policy
+
+Calibration should not run every pruning round.
+
+It should run once per relevant geometry and execution signature, then be reused.
+
+At minimum, the cache key should include:
+
+1. GPU identity,
+2. kernel type,
+3. points per test structure,
+4. containment input mode,
+5. a relative-structure complexity signature.
+
+The relative-structure complexity signature does not need optimizer semantics.
+
+It only needs enough package-owned information to detect that the geometry class has materially changed.
+
+Examples of acceptable package-owned signature ingredients include:
+
+1. number of relative structures,
+2. total number of slices,
+3. total polygon vertex count,
+4. any kernel-specific geometry packing mode.
+
+#### Runtime use inside optimizer-v2
+
+Once the package returns `safe_max_test_structures_per_call`, optimizer-v2 should use it only as a structure budget.
+
+The runner-side packed-`N` rule should remain:
+
+1. keep `initial_trial_prefix` and `trial_block_size` as minimum floors,
+2. compute the active candidate chunk size as `min(active_candidates, max_candidates_per_chunk)`,
+3. derive the largest cumulative `N` such that:
+
+`effective_chunk_candidate_count * (include_nominal + N) <= safe_max_test_structures_per_call`
+
+4. choose the larger of the minimum floor and that packed `N`,
+5. cap the result at `max_total_trials`,
+6. if the floor exceeds the safe call size, keep the floor and allow the package to split the call internally.
+
+This preserves the optimizer contract that floors are policy minimums while call splitting remains a package-owned execution detail.
+
+#### Relationship to legacy memory knobs
+
+The existing main-level variables such as:
+
+1. `cupy_array_upper_limit_NxN_size_input`,
+2. `numpy_array_upper_limit_NxN_size_input`,
+3. `nearest_zslice_vals_and_indices_cupy_generic_max_size`,
+4. `nearest_zslice_vals_and_indices_numpy_generic_max_size`
+
+should remain documented as legacy or alternate-path array chunking controls.
+
+They are real and still useful in older generic paths, but they should not become the optimizer-v2 capacity contract.
+
+The reason is that those knobs are expressed in older array-size or nearest-z helper terms, whereas optimizer-v2 now needs one package-owned budget expressed in test-structure-call units.
+
+The migration rule should therefore be:
+
+1. leave the legacy knobs governing legacy or alternate paths,
+2. introduce dynamic package calibration for `safe_max_test_structures_per_call`,
+3. let optimizer-v2 consume only the latter,
+4. retire or absorb the older knobs later only if those older paths are also moved behind the standalone package boundary.
+
+#### Failure policy and fallbacks
+
+The runtime should define explicit fallbacks.
+
+Recommended order:
+
+1. use a cached verified capacity result when available,
+2. otherwise run the dynamic calibrator,
+3. if calibration is unavailable or verification is skipped, fall back to a conservative configured static `max_test_structures_per_call`,
+4. if no static fallback exists either, allow `None` and rely on the package's internal full-batch behavior.
+
+That final `None` case should remain legal but should be treated as a deliberate escape hatch, not as the preferred research default.
+
+#### Rollout order for the next implementation pass
+
+The next implementation pass should follow this order:
+
+1. add the package-owned calibration result contract and cache key design,
+2. add a conservative estimator inside the custom containment package,
+3. add a bounded verifier inside the package,
+4. expose one repo-facing function that returns `safe_max_test_structures_per_call`,
+5. call that function once during optimizer-v2 runtime setup after biopsy sampled-point geometry is finalized,
+6. pass the returned structure budget into optimizer-v2 search,
+7. keep the current floor-based packed-`N` logic in the runner,
+8. export the resolved structure budget and packed round `N` values in the tested-candidate manifest,
+9. validate on at least one small patient set before widening use.
+
+The package-facing calibrator should be implemented first.
+
+The optimizer-v2 runner should not grow its own duplicate memory model.
+
+#### Explicit non-goals for that pass
+
+The next pass should not attempt all of the following at once:
+
+1. rewriting optimizer-v2 around retained-block-only sufficient statistics,
+2. unifying every old memory knob in the broader repo,
+3. moving the standalone package into a separate repository immediately,
+4. teaching the package optimizer-specific ranking semantics,
+5. calibrating every round dynamically from instantaneous free memory.
+
+The right scope is narrower:
+
+1. calibrate one stable package-level call budget,
+2. keep optimizer-v2 policy separate,
+3. let the runner use that budget to pack `N` upward above the configured floors.
+
 ### Statistical comparison rule
 
 The intended comparison is not an independent-samples comparison between candidate means.
