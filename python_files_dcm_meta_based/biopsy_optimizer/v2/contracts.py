@@ -120,6 +120,7 @@ class OptimizerV2ChunkScoreResult:
     structured_containment_result: Any
     stochastic_success_counts: np.ndarray
     point_probabilities: np.ndarray
+    candidate_trial_mean_point_scores: Optional[np.ndarray] = None
     candidate_scores: np.ndarray
     candidate_nominal_scores: np.ndarray
     distance_to_target_centroid_mm: np.ndarray

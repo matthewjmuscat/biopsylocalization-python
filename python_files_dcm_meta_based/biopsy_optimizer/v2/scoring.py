@@ -95,6 +95,13 @@ def score_target_candidate_chunk(
         chunk_layout,
     )
 
+    candidate_trial_mean_point_scores_np_arr = None
+    if objective_reducer_name == "mean_pd":
+        candidate_trial_mean_point_scores_cp_arr = stochastic_containment_result_cp_arr.astype(cp.float32).mean(axis=2)
+        candidate_trial_mean_point_scores_np_arr = cp.asnumpy(candidate_trial_mean_point_scores_cp_arr).astype(
+            np.float32
+        )
+
     point_probabilities_cp_arr = stochastic_containment_result_cp_arr.astype(cp.float32).mean(axis=1)
     stochastic_success_counts_cp_arr = stochastic_containment_result_cp_arr.sum(axis=1, dtype=cp.int32)
     candidate_scores_cp_arr = _reduce_point_probabilities(point_probabilities_cp_arr, objective_reducer_name)
@@ -136,6 +143,7 @@ def score_target_candidate_chunk(
         structured_containment_result=_coerce_output_array(structured_containment_result_cp_arr, return_array_as),
         stochastic_success_counts=stochastic_success_counts_np_arr,
         point_probabilities=point_probabilities_np_arr,
+        candidate_trial_mean_point_scores=candidate_trial_mean_point_scores_np_arr,
         candidate_scores=candidate_scores_np_arr,
         candidate_nominal_scores=candidate_nominal_scores_np_arr,
         distance_to_target_centroid_mm=distance_to_target_centroid_mm,

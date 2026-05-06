@@ -649,13 +649,58 @@ It also means older trial blocks do not need to be rescored once their sufficien
 
 #### Exact cumulative updating from retained block statistics
 
-The easiest exact update is the cumulative candidate mean.
+For the current executable optimizer path, the default reducer is `mean_pd`.
 
-If block `b` contains `n_b` trials and candidate `i` has exact block score sum `S_{i,b}` over those `n_b` trials, then the cumulative mean score after multiple blocks is exactly:
+Under that reducer, the random quantity should be defined explicitly.
+
+Let:
+
+1. `i` index candidate centroid,
+2. `t` index stochastic trial,
+3. `p` index sampled biopsy point along the nominal biopsy model,
+4. `X_{i,t,p}` be the binary containment indicator for candidate `i`, trial `t`, and biopsy point `p`, where `X_{i,t,p} = 1` if that localized biopsy point lies inside the target DIL and `0` otherwise.
+
+In the current scorer, the raw structured stochastic containment tensor has this semantic shape:
+
+`candidate x trial x biopsy_point`
+
+For one candidate `i` and one biopsy point `p`, the pointwise probability estimate is:
+
+`p_hat_{i,p} = (1 / N) * sum_t X_{i,t,p}`
+
+If candidate `i` has `P_i` biopsy sample points, then the current `mean_pd` selection score is:
+
+`mu_hat_i = (1 / P_i) * sum_p p_hat_{i,p}`
+
+Substituting the pointwise estimator gives:
+
+`mu_hat_i = (1 / (N * P_i)) * sum_t sum_p X_{i,t,p}`
+
+Now define the per-trial candidate score:
+
+`Z_{i,t} = (1 / P_i) * sum_p X_{i,t,p}`
+
+Then the candidate score can be written exactly as:
+
+`mu_hat_i = (1 / N) * sum_t Z_{i,t}`
+
+This is the cleanest quantity for uncertainty-aware staged pruning under the current `mean_pd` objective.
+
+The easiest exact update is therefore the cumulative mean of `Z_{i,t}`.
+
+If block `b` contains `n_b` trials and candidate `i` has exact block score sum
+
+`S_{i,b} = sum_{t in b} Z_{i,t}`
+
+then the cumulative mean score after multiple blocks is exactly:
 
 `mu_i = (sum_b S_{i,b}) / (sum_b n_b)`
 
-Equivalently, if the stored block value is the exact block mean `m_{i,b}`, then:
+Equivalently, if the stored block value is the exact block mean
+
+`m_{i,b} = S_{i,b} / n_b`
+
+then:
 
 `mu_i = (sum_b n_b * m_{i,b}) / (sum_b n_b)`
 
@@ -663,21 +708,41 @@ That part is exact.
 
 For exact uncertainty of one candidate mean, more than the block mean is needed.
 
-At minimum, the retained history should also support the second moment of the same trialwise score quantity, for example through per-block sums of squares.
+At minimum, the retained history should also support the second moment of the same trialwise score quantity.
+
+The simplest retained second-moment statistic is:
+
+`Q_{i,b} = sum_{t in b} Z_{i,t}^2`
+
+From `S_{i,b}` and `Q_{i,b}`, the cumulative first and second moments of `Z_{i,t}` can be updated exactly across appended blocks.
 
 For exact paired leader-versus-challenger uncertainty, the requirement is stronger again.
 
 If `Y_{i,t}` is the candidate-level trial score for candidate `i` at shared trial `t`, then the paired comparison uses:
 
-`D_{i,j,t} = Y_{i,t} - Y_{j,t}`
+`D_{i,j,t} = Z_{i,t} - Z_{j,t}`
 
 The exact paired mean is determined by the retained sums of `D_{i,j,t}`.
 
 The exact paired uncertainty is determined by retained second-moment information for `D_{i,j,t}` as well.
 
+One exact retained paired second-moment statistic would be:
+
+`R_{i,j,b} = sum_{t in b} (Z_{i,t} - Z_{j,t})^2`
+
 That means one scalar block mean per candidate is enough for exact cumulative score updating, but it is not enough by itself for exact paired-difference uncertainty.
 
 If the completed optimizer claims exact paired-difference pruning, it must retain sufficient statistics for that paired quantity, either directly as paired-difference block summaries for the comparisons that remain active or through an equivalent retained representation that preserves the needed covariance structure.
+
+The easiest exact representation is to retain the trialwise `Z_{i,t}` vector for the active candidate set at the current pruning horizon.
+
+That is far cheaper than retaining localized biopsy geometry, and it allows any later paired-difference quantity to be reconstructed exactly for those active candidates.
+
+For the current repo, this exact incremental statistical-pruning story should therefore be scoped to the `mean_pd` objective first.
+
+For `max_pd` and `min_pd`, the current reducer is applied after trial-averaging pointwise probabilities, so the same simple linear trialwise decomposition does not hold in the same way.
+
+Those reducers can remain supported for fixed-stage ranking, but the first uncertainty-aware staged-pruning implementation should target `mean_pd` explicitly.
 
 ### Transform-bank growth and stopping rule
 
