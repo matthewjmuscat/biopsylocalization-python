@@ -536,6 +536,32 @@ Where `pd` here means the target-DIL probability or binomial-estimator surface c
 
 The important contract is that optimizer v2 always computes the same underlying target-only per-point probability surface first, and only then applies the selected reducer.
 
+If candidate `i` has biopsy-sample-point probability surface `p_hat_{i,p}`, then the current reducer semantics are:
+
+`mean_pd(i) = (1 / P_i) * sum_p p_hat_{i,p}`
+
+`max_pd(i) = max_p p_hat_{i,p}`
+
+`min_pd(i) = min_p p_hat_{i,p}`
+
+So yes: these reducers act on the biopsy-sample-point axis, not on the trial axis.
+
+That is exactly why the uncertainty math is asymmetric.
+
+For `mean_pd`, averaging over biopsy points commutes with averaging over trials, so if `X_{i,t,p}` is the binary trial-point containment indicator then:
+
+`mean_pd(i) = (1 / P_i) * sum_p ((1 / N) * sum_t X_{i,t,p}) = (1 / N) * sum_t ((1 / P_i) * sum_p X_{i,t,p})`
+
+This gives the clean trialwise scalar `Z_{i,t}` used by the first statistical-pruning pass.
+
+For `max_pd` and `min_pd`, that commutation does not hold in general:
+
+`max_p ((1 / N) * sum_t X_{i,t,p}) != (1 / N) * sum_t max_p X_{i,t,p}`
+
+and similarly for `min`.
+
+So `max_pd` and `min_pd` are still well-defined optimizer objectives, but they do not inherit the same simple exact trialwise decomposition that `mean_pd` does.
+
 The candidate dataframe should retain enough components to support future alternative objectives, including:
 
 - total successes by biopsy sample point,

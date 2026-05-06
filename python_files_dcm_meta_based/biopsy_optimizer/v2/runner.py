@@ -25,6 +25,11 @@ from preprocessing.transform_bank import SharedTransformBankPrefix
 
 
 DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD = "score_desc_distance_candidate_index__provisional"
+DEFAULT_STAGE_STATISTICAL_PRUNE_STD_DEV_THRESHOLD = 1.0
+STAGE_PRUNE_METHOD_LEGACY_SURVIVOR_CUTOFF = "legacy_survivor_cutoff"
+STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_1SIGMA = "paired_mean_pd_leader_1sigma"
+STAGE_PRUNE_REASON_PAIRED_MEAN_PD_DOMINATED = "paired_mean_pd_dominance_1sigma"
+STAGE_PRUNE_REASON_STATISTICALLY_COMPETITIVE = "statistically_competitive"
 FINAL_WINNER_METHOD_SCORE_UNIQUE = "score_unique_stage_c"
 FINAL_WINNER_METHOD_SCORE_RESCORE = "score_rescore_prefix_unique"
 FINAL_WINNER_METHOD_NEAREST_TARGET_CENTROID_FALLBACK = "nearest_target_centroid_fallback"
@@ -298,6 +303,8 @@ def _run_target_candidate_stage(
     stage_ranked_candidate_dataframe, survivor_candidate_indices_global = _build_stage_ranked_candidate_dataframe(
         stage_tested_candidate_dataframe,
         stage_config,
+        chunk_score_results=chunk_score_results,
+        objective_reducer_name=objective_reducer_name,
     )
     return OptimizerV2StageRunResult(
         stage_name=stage_config.stage_name,
@@ -343,6 +350,8 @@ def _annotate_stage_tested_candidate_dataframe(
 def _build_stage_ranked_candidate_dataframe(
     stage_tested_candidate_dataframe,
     stage_config: OptimizerV2StageConfig,
+    chunk_score_results: Sequence[OptimizerV2ChunkScoreResult],
+    objective_reducer_name: str,
 ):
     ranked_candidate_dataframe = stage_tested_candidate_dataframe.sort_values(
         by=["Objective value", "Distance to target centroid mm", "Candidate global index"],
@@ -351,11 +360,63 @@ def _build_stage_ranked_candidate_dataframe(
     ).reset_index(drop=True)
     ranked_candidate_dataframe["Candidate rank"] = np.arange(1, len(ranked_candidate_dataframe) + 1, dtype=np.int32)
 
-    survivor_count = stage_config.resolve_survivor_count(len(ranked_candidate_dataframe))
+    configured_survivor_count = stage_config.resolve_survivor_count(len(ranked_candidate_dataframe))
+    statistical_prune_result = _resolve_stage_statistical_prune_result(
+        ranked_candidate_dataframe=ranked_candidate_dataframe,
+        chunk_score_results=chunk_score_results,
+        objective_reducer_name=objective_reducer_name,
+    )
+    if statistical_prune_result is None:
+        survivor_mask = np.zeros(len(ranked_candidate_dataframe), dtype=bool)
+        if configured_survivor_count > 0:
+            survivor_mask[:configured_survivor_count] = True
+        prune_method = pandas.Series(
+            STAGE_PRUNE_METHOD_LEGACY_SURVIVOR_CUTOFF,
+            index=ranked_candidate_dataframe.index,
+            dtype=object,
+        )
+        statistical_leader_candidate_index = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
+        paired_mean_deficit = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
+        paired_standard_error = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
+        paired_z_score = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=float)
+        dominance_prune_flag = np.zeros(len(ranked_candidate_dataframe), dtype=bool)
+        prune_reason = pandas.Series("survived_stage", index=ranked_candidate_dataframe.index, dtype=object)
+        prune_reason.loc[~survivor_mask] = "stage_survivor_cutoff"
+    else:
+        survivor_mask = statistical_prune_result["survivor_mask"]
+        prune_method = pandas.Series(
+            STAGE_PRUNE_METHOD_PAIRED_MEAN_PD_LEADER_1SIGMA,
+            index=ranked_candidate_dataframe.index,
+            dtype=object,
+        )
+        statistical_leader_candidate_index = pandas.Series(
+            np.int32(statistical_prune_result["leader_candidate_index_global"]),
+            index=ranked_candidate_dataframe.index,
+        )
+        paired_mean_deficit = pandas.Series(statistical_prune_result["paired_mean_deficit"], index=ranked_candidate_dataframe.index)
+        paired_standard_error = pandas.Series(
+            statistical_prune_result["paired_standard_error"],
+            index=ranked_candidate_dataframe.index,
+        )
+        paired_z_score = pandas.Series(statistical_prune_result["paired_z_score"], index=ranked_candidate_dataframe.index)
+        dominance_prune_flag = statistical_prune_result["dominance_prune_flag"]
+        prune_reason = pandas.Series(
+            STAGE_PRUNE_REASON_STATISTICALLY_COMPETITIVE,
+            index=ranked_candidate_dataframe.index,
+            dtype=object,
+        )
+        prune_reason.loc[dominance_prune_flag] = STAGE_PRUNE_REASON_PAIRED_MEAN_PD_DOMINATED
+
+    survivor_count = int(np.count_nonzero(survivor_mask))
+    ranked_candidate_dataframe["Stage configured survivor count target"] = np.int32(configured_survivor_count)
     ranked_candidate_dataframe["Stage output survivor count"] = np.int32(survivor_count)
-    ranked_candidate_dataframe["Is survivor"] = False
-    if survivor_count > 0:
-        ranked_candidate_dataframe.loc[: survivor_count - 1, "Is survivor"] = True
+    ranked_candidate_dataframe["Stage prune method"] = prune_method
+    ranked_candidate_dataframe["Stage statistical leader candidate global index"] = statistical_leader_candidate_index
+    ranked_candidate_dataframe["Stage paired mean deficit vs leader"] = paired_mean_deficit
+    ranked_candidate_dataframe["Stage paired standard error vs leader"] = paired_standard_error
+    ranked_candidate_dataframe["Stage paired z score vs leader"] = paired_z_score
+    ranked_candidate_dataframe["Stage statistical dominance prune flag"] = dominance_prune_flag.astype(bool)
+    ranked_candidate_dataframe["Is survivor"] = survivor_mask.astype(bool)
     ranked_candidate_dataframe["Stage active candidate count before prune"] = ranked_candidate_dataframe.get(
         "Stage input candidate count",
         np.int32(len(ranked_candidate_dataframe)),
@@ -365,8 +426,6 @@ def _build_stage_ranked_candidate_dataframe(
     prune_stage_name = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=object)
     prune_stage_name.loc[ranked_candidate_dataframe["Stage prune flag"]] = str(stage_config.stage_name)
     ranked_candidate_dataframe["Pruned at stage"] = prune_stage_name
-    prune_reason = pandas.Series("survived_stage", index=ranked_candidate_dataframe.index, dtype=object)
-    prune_reason.loc[ranked_candidate_dataframe["Stage prune flag"]] = "stage_survivor_cutoff"
     ranked_candidate_dataframe["Stage prune reason"] = prune_reason
 
     survivor_candidate_indices_global = ranked_candidate_dataframe.loc[
@@ -374,6 +433,101 @@ def _build_stage_ranked_candidate_dataframe(
         "Candidate global index",
     ].to_numpy(dtype=np.int32)
     return ranked_candidate_dataframe, survivor_candidate_indices_global
+
+
+def _resolve_stage_statistical_prune_result(
+    ranked_candidate_dataframe,
+    chunk_score_results: Sequence[OptimizerV2ChunkScoreResult],
+    objective_reducer_name: str,
+):
+    if objective_reducer_name != "mean_pd":
+        return None
+    if len(ranked_candidate_dataframe) == 0:
+        return None
+
+    ranked_trial_score_matrix = _build_ranked_candidate_trial_score_matrix(
+        ranked_candidate_dataframe,
+        chunk_score_results,
+    )
+    if ranked_trial_score_matrix is None:
+        return None
+    if ranked_trial_score_matrix.shape[1] < 2:
+        return None
+
+    leader_trial_scores = ranked_trial_score_matrix[0]
+    paired_trial_deficits = leader_trial_scores.reshape(1, -1) - ranked_trial_score_matrix
+    paired_mean_deficit = paired_trial_deficits.mean(axis=1).astype(np.float32)
+    paired_standard_error = (
+        paired_trial_deficits.std(axis=1, ddof=1).astype(np.float32) / np.float32(np.sqrt(ranked_trial_score_matrix.shape[1]))
+    )
+    paired_standard_error = np.nan_to_num(paired_standard_error, nan=0.0, posinf=np.inf, neginf=np.inf)
+
+    paired_z_score = np.zeros(len(ranked_candidate_dataframe), dtype=np.float32)
+    nonzero_standard_error_mask = paired_standard_error > 0.0
+    paired_z_score[nonzero_standard_error_mask] = (
+        paired_mean_deficit[nonzero_standard_error_mask] / paired_standard_error[nonzero_standard_error_mask]
+    )
+    zero_standard_error_positive_deficit_mask = (~nonzero_standard_error_mask) & (paired_mean_deficit > 0.0)
+    paired_z_score[zero_standard_error_positive_deficit_mask] = np.inf
+
+    dominance_prune_flag = paired_mean_deficit > (
+        np.float32(DEFAULT_STAGE_STATISTICAL_PRUNE_STD_DEV_THRESHOLD) * paired_standard_error
+    )
+    dominance_prune_flag[0] = False
+
+    return {
+        "leader_candidate_index_global": int(ranked_candidate_dataframe.iloc[0]["Candidate global index"]),
+        "survivor_mask": (~dominance_prune_flag).astype(bool),
+        "paired_mean_deficit": paired_mean_deficit,
+        "paired_standard_error": paired_standard_error,
+        "paired_z_score": paired_z_score,
+        "dominance_prune_flag": dominance_prune_flag.astype(bool),
+    }
+
+
+def _build_ranked_candidate_trial_score_matrix(
+    ranked_candidate_dataframe,
+    chunk_score_results: Sequence[OptimizerV2ChunkScoreResult],
+):
+    candidate_trial_scores_by_candidate_index = {}
+    num_trials = None
+
+    for chunk_score_result in chunk_score_results:
+        candidate_trial_mean_point_scores = chunk_score_result.candidate_trial_mean_point_scores
+        if candidate_trial_mean_point_scores is None:
+            return None
+
+        candidate_trial_mean_point_scores = np.asarray(candidate_trial_mean_point_scores, dtype=np.float32)
+        if candidate_trial_mean_point_scores.ndim != 2:
+            return None
+        if candidate_trial_mean_point_scores.shape[0] != len(chunk_score_result.candidate_indices_global):
+            return None
+        if candidate_trial_mean_point_scores.shape[1] != chunk_score_result.chunk_layout.num_trials:
+            return None
+        if not np.all(np.isfinite(candidate_trial_mean_point_scores)):
+            return None
+
+        if num_trials is None:
+            num_trials = candidate_trial_mean_point_scores.shape[1]
+        elif candidate_trial_mean_point_scores.shape[1] != num_trials:
+            return None
+
+        for candidate_index_global, candidate_trial_scores in zip(
+            chunk_score_result.candidate_indices_global,
+            candidate_trial_mean_point_scores,
+        ):
+            candidate_trial_scores_by_candidate_index[int(candidate_index_global)] = candidate_trial_scores
+
+    ranked_candidate_indices_global = ranked_candidate_dataframe["Candidate global index"].to_numpy(dtype=np.int32)
+    if any(int(candidate_index_global) not in candidate_trial_scores_by_candidate_index for candidate_index_global in ranked_candidate_indices_global):
+        return None
+
+    return np.vstack(
+        [
+            candidate_trial_scores_by_candidate_index[int(candidate_index_global)]
+            for candidate_index_global in ranked_candidate_indices_global
+        ]
+    ).astype(np.float32)
 
 
 def _resolve_initial_candidate_indices_global(
@@ -745,11 +899,6 @@ def _move_operational_winner_to_top(candidate_dataframe, winner_candidate_index_
             len(updated_candidate_dataframe) + 1,
             dtype=np.int32,
         )
-    if "Stage output survivor count" in updated_candidate_dataframe.columns:
-        survivor_count = int(updated_candidate_dataframe.iloc[0]["Stage output survivor count"])
-        updated_candidate_dataframe["Is survivor"] = False
-        if survivor_count > 0:
-            updated_candidate_dataframe.loc[: survivor_count - 1, "Is survivor"] = True
     return updated_candidate_dataframe
 
 
