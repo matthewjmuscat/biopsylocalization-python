@@ -10,6 +10,7 @@ import pandas
 import polygon_dilation_helpers_numpy
 from biopsy_optimizer.v2.candidate_pool import build_target_candidate_pool
 from biopsy_optimizer.v2.output import (
+    annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit,
     annotate_target_dil_optimizer_dataframe_with_downstream_mc,
     build_target_dil_optimization_summary_dataframe,
     build_target_dil_ranked_candidate_output_dataframe,
@@ -66,6 +67,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     downstream_comparable_trial_count=None,
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
+    render_backend="open3d",
     render_patient_whitelist=None,
     render_roi_whitelist=None,
     render_include_planned_sampled_points_bool=True,
@@ -269,7 +271,10 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             ):
                 live_display.stop()
                 try:
-                    render_scene_render_jobs(stage_boundary_render_jobs)
+                    render_scene_render_jobs(
+                        stage_boundary_render_jobs,
+                        render_backend=render_backend,
+                    )
                 finally:
                     live_display.start(refresh=True)
                     live_display.refresh()
@@ -365,6 +370,34 @@ def annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(
                 pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY),
                 downstream_structure_score_dataframe,
                 downstream_trial_count,
+            )
+        )
+
+
+def annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
+    master_structure_reference_dict,
+    bx_ref,
+    all_ref_key,
+):
+    for patient_uid, pydicom_item in master_structure_reference_dict.items():
+        biopsy_sampling_audit_dataframe = _build_biopsy_sampling_audit_source_dataframe(
+            patient_uid,
+            pydicom_item,
+            bx_ref,
+        )
+        pre_processing_dataframe_dict = pydicom_item[all_ref_key][
+            "Multi-structure pre-processing output dataframes dict"
+        ]
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY),
+                biopsy_sampling_audit_dataframe,
+            )
+        )
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY),
+                biopsy_sampling_audit_dataframe,
             )
         )
 
@@ -479,7 +512,73 @@ def _build_search_metadata(
         ),
         "Target structure ID": simulated_biopsy_preparation_dict.get("Target structure ID")
         or target_structure.get("ROI"),
+        "Target optimizer planned biopsy sampled point count": _resolve_planned_sampled_point_count(
+            specific_structure
+        ),
     }
+
+
+def _build_biopsy_sampling_audit_source_dataframe(
+    patient_uid,
+    pydicom_item,
+    bx_ref,
+):
+    source_rows = []
+    for specific_structure in pydicom_item.get(bx_ref, []):
+        planned_sampled_point_count = _resolve_planned_sampled_point_count(specific_structure)
+        finalized_sampled_point_count = _resolve_finalized_sampled_point_count(specific_structure)
+        if planned_sampled_point_count is None and finalized_sampled_point_count is None:
+            continue
+
+        source_rows.append(
+            {
+                "Patient ID": patient_uid,
+                "Biopsy ROI": specific_structure.get("ROI"),
+                "Biopsy ref #": specific_structure.get("Ref #"),
+                "Biopsy index": _normalize_scalar(specific_structure.get("Index number")),
+                "Target optimizer planned biopsy sampled point count": planned_sampled_point_count,
+                "Target optimizer finalized biopsy sampled point count": finalized_sampled_point_count,
+            }
+        )
+
+    if len(source_rows) == 0:
+        return pandas.DataFrame(
+            columns=[
+                "Patient ID",
+                "Biopsy ROI",
+                "Biopsy ref #",
+                "Biopsy index",
+                "Target optimizer planned biopsy sampled point count",
+                "Target optimizer finalized biopsy sampled point count",
+            ]
+        )
+
+    return pandas.DataFrame(source_rows)
+
+
+def _resolve_planned_sampled_point_count(specific_structure):
+    simulated_biopsy_planning_dict = specific_structure.get("Simulated biopsy planning dict") or {}
+    planned_sampled_point_count = simulated_biopsy_planning_dict.get("Planned sampled point count")
+    if planned_sampled_point_count is not None:
+        return int(planned_sampled_point_count)
+
+    planned_sampled_points = simulated_biopsy_planning_dict.get("Planned sampled volume pts arr")
+    if planned_sampled_points is None:
+        return None
+
+    return int(np.asarray(planned_sampled_points).shape[0])
+
+
+def _resolve_finalized_sampled_point_count(specific_structure):
+    finalized_sampled_point_count = specific_structure.get("Num sampled bx pts")
+    if finalized_sampled_point_count is not None:
+        return int(finalized_sampled_point_count)
+
+    finalized_sampled_points = specific_structure.get("Random uniformly sampled volume pts arr")
+    if finalized_sampled_points is None:
+        return None
+
+    return int(np.asarray(finalized_sampled_points).shape[0])
 
 
 def _build_target_centroid_fallback_summary_dataframe(
@@ -801,6 +900,7 @@ __all__ = [
     "TARGET_DIL_OPTIMIZER_V2_LANE_NAME",
     "TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY",
     "TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY",
+    "annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit",
     "annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores",
     "run_target_dil_optimizer_v2_for_live_simulated_family",
 ]

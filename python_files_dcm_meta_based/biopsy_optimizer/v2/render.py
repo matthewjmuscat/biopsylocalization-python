@@ -164,8 +164,9 @@ def render_stage_boundary_candidate_clouds(
     additional_point_clouds: Optional[Sequence[Any]] = None,
     camera_config: Optional[OptimizerV2RenderCameraConfig] = None,
     scene_name_prefix: Optional[str] = None,
+    render_backend: str = "open3d",
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
-    """Build and render one Open3D scene per selected stage boundary."""
+    """Build and render one scene per selected stage boundary using the selected backend."""
     stage_boundary_render_jobs = build_stage_boundary_render_jobs(
         search_result=search_result,
         candidate_pool=candidate_pool,
@@ -178,7 +179,10 @@ def render_stage_boundary_candidate_clouds(
         camera_config=camera_config,
         scene_name_prefix=scene_name_prefix,
     )
-    return render_scene_render_jobs(stage_boundary_render_jobs)
+    return render_scene_render_jobs(
+        stage_boundary_render_jobs,
+        render_backend=render_backend,
+    )
 
 
 def _build_stage_boundary_scene_name(
@@ -193,14 +197,30 @@ def _build_stage_boundary_scene_name(
 
 def render_scene_render_jobs(
     render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+    render_backend: str = "open3d",
 ) -> Tuple[OptimizerV2StageBoundaryRenderJob, ...]:
     """Render prebuilt scene jobs so they can be replayed or exported later."""
+    resolved_render_jobs = tuple(render_jobs)
+    if len(resolved_render_jobs) == 0:
+        return resolved_render_jobs
+
+    resolved_render_backend = _normalize_render_backend(render_backend)
+    if resolved_render_backend in ("open3d", "both"):
+        _render_scene_render_jobs_open3d(resolved_render_jobs)
+    if resolved_render_backend in ("plotly", "both"):
+        _render_scene_render_jobs_plotly(resolved_render_jobs)
+
+    return resolved_render_jobs
+
+
+def _render_scene_render_jobs_open3d(
+    render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+) -> None:
+    """Render scene jobs in the multistage Open3D debug viewer."""
     import open3d as o3d
     import point_containment_tools
 
     resolved_render_jobs = tuple(render_jobs)
-    if len(resolved_render_jobs) == 0:
-        return resolved_render_jobs
 
     stage_geometries_by_name = {}
     layer_visibility_by_name = {}
@@ -262,7 +282,54 @@ def render_scene_render_jobs(
     visualizer.run()
     visualizer.destroy_window()
 
-    return resolved_render_jobs
+
+def _render_scene_render_jobs_plotly(
+    render_jobs: Sequence[OptimizerV2StageBoundaryRenderJob],
+) -> None:
+    """Render scene jobs as Plotly figures for scientific review and export-oriented follow-on work."""
+    import plotly.graph_objects as go
+
+    for render_job in render_jobs:
+        figure = go.Figure()
+        for render_layer in render_job.render_layers:
+            plotly_trace = _build_plotly_trace_for_render_layer(render_layer)
+            if plotly_trace is None:
+                continue
+            figure.add_trace(plotly_trace)
+
+        figure.update_layout(
+            title=dict(text=render_job.scene_name),
+            template="plotly_white",
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            legend=dict(title="Optimizer V2 Layers"),
+            scene=dict(
+                bgcolor="white",
+                aspectmode="data",
+                xaxis=dict(
+                    title="Left(+)-Right(-), X Axis (mm)",
+                    backgroundcolor="rgb(245,245,245)",
+                    gridcolor="black",
+                    showbackground=True,
+                    zerolinecolor="black",
+                ),
+                yaxis=dict(
+                    title="Posterior(+)-Anterior(-), Y Axis (mm)",
+                    backgroundcolor="rgb(245,245,245)",
+                    gridcolor="black",
+                    showbackground=True,
+                    zerolinecolor="black",
+                ),
+                zaxis=dict(
+                    title="Superior(+)-Inferior(-), Z Axis (mm)",
+                    backgroundcolor="rgb(245,245,245)",
+                    gridcolor="black",
+                    showbackground=True,
+                    zerolinecolor="black",
+                ),
+            ),
+        )
+        figure.show()
 
 
 def _register_render_layer_toggle_callbacks(
@@ -473,6 +540,101 @@ def _build_multistage_scene_name(
     if first_scene_name.endswith(stage_suffix):
         return first_scene_name[: -len(stage_suffix)] + "__optimizer_v2"
     return first_scene_name
+
+
+def _build_plotly_trace_for_render_layer(
+    render_layer: OptimizerV2RenderLayer,
+):
+    import plotly.graph_objects as go
+
+    if render_layer.layer_kind != "point_cloud":
+        print(
+            "[optimizer-v2 render] skipping unsupported Plotly layer '{}' of kind '{}'".format(
+                render_layer.layer_name,
+                render_layer.layer_kind,
+            )
+        )
+        return None
+
+    layer_points = np.asarray(render_layer.points, dtype=float)
+    layer_color = _rgb_color_string(render_layer.color)
+    layer_name = _humanize_render_layer_name(render_layer.layer_name)
+    layer_mode = _resolve_plotly_layer_mode(render_layer.layer_name, layer_points)
+    layer_opacity = _resolve_plotly_layer_opacity(render_layer.layer_name)
+    layer_marker_size = _resolve_plotly_layer_marker_size(render_layer.layer_name)
+
+    trace_kwargs = {
+        "x": layer_points[:, 0],
+        "y": layer_points[:, 1],
+        "z": layer_points[:, 2],
+        "mode": layer_mode,
+        "name": layer_name,
+        "opacity": layer_opacity,
+    }
+    if "lines" in layer_mode:
+        trace_kwargs["line"] = {"color": layer_color, "width": 6}
+    if "markers" in layer_mode:
+        trace_kwargs["marker"] = {"color": layer_color, "size": layer_marker_size}
+
+    return go.Scatter3d(**trace_kwargs)
+
+
+def _resolve_plotly_layer_mode(layer_name: str, layer_points: np.ndarray) -> str:
+    if layer_name == "planned_centroid_line" and layer_points.shape[0] >= 2:
+        return "lines+markers"
+    return "markers"
+
+
+def _resolve_plotly_layer_marker_size(layer_name: str) -> float:
+    marker_sizes_by_layer = {
+        "stage_input_candidates": 2.2,
+        "stage_survivors": 3.5,
+        "target_points": 1.4,
+        "target_structure_surface": 1.0,
+        "planned_sampled_points": 1.8,
+        "planned_core_structure": 1.1,
+        "planned_centroid_line": 4.2,
+        "nominal_biopsy_centroid": 7.0,
+        "operational_winner": 8.0,
+        "prostate_structure": 1.0,
+        "urethra_structure": 1.8,
+        "rectum_structure": 1.0,
+    }
+    return float(marker_sizes_by_layer.get(layer_name, 2.5))
+
+
+def _resolve_plotly_layer_opacity(layer_name: str) -> float:
+    opacity_by_layer = {
+        "stage_input_candidates": 0.35,
+        "stage_survivors": 0.85,
+        "target_points": 0.22,
+        "target_structure_surface": 0.14,
+        "planned_sampled_points": 0.55,
+        "planned_core_structure": 0.22,
+        "planned_centroid_line": 0.95,
+        "prostate_structure": 0.12,
+        "urethra_structure": 0.45,
+        "rectum_structure": 0.12,
+    }
+    return float(opacity_by_layer.get(layer_name, 0.9))
+
+
+def _humanize_render_layer_name(layer_name: str) -> str:
+    return str(layer_name).replace("_", " ")
+
+
+def _rgb_color_string(color: np.ndarray) -> str:
+    red, green, blue = (np.asarray(color, dtype=float).reshape(3) * 255).astype(int)
+    return "rgb({}, {}, {})".format(red, green, blue)
+
+
+def _normalize_render_backend(render_backend: str) -> str:
+    normalized_render_backend = str(render_backend).strip().lower()
+    if normalized_render_backend not in ("open3d", "plotly", "both"):
+        raise ValueError(
+            "unsupported optimizer-v2 render backend: {}".format(render_backend)
+        )
+    return normalized_render_backend
 
 
 def build_point_cloud_render_layer(

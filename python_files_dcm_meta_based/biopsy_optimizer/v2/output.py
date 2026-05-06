@@ -12,6 +12,8 @@ from biopsy_optimizer.v2.contracts import OptimizerV2SearchRunResult
 
 DOWNSTREAM_MC_SCORE_MERGE_COLUMN = "__downstream_mc_target_score"
 DOWNSTREAM_MC_TRIAL_COUNT_MERGE_COLUMN = "__downstream_mc_trial_count"
+BIOPSY_SAMPLE_COUNT_PLANNED_MERGE_COLUMN = "__planned_biopsy_sample_count"
+BIOPSY_SAMPLE_COUNT_FINALIZED_MERGE_COLUMN = "__finalized_biopsy_sample_count"
 DOWNSTREAM_MC_JOIN_COLUMNS = (
     "Patient ID",
     "Biopsy ROI",
@@ -21,6 +23,17 @@ DOWNSTREAM_MC_JOIN_COLUMNS = (
     "Target structure type",
     "Target structure index",
 )
+BIOPSY_SAMPLE_COUNT_JOIN_COLUMNS = (
+    "Patient ID",
+    "Biopsy ROI",
+    "Biopsy ref #",
+    "Biopsy index",
+)
+PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN = "Target optimizer planned biopsy sampled point count"
+FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN = "Target optimizer finalized biopsy sampled point count"
+BIOPSY_SAMPLED_POINT_COUNT_DELTA_COLUMN = "Target optimizer biopsy sampled point count delta"
+BIOPSY_SAMPLED_POINT_COUNT_RATIO_COLUMN = "Target optimizer biopsy sampled point count ratio"
+BIOPSY_SAMPLED_POINT_COUNT_MISMATCH_FLAG_COLUMN = "Target optimizer biopsy sampled point count mismatch flag"
 
 
 def build_target_dil_optimization_summary_dataframe(
@@ -30,7 +43,7 @@ def build_target_dil_optimization_summary_dataframe(
     """Build one carry-down winner summary row for the target-DIL optimizer lane."""
     if search_result.ranked_candidate_dataframe.empty:
         return _apply_metadata_to_dataframe(
-            _initialize_downstream_mc_placeholder_columns(pandas.DataFrame()),
+            _initialize_optimizer_output_placeholder_columns(pandas.DataFrame()),
             metadata,
         )
 
@@ -107,7 +120,7 @@ def build_target_dil_optimization_summary_dataframe(
         ),
         "Target optimizer agreement delta": _resolve_selected_winner_score_surface_delta(winner_row),
     }
-    summary_dataframe = _initialize_downstream_mc_placeholder_columns(
+    summary_dataframe = _initialize_optimizer_output_placeholder_columns(
         pandas.DataFrame([summary_row])
     )
     return _apply_metadata_to_dataframe(summary_dataframe, metadata)
@@ -121,7 +134,7 @@ def build_target_dil_ranked_candidate_output_dataframe(
     ranked_candidate_dataframe = search_result.ranked_candidate_dataframe.copy()
     if ranked_candidate_dataframe.empty:
         return _apply_metadata_to_dataframe(
-            _initialize_downstream_mc_placeholder_columns(ranked_candidate_dataframe),
+            _initialize_optimizer_output_placeholder_columns(ranked_candidate_dataframe),
             metadata,
         )
 
@@ -198,10 +211,103 @@ def build_target_dil_ranked_candidate_output_dataframe(
     ranked_candidate_dataframe["Target optimizer agreement delta"] = ranked_candidate_dataframe[
         "Target optimizer selected winner score-surface delta"
     ]
-    ranked_candidate_dataframe = _initialize_downstream_mc_placeholder_columns(
+    ranked_candidate_dataframe = _initialize_optimizer_output_placeholder_columns(
         ranked_candidate_dataframe
     )
     return _apply_metadata_to_dataframe(ranked_candidate_dataframe, metadata)
+
+
+def annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
+    dataframe: Optional[pandas.DataFrame],
+    biopsy_sampling_audit_dataframe: Optional[pandas.DataFrame],
+) -> Optional[pandas.DataFrame]:
+    if dataframe is None:
+        return None
+
+    updated_dataframe = _initialize_optimizer_output_placeholder_columns(dataframe)
+    if updated_dataframe.empty:
+        return updated_dataframe
+    if biopsy_sampling_audit_dataframe is None or biopsy_sampling_audit_dataframe.empty:
+        return updated_dataframe
+    if any(join_column not in updated_dataframe.columns for join_column in BIOPSY_SAMPLE_COUNT_JOIN_COLUMNS):
+        return updated_dataframe
+
+    selected_columns = [
+        *BIOPSY_SAMPLE_COUNT_JOIN_COLUMNS,
+        PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN,
+        FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN,
+    ]
+    missing_columns = [
+        column_name
+        for column_name in selected_columns
+        if column_name not in biopsy_sampling_audit_dataframe.columns
+    ]
+    if missing_columns:
+        return updated_dataframe
+
+    normalized_dataframe = _normalize_downstream_mc_join_columns(updated_dataframe)
+    normalized_audit_dataframe = _normalize_downstream_mc_join_columns(
+        biopsy_sampling_audit_dataframe[selected_columns].copy()
+    )
+    normalized_audit_dataframe.rename(
+        columns={
+            PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN: BIOPSY_SAMPLE_COUNT_PLANNED_MERGE_COLUMN,
+            FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN: BIOPSY_SAMPLE_COUNT_FINALIZED_MERGE_COLUMN,
+        },
+        inplace=True,
+    )
+    normalized_audit_dataframe = normalized_audit_dataframe.drop_duplicates(
+        subset=list(BIOPSY_SAMPLE_COUNT_JOIN_COLUMNS),
+        keep="last",
+    )
+
+    merged_dataframe = normalized_dataframe.merge(
+        normalized_audit_dataframe,
+        how="left",
+        on=list(BIOPSY_SAMPLE_COUNT_JOIN_COLUMNS),
+        sort=False,
+    )
+    merged_dataframe[PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN] = merged_dataframe[
+        BIOPSY_SAMPLE_COUNT_PLANNED_MERGE_COLUMN
+    ].combine_first(merged_dataframe[PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN])
+    merged_dataframe[FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN] = merged_dataframe[
+        BIOPSY_SAMPLE_COUNT_FINALIZED_MERGE_COLUMN
+    ]
+
+    valid_count_mask = merged_dataframe[PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN].notna() & merged_dataframe[
+        FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN
+    ].notna()
+    point_count_delta = pandas.Series(np.nan, index=merged_dataframe.index, dtype=float)
+    point_count_delta.loc[valid_count_mask] = (
+        merged_dataframe.loc[valid_count_mask, FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+        - merged_dataframe.loc[valid_count_mask, PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+    )
+    merged_dataframe[BIOPSY_SAMPLED_POINT_COUNT_DELTA_COLUMN] = point_count_delta
+
+    ratio_mask = valid_count_mask & (
+        merged_dataframe[PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN] != 0
+    )
+    point_count_ratio = pandas.Series(np.nan, index=merged_dataframe.index, dtype=float)
+    point_count_ratio.loc[ratio_mask] = (
+        merged_dataframe.loc[ratio_mask, FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+        / merged_dataframe.loc[ratio_mask, PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+    )
+    merged_dataframe[BIOPSY_SAMPLED_POINT_COUNT_RATIO_COLUMN] = point_count_ratio
+
+    mismatch_flag = pandas.Series(np.nan, index=merged_dataframe.index, dtype=object)
+    mismatch_flag.loc[valid_count_mask] = (
+        merged_dataframe.loc[valid_count_mask, FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+        != merged_dataframe.loc[valid_count_mask, PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN]
+    ).astype(bool)
+    merged_dataframe[BIOPSY_SAMPLED_POINT_COUNT_MISMATCH_FLAG_COLUMN] = mismatch_flag
+
+    return merged_dataframe.drop(
+        columns=[
+            BIOPSY_SAMPLE_COUNT_PLANNED_MERGE_COLUMN,
+            BIOPSY_SAMPLE_COUNT_FINALIZED_MERGE_COLUMN,
+        ],
+        errors="ignore",
+    )
 
 
 def annotate_target_dil_optimizer_dataframe_with_downstream_mc(
@@ -212,7 +318,7 @@ def annotate_target_dil_optimizer_dataframe_with_downstream_mc(
     if dataframe is None:
         return None
 
-    updated_dataframe = _initialize_downstream_mc_placeholder_columns(dataframe)
+    updated_dataframe = _initialize_optimizer_output_placeholder_columns(dataframe)
     if updated_dataframe.empty:
         return updated_dataframe
     if downstream_structure_score_dataframe is None or downstream_structure_score_dataframe.empty:
@@ -359,6 +465,30 @@ def _initialize_downstream_mc_placeholder_columns(
     return updated_dataframe
 
 
+def _initialize_biopsy_sampling_audit_placeholder_columns(
+    dataframe: pandas.DataFrame,
+) -> pandas.DataFrame:
+    updated_dataframe = dataframe.copy()
+    placeholder_columns = (
+        PLANNED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN,
+        FINALIZED_BIOPSY_SAMPLED_POINT_COUNT_COLUMN,
+        BIOPSY_SAMPLED_POINT_COUNT_DELTA_COLUMN,
+        BIOPSY_SAMPLED_POINT_COUNT_RATIO_COLUMN,
+        BIOPSY_SAMPLED_POINT_COUNT_MISMATCH_FLAG_COLUMN,
+    )
+    for column_name in placeholder_columns:
+        if column_name not in updated_dataframe.columns:
+            updated_dataframe[column_name] = np.nan
+    return updated_dataframe
+
+
+def _initialize_optimizer_output_placeholder_columns(
+    dataframe: pandas.DataFrame,
+) -> pandas.DataFrame:
+    updated_dataframe = _initialize_biopsy_sampling_audit_placeholder_columns(dataframe)
+    return _initialize_downstream_mc_placeholder_columns(updated_dataframe)
+
+
 def _resolve_selected_winner_score_surface_delta(row) -> float:
     optimizer_side_score = row.get(
         "Final winner resolved objective value",
@@ -396,6 +526,7 @@ def _apply_metadata_to_dataframe(
 
 
 __all__ = [
+    "annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit",
     "annotate_target_dil_optimizer_dataframe_with_downstream_mc",
     "build_target_dil_optimization_summary_dataframe",
     "build_target_dil_ranked_candidate_output_dataframe",

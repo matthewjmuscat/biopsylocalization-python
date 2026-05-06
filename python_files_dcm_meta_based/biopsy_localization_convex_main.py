@@ -125,6 +125,7 @@ from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_se
 from biopsy_optimizer.v2.live_integration import (
     TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
     TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
+    annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
     annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
@@ -532,6 +533,7 @@ def main():
     optimizer_v2_max_candidates_per_chunk = 8
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = ("stage_a", "stage_b", "stage_c")
+    optimizer_v2_render_backend = "open3d" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
     optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
     optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
     num_stochastic_targeting_transform_samples_input = 0 # Placeholder budget for a future stochastic-targeting stage before simulated-biopsy planning; currently only used when sizing shared transform precompute.
@@ -4670,6 +4672,7 @@ def main():
                               ),
                               render_stage_boundary_candidate_clouds_bool=optimizer_v2_render_stage_boundary_candidate_clouds_bool,
                               render_stage_names_to_render=optimizer_v2_render_stage_names,
+                              render_backend=optimizer_v2_render_backend,
                               render_patient_whitelist=optimizer_v2_render_patient_whitelist,
                               render_roi_whitelist=optimizer_v2_render_roi_whitelist,
                               oar_ref=oar_ref,
@@ -5749,6 +5752,11 @@ def main():
                 live_display,
                 stopwatch,
                 show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot,
+            )
+            annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
+                master_structure_reference_dict,
+                bx_ref,
+                all_ref_key,
             )
 
             live_display = biopsy_double_sextant_processer(
