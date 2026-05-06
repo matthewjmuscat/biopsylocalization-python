@@ -10,6 +10,7 @@ import pandas
 import polygon_dilation_helpers_numpy
 from biopsy_optimizer.v2.candidate_pool import build_target_candidate_pool
 from biopsy_optimizer.v2.output import (
+    annotate_target_dil_optimizer_dataframe_with_downstream_mc,
     build_target_dil_optimization_summary_dataframe,
     build_target_dil_ranked_candidate_output_dataframe,
 )
@@ -38,6 +39,9 @@ TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY = (
 )
 TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY = (
     "Biopsy optimization - Target DIL optimizer v2 stage boundary render jobs"
+)
+TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY = (
+    "Tissue class - Global tissue by structure statistics"
 )
 
 
@@ -332,6 +336,37 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     patients_progress.update(processing_patients_task, visible=False)
     completed_progress.update(processing_patients_task_completed, visible=True)
     return live_display
+
+
+def annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(
+    master_structure_reference_dict,
+    all_ref_key,
+    downstream_trial_count,
+):
+    for _patient_uid, pydicom_item in master_structure_reference_dict.items():
+        downstream_dataframe_dict = (
+            pydicom_item[all_ref_key].get("Multi-structure MC simulation output dataframes dict") or {}
+        )
+        downstream_structure_score_dataframe = downstream_dataframe_dict.get(
+            TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY
+        )
+        pre_processing_dataframe_dict = pydicom_item[all_ref_key][
+            "Multi-structure pre-processing output dataframes dict"
+        ]
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_downstream_mc(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY),
+                downstream_structure_score_dataframe,
+                downstream_trial_count,
+            )
+        )
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_downstream_mc(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY),
+                downstream_structure_score_dataframe,
+                downstream_trial_count,
+            )
+        )
 
 
 def _resolve_target_dil_structure(
@@ -762,8 +797,10 @@ def _normalize_scalar(value: Any):
 
 
 __all__ = [
+    "TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY",
     "TARGET_DIL_OPTIMIZER_V2_LANE_NAME",
     "TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY",
     "TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY",
+    "annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores",
     "run_target_dil_optimizer_v2_for_live_simulated_family",
 ]

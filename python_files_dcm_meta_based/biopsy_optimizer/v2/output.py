@@ -10,6 +10,19 @@ import pandas
 from biopsy_optimizer.v2.contracts import OptimizerV2SearchRunResult
 
 
+DOWNSTREAM_MC_SCORE_MERGE_COLUMN = "__downstream_mc_target_score"
+DOWNSTREAM_MC_TRIAL_COUNT_MERGE_COLUMN = "__downstream_mc_trial_count"
+DOWNSTREAM_MC_JOIN_COLUMNS = (
+    "Patient ID",
+    "Biopsy ROI",
+    "Biopsy ref #",
+    "Biopsy index",
+    "Target structure ID",
+    "Target structure type",
+    "Target structure index",
+)
+
+
 def build_target_dil_optimization_summary_dataframe(
     search_result: OptimizerV2SearchRunResult,
     metadata: Optional[Mapping[str, Any]] = None,
@@ -191,10 +204,144 @@ def build_target_dil_ranked_candidate_output_dataframe(
     return _apply_metadata_to_dataframe(ranked_candidate_dataframe, metadata)
 
 
+def annotate_target_dil_optimizer_dataframe_with_downstream_mc(
+    dataframe: Optional[pandas.DataFrame],
+    downstream_structure_score_dataframe: Optional[pandas.DataFrame],
+    downstream_trial_count: Optional[int],
+) -> Optional[pandas.DataFrame]:
+    if dataframe is None:
+        return None
+
+    updated_dataframe = _initialize_downstream_mc_placeholder_columns(dataframe)
+    if updated_dataframe.empty:
+        return updated_dataframe
+    if downstream_structure_score_dataframe is None or downstream_structure_score_dataframe.empty:
+        return updated_dataframe
+    if downstream_trial_count is None or int(downstream_trial_count) <= 0:
+        return updated_dataframe
+    if any(join_column not in updated_dataframe.columns for join_column in DOWNSTREAM_MC_JOIN_COLUMNS):
+        return updated_dataframe
+
+    normalized_dataframe = _normalize_downstream_mc_join_columns(updated_dataframe)
+    annotation_source_dataframe = _build_downstream_mc_annotation_source_dataframe(
+        downstream_structure_score_dataframe,
+        int(downstream_trial_count),
+    )
+    if annotation_source_dataframe.empty:
+        return updated_dataframe
+
+    merged_dataframe = normalized_dataframe.merge(
+        annotation_source_dataframe,
+        how="left",
+        on=list(DOWNSTREAM_MC_JOIN_COLUMNS),
+        sort=False,
+    )
+    merged_dataframe[
+        "Target optimizer selected winner downstream MC target score"
+    ] = merged_dataframe[DOWNSTREAM_MC_SCORE_MERGE_COLUMN]
+    merged_dataframe[
+        "Target optimizer selected winner downstream MC trial count"
+    ] = np.int32(int(downstream_trial_count))
+
+    downstream_comparable_score = merged_dataframe[
+        "Target optimizer selected winner downstream-comparable target score"
+    ].combine_first(
+        merged_dataframe.get("Target optimizer downstream comparable target score")
+    )
+    merged_dataframe[
+        "Target optimizer selected winner downstream MC agreement delta"
+    ] = merged_dataframe[
+        "Target optimizer selected winner downstream MC target score"
+    ] - downstream_comparable_score
+
+    return merged_dataframe.drop(
+        columns=[DOWNSTREAM_MC_SCORE_MERGE_COLUMN, DOWNSTREAM_MC_TRIAL_COUNT_MERGE_COLUMN],
+        errors="ignore",
+    )
+
+
 def _resolve_final_stage_name(search_result: OptimizerV2SearchRunResult) -> str:
     if not search_result.stage_results:
         return ""
     return str(search_result.stage_results[-1].stage_name)
+
+
+def _build_downstream_mc_annotation_source_dataframe(
+    downstream_structure_score_dataframe: pandas.DataFrame,
+    downstream_trial_count: int,
+) -> pandas.DataFrame:
+    selected_columns = [
+        "Patient ID",
+        "Bx ID",
+        "Bx refnum",
+        "Bx index",
+        "Relative structure ROI",
+        "Relative structure type",
+        "Relative structure index",
+        "Global mean binom est",
+    ]
+    missing_columns = [
+        column_name
+        for column_name in selected_columns
+        if column_name not in downstream_structure_score_dataframe.columns
+    ]
+    if missing_columns:
+        return pandas.DataFrame(columns=[*DOWNSTREAM_MC_JOIN_COLUMNS, DOWNSTREAM_MC_SCORE_MERGE_COLUMN])
+
+    annotation_source_dataframe = downstream_structure_score_dataframe[selected_columns].copy()
+    annotation_source_dataframe.rename(
+        columns={
+            "Bx ID": "Biopsy ROI",
+            "Bx refnum": "Biopsy ref #",
+            "Bx index": "Biopsy index",
+            "Relative structure ROI": "Target structure ID",
+            "Relative structure type": "Target structure type",
+            "Relative structure index": "Target structure index",
+        },
+        inplace=True,
+    )
+    annotation_source_dataframe = _normalize_downstream_mc_join_columns(annotation_source_dataframe)
+    annotation_source_dataframe[DOWNSTREAM_MC_SCORE_MERGE_COLUMN] = pandas.to_numeric(
+        annotation_source_dataframe["Global mean binom est"],
+        errors="coerce",
+    )
+    annotation_source_dataframe[DOWNSTREAM_MC_TRIAL_COUNT_MERGE_COLUMN] = np.int32(downstream_trial_count)
+    annotation_source_dataframe = annotation_source_dataframe[
+        [
+            *DOWNSTREAM_MC_JOIN_COLUMNS,
+            DOWNSTREAM_MC_SCORE_MERGE_COLUMN,
+            DOWNSTREAM_MC_TRIAL_COUNT_MERGE_COLUMN,
+        ]
+    ]
+    return annotation_source_dataframe.drop_duplicates(
+        subset=list(DOWNSTREAM_MC_JOIN_COLUMNS),
+        keep="last",
+    ).reset_index(drop=True)
+
+
+def _normalize_downstream_mc_join_columns(dataframe: pandas.DataFrame) -> pandas.DataFrame:
+    updated_dataframe = dataframe.copy()
+    string_join_columns = (
+        "Patient ID",
+        "Biopsy ROI",
+        "Target structure ID",
+        "Target structure type",
+    )
+    numeric_join_columns = (
+        "Biopsy ref #",
+        "Biopsy index",
+        "Target structure index",
+    )
+    for column_name in string_join_columns:
+        if column_name in updated_dataframe.columns:
+            updated_dataframe[column_name] = updated_dataframe[column_name].astype(str)
+    for column_name in numeric_join_columns:
+        if column_name in updated_dataframe.columns:
+            updated_dataframe[column_name] = pandas.to_numeric(
+                updated_dataframe[column_name],
+                errors="coerce",
+            )
+    return updated_dataframe
 
 
 def _initialize_downstream_mc_placeholder_columns(
@@ -249,6 +396,7 @@ def _apply_metadata_to_dataframe(
 
 
 __all__ = [
+    "annotate_target_dil_optimizer_dataframe_with_downstream_mc",
     "build_target_dil_optimization_summary_dataframe",
     "build_target_dil_ranked_candidate_output_dataframe",
 ]

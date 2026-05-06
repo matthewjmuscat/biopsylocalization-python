@@ -125,6 +125,7 @@ from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_se
 from biopsy_optimizer.v2.live_integration import (
     TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
     TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
+    annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -6321,6 +6322,11 @@ def main():
                                                     bx_ref,
                                                     all_ref_key)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue class global scores (structure)"] = cohort_global_tissue_class_by_structure_dataframe
+                annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(
+                    master_structure_reference_dict,
+                    all_ref_key,
+                    num_MC_containment_simulations_input,
+                )
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 # create dataframe for tissue volume above threshold
