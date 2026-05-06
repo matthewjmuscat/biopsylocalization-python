@@ -313,7 +313,10 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             )
             if should_render_interactively or should_export_structure:
                 effective_render_backend = render_backend if should_render_interactively else "none"
-                if should_render_interactively:
+                should_pause_live_display = (
+                    should_render_interactively or should_export_structure
+                )
+                if should_pause_live_display:
                     live_display.stop()
                 try:
                     render_scene_render_jobs(
@@ -322,7 +325,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                         plotly_export_config=plotly_export_config,
                     )
                 finally:
-                    if should_render_interactively:
+                    if should_pause_live_display:
                         live_display.start(refresh=True)
                         live_display.refresh()
 
@@ -384,7 +387,10 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                             if should_render_winner_interactively
                             else "none"
                         )
-                        if should_render_winner_interactively:
+                        should_pause_live_display = (
+                            should_render_winner_interactively or should_export_winner
+                        )
+                        if should_pause_live_display:
                             live_display.stop()
                         try:
                             render_scene_render_jobs(
@@ -393,7 +399,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                                 plotly_export_config=winner_containment_export_config,
                             )
                         finally:
-                            if should_render_winner_interactively:
+                            if should_pause_live_display:
                                 live_display.start(refresh=True)
                                 live_display.refresh()
 

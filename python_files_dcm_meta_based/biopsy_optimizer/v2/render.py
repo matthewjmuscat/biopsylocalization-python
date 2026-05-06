@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -384,19 +385,75 @@ def _render_scene_render_jobs_plotly(
     plotly_export_config: Optional[OptimizerV2PlotlyExportConfig] = None,
 ) -> None:
     """Render scene jobs as Plotly figures for scientific review and export-oriented follow-on work."""
-    for render_job in render_jobs:
-        figure = _build_plotly_figure_for_render_job(
-            render_job,
-            plotly_export_config=plotly_export_config,
+    resolved_render_jobs = tuple(render_jobs)
+    resolved_file_formats = ()
+    export_progress = None
+    export_task_id = None
+
+    if plotly_export_config is not None:
+        from rich.console import Console
+        from rich.progress import (
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            SpinnerColumn,
+            TextColumn,
+            TimeElapsedColumn,
         )
-        if plotly_export_config is not None:
+
+        resolved_file_formats = _resolve_plotly_export_file_formats(plotly_export_config)
+        total_output_files = len(resolved_render_jobs) * len(resolved_file_formats)
+        export_progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=Console(),
+            transient=False,
+        )
+
+    if export_progress is None:
+        for render_job in resolved_render_jobs:
+            figure = _build_plotly_figure_for_render_job(
+                render_job,
+                plotly_export_config=plotly_export_config,
+            )
+            if plotly_export_config is not None:
+                _export_plotly_figure_for_render_job(
+                    figure,
+                    render_job,
+                    plotly_export_config,
+                    resolved_file_formats=resolved_file_formats,
+                )
+            if show_figures:
+                figure.show()
+        return
+
+    with export_progress:
+        export_task_id = export_progress.add_task(
+            "Exporting optimizer-v2 Plotly scenes...",
+            total=total_output_files,
+        )
+        for render_job in resolved_render_jobs:
+            figure = _build_plotly_figure_for_render_job(
+                render_job,
+                plotly_export_config=plotly_export_config,
+            )
             _export_plotly_figure_for_render_job(
                 figure,
                 render_job,
                 plotly_export_config,
+                resolved_file_formats=resolved_file_formats,
+                export_progress=export_progress,
+                export_task_id=export_task_id,
             )
-        if show_figures:
-            figure.show()
+            if show_figures:
+                figure.show()
+        export_progress.update(
+            export_task_id,
+            description="Finished optimizer-v2 Plotly export.",
+        )
 
 
 def _build_plotly_figure_for_render_job(
@@ -482,23 +539,30 @@ def _export_plotly_figure_for_render_job(
     figure,
     render_job: OptimizerV2StageBoundaryRenderJob,
     plotly_export_config: OptimizerV2PlotlyExportConfig,
+    resolved_file_formats: Optional[Tuple[str, ...]] = None,
+    export_progress=None,
+    export_task_id=None,
 ) -> None:
     resolved_output_dir = Path(plotly_export_config.output_dir)
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     file_stem = _sanitize_output_path_fragment(render_job.scene_name)
-    resolved_file_formats = tuple(
-        str(file_format).strip().lower().lstrip(".")
-        for file_format in plotly_export_config.file_formats
-        if str(file_format).strip() != ""
-    )
-    if len(resolved_file_formats) == 0:
-        raise ValueError("plotly_export_config.file_formats cannot be empty")
+    if resolved_file_formats is None:
+        resolved_file_formats = _resolve_plotly_export_file_formats(plotly_export_config)
 
     for file_format in resolved_file_formats:
         if file_format not in ("svg", "pdf"):
             raise ValueError(
                 "unsupported optimizer-v2 Plotly export format: {}".format(file_format)
             )
+        if export_progress is not None and export_task_id is not None:
+            export_progress.update(
+                export_task_id,
+                description="Exporting {} [{}]...".format(
+                    render_job.stage_name,
+                    file_format.upper(),
+                ),
+            )
+        export_start_time = time.perf_counter()
         figure.write_image(
             resolved_output_dir.joinpath("{}.{}".format(file_stem, file_format)),
             format=file_format,
@@ -506,6 +570,30 @@ def _export_plotly_figure_for_render_job(
             height=int(plotly_export_config.height),
             scale=float(plotly_export_config.scale),
         )
+        if export_progress is not None and export_task_id is not None:
+            export_elapsed_seconds = time.perf_counter() - export_start_time
+            export_progress.advance(export_task_id, 1)
+            export_progress.update(
+                export_task_id,
+                description="Exported {} [{}] in {:.1f}s".format(
+                    render_job.stage_name,
+                    file_format.upper(),
+                    export_elapsed_seconds,
+                ),
+            )
+
+
+def _resolve_plotly_export_file_formats(
+    plotly_export_config: OptimizerV2PlotlyExportConfig,
+) -> Tuple[str, ...]:
+    resolved_file_formats = tuple(
+        str(file_format).strip().lower().lstrip(".")
+        for file_format in plotly_export_config.file_formats
+        if str(file_format).strip() != ""
+    )
+    if len(resolved_file_formats) == 0:
+        raise ValueError("plotly_export_config.file_formats cannot be empty")
+    return resolved_file_formats
 
 
 def _sanitize_output_path_fragment(raw_fragment: str) -> str:
