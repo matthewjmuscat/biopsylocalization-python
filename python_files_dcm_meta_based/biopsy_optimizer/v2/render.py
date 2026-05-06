@@ -415,6 +415,7 @@ def _register_render_layer_toggle_callbacks(
         ord("I"): ("stage_input_candidates",),
         ord("S"): ("stage_survivors",),
         ord("T"): ("target_points",),
+        ord("G"): ("target_structure_centroid",),
         ord("N"): ("nominal_biopsy_centroid",),
         ord("W"): ("operational_winner",),
         ord("P"): ("planned_sampled_points",),
@@ -582,7 +583,7 @@ def _print_render_layer_toggle_help(
                 )
             )
         )
-    print("  I=input candidates, S=survivors, T=target points, N=nominal centroid, W=winner")
+    print("  I=input candidates, S=survivors, T=target points, G=target centroid, N=nominal centroid, W=winner")
     print("  P=planned sampled points, C=planned core structure, L=planned centroid line")
     print("  O=prostate, U=urethra, R=rectum, D=target surface contours")
     print("  A=show all, X=hide all, H=print help, Q/Esc=close window")
@@ -693,6 +694,7 @@ def _resolve_plotly_layer_marker_size(layer_name: str) -> float:
         "stage_input_candidates": 2.2,
         "stage_survivors": 3.5,
         "target_points": 1.4,
+        "target_structure_centroid": 8.0,
         "target_structure_surface": 1.0,
         "planned_sampled_points": 1.8,
         "planned_core_structure": 1.1,
@@ -711,6 +713,7 @@ def _resolve_plotly_layer_opacity(layer_name: str) -> float:
         "stage_input_candidates": 0.35,
         "stage_survivors": 0.85,
         "target_points": 0.22,
+        "target_structure_centroid": 1.0,
         "target_structure_surface": 0.14,
         "planned_sampled_points": 0.55,
         "planned_core_structure": 0.22,

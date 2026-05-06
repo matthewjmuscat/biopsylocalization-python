@@ -900,6 +900,30 @@ def _build_additional_stage_boundary_render_layers(
                     )
                 )
 
+    raw_target_structure_centroid = target_structure.get("Structure global centroid")
+    if raw_target_structure_centroid is not None:
+        additional_render_layers.append(
+            build_point_cloud_render_layer(
+                layer_name="target_structure_centroid",
+                points=np.asarray(raw_target_structure_centroid, dtype=float).reshape(1, 3),
+                color=_resolve_layer_style_color(
+                    render_layer_style_by_name,
+                    "target_structure_centroid",
+                    _darken_color(target_structure_render_color, factor=0.35),
+                ),
+                marker_size=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    "target_structure_centroid",
+                    "marker_size",
+                ),
+                opacity=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    "target_structure_centroid",
+                    "opacity",
+                ),
+            )
+        )
+
     if render_include_selected_anatomy_bool:
         additional_render_layers.extend(
             _build_selected_anatomy_render_layers(
