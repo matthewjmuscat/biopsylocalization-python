@@ -305,7 +305,7 @@ def _run_target_candidate_stage(
         input_candidate_indices_global=np.asarray(candidate_indices_global, dtype=np.int32),
         survivor_candidate_indices_global=survivor_candidate_indices_global,
         chunk_score_results=tuple(chunk_score_results),
-        tested_candidate_dataframe=stage_tested_candidate_dataframe,
+        tested_candidate_dataframe=stage_ranked_candidate_dataframe.copy(),
         ranked_candidate_dataframe=stage_ranked_candidate_dataframe,
     )
 
@@ -356,6 +356,18 @@ def _build_stage_ranked_candidate_dataframe(
     ranked_candidate_dataframe["Is survivor"] = False
     if survivor_count > 0:
         ranked_candidate_dataframe.loc[: survivor_count - 1, "Is survivor"] = True
+    ranked_candidate_dataframe["Stage active candidate count before prune"] = ranked_candidate_dataframe.get(
+        "Stage input candidate count",
+        np.int32(len(ranked_candidate_dataframe)),
+    )
+    ranked_candidate_dataframe["Stage active candidate count after prune"] = np.int32(survivor_count)
+    ranked_candidate_dataframe["Stage prune flag"] = (~ranked_candidate_dataframe["Is survivor"]).astype(bool)
+    prune_stage_name = pandas.Series(np.nan, index=ranked_candidate_dataframe.index, dtype=object)
+    prune_stage_name.loc[ranked_candidate_dataframe["Stage prune flag"]] = str(stage_config.stage_name)
+    ranked_candidate_dataframe["Pruned at stage"] = prune_stage_name
+    prune_reason = pandas.Series("survived_stage", index=ranked_candidate_dataframe.index, dtype=object)
+    prune_reason.loc[ranked_candidate_dataframe["Stage prune flag"]] = "stage_survivor_cutoff"
+    ranked_candidate_dataframe["Stage prune reason"] = prune_reason
 
     survivor_candidate_indices_global = ranked_candidate_dataframe.loc[
         ranked_candidate_dataframe["Is survivor"],

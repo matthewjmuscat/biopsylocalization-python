@@ -595,6 +595,12 @@ The completed optimizer-v2 export contract should therefore keep two distinct pu
 1. a ranked final-candidate table for transport and quick review,
 2. a tested-candidate audit table containing every candidate row that was actually scored at every stage.
 
+The recommended default moving forward is to retain and export the full tested-candidate manifest.
+
+That full manifest should be treated as the canonical research and audit surface for optimizer v2.
+
+The final ranked table should remain, but only as the concise operational subset used for transport, quick review, and winner-focused downstream checks.
+
 The ranked final-candidate table should stay intentionally narrow.
 
 It should remain the surface used for transport, operational review, and winner-level downstream comparisons.
@@ -633,13 +639,45 @@ Because all active candidates in one pruning round are evaluated against the sam
 The recommended implementation contract is:
 
 1. partition the stochastic evaluation into appended shared trial blocks,
-2. record one block-level score contribution per active candidate per block,
+2. record sufficient block-level statistics for the exact update rule that is going to be used,
 3. compare the current leader set against each active challenger using paired block differences,
 4. prune only when the challenger's upper bound is still below the leader's lower bound, or equivalently when the paired difference is decisively unfavorable under the configured confidence rule.
 
-This gives exact cumulative updating relative to the retained block summaries.
+This can give exact cumulative updating, but only if the retained block summaries are actually sufficient for the statistic being claimed.
 
 It also means older trial blocks do not need to be rescored once their sufficient statistics have been retained.
+
+#### Exact cumulative updating from retained block statistics
+
+The easiest exact update is the cumulative candidate mean.
+
+If block `b` contains `n_b` trials and candidate `i` has exact block score sum `S_{i,b}` over those `n_b` trials, then the cumulative mean score after multiple blocks is exactly:
+
+`mu_i = (sum_b S_{i,b}) / (sum_b n_b)`
+
+Equivalently, if the stored block value is the exact block mean `m_{i,b}`, then:
+
+`mu_i = (sum_b n_b * m_{i,b}) / (sum_b n_b)`
+
+That part is exact.
+
+For exact uncertainty of one candidate mean, more than the block mean is needed.
+
+At minimum, the retained history should also support the second moment of the same trialwise score quantity, for example through per-block sums of squares.
+
+For exact paired leader-versus-challenger uncertainty, the requirement is stronger again.
+
+If `Y_{i,t}` is the candidate-level trial score for candidate `i` at shared trial `t`, then the paired comparison uses:
+
+`D_{i,j,t} = Y_{i,t} - Y_{j,t}`
+
+The exact paired mean is determined by the retained sums of `D_{i,j,t}`.
+
+The exact paired uncertainty is determined by retained second-moment information for `D_{i,j,t}` as well.
+
+That means one scalar block mean per candidate is enough for exact cumulative score updating, but it is not enough by itself for exact paired-difference uncertainty.
+
+If the completed optimizer claims exact paired-difference pruning, it must retain sufficient statistics for that paired quantity, either directly as paired-difference block summaries for the comparisons that remain active or through an equivalent retained representation that preserves the needed covariance structure.
 
 ### Transform-bank growth and stopping rule
 
@@ -672,9 +710,39 @@ The second strategy is more flexible.
 
 The first is simpler operationally.
 
+In the second strategy, the appended block is not a recycled pass through the original prefix.
+
+It is a genuinely fresh contiguous extension of the same shared bank.
+
+The earlier prefix remains unchanged, and the newly appended trials occupy the next unused block boundary.
+
 Either way, the completed design should still preserve a declared hard ceiling.
 
 An unbounded while-loop with no maximum trial policy is not recommended for production runs.
+
+If on-demand bank append is implemented, the transform-bank tracking contract must also become explicit.
+
+Appending stochastic blocks is not just a matter of making one array longer.
+
+The optimizer and all downstream consumers must be able to prove that every score, every audit row, every winner-only replay, and every downstream-comparable MC surface refers to the same shared uncertainty realization up to the declared prefix length.
+
+That means the stored bank metadata should include, at minimum:
+
+1. a bank identity or run-local bank UUID,
+2. the total number of currently realized trials,
+3. the cumulative block boundaries,
+4. the random-generation policy and uncertainty-model identity used to create the bank,
+5. enough metadata to prove that the appended blocks are contiguous extensions of the same bank rather than a fresh replacement bank,
+6. the exact prefix length used by each scoring or replay surface.
+
+Any coupled arrays or derivative cached objects that depend on trial count should then be treated as prefix-indexed views over that same tracked bank, not as independent stochastic objects.
+
+The practical rule is simple:
+
+1. append only contiguous new shared draws,
+2. never rewrite earlier draws,
+3. never silently swap to a fresh unrelated bank,
+4. always stamp every scored surface with the exact bank identity and prefix length it used.
 
 ### Retained history and debug replay rule
 

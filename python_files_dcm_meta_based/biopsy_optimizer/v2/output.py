@@ -217,6 +217,60 @@ def build_target_dil_ranked_candidate_output_dataframe(
     return _apply_metadata_to_dataframe(ranked_candidate_dataframe, metadata)
 
 
+def build_target_dil_tested_candidate_output_dataframe(
+    search_result: OptimizerV2SearchRunResult,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> pandas.DataFrame:
+    """Build the all-stages tested-candidate audit table with carry-down metadata stamped on it."""
+    tested_candidate_dataframe = search_result.tested_candidate_dataframe.copy()
+    if tested_candidate_dataframe.empty:
+        return _apply_metadata_to_dataframe(
+            _initialize_optimizer_output_placeholder_columns(tested_candidate_dataframe),
+            metadata,
+        )
+
+    tested_candidate_dataframe["Target optimizer lane"] = "target_dil_optimizer_v2"
+    tested_candidate_dataframe["Target optimizer final stage name"] = _resolve_final_stage_name(search_result)
+    tested_candidate_dataframe["Target optimizer num stages"] = np.int32(len(search_result.stage_results))
+    tested_candidate_dataframe["Target optimizer num tested candidate rows"] = np.int32(
+        len(search_result.tested_candidate_dataframe)
+    )
+    tested_candidate_dataframe["Target optimizer num final ranked candidates"] = np.int32(
+        len(search_result.ranked_candidate_dataframe)
+    )
+    tested_candidate_dataframe.rename(
+        columns={
+            "Objective value": "Target optimizer tested score",
+            "Nominal objective value": "Target optimizer tested nominal score",
+            "Objective reducer name": "Target optimizer objective reducer name",
+            "Distance to target centroid mm": "Target optimizer distance to target centroid mm",
+            "Stage name": "Target optimizer stage name",
+            "Candidate rank": "Target optimizer stage candidate rank",
+            "Is survivor": "Target optimizer stage survivor flag",
+            "Stage input candidate count": "Target optimizer stage input candidate count",
+            "Stage output survivor count": "Target optimizer stage output survivor count",
+            "Stage active candidate count before prune": "Target optimizer stage active candidate count before prune",
+            "Stage active candidate count after prune": "Target optimizer stage active candidate count after prune",
+            "Stage prune flag": "Target optimizer stage prune flag",
+            "Stage prune reason": "Target optimizer stage prune reason",
+            "Pruned at stage": "Target optimizer pruned at stage",
+            "Winning-candidate downstream-comparable target score": "Target optimizer downstream comparable target score",
+            "Downstream-comparable score trial count": "Target optimizer downstream comparable trial count",
+            "Winner determination method": "Target optimizer winner determination method",
+            "Is operational winner": "Target optimizer operational winner flag",
+        },
+        inplace=True,
+    )
+    tested_candidate_dataframe["Target optimizer downstream comparable score trial count"] = tested_candidate_dataframe.get(
+        "Target optimizer downstream comparable trial count",
+        np.nan,
+    )
+    tested_candidate_dataframe = _initialize_optimizer_output_placeholder_columns(
+        tested_candidate_dataframe
+    )
+    return _apply_metadata_to_dataframe(tested_candidate_dataframe, metadata)
+
+
 def annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
     dataframe: Optional[pandas.DataFrame],
     biopsy_sampling_audit_dataframe: Optional[pandas.DataFrame],
@@ -530,4 +584,5 @@ __all__ = [
     "annotate_target_dil_optimizer_dataframe_with_downstream_mc",
     "build_target_dil_optimization_summary_dataframe",
     "build_target_dil_ranked_candidate_output_dataframe",
+    "build_target_dil_tested_candidate_output_dataframe",
 ]

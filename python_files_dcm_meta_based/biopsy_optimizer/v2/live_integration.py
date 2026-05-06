@@ -16,6 +16,7 @@ from biopsy_optimizer.v2.output import (
     annotate_target_dil_optimizer_dataframe_with_downstream_mc,
     build_target_dil_optimization_summary_dataframe,
     build_target_dil_ranked_candidate_output_dataframe,
+    build_target_dil_tested_candidate_output_dataframe,
 )
 from biopsy_optimizer.v2.render import (
     OptimizerV2PlotlyExportConfig,
@@ -44,6 +45,9 @@ TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY = (
 )
 TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY = (
     "Biopsy optimization - Target DIL optimizer v2 ranked candidates dataframe"
+)
+TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY = (
+    "Biopsy optimization - Target DIL optimizer v2 tested candidates dataframe"
 )
 TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY = (
     "Biopsy optimization - Target DIL optimizer v2 stage boundary render jobs"
@@ -136,6 +140,9 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
                 TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY
             ] = None
+            pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
+                TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY
+            ] = None
             patients_progress.update(processing_patients_task, advance=1)
             completed_progress.update(processing_patients_task_completed, advance=1)
             continue
@@ -154,6 +161,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         target_structure_pack_cache = {}
         patient_summary_dataframes = []
         patient_ranked_dataframes = []
+        patient_tested_dataframes = []
 
         for specific_structure in optimizer_target_structures:
             structureID = specific_structure["ROI"]
@@ -416,6 +424,10 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 search_result,
                 metadata=metadata,
             )
+            tested_candidate_dataframe = build_target_dil_tested_candidate_output_dataframe(
+                search_result,
+                metadata=metadata,
+            )
 
             if summary_dataframe.empty:
                 summary_dataframe = _build_target_centroid_fallback_summary_dataframe(
@@ -423,6 +435,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     metadata,
                 )
                 ranked_candidate_dataframe = pandas.DataFrame()
+                tested_candidate_dataframe = pandas.DataFrame()
                 target_vector = target_structure_centroid
                 transport_source = "{}:target_centroid_fallback".format(TARGET_DIL_OPTIMIZER_V2_LANE_NAME)
             else:
@@ -447,6 +460,8 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             patient_summary_dataframes.append(summary_dataframe)
             if not ranked_candidate_dataframe.empty:
                 patient_ranked_dataframes.append(ranked_candidate_dataframe)
+            if not tested_candidate_dataframe.empty:
+                patient_tested_dataframes.append(tested_candidate_dataframe)
 
             structures_progress.update(processing_structures_task, advance=1)
 
@@ -458,6 +473,9 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
             TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY
         ] = _concat_dataframes_or_none(patient_ranked_dataframes)
+        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
+            TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY
+        ] = _concat_dataframes_or_none(patient_tested_dataframes)
 
         patients_progress.update(processing_patients_task, advance=1)
         completed_progress.update(processing_patients_task_completed, advance=1)
@@ -496,6 +514,13 @@ def annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(
                 downstream_trial_count,
             )
         )
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_downstream_mc(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY),
+                downstream_structure_score_dataframe,
+                downstream_trial_count,
+            )
+        )
 
 
 def annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
@@ -521,6 +546,12 @@ def annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
         pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY] = (
             annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
                 pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY),
+                biopsy_sampling_audit_dataframe,
+            )
+        )
+        pre_processing_dataframe_dict[TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY] = (
+            annotate_target_dil_optimizer_dataframe_with_biopsy_sampling_audit(
+                pre_processing_dataframe_dict.get(TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY),
                 biopsy_sampling_audit_dataframe,
             )
         )
@@ -1558,6 +1589,7 @@ __all__ = [
     "TARGET_DIL_OPTIMIZER_V2_LANE_NAME",
     "TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY",
     "TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY",
+    "TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY",
     "annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit",
     "annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores",
     "run_target_dil_optimizer_v2_for_live_simulated_family",
