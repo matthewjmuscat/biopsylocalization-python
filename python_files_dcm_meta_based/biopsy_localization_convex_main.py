@@ -531,7 +531,8 @@ def main():
     optimizer_v2_initial_trial_prefix = 16 # minimum shared trial prefix used before the first adaptive prune round
     optimizer_v2_trial_block_size = 16 # minimum appended shared trial block per adaptive prune round
     optimizer_v2_max_total_trials = 256 # hard optimizer ceiling before final winner-resolution rescoring
-    optimizer_v2_max_test_structures_per_call = None # Optional kernel-call structure budget. When set, adaptive rounds pack cumulative N upward to fill this budget for the current chunk size.
+    optimizer_v2_max_test_structures_per_call = None # Fixed kernel-call structure budget override. Leave as None to auto-calibrate once per optimizer-v2 run.
+    optimizer_v2_auto_calibrate_max_test_structures_per_call = True # When True and no fixed override is supplied, calibrate a safe package-level call budget once against the run's worst-case geometry.
     optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # Adaptive mean_pd rounds require a non-None threshold; tune this to prune more or less aggressively.
     optimizer_v2_search_config = build_optimizer_v2_adaptive_block_search_config(
         initial_trial_prefix=optimizer_v2_initial_trial_prefix,
@@ -4703,6 +4704,7 @@ def main():
                               live_display,
                               max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
                               max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
+                              auto_calibrate_max_test_structures_per_call=optimizer_v2_auto_calibrate_max_test_structures_per_call,
                               downstream_comparable_trial_count=(
                                   int(num_MC_containment_simulations_input)
                                   if num_MC_containment_simulations_input > 0

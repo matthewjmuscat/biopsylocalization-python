@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas
 
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents
 import polygon_dilation_helpers_numpy
 from biopsy_optimizer.v2.contracts import OptimizerV2ChunkLayout
 from biopsy_optimizer.v2.candidate_pool import build_target_candidate_pool
@@ -56,6 +58,17 @@ TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY = (
     "Tissue class - Global tissue by structure statistics"
 )
 
+DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR = 0.7
+DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR = 1.25
+DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_EXPANSION_ROUNDS = 2
+DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_BINARY_SEARCH_ROUNDS = 6
+
+
+@dataclass(frozen=True)
+class OptimizerV2CallCapacityCalibrationInputs:
+    prototype_test_structure_points_2d_arr: np.ndarray
+    target_relative_structures_nominal_plus_trials: Sequence[Sequence[np.ndarray]]
+
 
 def run_target_dil_optimizer_v2_for_live_simulated_family(
     master_structure_reference_dict,
@@ -77,6 +90,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     live_display,
     max_candidates_per_chunk=8,
     max_test_structures_per_call=None,
+    auto_calibrate_max_test_structures_per_call=True,
     downstream_comparable_trial_count=None,
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
@@ -116,6 +130,22 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         processing_patients_task_completed_main_description,
         total=master_structure_info_dict["Global"]["Num cases"],
         visible=False,
+    )
+
+    resolved_max_test_structures_per_call = _resolve_effective_max_test_structures_per_call(
+        master_structure_reference_dict=master_structure_reference_dict,
+        bx_ref=bx_ref,
+        dil_ref=dil_ref,
+        optimizer_simulated_type=optimizer_simulated_type,
+        search_config=search_config,
+        parallel_pool=parallel_pool,
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+        max_test_structures_per_call=max_test_structures_per_call,
+        auto_calibrate_max_test_structures_per_call=auto_calibrate_max_test_structures_per_call,
+        downstream_comparable_trial_count=downstream_comparable_trial_count,
     )
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
@@ -245,7 +275,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 target_structure_centroid=target_structure_centroid,
                 target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                 max_candidates_per_chunk=max_candidates_per_chunk,
-                max_test_structures_per_call=max_test_structures_per_call,
+                max_test_structures_per_call=resolved_max_test_structures_per_call,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
                 downstream_comparable_trial_count=downstream_comparable_trial_count,
@@ -360,7 +390,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                         downstream_comparable_trial_count=downstream_comparable_trial_count,
                         additional_render_layers=additional_render_layers,
                         render_layer_style_by_name=render_layer_style_by_name,
-                        max_test_structures_per_call=max_test_structures_per_call,
+                        max_test_structures_per_call=resolved_max_test_structures_per_call,
                         include_edges_in_log=include_edges_in_log,
                         kernel_type=kernel_type,
                     )
@@ -642,6 +672,139 @@ def _build_target_structure_nominal_plus_trials(
         )
 
     return nominal_plus_trials
+
+
+def _resolve_effective_max_test_structures_per_call(
+    master_structure_reference_dict,
+    bx_ref,
+    dil_ref,
+    optimizer_simulated_type,
+    search_config,
+    parallel_pool,
+    constant_z_slice_polygons_handler_option,
+    remove_consecutive_duplicate_points_in_polygons,
+    include_edges_in_log,
+    kernel_type,
+    max_test_structures_per_call,
+    auto_calibrate_max_test_structures_per_call,
+    downstream_comparable_trial_count,
+):
+    if max_test_structures_per_call is not None:
+        return int(max_test_structures_per_call)
+    if not auto_calibrate_max_test_structures_per_call:
+        return None
+
+    calibration_inputs = _build_optimizer_v2_call_capacity_calibration_inputs(
+        master_structure_reference_dict=master_structure_reference_dict,
+        bx_ref=bx_ref,
+        dil_ref=dil_ref,
+        optimizer_simulated_type=optimizer_simulated_type,
+        search_config=search_config,
+        downstream_comparable_trial_count=downstream_comparable_trial_count,
+        parallel_pool=parallel_pool,
+    )
+    if calibration_inputs is None:
+        return None
+
+    calibration_result = (
+        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.calibrate_max_test_structures_per_call(
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays=(
+                calibration_inputs.target_relative_structures_nominal_plus_trials
+            ),
+            prototype_test_structure_points_2d_arr=(
+                calibration_inputs.prototype_test_structure_points_2d_arr
+            ),
+            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                remove_consecutive_duplicate_points_in_polygons
+            ),
+            log_file_name=None,
+            include_edges_in_log=include_edges_in_log,
+            kernel_type=kernel_type,
+            safety_factor=DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR,
+            verification_expansion_factor=(
+                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR
+            ),
+            max_verification_expansion_rounds=(
+                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_EXPANSION_ROUNDS
+            ),
+            max_binary_search_rounds=(
+                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_BINARY_SEARCH_ROUNDS
+            ),
+        )
+    )
+    return int(calibration_result.safe_max_test_structures_per_call)
+
+
+def _build_optimizer_v2_call_capacity_calibration_inputs(
+    master_structure_reference_dict,
+    bx_ref,
+    dil_ref,
+    optimizer_simulated_type,
+    search_config,
+    downstream_comparable_trial_count,
+    parallel_pool,
+):
+    representative_biopsy_points = None
+    representative_target_structure = None
+    representative_biopsy_point_count = -1
+    representative_target_point_count = -1
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        del patientUID
+        optimizer_target_structures = [
+            specific_structure
+            for specific_structure in pydicom_item[bx_ref]
+            if specific_structure["Simulated bool"] == True
+            and specific_structure["Simulated type"] == optimizer_simulated_type
+        ]
+        for specific_structure in optimizer_target_structures:
+            nominal_biopsy_points = np.asarray(
+                get_planned_simulated_biopsy_sampled_points_arr(specific_structure),
+                dtype=float,
+            )
+            if nominal_biopsy_points.shape[0] > representative_biopsy_point_count:
+                representative_biopsy_points = nominal_biopsy_points
+                representative_biopsy_point_count = int(nominal_biopsy_points.shape[0])
+
+            target_structure = _resolve_target_dil_structure(
+                pydicom_item,
+                specific_structure,
+                dil_ref,
+            )
+            target_point_count = _count_constant_zslice_points(
+                target_structure["Inter-slice interpolation information"].interpolated_pts_list
+            )
+            if target_point_count > representative_target_point_count:
+                representative_target_structure = target_structure
+                representative_target_point_count = int(target_point_count)
+
+    if representative_biopsy_points is None or representative_target_structure is None:
+        return None
+
+    calibration_trial_count = search_config.resolve_required_transform_bank_size(
+        downstream_trial_count=downstream_comparable_trial_count,
+    )
+    return OptimizerV2CallCapacityCalibrationInputs(
+        prototype_test_structure_points_2d_arr=np.asarray(
+            representative_biopsy_points,
+            dtype=float,
+        ),
+        target_relative_structures_nominal_plus_trials=_build_target_structure_nominal_plus_trials(
+            representative_target_structure,
+            calibration_trial_count,
+            parallel_pool,
+        ),
+    )
+
+
+def _count_constant_zslice_points(list_of_constant_zslice_arrays):
+    return int(
+        sum(
+            np.asarray(constant_zslice_array).shape[0]
+            for constant_zslice_array in list_of_constant_zslice_arrays
+        )
+    )
 
 
 def _build_search_metadata(
