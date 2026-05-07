@@ -288,11 +288,15 @@ class Header:
 
 class info_output:
     """display important information"""
-    def __init__(self, max_lines=20):
+    def __init__(self, max_lines=20, runtime_logger=None):
         self.text_lines = []  # Store lines as a list of strings
         #self.text_important_Text = Text()
         self.line_num = 1
         self.max_lines = max_lines
+        self.runtime_logger = runtime_logger
+
+    def set_runtime_logger(self, runtime_logger):
+        self.runtime_logger = runtime_logger
 
     """
     def __rich__(self) -> Panel:
@@ -364,6 +368,9 @@ class info_output:
 
         if getattr(live_display_obj, "rich_live_display_bool", True) == False:
             live_display_obj.console.print(f"[{self.line_num}][{datetime.now().strftime('%H:%M:%S')}] > {text_str}")
+
+        if self.runtime_logger is not None:
+            self.runtime_logger.info(None, text_str, details={"source": "important_info"})
 
         # Refresh the live display by calling refresh on the live display object
         live_display_obj.refresh()
@@ -508,7 +515,7 @@ def clear_completed_main_tasks(completed_progress):
 
 
 
-def section_completed(section_name, start_time, completed_progress, completed_sections_manager):
+def section_completed(section_name, start_time, completed_progress, completed_sections_manager, runtime_logger=None):
     """When a section is completed, clear tasks and add it to completed sections."""
     end_time = datetime.now()
     elapsed_time = end_time - start_time
@@ -518,3 +525,12 @@ def section_completed(section_name, start_time, completed_progress, completed_se
 
     # Add the completed section to the completed sections panel
     completed_sections_manager.add_completed_section(section_name, elapsed_time)
+
+    if runtime_logger is not None:
+        normalized_section_name = section_name.strip().lower().replace(" ", "_")
+        runtime_logger.phase_end(
+            "section.{}".format(normalized_section_name),
+            "Completed section: {}".format(section_name),
+            details={"elapsed_sec": round(elapsed_time.total_seconds(), 3)},
+            clear_phase=True,
+        )

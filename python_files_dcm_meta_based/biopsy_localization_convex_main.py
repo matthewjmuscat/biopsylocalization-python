@@ -130,6 +130,8 @@ from biopsy_optimizer.v2.live_integration import (
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
+from startup.runtime_logging import RuntimeLogger
+from startup.runtime_logging import install_runtime_logger
 
 
 def resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config):
@@ -528,6 +530,9 @@ def main():
     raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
     cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
     nn_search_end_cap_grid_factor = 0.1
+    svg_image_scale = 1 # setting this value to something not equal to 1 produces misaligned plots with multiple traces!
+    svg_image_height = 1080
+    svg_image_width = 1920
     optimizer_v2_initial_trial_prefix = 16 # minimum shared trial prefix used before the first adaptive prune round
     optimizer_v2_trial_block_size = 16 # minimum appended shared trial block per adaptive prune round
     optimizer_v2_max_total_trials = 256 # hard optimizer ceiling before final winner-resolution rescoring
@@ -599,10 +604,7 @@ def main():
     num_dose_NN_to_show_for_animation_plotting = 100
     num_bootstraps_for_regression_plots_input = 15
     pio.templates.default = "plotly_white"
-    svg_image_scale = 1 # setting this value to something not equal to 1 produces misaligned plots with multiple traces!
     NPKR_bandwidth = 0.5
-    svg_image_height = 1080
-    svg_image_width = 1920
     dpi_for_seaborn_plots = 100
     open3d_views_jsons_folder_name = "open3d_views_jsons"
     open3d_views_dose_folder_name = "dose_views"
@@ -1286,6 +1288,7 @@ def main():
                                                  }
 
 
+    runtime_logger = None
     cpu_count = os.cpu_count()
     with multiprocess.Pool(cpu_count) as parallel_pool:
 
@@ -1347,10 +1350,30 @@ def main():
             preprocessed_data_dir = data_dir.joinpath(preprocessed_data_folder_name)
 
             misc_tools.checkdirs(live_display, important_info, data_dir,uncertainty_dir,output_dir,input_dir, preprocessed_data_dir)
+            runtime_logger = install_runtime_logger(RuntimeLogger(output_dir))
+            important_info.set_runtime_logger(runtime_logger)
+            runtime_logger.checkpoint(
+                "run.initialization.complete",
+                "Initialized runtime logging and validated base input/output directories.",
+                details={
+                    "data_dir": data_dir,
+                    "input_dir": input_dir,
+                    "output_dir": output_dir,
+                    "preprocessed_data_dir": preprocessed_data_dir,
+                },
+            )
+            runtime_logger.memory_snapshot(
+                "run.initialization.complete",
+                "Captured initial memory snapshot after runtime initialization.",
+            )
            
 
             # only perform patient sample analyzer
             if only_perform_patient_analyser == True:
+                runtime_logger.phase_start(
+                    "patient_analyser.only",
+                    "Starting patient analyser-only workflow.",
+                )
 
                 live_display.stop()
                 output_csvs_folder = pathlib.Path(fd.askdirectory(title='Open output CSVs folder', initialdir=output_dir))
@@ -1493,12 +1516,22 @@ def main():
                                     boxmean_option
                                     )
 
+                runtime_logger.mark_completed("Patient analyser-only workflow completed successfully.")
                 sys.exit('>Programme exited.')
 
 
             section_start_time = datetime.now() 
+            runtime_logger.phase_start("section.simulations", "Starting section: Simulations.")
     
             if skip_preprocessing == False:
+                runtime_logger.phase_start(
+                    "input.discovery",
+                    "Starting DICOM input discovery.",
+                    details={
+                        "input_dir": input_dir,
+                        "uncertainty_dir": uncertainty_dir,
+                    },
+                )
                 
 
                 dicom_paths_list = list(pathlib.Path(input_dir).glob("**/*.dcm")) # list all file paths found in the data folder that have the .dcm extension
@@ -1670,11 +1703,34 @@ def main():
                 else: 
                     important_info.add_text_line("Not creating any simulated biopsies.", live_display)          
                     live_display.refresh() 
+
+                runtime_logger.phase_end(
+                    "input.discovery",
+                    "Completed DICOM input discovery.",
+                    details={
+                        "num_dicoms": num_dicoms,
+                        "num_rtstruct_patients": num_RTst_dcms_entries,
+                        "num_rtdose_patients": num_RTdose_dcms_entries,
+                        "num_rtplan_patients": num_RTplan_dcms_entries,
+                        "num_mr_t2_patients": num_MR_T2_dcms_entries,
+                        "num_mr_adc_patients": num_MR_ADC_dcms_entries,
+                        "num_us_patients": num_US_dcms_entries,
+                    },
+                )
                 
                 #live_display.stop()
                 # patient dictionary creation
                 building_patient_dictionaries_task = indeterminate_progress_main.add_task('[red]Building patient dictionary...', total=None)
                 building_patient_dictionaries_task_completed = completed_progress.add_task('[green]Building patient dictionary', total=num_RTst_dcms_entries, visible = False)
+                runtime_logger.phase_start(
+                    "preprocessing.structure_referencer",
+                    "Building patient master dictionary.",
+                    details={
+                        "num_rtstruct_patients": num_RTst_dcms_entries,
+                        "num_rtdose_patients": num_RTdose_dcms_entries,
+                        "num_rtplan_patients": num_RTplan_dcms_entries,
+                    },
+                )
                 master_structure_reference_dict, master_structure_info_dict = structure_referencer(data_removals_dict_bx,
                                                                                                 data_removals_dict_prostate,
                                                                                                 data_removals_dict_dil,
@@ -1714,6 +1770,18 @@ def main():
                 indeterminate_progress_main.update(building_patient_dictionaries_task, visible = False)
                 completed_progress.update(building_patient_dictionaries_task_completed, advance = num_RTst_dcms_entries,visible = True)
                 important_info.add_text_line("Patient master dictionary built for "+str(master_structure_info_dict["Global"]["Num cases"])+" patients.", live_display)  
+                runtime_logger.phase_end(
+                    "preprocessing.structure_referencer",
+                    "Built patient master dictionary.",
+                    details={
+                        "num_cases": master_structure_info_dict["Global"]["Num cases"],
+                        "num_structures": master_structure_info_dict["Global"]["Num structures"],
+                    },
+                )
+                runtime_logger.memory_snapshot(
+                    "preprocessing.structure_referencer",
+                    "Captured memory snapshot after structure referencer completed.",
+                )
                 live_display.refresh()
 
                 configure_transform_precompute_settings(
@@ -1730,6 +1798,19 @@ def main():
                 specific_output_dir, raw_mc_output_dir = create_run_output_directories(
                     master_structure_info_dict,
                     output_dir,
+                )
+                runtime_logger.attach_output_dir(specific_output_dir)
+                runtime_logger.checkpoint(
+                    "run_output_dir.ready",
+                    "Initialized specific output directory for this run.",
+                    details={
+                        "specific_output_dir": specific_output_dir,
+                        "raw_mc_output_dir": raw_mc_output_dir,
+                    },
+                )
+                runtime_logger.memory_snapshot(
+                    "run_output_dir.ready",
+                    "Captured memory snapshot after creating run output directories.",
                 )
 
                 #live_display.stop()
@@ -4646,6 +4727,15 @@ def main():
                 live_display.stop()
                 ########## PERFORM BIOPSY DIL OPTIMIZATION
                 # modularized!
+                runtime_logger.checkpoint(
+                    "optimizer.preflight",
+                    "Stopping live display before optimizer stages.",
+                )
+                runtime_logger.memory_snapshot(
+                    "optimizer_v1.pre",
+                    "Captured memory snapshot before optimizer-v1.",
+                )
+                runtime_logger.phase_start("optimizer_v1", "Starting optimizer-v1.")
                 apply_optimizer_v1_random_seed(master_structure_info_dict)
                 live_display = biopsy_optimizer_module_v1(master_structure_reference_dict,
                               master_structure_info_dict,
@@ -4685,7 +4775,13 @@ def main():
                               completed_progress,
                               live_display,
                               )
+                runtime_logger.phase_end("optimizer_v1", "Completed optimizer-v1.")
+                runtime_logger.memory_snapshot(
+                    "optimizer_v1.post",
+                    "Captured memory snapshot after optimizer-v1.",
+                )
 
+                runtime_logger.phase_start("optimizer_v2", "Starting optimizer-v2.")
                 live_display = run_target_dil_optimizer_v2_for_live_simulated_family(
                               master_structure_reference_dict,
                               master_structure_info_dict,
@@ -4735,6 +4831,11 @@ def main():
                               rectum_ref=rectum_ref_key,
                               urethra_ref=urethra_ref_key,
                               )
+                runtime_logger.phase_end("optimizer_v2", "Completed optimizer-v2.")
+                runtime_logger.memory_snapshot(
+                    "optimizer_v2.post",
+                    "Captured memory snapshot after optimizer-v2.",
+                )
 
                 
                 #####DONE##### PERFORM BIOPSY DIL OPTIMIZATION
@@ -5664,6 +5765,15 @@ def main():
                     specific_preprocessed_data_dir = preprocessed_data_dir.joinpath(specific_preprocessed_data_dir_name)
                     specific_preprocessed_data_dir.mkdir(parents=False, exist_ok=False)
                     preprocessed_info_file_name = str(master_structure_info_dict["Global"]["Num cases"])+' patients - '+str(global_num_structures)+' structures.csv'
+                    runtime_logger.phase_start(
+                        "pickle_export.preprocessed",
+                        "Exporting preprocessed pickle bundle.",
+                        details={
+                            "specific_preprocessed_data_dir": specific_preprocessed_data_dir,
+                            "num_cases": master_structure_info_dict["Global"]["Num cases"],
+                            "num_structures": global_num_structures,
+                        },
+                    )
                     export_preprocessed_pickle_bundle(
                         master_structure_reference_dict,
                         master_structure_info_dict,
@@ -5679,6 +5789,11 @@ def main():
                         urethra_ref_key,
                         dose_ref,
                         mr_adc_ref,
+                    )
+                    runtime_logger.phase_end(
+                        "pickle_export.preprocessed",
+                        "Exported preprocessed pickle bundle.",
+                        details={"specific_preprocessed_data_dir": specific_preprocessed_data_dir},
                     )
 
 
@@ -5701,6 +5816,11 @@ def main():
                 preprocessed_file_ready = ques_funcs.provide_choices_question('> You indicated to skip data preprocessing. Load data or quit?', ['yes','quit']) 
                 stopwatch.start()
                 if preprocessed_file_ready == 'yes':
+                    runtime_logger.phase_start(
+                        "pickle_load.preprocessed",
+                        "Loading preprocessed pickle bundle.",
+                        details={"preprocessed_data_dir": preprocessed_data_dir},
+                    )
                     loaded_preprocessed_run = load_selected_pickle_bundle_run(
                         reference_prompt='> Please indicate the location of master_structure_reference_dict.',
                         reference_title='Open the master_structure_reference_dict file',
@@ -5713,6 +5833,24 @@ def main():
                     master_structure_info_dict = loaded_preprocessed_run.master_structure_info_dict
                     specific_output_dir = loaded_preprocessed_run.specific_output_dir
                     raw_mc_output_dir = loaded_preprocessed_run.raw_mc_output_dir
+                    runtime_logger.attach_output_dir(specific_output_dir)
+                    runtime_logger.phase_end(
+                        "pickle_load.preprocessed",
+                        "Loaded preprocessed pickle bundle.",
+                        details={
+                            "reference_dict_path": loaded_preprocessed_run.reference_dict_path_str,
+                            "info_dict_path": loaded_preprocessed_run.info_dict_path_str,
+                            "specific_output_dir": specific_output_dir,
+                        },
+                    )
+                    runtime_logger.checkpoint(
+                        "run_output_dir.ready",
+                        "Attached runtime logger to loaded preprocessed run output directory.",
+                        details={
+                            "specific_output_dir": specific_output_dir,
+                            "raw_mc_output_dir": raw_mc_output_dir,
+                        },
+                    )
                 elif preprocessed_file_ready == 'quit':
                     print('> To save a preprocessed dataset to disk, run with preprocessing and pickle data options on.')
                     stopwatch.stop()
@@ -6162,10 +6300,11 @@ def main():
                                 
     
 
-            rich_preambles.section_completed("Simulations", section_start_time, completed_progress, completed_sections_manager)    
+            rich_preambles.section_completed("Simulations", section_start_time, completed_progress, completed_sections_manager, runtime_logger=runtime_logger)    
             
 
             section_start_time = datetime.now() 
+            runtime_logger.phase_start("section.dataframes_and_directories", "Starting section: Dataframes and directories.")
             
             # BEGIN SECTION TO DO AFTER READING MASTER STRUCTURE AND INFO FILES
 
@@ -6485,6 +6624,18 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise dose distribution"] = cohort_all_dose_data_by_trial_and_pt                
                 """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 1", total = None)
+                runtime_logger.phase_start(
+                    "dataframe_building",
+                    "Starting dataframe generation for MC dosimetry and MR outputs.",
+                    details={
+                        "mc_dose_sim_complete": mc_dose_sim_complete,
+                        "mc_mr_sim_complete": mc_mr_sim_complete,
+                    },
+                )
+                runtime_logger.checkpoint(
+                    "dataframe_building.preflight",
+                    "Stopping live display before dataframe generation blackout window.",
+                )
                 live_display.stop()
 
                 st = time.time()
@@ -6728,6 +6879,11 @@ def main():
 
                 live_display.start()
                 live_display.refresh()
+                runtime_logger.phase_end("dataframe_building", "Completed dataframe generation.")
+                runtime_logger.memory_snapshot(
+                    "dataframe_building",
+                    "Captured memory snapshot after dataframe generation.",
+                )
 
 
                 
@@ -6908,6 +7064,11 @@ def main():
             """
             live_display.stop()
             if mc_csv_output_dir.is_dir():
+                runtime_logger.phase_start(
+                    "dataframe_export.write_mc",
+                    "Writing MC simulation stored dataframes to file.",
+                    details={"mc_csv_output_dir": mc_csv_output_dir},
+                )
                 important_info.add_text_line("Writing MC sim stored dataframes to file.", live_display)
                 csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Writing MC sim stored dataframes to file...', total=None)
                 csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Writing MC sim stored dataframes to file', total=1, visible = False)
@@ -6954,6 +7115,10 @@ def main():
                 indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
                 completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
                 live_display.refresh()
+                runtime_logger.phase_end(
+                    "dataframe_export.write_mc",
+                    "Completed writing MC simulation stored dataframes to file.",
+                )
                 
 
             # fanova containment
@@ -7115,14 +7280,19 @@ def main():
 
 
 
-            rich_preambles.section_completed("Dataframes and directories", section_start_time, completed_progress, completed_sections_manager)    
+            rich_preambles.section_completed("Dataframes and directories", section_start_time, completed_progress, completed_sections_manager, runtime_logger=runtime_logger)    
 
             section_start_time = datetime.now() 
+            runtime_logger.phase_start("section.production_plots", "Starting section: Production plots.")
 
             # CREATE PRODUCTION PLOTS ---------------------------------------------
 
 
             live_display.stop()
+            runtime_logger.checkpoint(
+                "production_plots.preflight",
+                "Stopping live display before production-plot generation.",
+            )
 
             ### PREPROCESSING FIGS AND OPTIMIZATION
             if create_at_least_one_production_plot == True and preprocessing_complete_bool == True:
@@ -9066,9 +9236,11 @@ def main():
 
 
 
-            rich_preambles.section_completed("Production plots", section_start_time, completed_progress, completed_sections_manager)
+            rich_preambles.section_completed("Production plots", section_start_time, completed_progress, completed_sections_manager, runtime_logger=runtime_logger)
 
             live_display.stop()
+    if runtime_logger is not None:
+        runtime_logger.mark_completed("Programme complete.")
     sys.exit("> Programme complete.")
 
 
