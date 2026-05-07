@@ -129,6 +129,8 @@ from biopsy_optimizer.v2.live_integration import (
     annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
+from startup.guidance_map_workflow import GuidanceMapRenderConfig
+from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 from startup.runtime_logging import RuntimeLogger
 from startup.runtime_logging import install_runtime_logger
@@ -632,6 +634,12 @@ def main():
     bias_SI_multiplier = 1.5 
     # for guidance maps 
     number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3 # number of optimal template holes to consider for guidance maps firing depth recommendation
+    render_guidance_maps_after_simulated_core_finalization = False
+    guidance_map_plot_name = "guidance maps"
+    guidance_map_output_dir_name = "Guidance maps"
+    guidance_map_save_formats = ("svg", "pdf", "html")
+    guidance_map_image_width = 1300
+    guidance_map_image_height = 1300
     show_titles_for_guidance_maps = False
     # Guidance-map plotting rank policy:
     #   - int (e.g., 1 or 2): render that rank only
@@ -807,16 +815,6 @@ def main():
                                         "Biopsy positions relative to target DILs density plots": \
                                             {"Plot bool": False, # No code behind this method yet
                                              "Plot name": " - biopsy_positions_relative_to_target_DILs_density_plots",
-                                             "Plot color": 'rgba(0, 92, 171, 1)'
-                                             }, 
-                                        "Guidance maps":\
-                                            {"Plot bool": False, ### guidance maps toggle (this pathway is live development) 
-                                             "Plot name": "guidance maps",
-                                             "Plot color": 'rgba(0, 92, 171, 1)'
-                                             },
-                                        "Guidance maps with actual cores":\
-                                            {"Plot bool": False, # nothing behind this codewise yet, but would be nice
-                                             "Plot name": "guidance maps with actual cores",
                                              "Plot color": 'rgba(0, 92, 171, 1)'
                                              },      
                                         "Axial dose distribution all trials and global regression": \
@@ -1230,6 +1228,32 @@ def main():
     production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot bool"] = any(production_plots_input_dictionary["Tissue classification Sobol indices per biopsy plot"]["Plot bool dict"].values())
     production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool"] = any(production_plots_input_dictionary["Dosimetry Sobol indices per biopsy plot"]["Plot bool dict"].values())
     create_at_least_one_production_plot = any([x["Plot bool"] for x in production_plots_input_dictionary.values()]) # will produce True if at least one plot bool in the production_plots_input_dictionary is true, otherwise will be false if all are false 
+    guidance_map_render_config = GuidanceMapRenderConfig(
+        enabled=render_guidance_maps_after_simulated_core_finalization,
+        plot_name=guidance_map_plot_name,
+        output_dir_name=guidance_map_output_dir_name,
+        save_formats=guidance_map_save_formats,
+        image_width=guidance_map_image_width,
+        image_height=guidance_map_image_height,
+        image_scale=svg_image_scale,
+        axis_title_font_size=24,
+        axis_tick_font_size=20,
+        legend_font_size=20,
+        annotation_font_size=20,
+        distance_annotation_font_size=20,
+        fire_annotation_font_size=20,
+        colorbar_tick_font_size=20,
+        template_label_font_size=20,
+        colorbar_title_font_size=20,
+        fire_annotation_style="compact_table",
+        fire_table_position="outside top center",
+        draw_orientation_diagram=False,
+        show_titles=show_titles_for_guidance_maps,
+        show_euler_annotation_box=show_euler_annotation_box_behavior,
+        candidate_plot_rank=candidate_plot_ranks_behavior,
+        validate_firing_df_builder=validate_firing_df_builder_behavior,
+        strict_precomputed_guidance=strict_precomputed_guidance_behavior,
+    )
     if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
         fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
     else:
@@ -6273,6 +6297,30 @@ def main():
                 ] = cohort_guidance_map_firing_depth_recommendations_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
+                render_guidance_maps_for_run(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    dil_ref,
+                    oar_ref,
+                    rectum_ref_key,
+                    all_ref_key,
+                    structs_referenced_dict,
+                    plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool,
+                    biopsy_fire_travel_distances,
+                    biopsy_needle_compartment_length,
+                    interp_inter_slice_dist,
+                    interp_intra_slice_dist,
+                    radius_for_normals_estimation,
+                    max_nn_for_normals_estimation,
+                    biopsy_needle_tip_length,
+                    guidance_map_render_config,
+                    important_info=important_info,
+                    live_display=live_display,
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    runtime_logger=runtime_logger,
+                )
+
                 # structure radiomic 3D segmentation features dataframe
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 structure_cohort_3d_radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(master_structure_reference_dict,
@@ -7053,25 +7101,6 @@ def main():
                 output_figures_dir = specific_output_dir.joinpath(figures_output_dir_name)
                 output_figures_dir.mkdir(parents=True, exist_ok=True)
 
-                # PREPROCESSING
-                preprocessing_output_folder_name = 'Preprocessing'
-                preprocessing_fig_output_dir = output_figures_dir.joinpath(preprocessing_output_folder_name)
-                preprocessing_fig_output_dir.mkdir(parents=True, exist_ok=True)
-
-                # generate and store patient directory folders for saving
-                patient_sp_preprocessing_output_figures_dir_dict = {}
-                for patientUID in master_structure_reference_dict.keys():
-                    patient_sp_preprocessing_output_figures_dir = preprocessing_fig_output_dir.joinpath(patientUID)
-                    patient_sp_preprocessing_output_figures_dir.mkdir(parents=True, exist_ok=True)
-                    patient_sp_preprocessing_output_figures_dir_dict[patientUID] = patient_sp_preprocessing_output_figures_dir
-
-                # create a global folder
-                patient_sp_preprocessing_output_figures_dir = preprocessing_fig_output_dir.joinpath('Global')
-                patient_sp_preprocessing_output_figures_dir.mkdir(parents=True, exist_ok=True)
-                patient_sp_preprocessing_output_figures_dir_dict["Global"] = patient_sp_preprocessing_output_figures_dir
-
-                master_structure_info_dict["Global"]['Patient specific output figures directory (pre-processing) dict'] = patient_sp_preprocessing_output_figures_dir_dict
-
                 # MC SPECIFIC
                 mc_output_folder_name = 'MC simulation'
                 mc_fig_output_dir = output_figures_dir.joinpath(mc_output_folder_name)
@@ -7141,124 +7170,6 @@ def main():
 
             ### PREPROCESSING FIGS AND OPTIMIZATION
             if create_at_least_one_production_plot == True and preprocessing_complete_bool == True:
-                patient_sp_preprocessing_output_figures_dir_dict = master_structure_info_dict["Global"]['Patient specific output figures directory (pre-processing) dict']
-
-                if production_plots_input_dictionary["Guidance maps"]["Plot bool"] == True:
-
-                    general_plot_name_string = production_plots_input_dictionary["Guidance maps"]["Plot name"]
-
-                    patientUID_default = "Initializing"
-                    processing_patient_production_plot_description = "Creating guidance maps [{}]...".format(patientUID_default)
-                    processing_patients_task = patients_progress.add_task("[red]"+processing_patient_production_plot_description, total = master_structure_info_dict["Global"]["Num cases"])
-                    processing_patient_production_plot_description_completed = "Creating guidance maps"
-                    processing_patients_completed_task = completed_progress.add_task("[green]"+processing_patient_production_plot_description_completed, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-
-                    for patientUID,pydicom_item in master_structure_reference_dict.items():
-                        
-                        processing_patient_production_plot_description = "Creating guidance maps [{}]...".format(patientUID)
-                        patients_progress.update(processing_patients_task, description = "[red]" + processing_patient_production_plot_description)
-
-                        patient_sp_preprocessing_output_figures_dir = patient_sp_preprocessing_output_figures_dir_dict[patientUID]
-                        
-
-                        # Old guidance maps (blue backgrounds) commented out, no use
-                        """"
-                        # Cumulative projection guidance map
-                        production_plots.production_plot_guidance_maps_cumulative_projection(patientUID,
-                                                patient_sp_preprocessing_output_figures_dir,
-                                                pydicom_item,
-                                                all_ref_key,
-                                                svg_image_scale,
-                                                svg_image_width,
-                                                svg_image_height,
-                                                general_plot_name_string
-                                                )
-                        # Max planes guidance maps
-                        production_plots.production_plot_guidance_maps_max_planes(patientUID,
-                                            patient_sp_preprocessing_output_figures_dir,
-                                            pydicom_item,
-                                            dil_ref,
-                                            oar_ref,
-                                            all_ref_key,
-                                            svg_image_scale,
-                                            svg_image_width,
-                                            svg_image_height,
-                                            general_plot_name_string
-                                            )
-                        """
-
-                        """
-                        production_plots.guidance_map_transducer_angle_sagittal(patientUID,
-                                            patient_sp_preprocessing_output_figures_dir,
-                                            pydicom_item,
-                                            dil_ref,
-                                            oar_ref,
-                                            rectum_ref_key,
-                                            all_ref_key,
-                                            structs_referenced_dict,
-                                            plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool,
-                                            biopsy_fire_travel_distances,
-                                            biopsy_needle_compartment_length,
-                                            important_info,
-                                            live_display,
-                                            svg_image_scale,
-                                            svg_image_width,
-                                            svg_image_height,
-                                            general_plot_name_string
-                                            )
-                        """
-                        
-                        production_plots.guidance_map_transducer_angle_sagittal_and_max_plane_transverse(patientUID,
-                                            patient_sp_preprocessing_output_figures_dir,
-                                            pydicom_item,
-                                            dil_ref,
-                                            oar_ref,
-                                            rectum_ref_key,
-                                            all_ref_key,
-                                            structs_referenced_dict,
-                                            plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool,
-                                            biopsy_fire_travel_distances,
-                                            biopsy_needle_compartment_length,
-                                            interp_inter_slice_dist,
-                                            interp_intra_slice_dist,
-                                            radius_for_normals_estimation,
-                                            max_nn_for_normals_estimation,
-                                            important_info,
-                                            live_display,
-                                            svg_image_scale,
-                                            1300,
-                                            1300, # am making these plots square
-                                            general_plot_name_string,
-                                            biopsy_needle_tip_length,
-                                            save_formats=["svg", "pdf", "html"],
-                                            axis_title_font_size=24,
-                                            axis_tick_font_size=20,
-                                            legend_font_size=20,
-                                            annotation_font_size=20,
-                                            distance_annotation_font_size=20,
-                                            fire_annotation_font_size=20,
-                                            colorbar_tick_font_size=20,
-                                            template_label_font_size=20,
-                                            colorbar_title_font_size=20,
-                                            fire_annotation_style="compact_table",
-                                            fire_table_position="outside top center",
-                                            draw_orientation_diagram=False,
-                                            show_titles=show_titles_for_guidance_maps,
-                                            show_euler_annotation_box=show_euler_annotation_box_behavior,
-                                            candidate_plot_rank=candidate_plot_ranks_behavior,
-                                            validate_firing_df_builder=validate_firing_df_builder_behavior,
-                                            strict_precomputed_guidance=strict_precomputed_guidance_behavior
-                                            )
-                        
-                        patients_progress.update(processing_patients_task, advance = 1)
-                        completed_progress.update(processing_patients_completed_task, advance = 1)
-
-                    patients_progress.update(processing_patients_task, visible = False)
-                    completed_progress.update(processing_patients_completed_task, visible = True)
-                else:
-                    pass
-
                 if production_plots_input_dictionary["Cohort - Prostate biopsies heatmap"]["Plot bool"] == True:
                     main_indeterminate_task = indeterminate_progress_main.add_task('[red]Cohort - Prostate biopsies heatmap...', total=None)
                     main_indeterminate_task_completed = completed_progress.add_task('[green]Cohort - Prostate biopsies heatmap', total=1, visible = False)
@@ -9872,7 +9783,8 @@ def structure_referencer(data_removals_dict_bx,
                                                "MC info": mc_info, 
                                                "Random info": random_info,
                                                "FANOVA info": fanova_info,
-                                               'Patient specific output figures directory (pre-processing) dict': None,                        
+                                               'Patient specific guidance map figures directory dict': None,
+                                               'Guidance map figures dir': None,
                                                'Patient specific output figures directory (MC sim) dict': None,
                                                'Patient specific output figures directory (fanova) dict': None,
                                                "Cohort figures dir": None,
