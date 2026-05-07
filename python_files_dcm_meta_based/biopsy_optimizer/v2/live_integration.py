@@ -71,6 +71,27 @@ class OptimizerV2CallCapacityCalibrationInputs:
     target_relative_structures_nominal_plus_trials: Sequence[Sequence[np.ndarray]]
 
 
+@dataclass(frozen=True)
+class OptimizerV2CandidateContainmentReplayOption:
+    option_key: str
+    display_label: str
+    candidate_index_global: int
+    num_trials: int
+    scene_group_name: str
+    scene_name_suffix: str
+
+
+@dataclass(frozen=True)
+class OptimizerV2RenderGuiSelection:
+    action: str
+    selected_stage_names: Tuple[str, ...] = ()
+    stage_render_backend: str = "none"
+    stage_export_plotly: bool = False
+    selected_candidate_option_key: Optional[str] = None
+    candidate_render_backend: str = "none"
+    candidate_export_plotly: bool = False
+
+
 def run_target_dil_optimizer_v2_for_live_simulated_family(
     master_structure_reference_dict,
     master_structure_info_dict,
@@ -330,121 +351,56 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 render_patient_whitelist,
                 render_roi_whitelist,
             )
-            plotly_export_config = None
-            if render_plotly_export_bool and should_render_structure and stage_boundary_render_jobs:
-                plotly_export_config = _build_plotly_export_config_for_scene_group(
-                    master_structure_info_dict,
-                    patientUID,
-                    structureID,
-                    "stage_boundary",
-                    render_plotly_export_formats,
-                    render_plotly_export_width,
-                    render_plotly_export_height,
-                    render_plotly_export_scale,
-                    render_plotly_export_camera_eye,
-                    render_plotly_export_camera_center,
-                    render_plotly_export_camera_up,
+            if should_render_structure:
+                stage_render_backend_default = _normalize_requested_render_backend(render_backend)
+                candidate_render_backend_default = _normalize_requested_render_backend(
+                    render_winner_containment_backend
+                    if render_winner_containment_backend is not None
+                    else render_backend
                 )
-
-            should_render_interactively = (
-                render_stage_boundary_candidate_clouds_bool
-                and should_render_structure
-                and stage_boundary_render_jobs
-            )
-            should_export_structure = (
-                plotly_export_config is not None and bool(stage_boundary_render_jobs)
-            )
-            if should_render_interactively or should_export_structure:
-                effective_render_backend = render_backend if should_render_interactively else "none"
-                should_pause_live_display = (
-                    should_render_interactively or should_export_structure
-                )
-                if should_pause_live_display:
-                    live_display.stop()
+                live_display.stop()
                 try:
-                    render_scene_render_jobs(
-                        stage_boundary_render_jobs,
-                        render_backend=effective_render_backend,
-                        plotly_export_config=plotly_export_config,
-                    )
-                finally:
-                    if should_pause_live_display:
-                        live_display.start(refresh=True)
-                        live_display.refresh()
-
-            resolved_winner_containment_backend = render_backend
-            if render_winner_containment_backend is not None:
-                resolved_winner_containment_backend = render_winner_containment_backend
-            if render_winner_containment_debug_bool and should_render_structure:
-                winner_containment_render_job, winner_containment_chunk_score_result = (
-                    _build_winner_containment_debug_render_job(
+                    _run_optimizer_v2_render_selection_loop(
+                        master_structure_info_dict=master_structure_info_dict,
                         patientUID=patientUID,
                         structureID=structureID,
                         search_result=search_result,
                         candidate_pool=candidate_pool,
+                        stage_boundary_render_jobs=stage_boundary_render_jobs,
+                        target_structure=target_structure,
+                        target_structure_centroid=target_structure_centroid,
                         nominal_biopsy_points=nominal_biopsy_points,
                         nominal_biopsy_centroid=nominal_biopsy_centroid,
                         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
-                        target_structure=target_structure,
-                        target_structure_centroid=target_structure_centroid,
                         biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
-                        target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+                        target_relative_structures_nominal_plus_trials_provider=(
+                            target_relative_structures_nominal_plus_trials_provider
+                        ),
                         target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                         downstream_comparable_trial_count=downstream_comparable_trial_count,
                         additional_render_layers=additional_render_layers,
                         render_layer_style_by_name=render_layer_style_by_name,
+                        render_stage_boundary_candidate_clouds_bool=(
+                            render_stage_boundary_candidate_clouds_bool
+                        ),
+                        stage_render_backend_default=stage_render_backend_default,
+                        candidate_render_backend_default=candidate_render_backend_default,
+                        render_plotly_export_bool=render_plotly_export_bool,
+                        render_plotly_export_formats=render_plotly_export_formats,
+                        render_plotly_export_width=render_plotly_export_width,
+                        render_plotly_export_height=render_plotly_export_height,
+                        render_plotly_export_scale=render_plotly_export_scale,
+                        render_plotly_export_camera_eye=render_plotly_export_camera_eye,
+                        render_plotly_export_camera_center=render_plotly_export_camera_center,
+                        render_plotly_export_camera_up=render_plotly_export_camera_up,
+                        render_winner_containment_debug_bool=render_winner_containment_debug_bool,
                         max_test_structures_per_call=resolved_max_test_structures_per_call,
                         include_edges_in_log=include_edges_in_log,
                         kernel_type=kernel_type,
                     )
-                )
-                if winner_containment_render_job is not None:
-                    _print_winner_containment_debug_summary(
-                        patientUID,
-                        structureID,
-                        winner_containment_chunk_score_result,
-                    )
-                    winner_containment_export_config = None
-                    if render_plotly_export_bool:
-                        winner_containment_export_config = _build_plotly_export_config_for_scene_group(
-                            master_structure_info_dict,
-                            patientUID,
-                            structureID,
-                            "winner_containment",
-                            render_plotly_export_formats,
-                            render_plotly_export_width,
-                            render_plotly_export_height,
-                            render_plotly_export_scale,
-                            render_plotly_export_camera_eye,
-                            render_plotly_export_camera_center,
-                            render_plotly_export_camera_up,
-                        )
-
-                    should_render_winner_interactively = (
-                        _normalize_requested_render_backend(resolved_winner_containment_backend) != "none"
-                    )
-                    should_export_winner = winner_containment_export_config is not None
-                    if should_render_winner_interactively or should_export_winner:
-                        effective_winner_backend = (
-                            resolved_winner_containment_backend
-                            if should_render_winner_interactively
-                            else "none"
-                        )
-                        should_pause_live_display = (
-                            should_render_winner_interactively or should_export_winner
-                        )
-                        if should_pause_live_display:
-                            live_display.stop()
-                        try:
-                            render_scene_render_jobs(
-                                (winner_containment_render_job,),
-                                render_backend=effective_winner_backend,
-                                plotly_export_config=winner_containment_export_config,
-                            )
-                        finally:
-                            if should_pause_live_display:
-                                live_display.start(refresh=True)
-                                live_display.refresh()
+                finally:
+                    live_display.start(refresh=True)
+                    live_display.refresh()
 
             metadata = _build_search_metadata(
                 patientUID,
@@ -1145,6 +1101,615 @@ def _sanitize_output_path_fragment(raw_fragment):
     return sanitized_fragment
 
 
+def _run_optimizer_v2_render_selection_loop(
+    master_structure_info_dict,
+    patientUID,
+    structureID,
+    search_result,
+    candidate_pool,
+    stage_boundary_render_jobs,
+    target_structure,
+    target_structure_centroid,
+    nominal_biopsy_points,
+    nominal_biopsy_centroid,
+    nominal_biopsy_centroid_line,
+    biopsy_transform_bank_prefix_provider,
+    target_relative_structures_nominal_plus_trials_provider,
+    target_transform_bank_prefix_provider,
+    downstream_comparable_trial_count,
+    additional_render_layers,
+    render_layer_style_by_name,
+    render_stage_boundary_candidate_clouds_bool,
+    stage_render_backend_default,
+    candidate_render_backend_default,
+    render_plotly_export_bool,
+    render_plotly_export_formats,
+    render_plotly_export_width,
+    render_plotly_export_height,
+    render_plotly_export_scale,
+    render_plotly_export_camera_eye,
+    render_plotly_export_camera_center,
+    render_plotly_export_camera_up,
+    render_winner_containment_debug_bool,
+    max_test_structures_per_call,
+    include_edges_in_log,
+    kernel_type,
+):
+    resolved_stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
+    candidate_replay_options = _build_optimizer_v2_candidate_containment_replay_options(
+        search_result,
+        downstream_comparable_trial_count,
+    )
+
+    stage_can_show_open3d = (
+        bool(render_stage_boundary_candidate_clouds_bool)
+        and stage_render_backend_default in ("open3d", "both")
+        and bool(resolved_stage_boundary_render_jobs)
+    )
+    stage_can_show_plotly = (
+        bool(render_stage_boundary_candidate_clouds_bool)
+        and stage_render_backend_default in ("plotly", "both")
+        and bool(resolved_stage_boundary_render_jobs)
+    )
+    stage_can_export_plotly = bool(render_plotly_export_bool) and bool(resolved_stage_boundary_render_jobs)
+    candidate_can_show_open3d = (
+        bool(render_winner_containment_debug_bool)
+        and candidate_render_backend_default in ("open3d", "both")
+        and len(candidate_replay_options) > 0
+    )
+    candidate_can_show_plotly = (
+        bool(render_winner_containment_debug_bool)
+        and candidate_render_backend_default in ("plotly", "both")
+        and len(candidate_replay_options) > 0
+    )
+    candidate_can_export_plotly = (
+        bool(render_winner_containment_debug_bool)
+        and bool(render_plotly_export_bool)
+        and len(candidate_replay_options) > 0
+    )
+
+    if not any(
+        (
+            stage_can_show_open3d,
+            stage_can_show_plotly,
+            stage_can_export_plotly,
+            candidate_can_show_open3d,
+            candidate_can_show_plotly,
+            candidate_can_export_plotly,
+        )
+    ):
+        return
+
+    candidate_replay_options_by_key = {
+        replay_option.option_key: replay_option for replay_option in candidate_replay_options
+    }
+
+    while True:
+        gui_selection = _show_optimizer_v2_render_selection_dialog(
+            patientUID=patientUID,
+            structureID=structureID,
+            stage_boundary_render_jobs=resolved_stage_boundary_render_jobs,
+            candidate_replay_options=candidate_replay_options,
+            stage_can_show_open3d=stage_can_show_open3d,
+            stage_can_show_plotly=stage_can_show_plotly,
+            stage_can_export_plotly=stage_can_export_plotly,
+            candidate_can_show_open3d=candidate_can_show_open3d,
+            candidate_can_show_plotly=candidate_can_show_plotly,
+            candidate_can_export_plotly=candidate_can_export_plotly,
+        )
+        if gui_selection.action == "continue":
+            return
+
+        if gui_selection.action == "render_stage_boundary":
+            selected_stage_boundary_render_jobs = tuple(
+                render_job
+                for render_job in resolved_stage_boundary_render_jobs
+                if render_job.stage_name in gui_selection.selected_stage_names
+            )
+            stage_plotly_export_config = None
+            if gui_selection.stage_export_plotly:
+                stage_plotly_export_config = _build_plotly_export_config_for_scene_group(
+                    master_structure_info_dict,
+                    patientUID,
+                    structureID,
+                    "stage_boundary",
+                    render_plotly_export_formats,
+                    render_plotly_export_width,
+                    render_plotly_export_height,
+                    render_plotly_export_scale,
+                    render_plotly_export_camera_eye,
+                    render_plotly_export_camera_center,
+                    render_plotly_export_camera_up,
+                )
+            render_scene_render_jobs(
+                selected_stage_boundary_render_jobs,
+                render_backend=gui_selection.stage_render_backend,
+                plotly_export_config=stage_plotly_export_config,
+            )
+            continue
+
+        if gui_selection.action != "render_candidate_containment":
+            raise ValueError("unsupported optimizer-v2 GUI action: {}".format(gui_selection.action))
+
+        replay_option = candidate_replay_options_by_key.get(gui_selection.selected_candidate_option_key)
+        if replay_option is None:
+            raise ValueError(
+                "unknown optimizer-v2 candidate replay option: {}".format(
+                    gui_selection.selected_candidate_option_key
+                )
+            )
+
+        candidate_containment_render_job, candidate_containment_chunk_score_result = (
+            _build_candidate_containment_debug_render_job(
+                patientUID=patientUID,
+                structureID=structureID,
+                candidate_index_global=replay_option.candidate_index_global,
+                resolved_trial_count=replay_option.num_trials,
+                scene_name_suffix=replay_option.scene_name_suffix,
+                candidate_pool=candidate_pool,
+                nominal_biopsy_points=nominal_biopsy_points,
+                nominal_biopsy_centroid=nominal_biopsy_centroid,
+                nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+                target_structure=target_structure,
+                target_structure_centroid=target_structure_centroid,
+                biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                target_relative_structures_nominal_plus_trials_provider=(
+                    target_relative_structures_nominal_plus_trials_provider
+                ),
+                target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+                additional_render_layers=additional_render_layers,
+                render_layer_style_by_name=render_layer_style_by_name,
+                max_test_structures_per_call=max_test_structures_per_call,
+                include_edges_in_log=include_edges_in_log,
+                kernel_type=kernel_type,
+            )
+        )
+        _print_candidate_containment_debug_summary(
+            patientUID,
+            structureID,
+            candidate_containment_chunk_score_result,
+            replay_option.scene_name_suffix,
+        )
+        candidate_plotly_export_config = None
+        if gui_selection.candidate_export_plotly:
+            candidate_plotly_export_config = _build_plotly_export_config_for_scene_group(
+                master_structure_info_dict,
+                patientUID,
+                structureID,
+                replay_option.scene_group_name,
+                render_plotly_export_formats,
+                render_plotly_export_width,
+                render_plotly_export_height,
+                render_plotly_export_scale,
+                render_plotly_export_camera_eye,
+                render_plotly_export_camera_center,
+                render_plotly_export_camera_up,
+            )
+        render_scene_render_jobs(
+            (candidate_containment_render_job,),
+            render_backend=gui_selection.candidate_render_backend,
+            plotly_export_config=candidate_plotly_export_config,
+        )
+
+
+def _show_optimizer_v2_render_selection_dialog(
+    patientUID,
+    structureID,
+    stage_boundary_render_jobs,
+    candidate_replay_options,
+    stage_can_show_open3d,
+    stage_can_show_plotly,
+    stage_can_export_plotly,
+    candidate_can_show_open3d,
+    candidate_can_show_plotly,
+    candidate_can_export_plotly,
+):
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    resolved_stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
+    resolved_candidate_replay_options = tuple(candidate_replay_options)
+    resolved_stage_names = tuple(render_job.stage_name for render_job in resolved_stage_boundary_render_jobs)
+
+    dialog_result = {
+        "selection": OptimizerV2RenderGuiSelection(action="continue"),
+    }
+
+    root = tk.Tk()
+    root.title("Optimizer-v2 render selector")
+    root.geometry("1120x760")
+    root.minsize(980, 640)
+    root.attributes("-topmost", True)
+    root.after(250, lambda: root.attributes("-topmost", False))
+
+    stage_show_open3d_var = tk.BooleanVar(value=bool(stage_can_show_open3d))
+    stage_show_plotly_var = tk.BooleanVar(value=bool(stage_can_show_plotly))
+    stage_export_plotly_var = tk.BooleanVar(value=bool(stage_can_export_plotly))
+    candidate_show_open3d_var = tk.BooleanVar(value=bool(candidate_can_show_open3d))
+    candidate_show_plotly_var = tk.BooleanVar(value=bool(candidate_can_show_plotly))
+    candidate_export_plotly_var = tk.BooleanVar(value=bool(candidate_can_export_plotly))
+    stage_selection_vars = {
+        stage_name: tk.BooleanVar(value=False) for stage_name in resolved_stage_names
+    }
+    candidate_choice_var = tk.StringVar(
+        value=(resolved_candidate_replay_options[0].display_label if resolved_candidate_replay_options else "")
+    )
+    candidate_label_to_option_key = {
+        replay_option.display_label: replay_option.option_key
+        for replay_option in resolved_candidate_replay_options
+    }
+
+    main_frame = ttk.Frame(root, padding=12)
+    main_frame.pack(fill="both", expand=True)
+    main_frame.columnconfigure(0, weight=1)
+
+    header_label = ttk.Label(
+        main_frame,
+        text="Optimizer-v2 render selection for {} / {}".format(patientUID, structureID),
+        font=("TkDefaultFont", 11, "bold"),
+    )
+    header_label.grid(row=0, column=0, sticky="w", pady=(0, 8))
+
+    instructions_label = ttk.Label(
+        main_frame,
+        text=(
+            "Select a stage-boundary scene subset or one candidate containment replay, render it, "
+            "then the dialog will reopen until you choose Continue with code."
+        ),
+        wraplength=1050,
+        justify="left",
+    )
+    instructions_label.grid(row=1, column=0, sticky="w", pady=(0, 10))
+
+    stage_frame = ttk.LabelFrame(main_frame, text="Stage boundary scenes", padding=10)
+    stage_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
+    stage_frame.columnconfigure(0, weight=1)
+
+    stage_backend_frame = ttk.Frame(stage_frame)
+    stage_backend_frame.grid(row=0, column=0, sticky="w", pady=(0, 8))
+    ttk.Checkbutton(
+        stage_backend_frame,
+        text="Open3D",
+        variable=stage_show_open3d_var,
+        state=("normal" if stage_can_show_open3d else "disabled"),
+    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
+    ttk.Checkbutton(
+        stage_backend_frame,
+        text="Plotly figures",
+        variable=stage_show_plotly_var,
+        state=("normal" if stage_can_show_plotly else "disabled"),
+    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    ttk.Checkbutton(
+        stage_backend_frame,
+        text="Plotly export",
+        variable=stage_export_plotly_var,
+        state=("normal" if stage_can_export_plotly else "disabled"),
+    ).grid(row=0, column=2, sticky="w")
+
+    if resolved_stage_names:
+        stage_names_frame = ttk.Frame(stage_frame)
+        stage_names_frame.grid(row=1, column=0, sticky="w")
+        for stage_index, stage_name in enumerate(resolved_stage_names):
+            ttk.Checkbutton(
+                stage_names_frame,
+                text=stage_name,
+                variable=stage_selection_vars[stage_name],
+            ).grid(
+                row=stage_index // 2,
+                column=stage_index % 2,
+                sticky="w",
+                padx=(0, 18),
+                pady=2,
+            )
+
+        stage_buttons_frame = ttk.Frame(stage_frame)
+        stage_buttons_frame.grid(row=2, column=0, sticky="w", pady=(10, 0))
+
+        def _select_all_stages() -> None:
+            for stage_var in stage_selection_vars.values():
+                stage_var.set(True)
+
+        def _clear_all_stages() -> None:
+            for stage_var in stage_selection_vars.values():
+                stage_var.set(False)
+
+        ttk.Button(stage_buttons_frame, text="Select all stages", command=_select_all_stages).grid(
+            row=0,
+            column=0,
+            padx=(0, 8),
+        )
+        ttk.Button(stage_buttons_frame, text="Clear stages", command=_clear_all_stages).grid(
+            row=0,
+            column=1,
+            padx=(0, 8),
+        )
+
+        def _render_selected_stages() -> None:
+            selected_stage_names = tuple(
+                stage_name
+                for stage_name, stage_var in stage_selection_vars.items()
+                if bool(stage_var.get())
+            )
+            if len(selected_stage_names) == 0:
+                messagebox.showwarning(
+                    "No stages selected",
+                    "Select at least one stage boundary scene before rendering.",
+                    parent=root,
+                )
+                return
+
+            stage_render_backend = _resolve_requested_gui_render_backend(
+                bool(stage_show_open3d_var.get()),
+                bool(stage_show_plotly_var.get()),
+            )
+            if stage_render_backend == "none" and not bool(stage_export_plotly_var.get()):
+                messagebox.showwarning(
+                    "No render target selected",
+                    "Enable Open3D, Plotly figures, or Plotly export for stage-boundary rendering.",
+                    parent=root,
+                )
+                return
+
+            dialog_result["selection"] = OptimizerV2RenderGuiSelection(
+                action="render_stage_boundary",
+                selected_stage_names=selected_stage_names,
+                stage_render_backend=stage_render_backend,
+                stage_export_plotly=bool(stage_export_plotly_var.get()),
+            )
+            root.destroy()
+
+        ttk.Button(
+            stage_buttons_frame,
+            text="Render selected stages",
+            command=_render_selected_stages,
+        ).grid(row=0, column=2, padx=(0, 8))
+    else:
+        ttk.Label(
+            stage_frame,
+            text="No stage-boundary render jobs are available for this structure.",
+        ).grid(row=1, column=0, sticky="w")
+
+    candidate_frame = ttk.LabelFrame(main_frame, text="Candidate containment replay", padding=10)
+    candidate_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+    candidate_frame.columnconfigure(0, weight=1)
+
+    candidate_backend_frame = ttk.Frame(candidate_frame)
+    candidate_backend_frame.grid(row=0, column=0, sticky="w", pady=(0, 8))
+    ttk.Checkbutton(
+        candidate_backend_frame,
+        text="Open3D",
+        variable=candidate_show_open3d_var,
+        state=("normal" if candidate_can_show_open3d else "disabled"),
+    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
+    ttk.Checkbutton(
+        candidate_backend_frame,
+        text="Plotly figures",
+        variable=candidate_show_plotly_var,
+        state=("normal" if candidate_can_show_plotly else "disabled"),
+    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    ttk.Checkbutton(
+        candidate_backend_frame,
+        text="Plotly export",
+        variable=candidate_export_plotly_var,
+        state=("normal" if candidate_can_export_plotly else "disabled"),
+    ).grid(row=0, column=2, sticky="w")
+
+    if resolved_candidate_replay_options:
+        ttk.Label(
+            candidate_frame,
+            text="Candidate / stage replay option",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 4))
+        candidate_combobox = ttk.Combobox(
+            candidate_frame,
+            textvariable=candidate_choice_var,
+            values=tuple(replay_option.display_label for replay_option in resolved_candidate_replay_options),
+            state="readonly",
+            width=120,
+        )
+        candidate_combobox.grid(row=2, column=0, sticky="ew")
+        candidate_combobox.current(0)
+
+        def _render_selected_candidate_containment() -> None:
+            selected_candidate_label = candidate_choice_var.get()
+            selected_candidate_option_key = candidate_label_to_option_key.get(selected_candidate_label)
+            if selected_candidate_option_key is None:
+                messagebox.showwarning(
+                    "No candidate selected",
+                    "Select one candidate containment replay option before rendering.",
+                    parent=root,
+                )
+                return
+
+            candidate_render_backend = _resolve_requested_gui_render_backend(
+                bool(candidate_show_open3d_var.get()),
+                bool(candidate_show_plotly_var.get()),
+            )
+            if candidate_render_backend == "none" and not bool(candidate_export_plotly_var.get()):
+                messagebox.showwarning(
+                    "No render target selected",
+                    "Enable Open3D, Plotly figures, or Plotly export for candidate containment replay.",
+                    parent=root,
+                )
+                return
+
+            dialog_result["selection"] = OptimizerV2RenderGuiSelection(
+                action="render_candidate_containment",
+                selected_candidate_option_key=selected_candidate_option_key,
+                candidate_render_backend=candidate_render_backend,
+                candidate_export_plotly=bool(candidate_export_plotly_var.get()),
+            )
+            root.destroy()
+
+        ttk.Button(
+            candidate_frame,
+            text="Render selected candidate containment",
+            command=_render_selected_candidate_containment,
+        ).grid(row=3, column=0, sticky="w", pady=(8, 0))
+    else:
+        ttk.Label(
+            candidate_frame,
+            text="No candidate containment replay options are available for this structure.",
+        ).grid(row=1, column=0, sticky="w")
+
+    footer_frame = ttk.Frame(main_frame)
+    footer_frame.grid(row=4, column=0, sticky="ew")
+    footer_frame.columnconfigure(0, weight=1)
+    ttk.Button(
+        footer_frame,
+        text="Continue with code",
+        command=root.destroy,
+    ).grid(row=0, column=1, sticky="e")
+
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    try:
+        root.mainloop()
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+    return dialog_result["selection"]
+
+
+def _resolve_requested_gui_render_backend(show_open3d, show_plotly):
+    if show_open3d and show_plotly:
+        return "both"
+    if show_open3d:
+        return "open3d"
+    if show_plotly:
+        return "plotly"
+    return "none"
+
+
+def _build_optimizer_v2_candidate_containment_replay_options(
+    search_result,
+    downstream_comparable_trial_count,
+):
+    replay_options = []
+    seen_replay_keys = set()
+
+    def append_replay_option(
+        option_key,
+        display_label,
+        candidate_index_global,
+        num_trials,
+        scene_group_name,
+        scene_name_suffix,
+    ):
+        normalized_replay_key = (int(candidate_index_global), int(num_trials), str(scene_name_suffix))
+        if normalized_replay_key in seen_replay_keys:
+            return
+        seen_replay_keys.add(normalized_replay_key)
+        replay_options.append(
+            OptimizerV2CandidateContainmentReplayOption(
+                option_key=str(option_key),
+                display_label=str(display_label),
+                candidate_index_global=int(candidate_index_global),
+                num_trials=int(num_trials),
+                scene_group_name=str(scene_group_name),
+                scene_name_suffix=str(scene_name_suffix),
+            )
+        )
+
+    winner_resolution_result = getattr(search_result, "winner_resolution_result", None)
+    if winner_resolution_result is not None:
+        append_replay_option(
+            option_key="winner_final_resolution",
+            display_label=(
+                "winner final resolution | cand={} | n={} | method={}"
+            ).format(
+                int(winner_resolution_result.candidate_index_global),
+                int(winner_resolution_result.final_resolution_trial_count),
+                str(winner_resolution_result.resolution_method),
+            ),
+            candidate_index_global=winner_resolution_result.candidate_index_global,
+            num_trials=winner_resolution_result.final_resolution_trial_count,
+            scene_group_name="winner_containment",
+            scene_name_suffix="winner_final_resolution",
+        )
+
+    if (
+        downstream_comparable_trial_count is not None
+        and int(downstream_comparable_trial_count) > 0
+        and search_result.operational_winner_candidate_index_global is not None
+    ):
+        append_replay_option(
+            option_key="winner_downstream_comparable",
+            display_label=(
+                "winner downstream comparable | cand={} | n={}"
+            ).format(
+                int(search_result.operational_winner_candidate_index_global),
+                int(downstream_comparable_trial_count),
+            ),
+            candidate_index_global=search_result.operational_winner_candidate_index_global,
+            num_trials=int(downstream_comparable_trial_count),
+            scene_group_name="winner_containment",
+            scene_name_suffix="winner_downstream_comparable",
+        )
+
+    tested_candidate_dataframe = getattr(search_result, "tested_candidate_dataframe", None)
+    if tested_candidate_dataframe is None or tested_candidate_dataframe.empty:
+        return tuple(replay_options)
+
+    candidate_replay_source_dataframe = tested_candidate_dataframe.copy()
+    candidate_replay_source_dataframe = candidate_replay_source_dataframe.sort_values(
+        by=[
+            "Stage round index",
+            "Candidate rank",
+            "Candidate global index",
+            "Num trials used",
+        ],
+        kind="stable",
+        na_position="last",
+    )
+    candidate_replay_source_dataframe = candidate_replay_source_dataframe.drop_duplicates(
+        subset=["Candidate global index", "Stage name", "Num trials used"],
+        keep="last",
+    )
+
+    for row_dict in candidate_replay_source_dataframe.to_dict("records"):
+        candidate_index_global = int(row_dict["Candidate global index"])
+        num_trials_used = int(row_dict["Num trials used"])
+        stage_name = str(row_dict.get("Stage name") or "unknown_stage")
+        objective_value = row_dict.get("Objective value")
+        candidate_rank = row_dict.get("Candidate rank")
+        pruned_at_stage = row_dict.get("Pruned at stage")
+        operational_winner_flag = bool(row_dict.get("Is operational winner", False))
+
+        display_label = "cand={} | stage={} | n={}".format(
+            candidate_index_global,
+            stage_name,
+            num_trials_used,
+        )
+        if pandas.notna(candidate_rank):
+            display_label += " | rank={}".format(int(candidate_rank))
+        if pandas.notna(objective_value):
+            display_label += " | score={:.6f}".format(float(objective_value))
+        if pandas.notna(pruned_at_stage):
+            display_label += " | pruned={}".format(str(pruned_at_stage))
+        if operational_winner_flag:
+            display_label += " | operational winner"
+
+        append_replay_option(
+            option_key="candidate_{}_{}_n{}".format(
+                candidate_index_global,
+                _sanitize_output_path_fragment(stage_name),
+                num_trials_used,
+            ),
+            display_label=display_label,
+            candidate_index_global=candidate_index_global,
+            num_trials=num_trials_used,
+            scene_group_name="candidate_containment",
+            scene_name_suffix="candidate_{}_{}_n{}".format(
+                candidate_index_global,
+                _sanitize_output_path_fragment(stage_name),
+                num_trials_used,
+            ),
+        )
+
+    return tuple(replay_options)
+
+
 def _build_winner_containment_debug_render_job(
     patientUID,
     structureID,
@@ -1173,25 +1738,69 @@ def _build_winner_containment_debug_render_job(
         search_result,
         downstream_comparable_trial_count,
     )
-    winner_chunk_layout = OptimizerV2ChunkLayout(
-        candidate_indices_global=(int(winner_candidate_index_global),),
-        num_trials=resolved_trial_count,
+    return _build_candidate_containment_debug_render_job(
+        patientUID=patientUID,
+        structureID=structureID,
+        candidate_index_global=int(winner_candidate_index_global),
+        resolved_trial_count=resolved_trial_count,
+        scene_name_suffix="winner_containment",
+        candidate_pool=candidate_pool,
+        nominal_biopsy_points=nominal_biopsy_points,
+        nominal_biopsy_centroid=nominal_biopsy_centroid,
+        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        target_structure=target_structure,
+        target_structure_centroid=target_structure_centroid,
+        biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+        target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+        target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+        additional_render_layers=additional_render_layers,
+        render_layer_style_by_name=render_layer_style_by_name,
+        max_test_structures_per_call=max_test_structures_per_call,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+    )
+
+
+def _build_candidate_containment_debug_render_job(
+    patientUID,
+    structureID,
+    candidate_index_global,
+    resolved_trial_count,
+    scene_name_suffix,
+    candidate_pool,
+    nominal_biopsy_points,
+    nominal_biopsy_centroid,
+    nominal_biopsy_centroid_line,
+    target_structure,
+    target_structure_centroid,
+    biopsy_transform_bank_prefix_provider,
+    target_relative_structures_nominal_plus_trials_provider,
+    target_transform_bank_prefix_provider,
+    additional_render_layers,
+    render_layer_style_by_name,
+    max_test_structures_per_call,
+    include_edges_in_log,
+    kernel_type,
+):
+    candidate_chunk_layout = OptimizerV2ChunkLayout(
+        candidate_indices_global=(int(candidate_index_global),),
+        num_trials=int(resolved_trial_count),
         include_nominal=True,
         nominal_relative_structure_index=0,
         trial_relative_structure_start_index=1,
     )
-    winner_chunk_score_result = score_target_candidate_chunk(
+    candidate_chunk_score_result = score_target_candidate_chunk(
         candidate_pool=candidate_pool,
-        chunk_layout=winner_chunk_layout,
+        chunk_layout=candidate_chunk_layout,
         nominal_biopsy_points=nominal_biopsy_points,
         nominal_biopsy_centroid=nominal_biopsy_centroid,
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
-        biopsy_transform_bank_prefix=biopsy_transform_bank_prefix_provider(resolved_trial_count),
+        biopsy_transform_bank_prefix=biopsy_transform_bank_prefix_provider(int(resolved_trial_count)),
         target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials_provider(
-            resolved_trial_count
+            int(resolved_trial_count)
         ),
         target_structure_centroid=target_structure_centroid,
-        target_transform_bank_prefix=target_transform_bank_prefix_provider(resolved_trial_count),
+        target_transform_bank_prefix=target_transform_bank_prefix_provider(int(resolved_trial_count)),
         objective_reducer_name="mean_pd",
         max_test_structures_per_call=max_test_structures_per_call,
         create_tested_candidate_dataframe=True,
@@ -1201,13 +1810,13 @@ def _build_winner_containment_debug_render_job(
         return_array_as="numpy",
     )
     containment_render_layers = build_success_failure_render_layers_from_chunk_score_result(
-        winner_chunk_score_result,
+        candidate_chunk_score_result,
         candidate_local_chunk_index=0,
         include_nominal_slice=False,
     )
 
-    winner_candidate_point = np.asarray(
-        candidate_pool.candidate_points[int(winner_candidate_index_global)],
+    candidate_point = np.asarray(
+        candidate_pool.candidate_points[int(candidate_index_global)],
         dtype=float,
     ).reshape(1, 3)
     render_layers = [
@@ -1235,7 +1844,7 @@ def _build_winner_containment_debug_render_job(
         ),
         build_point_cloud_render_layer(
             layer_name="operational_winner",
-            points=winner_candidate_point,
+            points=candidate_point,
             color=_resolve_layer_style_color(
                 render_layer_style_by_name,
                 "operational_winner",
@@ -1256,18 +1865,23 @@ def _build_winner_containment_debug_render_job(
     render_layers.extend(additional_render_layers)
     render_layers.extend(containment_render_layers)
 
+    resolved_scene_name_suffix = _sanitize_output_path_fragment(scene_name_suffix)
     render_job = OptimizerV2StageBoundaryRenderJob(
-        scene_name="{}__{}__optimizer_v2_winner_containment".format(patientUID, structureID),
-        stage_name="winner_containment",
-        input_candidate_points=winner_candidate_point.copy(),
-        survivor_candidate_points=winner_candidate_point.copy(),
+        scene_name="{}__{}__optimizer_v2_{}".format(
+            patientUID,
+            structureID,
+            resolved_scene_name_suffix,
+        ),
+        stage_name=resolved_scene_name_suffix,
+        input_candidate_points=candidate_point.copy(),
+        survivor_candidate_points=candidate_point.copy(),
         target_points=np.asarray(
             target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
             dtype=float,
         ),
         render_layers=tuple(render_layers),
     )
-    return render_job, winner_chunk_score_result
+    return render_job, candidate_chunk_score_result
 
 
 def _resolve_winner_containment_trial_count(
@@ -1288,12 +1902,13 @@ def _resolve_winner_containment_trial_count(
     return int(search_result.stage_results[-1].num_trials)
 
 
-def _print_winner_containment_debug_summary(
+def _print_candidate_containment_debug_summary(
     patient_uid,
     roi_name,
-    winner_chunk_score_result,
+    candidate_chunk_score_result,
+    replay_context_label=None,
 ):
-    tested_candidate_dataframe = winner_chunk_score_result.tested_candidate_dataframe
+    tested_candidate_dataframe = candidate_chunk_score_result.tested_candidate_dataframe
     if tested_candidate_dataframe is None or tested_candidate_dataframe.empty:
         return
 
@@ -1303,9 +1918,10 @@ def _print_winner_containment_debug_summary(
     total_successes = int(winner_row["Total successes all points"])
     total_possible_successes = max(1, num_trials_used * num_biopsy_sample_points)
     print(
-        "[optimizer-v2 containment] patient={} roi={} candidate={} trials={} score={:.6f} nominal={:.6f} distance_mm={:.3f} bx_pts={} total_successes={} success_rate={:.6f}".format(
+        "[optimizer-v2 containment] patient={} roi={} context={} candidate={} trials={} score={:.6f} nominal={:.6f} distance_mm={:.3f} bx_pts={} total_successes={} success_rate={:.6f}".format(
             patient_uid,
             roi_name,
+            replay_context_label if replay_context_label is not None else "candidate_containment",
             int(winner_row["Candidate global index"]),
             num_trials_used,
             float(winner_row["Objective value"]),
