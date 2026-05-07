@@ -148,13 +148,14 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     render_plotly_export_width=1920,
     render_plotly_export_height=1080,
     render_plotly_export_scale=1.0,
-    render_plotly_export_camera_eye=(1.6, -1.8, 1.15),
+    render_plotly_export_camera_eye=(1.45, -1.45, 2.25),
     render_plotly_export_camera_center=(0.0, 0.0, 0.0),
     render_plotly_export_camera_up=(0.0, 0.0, 1.0),
     render_dialog_timeout_seconds=None,
     render_dialog_timeout_extend_seconds=300.0,
     render_winner_containment_debug_bool=False,
     render_winner_containment_backend=None,
+    render_include_target_points_bool=True,
     render_patient_whitelist=None,
     render_roi_whitelist=None,
     render_include_planned_sampled_points_bool=True,
@@ -424,6 +425,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 ),
                 nominal_biopsy_centroid=nominal_biopsy_centroid,
                 stage_names_to_render=render_stage_names_to_render,
+                include_target_points=render_include_target_points_bool,
                 additional_render_layers=additional_render_layers,
                 scene_name_prefix="{}__{}".format(patientUID, structureID),
                 render_layer_style_by_name=render_layer_style_by_name,
@@ -482,6 +484,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                         render_dialog_timeout_seconds=render_dialog_timeout_seconds,
                         render_dialog_timeout_extend_seconds=render_dialog_timeout_extend_seconds,
                         render_winner_containment_debug_bool=render_winner_containment_debug_bool,
+                        render_include_target_points_bool=render_include_target_points_bool,
                         max_test_structures_per_call=resolved_max_test_structures_per_call,
                         include_edges_in_log=include_edges_in_log,
                         kernel_type=kernel_type,
@@ -1302,6 +1305,7 @@ def _run_optimizer_v2_render_selection_loop(
     render_dialog_timeout_seconds,
     render_dialog_timeout_extend_seconds,
     render_winner_containment_debug_bool,
+    render_include_target_points_bool,
     max_test_structures_per_call,
     include_edges_in_log,
     kernel_type,
@@ -1434,6 +1438,7 @@ def _run_optimizer_v2_render_selection_loop(
                 target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                 additional_render_layers=additional_render_layers,
                 render_layer_style_by_name=render_layer_style_by_name,
+                include_target_points=render_include_target_points_bool,
                 max_test_structures_per_call=max_test_structures_per_call,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
@@ -1505,11 +1510,11 @@ def _build_optimizer_v2_render_broker_request(
         options=tuple(
             RenderBrokerChoiceOption(
                 option_key=render_job.stage_name,
-                display_label=render_job.stage_name,
+                display_label=_format_optimizer_v2_stage_choice_label(render_job, stage_index),
                 selected_by_default=False,
                 suggested_export_output_dir=default_stage_export_output_dir,
             )
-            for render_job in stage_boundary_render_jobs
+            for stage_index, render_job in enumerate(stage_boundary_render_jobs, start=1)
         ),
         allow_open3d=bool(stage_can_show_open3d),
         allow_plotly=bool(stage_can_show_plotly),
@@ -1611,6 +1616,24 @@ def _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
         _sanitize_output_path_fragment(patient_uid),
         _sanitize_output_path_fragment(roi_name),
         "plotly_vector",
+    )
+
+
+def _format_optimizer_v2_stage_choice_label(render_job, stage_index):
+    input_candidate_count = int(np.asarray(render_job.input_candidate_points).shape[0])
+    survivor_candidate_count = int(np.asarray(render_job.survivor_candidate_points).shape[0])
+    stage_name = str(render_job.stage_name)
+    trial_count_text = stage_name
+    if "_n" in stage_name:
+        try:
+            trial_count_text = "{} trials".format(int(stage_name.rsplit("_n", 1)[1]))
+        except Exception:
+            trial_count_text = stage_name
+    return "Round {} | {} | {} -> {} candidates".format(
+        int(stage_index),
+        trial_count_text,
+        input_candidate_count,
+        survivor_candidate_count,
     )
 
 
@@ -1836,6 +1859,7 @@ def _build_candidate_containment_debug_render_job(
     max_test_structures_per_call,
     include_edges_in_log,
     kernel_type,
+    include_target_points=True,
 ):
     candidate_chunk_layout = OptimizerV2ChunkLayout(
         candidate_indices_global=(int(candidate_index_global),),
@@ -1876,28 +1900,6 @@ def _build_candidate_containment_debug_render_job(
     ).reshape(1, 3)
     render_layers = [
         build_point_cloud_render_layer(
-            layer_name="target_points",
-            points=np.asarray(
-                target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
-                dtype=float,
-            ),
-            color=_resolve_layer_style_color(
-                render_layer_style_by_name,
-                "target_points",
-                np.array([0.0, 0.0, 1.0]),
-            ),
-            marker_size=_resolve_layer_style_float(
-                render_layer_style_by_name,
-                "target_points",
-                "marker_size",
-            ),
-            opacity=_resolve_layer_style_float(
-                render_layer_style_by_name,
-                "target_points",
-                "opacity",
-            ),
-        ),
-        build_point_cloud_render_layer(
             layer_name="operational_winner",
             points=candidate_point,
             color=_resolve_layer_style_color(
@@ -1917,6 +1919,32 @@ def _build_candidate_containment_debug_render_job(
             ),
         ),
     ]
+    if include_target_points:
+        render_layers.insert(
+            0,
+            build_point_cloud_render_layer(
+                layer_name="target_points",
+                points=np.asarray(
+                    target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
+                    dtype=float,
+                ),
+                color=_resolve_layer_style_color(
+                    render_layer_style_by_name,
+                    "target_points",
+                    np.array([0.0, 0.0, 1.0]),
+                ),
+                marker_size=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    "target_points",
+                    "marker_size",
+                ),
+                opacity=_resolve_layer_style_float(
+                    render_layer_style_by_name,
+                    "target_points",
+                    "opacity",
+                ),
+            ),
+        )
     render_layers.extend(additional_render_layers)
     render_layers.extend(containment_render_layers)
 

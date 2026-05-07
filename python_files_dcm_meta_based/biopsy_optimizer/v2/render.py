@@ -52,7 +52,7 @@ class OptimizerV2PlotlyExportConfig:
     width: int = 1920
     height: int = 1080
     scale: float = 1.0
-    camera_eye: Tuple[float, float, float] = (1.6, -1.8, 1.15)
+    camera_eye: Tuple[float, float, float] = (1.45, -1.45, 2.25)
     camera_center: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     camera_up: Tuple[float, float, float] = (0.0, 0.0, 1.0)
 
@@ -78,6 +78,7 @@ def build_stage_boundary_render_jobs(
     target_points_array: np.ndarray,
     nominal_biopsy_centroid: Optional[np.ndarray] = None,
     stage_names_to_render: Optional[Sequence[str]] = None,
+    include_target_points: bool = True,
     include_final_winner: bool = True,
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
@@ -156,24 +157,27 @@ def build_stage_boundary_render_jobs(
                     "stage_survivors",
                 ),
             ),
-            build_point_cloud_render_layer(
-                layer_name="target_points",
-                points=normalized_target_points,
-                color=_resolve_layer_color(
-                    render_layer_style_by_name,
-                    "target_points",
-                    np.array([0.0, 0.0, 1.0]),
-                ),
-                marker_size=_resolve_layer_marker_size(
-                    render_layer_style_by_name,
-                    "target_points",
-                ),
-                opacity=_resolve_layer_opacity(
-                    render_layer_style_by_name,
-                    "target_points",
-                ),
-            ),
         ]
+        if include_target_points:
+            render_layers.append(
+                build_point_cloud_render_layer(
+                    layer_name="target_points",
+                    points=normalized_target_points,
+                    color=_resolve_layer_color(
+                        render_layer_style_by_name,
+                        "target_points",
+                        np.array([0.0, 0.0, 1.0]),
+                    ),
+                    marker_size=_resolve_layer_marker_size(
+                        render_layer_style_by_name,
+                        "target_points",
+                    ),
+                    opacity=_resolve_layer_opacity(
+                        render_layer_style_by_name,
+                        "target_points",
+                    ),
+                )
+            )
         if normalized_nominal_biopsy_centroid is not None:
             render_layers.append(
                 build_point_cloud_render_layer(
@@ -246,6 +250,7 @@ def render_stage_boundary_candidate_clouds(
     target_points_array: np.ndarray,
     nominal_biopsy_centroid: Optional[np.ndarray] = None,
     stage_names_to_render: Optional[Sequence[str]] = None,
+    include_target_points: bool = True,
     include_final_winner: bool = True,
     additional_render_layers: Optional[Sequence[OptimizerV2RenderLayer]] = None,
     additional_point_clouds: Optional[Sequence[Any]] = None,
@@ -262,6 +267,7 @@ def render_stage_boundary_candidate_clouds(
         target_points_array=target_points_array,
         nominal_biopsy_centroid=nominal_biopsy_centroid,
         stage_names_to_render=stage_names_to_render,
+        include_target_points=include_target_points,
         include_final_winner=include_final_winner,
         additional_render_layers=additional_render_layers,
         additional_point_clouds=additional_point_clouds,
@@ -514,7 +520,7 @@ def _build_plotly_figure_for_render_job(
 def _resolve_plotly_scene_camera(
     plotly_export_config: Optional[OptimizerV2PlotlyExportConfig],
 ):
-    resolved_camera_eye = (1.6, -1.8, 1.15)
+    resolved_camera_eye = (1.45, -1.45, 2.25)
     resolved_camera_center = (0.0, 0.0, 0.0)
     resolved_camera_up = (0.0, 0.0, 1.0)
     if plotly_export_config is not None:

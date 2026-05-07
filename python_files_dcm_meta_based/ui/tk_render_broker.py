@@ -296,6 +296,12 @@ class TkRenderBrokerDialogAdapter:
             def _set_export_widgets_state(
                 choice_group=choice_group,
                 export_enabled_var=export_enabled_var,
+                output_dir_entry=output_dir_entry,
+                browse_button=browse_button,
+                file_formats_entry=file_formats_entry,
+                width_entry=width_entry,
+                height_entry=height_entry,
+                scale_entry=scale_entry,
             ):
                 widget_state = (
                     "normal"
@@ -311,6 +317,7 @@ class TkRenderBrokerDialogAdapter:
 
             def _update_single_selection_export_suggestion(
                 *_args,
+                choice_group=choice_group,
                 option_state=option_state,
                 output_dir_var=output_dir_var,
                 suggested_output_dir_ref=suggested_output_dir_ref,
@@ -357,7 +364,14 @@ class TkRenderBrokerDialogAdapter:
                     return ()
                 return (selected_option_key,)
 
-            def _parse_export_settings():
+            def _parse_export_settings(
+                export_enabled_var=export_enabled_var,
+                output_dir_var=output_dir_var,
+                file_formats_var=file_formats_var,
+                width_var=width_var,
+                height_var=height_var,
+                scale_var=scale_var,
+            ):
                 if not bool(export_enabled_var.get()):
                     return None
                 output_dir_text = str(output_dir_var.get()).strip()
@@ -379,8 +393,13 @@ class TkRenderBrokerDialogAdapter:
                     scale=scale,
                 )
 
-            def _submit_group_selection(choice_group=choice_group):
-                selected_option_keys = _build_selected_option_keys(choice_group=choice_group)
+            def _submit_group_selection(
+                choice_group=choice_group,
+                build_selected_option_keys=_build_selected_option_keys,
+                backend_vars=backend_vars,
+                parse_export_settings=_parse_export_settings,
+            ):
+                selected_option_keys = build_selected_option_keys(choice_group=choice_group)
                 if len(selected_option_keys) == 0:
                     messagebox.showwarning(
                         "No selection",
@@ -394,7 +413,7 @@ class TkRenderBrokerDialogAdapter:
                     bool(backend_vars["plotly"].get()),
                 )
                 try:
-                    export_settings = _parse_export_settings()
+                    export_settings = parse_export_settings()
                 except Exception as exc:
                     messagebox.showwarning(
                         "Invalid export settings",

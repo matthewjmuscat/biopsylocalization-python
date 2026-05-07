@@ -557,13 +557,14 @@ def main():
     optimizer_v2_render_plotly_export_width = svg_image_width
     optimizer_v2_render_plotly_export_height = svg_image_height
     optimizer_v2_render_plotly_export_scale = svg_image_scale
-    optimizer_v2_render_plotly_export_camera_eye = (1.6, -1.8, 1.15)
+    optimizer_v2_render_plotly_export_camera_eye = (1.45, -1.45, 2.25)
     optimizer_v2_render_plotly_export_camera_center = (0.0, 0.0, 0.0)
     optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
     optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
     optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
     optimizer_v2_render_winner_containment_debug_bool = True # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
     optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
+    optimizer_v2_render_include_target_points_bool = False # If False, omit the raw DIL point cloud and rely on contour-style target layers instead.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
     optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
     optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
@@ -4439,6 +4440,7 @@ def main():
                               render_dialog_timeout_extend_seconds=optimizer_v2_render_dialog_timeout_extend_seconds,
                               render_winner_containment_debug_bool=optimizer_v2_render_winner_containment_debug_bool,
                               render_winner_containment_backend=optimizer_v2_render_winner_containment_backend,
+                              render_include_target_points_bool=optimizer_v2_render_include_target_points_bool,
                               render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,
                               render_patient_whitelist=optimizer_v2_render_patient_whitelist,
                               render_roi_whitelist=optimizer_v2_render_roi_whitelist,
