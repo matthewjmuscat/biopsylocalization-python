@@ -40,6 +40,17 @@ from preprocessing.transform_bank import (
     get_biopsy_transform_bank_prefix,
     get_structure_transform_bank_prefix,
 )
+from ui.render_broker import (
+    RenderBrokerChoiceGroup,
+    RenderBrokerChoiceOption,
+    RenderBrokerDecision,
+    RenderBrokerExportDefaults,
+    RenderBrokerRequest,
+    RenderBrokerSessionState,
+    RenderBrokerTimeoutPolicy,
+    run_render_broker_session,
+)
+from ui.tk_render_broker import TkRenderBrokerDialogAdapter
 
 
 TARGET_DIL_OPTIMIZER_V2_LANE_NAME = "target_dil_optimizer_v2"
@@ -81,17 +92,6 @@ class OptimizerV2CandidateContainmentReplayOption:
     scene_name_suffix: str
 
 
-@dataclass(frozen=True)
-class OptimizerV2RenderGuiSelection:
-    action: str
-    selected_stage_names: Tuple[str, ...] = ()
-    stage_render_backend: str = "none"
-    stage_export_plotly: bool = False
-    selected_candidate_option_key: Optional[str] = None
-    candidate_render_backend: str = "none"
-    candidate_export_plotly: bool = False
-
-
 def run_target_dil_optimizer_v2_for_live_simulated_family(
     master_structure_reference_dict,
     master_structure_info_dict,
@@ -126,6 +126,8 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     render_plotly_export_camera_eye=(1.6, -1.8, 1.15),
     render_plotly_export_camera_center=(0.0, 0.0, 0.0),
     render_plotly_export_camera_up=(0.0, 0.0, 1.0),
+    render_dialog_timeout_seconds=None,
+    render_dialog_timeout_extend_seconds=300.0,
     render_winner_containment_debug_bool=False,
     render_winner_containment_backend=None,
     render_patient_whitelist=None,
@@ -393,6 +395,8 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                         render_plotly_export_camera_eye=render_plotly_export_camera_eye,
                         render_plotly_export_camera_center=render_plotly_export_camera_center,
                         render_plotly_export_camera_up=render_plotly_export_camera_up,
+                        render_dialog_timeout_seconds=render_dialog_timeout_seconds,
+                        render_dialog_timeout_extend_seconds=render_dialog_timeout_extend_seconds,
                         render_winner_containment_debug_bool=render_winner_containment_debug_bool,
                         max_test_structures_per_call=resolved_max_test_structures_per_call,
                         include_edges_in_log=include_edges_in_log,
@@ -1130,6 +1134,8 @@ def _run_optimizer_v2_render_selection_loop(
     render_plotly_export_camera_eye,
     render_plotly_export_camera_center,
     render_plotly_export_camera_up,
+    render_dialog_timeout_seconds,
+    render_dialog_timeout_extend_seconds,
     render_winner_containment_debug_bool,
     max_test_structures_per_call,
     include_edges_in_log,
@@ -1183,59 +1189,63 @@ def _run_optimizer_v2_render_selection_loop(
     candidate_replay_options_by_key = {
         replay_option.option_key: replay_option for replay_option in candidate_replay_options
     }
+    render_broker_request = _build_optimizer_v2_render_broker_request(
+        master_structure_info_dict=master_structure_info_dict,
+        patientUID=patientUID,
+        structureID=structureID,
+        stage_boundary_render_jobs=resolved_stage_boundary_render_jobs,
+        candidate_replay_options=candidate_replay_options,
+        stage_can_show_open3d=stage_can_show_open3d,
+        stage_can_show_plotly=stage_can_show_plotly,
+        stage_can_export_plotly=stage_can_export_plotly,
+        candidate_can_show_open3d=candidate_can_show_open3d,
+        candidate_can_show_plotly=candidate_can_show_plotly,
+        candidate_can_export_plotly=candidate_can_export_plotly,
+        stage_render_backend_default=stage_render_backend_default,
+        candidate_render_backend_default=candidate_render_backend_default,
+        render_plotly_export_formats=render_plotly_export_formats,
+        render_plotly_export_width=render_plotly_export_width,
+        render_plotly_export_height=render_plotly_export_height,
+        render_plotly_export_scale=render_plotly_export_scale,
+        render_dialog_timeout_seconds=render_dialog_timeout_seconds,
+        render_dialog_timeout_extend_seconds=render_dialog_timeout_extend_seconds,
+    )
 
-    while True:
-        gui_selection = _show_optimizer_v2_render_selection_dialog(
-            patientUID=patientUID,
-            structureID=structureID,
-            stage_boundary_render_jobs=resolved_stage_boundary_render_jobs,
-            candidate_replay_options=candidate_replay_options,
-            stage_can_show_open3d=stage_can_show_open3d,
-            stage_can_show_plotly=stage_can_show_plotly,
-            stage_can_export_plotly=stage_can_export_plotly,
-            candidate_can_show_open3d=candidate_can_show_open3d,
-            candidate_can_show_plotly=candidate_can_show_plotly,
-            candidate_can_export_plotly=candidate_can_export_plotly,
-        )
-        if gui_selection.action == "continue":
-            return
-
-        if gui_selection.action == "render_stage_boundary":
+    def _handle_render_broker_decision(render_broker_decision: RenderBrokerDecision) -> None:
+        if render_broker_decision.group_key == "stage_boundary":
             selected_stage_boundary_render_jobs = tuple(
                 render_job
                 for render_job in resolved_stage_boundary_render_jobs
-                if render_job.stage_name in gui_selection.selected_stage_names
+                if render_job.stage_name in render_broker_decision.selected_option_keys
             )
-            stage_plotly_export_config = None
-            if gui_selection.stage_export_plotly:
-                stage_plotly_export_config = _build_plotly_export_config_for_scene_group(
-                    master_structure_info_dict,
-                    patientUID,
-                    structureID,
-                    "stage_boundary",
-                    render_plotly_export_formats,
-                    render_plotly_export_width,
-                    render_plotly_export_height,
-                    render_plotly_export_scale,
-                    render_plotly_export_camera_eye,
-                    render_plotly_export_camera_center,
-                    render_plotly_export_camera_up,
-                )
+            stage_plotly_export_config = _build_optimizer_v2_plotly_export_config_from_broker_settings(
+                render_broker_export_settings=render_broker_decision.export_settings,
+                camera_eye=render_plotly_export_camera_eye,
+                camera_center=render_plotly_export_camera_center,
+                camera_up=render_plotly_export_camera_up,
+            )
             render_scene_render_jobs(
                 selected_stage_boundary_render_jobs,
-                render_backend=gui_selection.stage_render_backend,
+                render_backend=render_broker_decision.render_backend,
                 plotly_export_config=stage_plotly_export_config,
             )
-            continue
+            return
 
-        if gui_selection.action != "render_candidate_containment":
-            raise ValueError("unsupported optimizer-v2 GUI action: {}".format(gui_selection.action))
+        if render_broker_decision.group_key != "candidate_containment":
+            raise ValueError(
+                "unsupported optimizer-v2 render broker group: {}".format(
+                    render_broker_decision.group_key
+                )
+            )
 
-        replay_option = candidate_replay_options_by_key.get(gui_selection.selected_candidate_option_key)
+        if len(render_broker_decision.selected_option_keys) != 1:
+            raise ValueError("optimizer-v2 candidate containment expects exactly one selected option")
+
+        replay_option = candidate_replay_options_by_key.get(render_broker_decision.selected_option_keys[0])
         if replay_option is None:
             raise ValueError(
                 "unknown optimizer-v2 candidate replay option: {}".format(
-                    gui_selection.selected_candidate_option_key
+                    render_broker_decision.selected_option_keys[0]
                 )
             )
 
@@ -1270,29 +1280,28 @@ def _run_optimizer_v2_render_selection_loop(
             candidate_containment_chunk_score_result,
             replay_option.scene_name_suffix,
         )
-        candidate_plotly_export_config = None
-        if gui_selection.candidate_export_plotly:
-            candidate_plotly_export_config = _build_plotly_export_config_for_scene_group(
-                master_structure_info_dict,
-                patientUID,
-                structureID,
-                replay_option.scene_group_name,
-                render_plotly_export_formats,
-                render_plotly_export_width,
-                render_plotly_export_height,
-                render_plotly_export_scale,
-                render_plotly_export_camera_eye,
-                render_plotly_export_camera_center,
-                render_plotly_export_camera_up,
-            )
+        candidate_plotly_export_config = _build_optimizer_v2_plotly_export_config_from_broker_settings(
+            render_broker_export_settings=render_broker_decision.export_settings,
+            camera_eye=render_plotly_export_camera_eye,
+            camera_center=render_plotly_export_camera_center,
+            camera_up=render_plotly_export_camera_up,
+        )
         render_scene_render_jobs(
             (candidate_containment_render_job,),
-            render_backend=gui_selection.candidate_render_backend,
+            render_backend=render_broker_decision.render_backend,
             plotly_export_config=candidate_plotly_export_config,
         )
 
+    run_render_broker_session(
+        render_broker_request,
+        TkRenderBrokerDialogAdapter(),
+        _handle_render_broker_decision,
+        initial_session_state=RenderBrokerSessionState(),
+    )
 
-def _show_optimizer_v2_render_selection_dialog(
+
+def _build_optimizer_v2_render_broker_request(
+    master_structure_info_dict,
     patientUID,
     structureID,
     stage_boundary_render_jobs,
@@ -1303,282 +1312,163 @@ def _show_optimizer_v2_render_selection_dialog(
     candidate_can_show_open3d,
     candidate_can_show_plotly,
     candidate_can_export_plotly,
+    stage_render_backend_default,
+    candidate_render_backend_default,
+    render_plotly_export_formats,
+    render_plotly_export_width,
+    render_plotly_export_height,
+    render_plotly_export_scale,
+    render_dialog_timeout_seconds,
+    render_dialog_timeout_extend_seconds,
 ):
-    import tkinter as tk
-    from tkinter import messagebox, ttk
-
-    resolved_stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
-    resolved_candidate_replay_options = tuple(candidate_replay_options)
-    resolved_stage_names = tuple(render_job.stage_name for render_job in resolved_stage_boundary_render_jobs)
-
-    dialog_result = {
-        "selection": OptimizerV2RenderGuiSelection(action="continue"),
-    }
-
-    root = tk.Tk()
-    root.title("Optimizer-v2 render selector")
-    root.geometry("1120x760")
-    root.minsize(980, 640)
-    root.attributes("-topmost", True)
-    root.after(250, lambda: root.attributes("-topmost", False))
-
-    stage_show_open3d_var = tk.BooleanVar(value=bool(stage_can_show_open3d))
-    stage_show_plotly_var = tk.BooleanVar(value=bool(stage_can_show_plotly))
-    stage_export_plotly_var = tk.BooleanVar(value=bool(stage_can_export_plotly))
-    candidate_show_open3d_var = tk.BooleanVar(value=bool(candidate_can_show_open3d))
-    candidate_show_plotly_var = tk.BooleanVar(value=bool(candidate_can_show_plotly))
-    candidate_export_plotly_var = tk.BooleanVar(value=bool(candidate_can_export_plotly))
-    stage_selection_vars = {
-        stage_name: tk.BooleanVar(value=False) for stage_name in resolved_stage_names
-    }
-    candidate_choice_var = tk.StringVar(
-        value=(resolved_candidate_replay_options[0].display_label if resolved_candidate_replay_options else "")
+    stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
+    candidate_replay_options = tuple(candidate_replay_options)
+    default_stage_export_output_dir = _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
+        master_structure_info_dict,
+        patientUID,
+        structureID,
+        "stage_boundary",
     )
-    candidate_label_to_option_key = {
-        replay_option.display_label: replay_option.option_key
-        for replay_option in resolved_candidate_replay_options
-    }
-
-    main_frame = ttk.Frame(root, padding=12)
-    main_frame.pack(fill="both", expand=True)
-    main_frame.columnconfigure(0, weight=1)
-
-    header_label = ttk.Label(
-        main_frame,
-        text="Optimizer-v2 render selection for {} / {}".format(patientUID, structureID),
-        font=("TkDefaultFont", 11, "bold"),
-    )
-    header_label.grid(row=0, column=0, sticky="w", pady=(0, 8))
-
-    instructions_label = ttk.Label(
-        main_frame,
-        text=(
-            "Select a stage-boundary scene subset or one candidate containment replay, render it, "
-            "then the dialog will reopen until you choose Continue with code."
+    stage_choice_group = RenderBrokerChoiceGroup(
+        group_key="stage_boundary",
+        display_label="Stage boundary scenes",
+        description=(
+            "Choose any stage-boundary scenes to review. You can render them live, export Plotly outputs, "
+            "or do both in one action."
         ),
-        wraplength=1050,
-        justify="left",
+        selection_mode="multi",
+        options=tuple(
+            RenderBrokerChoiceOption(
+                option_key=render_job.stage_name,
+                display_label=render_job.stage_name,
+                selected_by_default=False,
+                suggested_export_output_dir=default_stage_export_output_dir,
+            )
+            for render_job in stage_boundary_render_jobs
+        ),
+        allow_open3d=bool(stage_can_show_open3d),
+        allow_plotly=bool(stage_can_show_plotly),
+        allow_plotly_export=bool(stage_can_export_plotly),
+        default_backend=stage_render_backend_default,
+        export_defaults=(
+            None
+            if not stage_can_export_plotly
+            else RenderBrokerExportDefaults(
+                file_formats=tuple(render_plotly_export_formats),
+                width=int(render_plotly_export_width),
+                height=int(render_plotly_export_height),
+                scale=float(render_plotly_export_scale),
+            )
+        ),
+        render_action_label="Render selected stages",
+        empty_state_message="No stage-boundary render jobs are available for this structure.",
     )
-    instructions_label.grid(row=1, column=0, sticky="w", pady=(0, 10))
-
-    stage_frame = ttk.LabelFrame(main_frame, text="Stage boundary scenes", padding=10)
-    stage_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
-    stage_frame.columnconfigure(0, weight=1)
-
-    stage_backend_frame = ttk.Frame(stage_frame)
-    stage_backend_frame.grid(row=0, column=0, sticky="w", pady=(0, 8))
-    ttk.Checkbutton(
-        stage_backend_frame,
-        text="Open3D",
-        variable=stage_show_open3d_var,
-        state=("normal" if stage_can_show_open3d else "disabled"),
-    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
-    ttk.Checkbutton(
-        stage_backend_frame,
-        text="Plotly figures",
-        variable=stage_show_plotly_var,
-        state=("normal" if stage_can_show_plotly else "disabled"),
-    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
-    ttk.Checkbutton(
-        stage_backend_frame,
-        text="Plotly export",
-        variable=stage_export_plotly_var,
-        state=("normal" if stage_can_export_plotly else "disabled"),
-    ).grid(row=0, column=2, sticky="w")
-
-    if resolved_stage_names:
-        stage_names_frame = ttk.Frame(stage_frame)
-        stage_names_frame.grid(row=1, column=0, sticky="w")
-        for stage_index, stage_name in enumerate(resolved_stage_names):
-            ttk.Checkbutton(
-                stage_names_frame,
-                text=stage_name,
-                variable=stage_selection_vars[stage_name],
-            ).grid(
-                row=stage_index // 2,
-                column=stage_index % 2,
-                sticky="w",
-                padx=(0, 18),
-                pady=2,
+    candidate_choice_group = RenderBrokerChoiceGroup(
+        group_key="candidate_containment",
+        display_label="Candidate containment replay",
+        description=(
+            "Choose one candidate replay to inspect. This reruns that candidate at the selected trial count "
+            "and can render or export the resulting success and failure cloud scene."
+        ),
+        selection_mode="single",
+        options=tuple(
+            RenderBrokerChoiceOption(
+                option_key=replay_option.option_key,
+                display_label=replay_option.display_label,
+                selected_by_default=(replay_option.option_key == candidate_replay_options[0].option_key)
+                if len(candidate_replay_options) > 0
+                else False,
+                suggested_export_output_dir=_build_optimizer_v2_plotly_export_output_dir_for_scene_group(
+                    master_structure_info_dict,
+                    patientUID,
+                    structureID,
+                    replay_option.scene_group_name,
+                ),
             )
-
-        stage_buttons_frame = ttk.Frame(stage_frame)
-        stage_buttons_frame.grid(row=2, column=0, sticky="w", pady=(10, 0))
-
-        def _select_all_stages() -> None:
-            for stage_var in stage_selection_vars.values():
-                stage_var.set(True)
-
-        def _clear_all_stages() -> None:
-            for stage_var in stage_selection_vars.values():
-                stage_var.set(False)
-
-        ttk.Button(stage_buttons_frame, text="Select all stages", command=_select_all_stages).grid(
-            row=0,
-            column=0,
-            padx=(0, 8),
+            for replay_option in candidate_replay_options
+        ),
+        allow_open3d=bool(candidate_can_show_open3d),
+        allow_plotly=bool(candidate_can_show_plotly),
+        allow_plotly_export=bool(candidate_can_export_plotly),
+        default_backend=candidate_render_backend_default,
+        export_defaults=(
+            None
+            if not candidate_can_export_plotly
+            else RenderBrokerExportDefaults(
+                file_formats=tuple(render_plotly_export_formats),
+                width=int(render_plotly_export_width),
+                height=int(render_plotly_export_height),
+                scale=float(render_plotly_export_scale),
+            )
+        ),
+        render_action_label="Render selected candidate containment",
+        empty_state_message="No candidate containment replay options are available for this structure.",
+    )
+    timeout_policy = None
+    if render_dialog_timeout_seconds is not None:
+        timeout_policy = RenderBrokerTimeoutPolicy(
+            timeout_seconds=float(render_dialog_timeout_seconds),
+            extend_timeout_seconds=float(render_dialog_timeout_extend_seconds),
+            allow_extend_timeout=True,
+            allow_disable_timeout_for_run=True,
+            timeout_action="continue",
         )
-        ttk.Button(stage_buttons_frame, text="Clear stages", command=_clear_all_stages).grid(
-            row=0,
-            column=1,
-            padx=(0, 8),
-        )
-
-        def _render_selected_stages() -> None:
-            selected_stage_names = tuple(
-                stage_name
-                for stage_name, stage_var in stage_selection_vars.items()
-                if bool(stage_var.get())
-            )
-            if len(selected_stage_names) == 0:
-                messagebox.showwarning(
-                    "No stages selected",
-                    "Select at least one stage boundary scene before rendering.",
-                    parent=root,
-                )
-                return
-
-            stage_render_backend = _resolve_requested_gui_render_backend(
-                bool(stage_show_open3d_var.get()),
-                bool(stage_show_plotly_var.get()),
-            )
-            if stage_render_backend == "none" and not bool(stage_export_plotly_var.get()):
-                messagebox.showwarning(
-                    "No render target selected",
-                    "Enable Open3D, Plotly figures, or Plotly export for stage-boundary rendering.",
-                    parent=root,
-                )
-                return
-
-            dialog_result["selection"] = OptimizerV2RenderGuiSelection(
-                action="render_stage_boundary",
-                selected_stage_names=selected_stage_names,
-                stage_render_backend=stage_render_backend,
-                stage_export_plotly=bool(stage_export_plotly_var.get()),
-            )
-            root.destroy()
-
-        ttk.Button(
-            stage_buttons_frame,
-            text="Render selected stages",
-            command=_render_selected_stages,
-        ).grid(row=0, column=2, padx=(0, 8))
-    else:
-        ttk.Label(
-            stage_frame,
-            text="No stage-boundary render jobs are available for this structure.",
-        ).grid(row=1, column=0, sticky="w")
-
-    candidate_frame = ttk.LabelFrame(main_frame, text="Candidate containment replay", padding=10)
-    candidate_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
-    candidate_frame.columnconfigure(0, weight=1)
-
-    candidate_backend_frame = ttk.Frame(candidate_frame)
-    candidate_backend_frame.grid(row=0, column=0, sticky="w", pady=(0, 8))
-    ttk.Checkbutton(
-        candidate_backend_frame,
-        text="Open3D",
-        variable=candidate_show_open3d_var,
-        state=("normal" if candidate_can_show_open3d else "disabled"),
-    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
-    ttk.Checkbutton(
-        candidate_backend_frame,
-        text="Plotly figures",
-        variable=candidate_show_plotly_var,
-        state=("normal" if candidate_can_show_plotly else "disabled"),
-    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
-    ttk.Checkbutton(
-        candidate_backend_frame,
-        text="Plotly export",
-        variable=candidate_export_plotly_var,
-        state=("normal" if candidate_can_export_plotly else "disabled"),
-    ).grid(row=0, column=2, sticky="w")
-
-    if resolved_candidate_replay_options:
-        ttk.Label(
-            candidate_frame,
-            text="Candidate / stage replay option",
-        ).grid(row=1, column=0, sticky="w", pady=(0, 4))
-        candidate_combobox = ttk.Combobox(
-            candidate_frame,
-            textvariable=candidate_choice_var,
-            values=tuple(replay_option.display_label for replay_option in resolved_candidate_replay_options),
-            state="readonly",
-            width=120,
-        )
-        candidate_combobox.grid(row=2, column=0, sticky="ew")
-        candidate_combobox.current(0)
-
-        def _render_selected_candidate_containment() -> None:
-            selected_candidate_label = candidate_choice_var.get()
-            selected_candidate_option_key = candidate_label_to_option_key.get(selected_candidate_label)
-            if selected_candidate_option_key is None:
-                messagebox.showwarning(
-                    "No candidate selected",
-                    "Select one candidate containment replay option before rendering.",
-                    parent=root,
-                )
-                return
-
-            candidate_render_backend = _resolve_requested_gui_render_backend(
-                bool(candidate_show_open3d_var.get()),
-                bool(candidate_show_plotly_var.get()),
-            )
-            if candidate_render_backend == "none" and not bool(candidate_export_plotly_var.get()):
-                messagebox.showwarning(
-                    "No render target selected",
-                    "Enable Open3D, Plotly figures, or Plotly export for candidate containment replay.",
-                    parent=root,
-                )
-                return
-
-            dialog_result["selection"] = OptimizerV2RenderGuiSelection(
-                action="render_candidate_containment",
-                selected_candidate_option_key=selected_candidate_option_key,
-                candidate_render_backend=candidate_render_backend,
-                candidate_export_plotly=bool(candidate_export_plotly_var.get()),
-            )
-            root.destroy()
-
-        ttk.Button(
-            candidate_frame,
-            text="Render selected candidate containment",
-            command=_render_selected_candidate_containment,
-        ).grid(row=3, column=0, sticky="w", pady=(8, 0))
-    else:
-        ttk.Label(
-            candidate_frame,
-            text="No candidate containment replay options are available for this structure.",
-        ).grid(row=1, column=0, sticky="w")
-
-    footer_frame = ttk.Frame(main_frame)
-    footer_frame.grid(row=4, column=0, sticky="ew")
-    footer_frame.columnconfigure(0, weight=1)
-    ttk.Button(
-        footer_frame,
-        text="Continue with code",
-        command=root.destroy,
-    ).grid(row=0, column=1, sticky="e")
-
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
-    try:
-        root.mainloop()
-    finally:
-        try:
-            root.destroy()
-        except Exception:
-            pass
-    return dialog_result["selection"]
+    return RenderBrokerRequest(
+        title="Optimizer-v2 render selector",
+        summary_lines=(
+            "Structure: {} / {}".format(patientUID, structureID),
+            (
+                "Select stage-boundary scenes or a candidate containment replay. After each render the dialog "
+                "will reopen until you choose Continue with code."
+            ),
+            "Timeout, when enabled, always auto-continues without opening new windows or exports.",
+        ),
+        choice_groups=(stage_choice_group, candidate_choice_group),
+        continue_button_label="Continue with code",
+        timeout_policy=timeout_policy,
+    )
 
 
-def _resolve_requested_gui_render_backend(show_open3d, show_plotly):
-    if show_open3d and show_plotly:
-        return "both"
-    if show_open3d:
-        return "open3d"
-    if show_plotly:
-        return "plotly"
-    return "none"
+def _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
+    master_structure_info_dict,
+    patient_uid,
+    roi_name,
+    scene_group_name,
+):
+    global_info = master_structure_info_dict.get("Global") or {}
+    specific_output_dir = global_info.get("Specific output dir")
+    if specific_output_dir is None:
+        return None
+    return Path(specific_output_dir).joinpath(
+        "scientific_communication",
+        "optimizer_v2",
+        _sanitize_output_path_fragment(scene_group_name),
+        _sanitize_output_path_fragment(patient_uid),
+        _sanitize_output_path_fragment(roi_name),
+        "plotly_vector",
+    )
+
+
+def _build_optimizer_v2_plotly_export_config_from_broker_settings(
+    render_broker_export_settings,
+    camera_eye,
+    camera_center,
+    camera_up,
+):
+    if render_broker_export_settings is None:
+        return None
+    export_output_dir = Path(render_broker_export_settings.output_dir)
+    export_output_dir.mkdir(parents=True, exist_ok=True)
+    return OptimizerV2PlotlyExportConfig(
+        output_dir=export_output_dir,
+        file_formats=tuple(render_broker_export_settings.file_formats),
+        width=int(render_broker_export_settings.width),
+        height=int(render_broker_export_settings.height),
+        scale=float(render_broker_export_settings.scale),
+        camera_eye=tuple(float(value) for value in camera_eye),
+        camera_center=tuple(float(value) for value in camera_center),
+        camera_up=tuple(float(value) for value in camera_up),
+    )
 
 
 def _build_optimizer_v2_candidate_containment_replay_options(

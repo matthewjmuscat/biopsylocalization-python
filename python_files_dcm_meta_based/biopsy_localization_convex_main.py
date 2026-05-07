@@ -553,6 +553,8 @@ def main():
     optimizer_v2_render_plotly_export_camera_eye = (1.6, -1.8, 1.15)
     optimizer_v2_render_plotly_export_camera_center = (0.0, 0.0, 0.0)
     optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
+    optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
+    optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
     optimizer_v2_render_winner_containment_debug_bool = True # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
     optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
@@ -4722,6 +4724,8 @@ def main():
                               render_plotly_export_camera_eye=optimizer_v2_render_plotly_export_camera_eye,
                               render_plotly_export_camera_center=optimizer_v2_render_plotly_export_camera_center,
                               render_plotly_export_camera_up=optimizer_v2_render_plotly_export_camera_up,
+                              render_dialog_timeout_seconds=optimizer_v2_render_dialog_timeout_seconds,
+                              render_dialog_timeout_extend_seconds=optimizer_v2_render_dialog_timeout_extend_seconds,
                               render_winner_containment_debug_bool=optimizer_v2_render_winner_containment_debug_bool,
                               render_winner_containment_backend=optimizer_v2_render_winner_containment_backend,
                               render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,

@@ -556,7 +556,7 @@ def _export_plotly_figure_for_render_job(
         resolved_file_formats = _resolve_plotly_export_file_formats(plotly_export_config)
 
     for file_format in resolved_file_formats:
-        if file_format not in ("svg", "pdf"):
+        if file_format not in ("svg", "pdf", "png"):
             raise ValueError(
                 "unsupported optimizer-v2 Plotly export format: {}".format(file_format)
             )
