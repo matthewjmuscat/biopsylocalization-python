@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
@@ -146,6 +147,8 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         max_test_structures_per_call=max_test_structures_per_call,
         auto_calibrate_max_test_structures_per_call=auto_calibrate_max_test_structures_per_call,
         downstream_comparable_trial_count=downstream_comparable_trial_count,
+        structures_progress=structures_progress,
+        completed_progress=completed_progress,
     )
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
@@ -688,52 +691,141 @@ def _resolve_effective_max_test_structures_per_call(
     max_test_structures_per_call,
     auto_calibrate_max_test_structures_per_call,
     downstream_comparable_trial_count,
+    structures_progress=None,
+    completed_progress=None,
 ):
     if max_test_structures_per_call is not None:
         return int(max_test_structures_per_call)
     if not auto_calibrate_max_test_structures_per_call:
         return None
 
-    calibration_inputs = _build_optimizer_v2_call_capacity_calibration_inputs(
-        master_structure_reference_dict=master_structure_reference_dict,
-        bx_ref=bx_ref,
-        dil_ref=dil_ref,
-        optimizer_simulated_type=optimizer_simulated_type,
-        search_config=search_config,
-        downstream_comparable_trial_count=downstream_comparable_trial_count,
-        parallel_pool=parallel_pool,
-    )
-    if calibration_inputs is None:
-        return None
-
-    calibration_result = (
-        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.calibrate_max_test_structures_per_call(
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays=(
-                calibration_inputs.target_relative_structures_nominal_plus_trials
-            ),
-            prototype_test_structure_points_2d_arr=(
-                calibration_inputs.prototype_test_structure_points_2d_arr
-            ),
-            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=(
-                remove_consecutive_duplicate_points_in_polygons
-            ),
-            log_file_name=None,
-            include_edges_in_log=include_edges_in_log,
-            kernel_type=kernel_type,
-            safety_factor=DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR,
-            verification_expansion_factor=(
-                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR
-            ),
-            max_verification_expansion_rounds=(
-                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_EXPANSION_ROUNDS
-            ),
-            max_binary_search_rounds=(
-                DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_BINARY_SEARCH_ROUNDS
-            ),
+    calibration_elapsed_start_time = time.perf_counter()
+    calibration_progress_task = None
+    if structures_progress is not None:
+        calibration_progress_task = structures_progress.add_task(
+            "[yellow]Optimizer-v2 calibration: building representative workload",
+            total=3,
         )
+
+    try:
+        calibration_inputs = _build_optimizer_v2_call_capacity_calibration_inputs(
+            master_structure_reference_dict=master_structure_reference_dict,
+            bx_ref=bx_ref,
+            dil_ref=dil_ref,
+            optimizer_simulated_type=optimizer_simulated_type,
+            search_config=search_config,
+            downstream_comparable_trial_count=downstream_comparable_trial_count,
+            parallel_pool=parallel_pool,
+        )
+        if calibration_inputs is None:
+            if calibration_progress_task is not None:
+                structures_progress.update(
+                    calibration_progress_task,
+                    advance=3,
+                    description="[yellow]Optimizer-v2 calibration: skipped (no eligible optimizer-v2 targets)",
+                )
+                structures_progress.remove_task(calibration_progress_task)
+            return None
+
+        if calibration_progress_task is not None:
+            structures_progress.update(
+                calibration_progress_task,
+                advance=1,
+                description="[yellow]Optimizer-v2 calibration: probing safe containment-call budget",
+            )
+
+        calibration_result = (
+            custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.calibrate_max_test_structures_per_call(
+                list_of_relative_structures_containting_list_of_constant_zslices_arrays=(
+                    calibration_inputs.target_relative_structures_nominal_plus_trials
+                ),
+                prototype_test_structure_points_2d_arr=(
+                    calibration_inputs.prototype_test_structure_points_2d_arr
+                ),
+                constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+                remove_consecutive_duplicate_points_in_polygons=(
+                    remove_consecutive_duplicate_points_in_polygons
+                ),
+                log_file_name=None,
+                include_edges_in_log=include_edges_in_log,
+                kernel_type=kernel_type,
+                safety_factor=DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR,
+                verification_expansion_factor=(
+                    DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR
+                ),
+                max_verification_expansion_rounds=(
+                    DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_EXPANSION_ROUNDS
+                ),
+                max_binary_search_rounds=(
+                    DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_BINARY_SEARCH_ROUNDS
+                ),
+            )
+        )
+        resolved_max_test_structures_per_call = int(
+            calibration_result.safe_max_test_structures_per_call
+        )
+        calibration_elapsed_seconds = time.perf_counter() - calibration_elapsed_start_time
+        calibration_summary_description = _build_optimizer_v2_calibration_summary_description(
+            calibration_result,
+            resolved_max_test_structures_per_call,
+            calibration_elapsed_seconds,
+        )
+
+        if calibration_progress_task is not None:
+            structures_progress.update(
+                calibration_progress_task,
+                advance=1,
+                description="[yellow]Optimizer-v2 calibration: finalizing optimizer budget",
+            )
+            structures_progress.update(
+                calibration_progress_task,
+                advance=1,
+                description=calibration_summary_description,
+            )
+            structures_progress.remove_task(calibration_progress_task)
+        _record_optimizer_v2_calibration_completion(
+            completed_progress,
+            calibration_summary_description,
+        )
+        return resolved_max_test_structures_per_call
+    except Exception:
+        if calibration_progress_task is not None:
+            structures_progress.update(
+                calibration_progress_task,
+                description="[red]Optimizer-v2 calibration failed",
+            )
+        raise
+
+
+def _build_optimizer_v2_calibration_summary_description(
+    calibration_result,
+    resolved_max_test_structures_per_call,
+    calibration_elapsed_seconds,
+):
+    cache_status = "cache hit" if calibration_result.from_cache else "cache miss"
+    return (
+        "[green]Optimizer-v2 calibration: safe max_test_structures_per_call={} "
+        "({}; attempts={}; {:.1f}s)"
+    ).format(
+        int(resolved_max_test_structures_per_call),
+        cache_status,
+        int(calibration_result.verification_attempt_count),
+        float(calibration_elapsed_seconds),
     )
-    return int(calibration_result.safe_max_test_structures_per_call)
+
+
+def _record_optimizer_v2_calibration_completion(
+    completed_progress,
+    calibration_summary_description,
+):
+    if completed_progress is None:
+        return
+
+    completed_calibration_task = completed_progress.add_task(
+        calibration_summary_description,
+        total=1,
+    )
+    completed_progress.update(completed_calibration_task, advance=1)
 
 
 def _build_optimizer_v2_call_capacity_calibration_inputs(
