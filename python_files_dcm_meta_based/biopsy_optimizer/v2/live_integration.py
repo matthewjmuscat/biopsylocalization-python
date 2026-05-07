@@ -40,6 +40,7 @@ from preprocessing.transform_bank import (
     get_biopsy_transform_bank_prefix,
     get_structure_transform_bank_prefix,
 )
+from startup.runtime_logging import get_active_runtime_logger
 from ui.render_broker import (
     RenderBrokerChoiceGroup,
     RenderBrokerChoiceOption,
@@ -80,6 +81,9 @@ DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_MAX_BINARY_SEARCH_ROUNDS = 6
 class OptimizerV2CallCapacityCalibrationInputs:
     prototype_test_structure_points_2d_arr: np.ndarray
     target_relative_structures_nominal_plus_trials: Sequence[Sequence[np.ndarray]]
+    calibration_trial_count: int
+    representative_biopsy_point_count: int
+    representative_target_point_count: int
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,26 @@ class OptimizerV2CandidateContainmentReplayOption:
     num_trials: int
     scene_group_name: str
     scene_name_suffix: str
+
+
+def _runtime_checkpoint(
+    phase,
+    message,
+    *,
+    patient_uid=None,
+    structure_id=None,
+    details=None,
+):
+    runtime_logger = get_active_runtime_logger()
+    if runtime_logger is None:
+        return
+    runtime_logger.checkpoint(
+        phase,
+        message,
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        details=details,
+    )
 
 
 def run_target_dil_optimizer_v2_for_live_simulated_family(
@@ -113,6 +137,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     max_candidates_per_chunk=8,
     max_test_structures_per_call=None,
     auto_calibrate_max_test_structures_per_call=True,
+    verify_calibrated_max_test_structures_per_call=True,
     downstream_comparable_trial_count=None,
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
@@ -156,6 +181,20 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         visible=False,
     )
 
+    _runtime_checkpoint(
+        "optimizer_v2.calibration.start",
+        "Resolving optimizer-v2 containment call budget.",
+        details={
+            "requested_max_test_structures_per_call": max_test_structures_per_call,
+            "auto_calibrate_max_test_structures_per_call": bool(
+                auto_calibrate_max_test_structures_per_call
+            ),
+            "verify_calibrated_max_test_structures_per_call": bool(
+                verify_calibrated_max_test_structures_per_call
+            ),
+            "downstream_comparable_trial_count": downstream_comparable_trial_count,
+        },
+    )
     resolved_max_test_structures_per_call = _resolve_effective_max_test_structures_per_call(
         master_structure_reference_dict=master_structure_reference_dict,
         bx_ref=bx_ref,
@@ -169,9 +208,20 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         kernel_type=kernel_type,
         max_test_structures_per_call=max_test_structures_per_call,
         auto_calibrate_max_test_structures_per_call=auto_calibrate_max_test_structures_per_call,
+        verify_calibrated_max_test_structures_per_call=(
+            verify_calibrated_max_test_structures_per_call
+        ),
         downstream_comparable_trial_count=downstream_comparable_trial_count,
         structures_progress=structures_progress,
         completed_progress=completed_progress,
+    )
+    _runtime_checkpoint(
+        "optimizer_v2.calibration.end",
+        "Resolved optimizer-v2 containment call budget.",
+        details={
+            "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+            "downstream_comparable_trial_count": downstream_comparable_trial_count,
+        },
     )
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
@@ -232,6 +282,15 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 specific_structure,
                 dil_ref,
             )
+            _runtime_checkpoint(
+                "optimizer_v2.structure.prepare",
+                "Preparing optimizer-v2 target structure for staged search.",
+                patient_uid=patientUID,
+                structure_id=structureID,
+                details={
+                    "target_structure_ref": int(target_structure["Ref #"]),
+                },
+            )
             target_structure_cache_key = int(target_structure["Ref #"])
 
             candidate_pool = candidate_pool_cache.get(target_structure_cache_key)
@@ -290,6 +349,18 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 target_structure_pack_cache[cache_key] = resolved_target_structure_pack
                 return resolved_target_structure_pack
 
+            _runtime_checkpoint(
+                "optimizer_v2.structure.search.start",
+                "Starting optimizer-v2 staged candidate search.",
+                patient_uid=patientUID,
+                structure_id=structureID,
+                details={
+                    "candidate_count": int(np.asarray(candidate_pool.candidate_points).shape[0]),
+                    "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+                    "downstream_comparable_trial_count": downstream_comparable_trial_count,
+                },
+            )
+            search_start_time = time.perf_counter()
             search_result = run_target_staged_candidate_search(
                 candidate_pool=candidate_pool,
                 search_config=search_config,
@@ -306,6 +377,19 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 kernel_type=kernel_type,
                 downstream_comparable_trial_count=downstream_comparable_trial_count,
                 return_array_as="numpy",
+            )
+            _runtime_checkpoint(
+                "optimizer_v2.structure.search.end",
+                "Completed optimizer-v2 staged candidate search.",
+                patient_uid=patientUID,
+                structure_id=structureID,
+                details={
+                    "stage_count": len(search_result.stage_results),
+                    "winner_candidate_index_global": (
+                        search_result.operational_winner_candidate_index_global
+                    ),
+                    "elapsed_seconds": round(time.perf_counter() - search_start_time, 3),
+                },
             )
 
             winner_candidate_point = _resolve_operational_winner_candidate_point(
@@ -650,6 +734,7 @@ def _resolve_effective_max_test_structures_per_call(
     kernel_type,
     max_test_structures_per_call,
     auto_calibrate_max_test_structures_per_call,
+    verify_calibrated_max_test_structures_per_call,
     downstream_comparable_trial_count,
     structures_progress=None,
     completed_progress=None,
@@ -668,6 +753,7 @@ def _resolve_effective_max_test_structures_per_call(
         )
 
     try:
+        calibration_input_build_start_time = time.perf_counter()
         calibration_inputs = _build_optimizer_v2_call_capacity_calibration_inputs(
             master_structure_reference_dict=master_structure_reference_dict,
             bx_ref=bx_ref,
@@ -676,6 +762,9 @@ def _resolve_effective_max_test_structures_per_call(
             search_config=search_config,
             downstream_comparable_trial_count=downstream_comparable_trial_count,
             parallel_pool=parallel_pool,
+        )
+        calibration_input_build_elapsed_seconds = (
+            time.perf_counter() - calibration_input_build_start_time
         )
         if calibration_inputs is None:
             if calibration_progress_task is not None:
@@ -687,11 +776,37 @@ def _resolve_effective_max_test_structures_per_call(
                 structures_progress.remove_task(calibration_progress_task)
             return None
 
+        _runtime_checkpoint(
+            "optimizer_v2.calibration.inputs.built",
+            "Built representative optimizer-v2 calibration workload.",
+            details={
+                "calibration_trial_count": calibration_inputs.calibration_trial_count,
+                "representative_biopsy_point_count": (
+                    calibration_inputs.representative_biopsy_point_count
+                ),
+                "representative_target_point_count": (
+                    calibration_inputs.representative_target_point_count
+                ),
+                "build_elapsed_seconds": round(calibration_input_build_elapsed_seconds, 3),
+            },
+        )
+
         if calibration_progress_task is not None:
             structures_progress.update(
                 calibration_progress_task,
                 advance=1,
-                description="[yellow]Optimizer-v2 calibration: probing safe containment-call budget",
+                description=(
+                    "[yellow]Optimizer-v2 calibration: {} safe containment-call budget "
+                    "(workload built in {:.1f}s; {} trials)"
+                ).format(
+                    (
+                        "probing"
+                        if verify_calibrated_max_test_structures_per_call
+                        else "estimating"
+                    ),
+                    float(calibration_input_build_elapsed_seconds),
+                    int(calibration_inputs.calibration_trial_count),
+                ),
             )
 
         calibration_result = (
@@ -710,6 +825,7 @@ def _resolve_effective_max_test_structures_per_call(
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
                 safety_factor=DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR,
+                verify_estimate=verify_calibrated_max_test_structures_per_call,
                 verification_expansion_factor=(
                     DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR
                 ),
@@ -725,10 +841,49 @@ def _resolve_effective_max_test_structures_per_call(
             calibration_result.safe_max_test_structures_per_call
         )
         calibration_elapsed_seconds = time.perf_counter() - calibration_elapsed_start_time
+        verification_elapsed_seconds = float(
+            sum(
+                attempt.elapsed_seconds
+                for attempt in calibration_result.verification_attempts
+            )
+        )
         calibration_summary_description = _build_optimizer_v2_calibration_summary_description(
             calibration_result,
             resolved_max_test_structures_per_call,
+            calibration_input_build_elapsed_seconds,
+            verification_elapsed_seconds,
             calibration_elapsed_seconds,
+        )
+        _runtime_checkpoint(
+            "optimizer_v2.calibration.probed",
+            "Probed optimizer-v2 containment-call budget.",
+            details={
+                "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+                "estimated_max_test_structures_per_call": (
+                    calibration_result.estimated_max_test_structures_per_call
+                ),
+                "verified_max_test_structures_per_call": (
+                    calibration_result.verified_max_test_structures_per_call
+                ),
+                "verification_skipped": bool(calibration_result.verification_skipped),
+                "calibration_trial_count": calibration_inputs.calibration_trial_count,
+                "representative_biopsy_point_count": (
+                    calibration_inputs.representative_biopsy_point_count
+                ),
+                "representative_target_point_count": (
+                    calibration_inputs.representative_target_point_count
+                ),
+                "build_elapsed_seconds": round(calibration_input_build_elapsed_seconds, 3),
+                "verification_elapsed_seconds": round(verification_elapsed_seconds, 3),
+                "verification_attempts": [
+                    {
+                        "num_test_structures": int(attempt.num_test_structures),
+                        "succeeded": bool(attempt.succeeded),
+                        "elapsed_seconds": round(float(attempt.elapsed_seconds), 3),
+                    }
+                    for attempt in calibration_result.verification_attempts
+                ],
+            },
         )
 
         if calibration_progress_task is not None:
@@ -760,15 +915,22 @@ def _resolve_effective_max_test_structures_per_call(
 def _build_optimizer_v2_calibration_summary_description(
     calibration_result,
     resolved_max_test_structures_per_call,
+    calibration_input_build_elapsed_seconds,
+    verification_elapsed_seconds,
     calibration_elapsed_seconds,
 ):
-    cache_status = "cache hit" if calibration_result.from_cache else "cache miss"
+    if calibration_result.verification_skipped:
+        resolution_mode = "estimate-only"
+    else:
+        resolution_mode = "cache hit" if calibration_result.from_cache else "cache miss"
     return (
         "[green]Optimizer-v2 calibration: safe max_test_structures_per_call={} "
-        "({}; attempts={}; {:.1f}s)"
+        "({}; build={:.1f}s; verify={:.1f}s; attempts={}; {:.1f}s total)"
     ).format(
         int(resolved_max_test_structures_per_call),
-        cache_status,
+        resolution_mode,
+        float(calibration_input_build_elapsed_seconds),
+        float(verification_elapsed_seconds),
         int(calibration_result.verification_attempt_count),
         float(calibration_elapsed_seconds),
     )
@@ -847,6 +1009,9 @@ def _build_optimizer_v2_call_capacity_calibration_inputs(
             calibration_trial_count,
             parallel_pool,
         ),
+        calibration_trial_count=int(calibration_trial_count),
+        representative_biopsy_point_count=int(representative_biopsy_point_count),
+        representative_target_point_count=int(representative_target_point_count),
     )
 
 

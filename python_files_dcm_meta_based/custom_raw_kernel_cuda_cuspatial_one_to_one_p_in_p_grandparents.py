@@ -16,6 +16,7 @@ It currently exposes two batching layers:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import time
 from typing import Any, Optional, Sequence
 
 import cupy as cp
@@ -57,6 +58,15 @@ class ContainmentCallCapacitySignature:
 
 
 @dataclass(frozen=True)
+class ContainmentCallCapacityVerificationAttempt:
+    """One real calibration probe against the production containment surface."""
+
+    num_test_structures: int
+    succeeded: bool
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True)
 class ContainmentCallCapacityCalibrationResult:
     """Resolved safe package-level `max_test_structures_per_call` budget."""
 
@@ -64,6 +74,8 @@ class ContainmentCallCapacityCalibrationResult:
     estimated_max_test_structures_per_call: int
     verified_max_test_structures_per_call: int
     verification_attempt_count: int
+    verification_attempts: tuple[ContainmentCallCapacityVerificationAttempt, ...]
+    verification_skipped: bool
     used_binary_search: bool
     from_cache: bool
     safety_factor: float
@@ -84,6 +96,7 @@ def calibrate_max_test_structures_per_call(
     include_edges_in_log: bool = False,
     kernel_type: str = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized",
     safety_factor: float = 0.7,
+    verify_estimate: bool = True,
     verification_expansion_factor: float = 1.25,
     max_verification_expansion_rounds: int = 2,
     max_binary_search_rounds: int = 6,
@@ -134,13 +147,30 @@ def calibrate_max_test_structures_per_call(
         _estimate_safe_max_test_structures_per_call(signature, safety_factor),
     )
 
+    if not verify_estimate:
+        return ContainmentCallCapacityCalibrationResult(
+            safe_max_test_structures_per_call=int(estimated_max_test_structures_per_call),
+            estimated_max_test_structures_per_call=int(estimated_max_test_structures_per_call),
+            verified_max_test_structures_per_call=int(estimated_max_test_structures_per_call),
+            verification_attempt_count=0,
+            verification_attempts=tuple(),
+            verification_skipped=True,
+            used_binary_search=False,
+            from_cache=False,
+            safety_factor=float(safety_factor),
+            verification_expansion_factor=float(verification_expansion_factor),
+            signature=signature,
+        )
+
     verification_attempt_count = 0
+    verification_attempts: list[ContainmentCallCapacityVerificationAttempt] = []
     used_binary_search = False
 
     def verify_candidate(num_test_structures: int) -> bool:
         nonlocal verification_attempt_count
         verification_attempt_count += 1
-        return _verify_max_test_structures_candidate(
+        attempt_start_time = time.perf_counter()
+        succeeded = _verify_max_test_structures_candidate(
             num_test_structures=num_test_structures,
             list_of_relative_structures_containting_list_of_constant_zslices_arrays=list_of_relative_structures_containting_list_of_constant_zslices_arrays,
             prototype_test_structure_points_2d_arr=normalized_prototype,
@@ -151,6 +181,14 @@ def calibrate_max_test_structures_per_call(
             include_edges_in_log=include_edges_in_log,
             kernel_type=kernel_type,
         )
+        verification_attempts.append(
+            ContainmentCallCapacityVerificationAttempt(
+                num_test_structures=int(num_test_structures),
+                succeeded=bool(succeeded),
+                elapsed_seconds=float(time.perf_counter() - attempt_start_time),
+            )
+        )
+        return succeeded
 
     best_verified = 0
     expansion_failure_upper_bound = None
@@ -199,6 +237,8 @@ def calibrate_max_test_structures_per_call(
         estimated_max_test_structures_per_call=int(estimated_max_test_structures_per_call),
         verified_max_test_structures_per_call=int(best_verified),
         verification_attempt_count=int(verification_attempt_count),
+        verification_attempts=tuple(verification_attempts),
+        verification_skipped=False,
         used_binary_search=bool(used_binary_search),
         from_cache=False,
         safety_factor=float(safety_factor),
