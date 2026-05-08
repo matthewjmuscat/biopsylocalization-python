@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional, Sequence
 
 import numpy as np
@@ -282,6 +283,7 @@ def _run_target_candidate_stage(
     capacity_packed_trial_prefix_target: Optional[int] = None,
     max_test_structures_per_call_budget: Optional[int] = None,
 ) -> OptimizerV2StageRunResult:
+    stage_elapsed_start_time = time.perf_counter()
     biopsy_transform_bank_prefix = biopsy_transform_bank_prefix_provider(stage_config.num_trials)
     target_transform_bank_prefix = target_transform_bank_prefix_provider(stage_config.num_trials)
     _validate_stage_transform_bank_prefix(
@@ -300,7 +302,9 @@ def _run_target_candidate_stage(
 
     chunk_score_results = []
     stage_tested_candidate_frames = []
+    chunk_scoring_elapsed_seconds = 0.0
     for chunk_candidate_indices_global in _yield_candidate_index_chunks(candidate_indices_global, max_candidates_per_chunk):
+        chunk_score_start_time = time.perf_counter()
         chunk_layout = OptimizerV2ChunkLayout(
             candidate_indices_global=tuple(int(candidate_index) for candidate_index in chunk_candidate_indices_global),
             num_trials=stage_config.num_trials,
@@ -330,6 +334,7 @@ def _run_target_candidate_stage(
             kernel_type=kernel_type,
             return_array_as=return_array_as,
         )
+        chunk_scoring_elapsed_seconds += time.perf_counter() - chunk_score_start_time
         chunk_score_results.append(chunk_score_result)
         stage_tested_candidate_frames.append(
             _annotate_stage_tested_candidate_dataframe(
@@ -343,16 +348,31 @@ def _run_target_candidate_stage(
                 minimum_trial_prefix_floor=minimum_trial_prefix_floor,
                 capacity_packed_trial_prefix_target=capacity_packed_trial_prefix_target,
                 max_test_structures_per_call_budget=max_test_structures_per_call_budget,
+                stage_chunk_count=len(chunk_score_results),
+                stage_chunk_scoring_elapsed_seconds=chunk_scoring_elapsed_seconds,
             )
         )
 
     stage_tested_candidate_dataframe = pandas.concat(stage_tested_candidate_frames, ignore_index=True)
+    ranking_start_time = time.perf_counter()
     stage_ranked_candidate_dataframe, survivor_candidate_indices_global = _build_stage_ranked_candidate_dataframe(
         stage_tested_candidate_dataframe,
         stage_config,
         chunk_score_results=chunk_score_results,
         objective_reducer_name=objective_reducer_name,
         mean_pd_stage_prune_std_dev_threshold=mean_pd_stage_prune_std_dev_threshold,
+    )
+    ranking_elapsed_seconds = time.perf_counter() - ranking_start_time
+    stage_total_elapsed_seconds = time.perf_counter() - stage_elapsed_start_time
+    stage_ranked_candidate_dataframe["Stage chunk count"] = np.int32(len(chunk_score_results))
+    stage_ranked_candidate_dataframe["Stage chunk scoring elapsed seconds"] = float(
+        chunk_scoring_elapsed_seconds
+    )
+    stage_ranked_candidate_dataframe["Stage ranking elapsed seconds"] = float(
+        ranking_elapsed_seconds
+    )
+    stage_ranked_candidate_dataframe["Stage total elapsed seconds"] = float(
+        stage_total_elapsed_seconds
     )
     return OptimizerV2StageRunResult(
         stage_name=stage_config.stage_name,
@@ -364,6 +384,10 @@ def _run_target_candidate_stage(
         ranked_candidate_dataframe=stage_ranked_candidate_dataframe,
         round_index=int(round_index),
         appended_trial_block_size=int(appended_trial_block_size),
+        num_candidate_chunks=int(len(chunk_score_results)),
+        chunk_scoring_elapsed_seconds=float(chunk_scoring_elapsed_seconds),
+        ranking_elapsed_seconds=float(ranking_elapsed_seconds),
+        total_elapsed_seconds=float(stage_total_elapsed_seconds),
     )
 
 
@@ -378,6 +402,8 @@ def _annotate_stage_tested_candidate_dataframe(
     minimum_trial_prefix_floor: Optional[int] = None,
     capacity_packed_trial_prefix_target: Optional[int] = None,
     max_test_structures_per_call_budget: Optional[int] = None,
+    stage_chunk_count: Optional[int] = None,
+    stage_chunk_scoring_elapsed_seconds: Optional[float] = None,
 ):
     annotated_dataframe = tested_candidate_dataframe.copy()
     annotated_dataframe["Stage name"] = stage_config.stage_name
@@ -411,6 +437,16 @@ def _annotate_stage_tested_candidate_dataframe(
     else:
         annotated_dataframe["Stage max test structures per call budget"] = np.int32(
             max_test_structures_per_call_budget
+        )
+    if stage_chunk_count is None:
+        annotated_dataframe["Stage chunk count"] = np.nan
+    else:
+        annotated_dataframe["Stage chunk count"] = np.int32(stage_chunk_count)
+    if stage_chunk_scoring_elapsed_seconds is None:
+        annotated_dataframe["Stage chunk scoring elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe["Stage chunk scoring elapsed seconds"] = float(
+            stage_chunk_scoring_elapsed_seconds
         )
     annotated_dataframe["Tie-break resolution method"] = DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD
     annotated_dataframe["Tie-break warning flag"] = False

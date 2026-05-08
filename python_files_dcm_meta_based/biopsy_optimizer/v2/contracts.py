@@ -141,6 +141,10 @@ class OptimizerV2StageRunResult:
     ranked_candidate_dataframe: Any
     round_index: int = 1
     appended_trial_block_size: int = 0
+    num_candidate_chunks: int = 0
+    chunk_scoring_elapsed_seconds: float = 0.0
+    ranking_elapsed_seconds: float = 0.0
+    total_elapsed_seconds: float = 0.0
 
 
 @dataclass

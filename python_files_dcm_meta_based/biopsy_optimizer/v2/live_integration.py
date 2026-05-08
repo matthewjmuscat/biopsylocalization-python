@@ -96,6 +96,25 @@ class OptimizerV2CandidateContainmentReplayOption:
     scene_name_suffix: str
 
 
+@dataclass(frozen=True)
+class OptimizerV2QueuedRenderContext:
+    patient_uid: str
+    structure_id: str
+    search_result: Any
+    candidate_pool: Any
+    stage_boundary_render_jobs: Tuple[OptimizerV2StageBoundaryRenderJob, ...]
+    target_structure: Any
+    target_structure_centroid: np.ndarray
+    nominal_biopsy_points: np.ndarray
+    nominal_biopsy_centroid: np.ndarray
+    nominal_biopsy_centroid_line: np.ndarray
+    biopsy_transform_bank_prefix_provider: Any
+    target_relative_structures_nominal_plus_trials_provider: Any
+    target_transform_bank_prefix_provider: Any
+    downstream_comparable_trial_count: Optional[int]
+    additional_render_layers: Tuple[Any, ...]
+
+
 def _runtime_checkpoint(
     phase,
     message,
@@ -114,6 +133,86 @@ def _runtime_checkpoint(
         structure_id=structure_id,
         details=details,
     )
+
+
+def _build_bound_biopsy_transform_bank_prefix_provider(specific_structure):
+    def _provider(num_trials, specific_structure=specific_structure):
+        return get_biopsy_transform_bank_prefix(specific_structure, num_trials)
+
+    return _provider
+
+
+def _build_bound_target_transform_bank_prefix_provider(target_structure):
+    def _provider(num_trials, target_structure=target_structure):
+        return get_structure_transform_bank_prefix(target_structure, num_trials)
+
+    return _provider
+
+
+def _build_bound_target_relative_structures_nominal_plus_trials_provider(
+    target_structure,
+    target_structure_cache_key,
+    target_structure_pack_cache,
+    parallel_pool,
+    patient_uid,
+    structure_id,
+):
+    def _provider(
+        num_trials,
+        target_structure=target_structure,
+        target_structure_cache_key=target_structure_cache_key,
+        target_structure_pack_cache=target_structure_pack_cache,
+        parallel_pool=parallel_pool,
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+    ):
+        cache_key = (target_structure_cache_key, int(num_trials))
+        cached_target_structure_pack = target_structure_pack_cache.get(cache_key)
+        if cached_target_structure_pack is not None:
+            return cached_target_structure_pack
+
+        pack_build_start_time = time.perf_counter()
+        resolved_target_structure_pack = _build_target_structure_nominal_plus_trials(
+            target_structure,
+            num_trials,
+            parallel_pool,
+        )
+        target_structure_pack_cache[cache_key] = resolved_target_structure_pack
+        _runtime_checkpoint(
+            "optimizer_v2.structure.target_pack.end",
+            "Built optimizer-v2 target structure trial pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "relative_structure_count": len(resolved_target_structure_pack),
+                "elapsed_seconds": round(time.perf_counter() - pack_build_start_time, 3),
+            },
+        )
+        return resolved_target_structure_pack
+
+    return _provider
+
+
+def _build_optimizer_v2_stage_timing_details(search_result):
+    return [
+        {
+            "stage_name": str(stage_result.stage_name),
+            "num_trials": int(stage_result.num_trials),
+            "input_candidate_count": int(np.asarray(stage_result.input_candidate_indices_global).size),
+            "survivor_candidate_count": int(
+                np.asarray(stage_result.survivor_candidate_indices_global).size
+            ),
+            "chunk_count": int(stage_result.num_candidate_chunks),
+            "chunk_scoring_elapsed_seconds": round(
+                float(stage_result.chunk_scoring_elapsed_seconds),
+                3,
+            ),
+            "ranking_elapsed_seconds": round(float(stage_result.ranking_elapsed_seconds), 3),
+            "total_elapsed_seconds": round(float(stage_result.total_elapsed_seconds), 3),
+        }
+        for stage_result in search_result.stage_results
+    ]
 
 
 def run_target_dil_optimizer_v2_for_live_simulated_family(
@@ -180,6 +279,13 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         processing_patients_task_completed_main_description,
         total=master_structure_info_dict["Global"]["Num cases"],
         visible=False,
+    )
+    queued_render_selection_contexts = []
+    stage_render_backend_default = _normalize_requested_render_backend(render_backend)
+    candidate_render_backend_default = _normalize_requested_render_backend(
+        render_winner_containment_backend
+        if render_winner_containment_backend is not None
+        else render_backend
     )
 
     _runtime_checkpoint(
@@ -296,6 +402,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
 
             candidate_pool = candidate_pool_cache.get(target_structure_cache_key)
             if candidate_pool is None:
+                candidate_pool_build_start_time = time.perf_counter()
                 candidate_pool = build_target_candidate_pool(
                     target_points_array=np.asarray(
                         target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
@@ -311,6 +418,26 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     include_edges_in_log=include_edges_in_log,
                 )
                 candidate_pool_cache[target_structure_cache_key] = candidate_pool
+                _runtime_checkpoint(
+                    "optimizer_v2.structure.candidate_pool.end",
+                    "Built optimizer-v2 candidate pool.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details={
+                        "candidate_count": int(np.asarray(candidate_pool.candidate_points).shape[0]),
+                        "elapsed_seconds": round(time.perf_counter() - candidate_pool_build_start_time, 3),
+                    },
+                )
+            else:
+                _runtime_checkpoint(
+                    "optimizer_v2.structure.candidate_pool.cache_hit",
+                    "Reused optimizer-v2 candidate pool from cache.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details={
+                        "candidate_count": int(np.asarray(candidate_pool.candidate_points).shape[0]),
+                    },
+                )
 
             planned_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
             nominal_biopsy_points = np.asarray(
@@ -330,25 +457,22 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 dtype=float,
             ).reshape(3)
 
-            def biopsy_transform_bank_prefix_provider(num_trials):
-                return get_biopsy_transform_bank_prefix(specific_structure, num_trials)
-
-            def target_transform_bank_prefix_provider(num_trials):
-                return get_structure_transform_bank_prefix(target_structure, num_trials)
-
-            def target_relative_structures_nominal_plus_trials_provider(num_trials):
-                cache_key = (target_structure_cache_key, int(num_trials))
-                cached_target_structure_pack = target_structure_pack_cache.get(cache_key)
-                if cached_target_structure_pack is not None:
-                    return cached_target_structure_pack
-
-                resolved_target_structure_pack = _build_target_structure_nominal_plus_trials(
-                    target_structure,
-                    num_trials,
-                    parallel_pool,
+            biopsy_transform_bank_prefix_provider = _build_bound_biopsy_transform_bank_prefix_provider(
+                specific_structure
+            )
+            target_transform_bank_prefix_provider = _build_bound_target_transform_bank_prefix_provider(
+                target_structure
+            )
+            target_relative_structures_nominal_plus_trials_provider = (
+                _build_bound_target_relative_structures_nominal_plus_trials_provider(
+                    target_structure=target_structure,
+                    target_structure_cache_key=target_structure_cache_key,
+                    target_structure_pack_cache=target_structure_pack_cache,
+                    parallel_pool=parallel_pool,
+                    patient_uid=patientUID,
+                    structure_id=structureID,
                 )
-                target_structure_pack_cache[cache_key] = resolved_target_structure_pack
-                return resolved_target_structure_pack
+            )
 
             _runtime_checkpoint(
                 "optimizer_v2.structure.search.start",
@@ -390,14 +514,16 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                         search_result.operational_winner_candidate_index_global
                     ),
                     "elapsed_seconds": round(time.perf_counter() - search_start_time, 3),
+                    "stage_timings": _build_optimizer_v2_stage_timing_details(search_result),
                 },
             )
 
+            render_prep_start_time = time.perf_counter()
             winner_candidate_point = _resolve_operational_winner_candidate_point(
                 search_result,
                 candidate_pool,
             )
-            additional_render_layers = _build_additional_stage_boundary_render_layers(
+            additional_render_layers = tuple(_build_additional_stage_boundary_render_layers(
                 structs_referenced_dict=structs_referenced_dict,
                 pydicom_item=pydicom_item,
                 specific_structure=specific_structure,
@@ -414,7 +540,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 oar_ref=oar_ref,
                 rectum_ref=rectum_ref,
                 urethra_ref=urethra_ref,
-            )
+            ))
 
             stage_boundary_render_jobs = build_stage_boundary_render_jobs(
                 search_result=search_result,
@@ -430,6 +556,17 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 scene_name_prefix="{}__{}".format(patientUID, structureID),
                 render_layer_style_by_name=render_layer_style_by_name,
             )
+            _runtime_checkpoint(
+                "optimizer_v2.structure.render_prep.end",
+                "Prepared optimizer-v2 render assets.",
+                patient_uid=patientUID,
+                structure_id=structureID,
+                details={
+                    "stage_scene_count": len(stage_boundary_render_jobs),
+                    "additional_render_layer_count": len(additional_render_layers),
+                    "elapsed_seconds": round(time.perf_counter() - render_prep_start_time, 3),
+                },
+            )
             specific_structure[
                 TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
             ] = stage_boundary_render_jobs
@@ -440,59 +577,41 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 render_roi_whitelist,
             )
             if should_render_structure:
-                stage_render_backend_default = _normalize_requested_render_backend(render_backend)
-                candidate_render_backend_default = _normalize_requested_render_backend(
-                    render_winner_containment_backend
-                    if render_winner_containment_backend is not None
-                    else render_backend
-                )
-                live_display.stop()
-                try:
-                    _run_optimizer_v2_render_selection_loop(
-                        master_structure_info_dict=master_structure_info_dict,
-                        patientUID=patientUID,
-                        structureID=structureID,
+                queued_render_selection_contexts.append(
+                    OptimizerV2QueuedRenderContext(
+                        patient_uid=str(patientUID),
+                        structure_id=str(structureID),
                         search_result=search_result,
                         candidate_pool=candidate_pool,
-                        stage_boundary_render_jobs=stage_boundary_render_jobs,
+                        stage_boundary_render_jobs=tuple(stage_boundary_render_jobs),
                         target_structure=target_structure,
-                        target_structure_centroid=target_structure_centroid,
-                        nominal_biopsy_points=nominal_biopsy_points,
-                        nominal_biopsy_centroid=nominal_biopsy_centroid,
-                        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+                        target_structure_centroid=np.asarray(target_structure_centroid, dtype=float).copy(),
+                        nominal_biopsy_points=np.asarray(nominal_biopsy_points, dtype=float).copy(),
+                        nominal_biopsy_centroid=np.asarray(nominal_biopsy_centroid, dtype=float).copy(),
+                        nominal_biopsy_centroid_line=np.asarray(
+                            nominal_biopsy_centroid_line,
+                            dtype=float,
+                        ).copy(),
                         biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
                         target_relative_structures_nominal_plus_trials_provider=(
                             target_relative_structures_nominal_plus_trials_provider
                         ),
                         target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                         downstream_comparable_trial_count=downstream_comparable_trial_count,
-                        additional_render_layers=additional_render_layers,
-                        render_layer_style_by_name=render_layer_style_by_name,
-                        render_stage_boundary_candidate_clouds_bool=(
-                            render_stage_boundary_candidate_clouds_bool
-                        ),
-                        stage_render_backend_default=stage_render_backend_default,
-                        candidate_render_backend_default=candidate_render_backend_default,
-                        render_plotly_export_bool=render_plotly_export_bool,
-                        render_plotly_export_formats=render_plotly_export_formats,
-                        render_plotly_export_width=render_plotly_export_width,
-                        render_plotly_export_height=render_plotly_export_height,
-                        render_plotly_export_scale=render_plotly_export_scale,
-                        render_plotly_export_camera_eye=render_plotly_export_camera_eye,
-                        render_plotly_export_camera_center=render_plotly_export_camera_center,
-                        render_plotly_export_camera_up=render_plotly_export_camera_up,
-                        render_dialog_timeout_seconds=render_dialog_timeout_seconds,
-                        render_dialog_timeout_extend_seconds=render_dialog_timeout_extend_seconds,
-                        render_winner_containment_debug_bool=render_winner_containment_debug_bool,
-                        render_include_target_points_bool=render_include_target_points_bool,
-                        max_test_structures_per_call=resolved_max_test_structures_per_call,
-                        include_edges_in_log=include_edges_in_log,
-                        kernel_type=kernel_type,
+                        additional_render_layers=tuple(additional_render_layers),
                     )
-                finally:
-                    live_display.start(refresh=True)
-                    live_display.refresh()
+                )
+                _runtime_checkpoint(
+                    "optimizer_v2.structure.render.queued",
+                    "Queued optimizer-v2 render review for end-of-run selection.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details={
+                        "stage_scene_count": len(stage_boundary_render_jobs),
+                    },
+                )
 
+            dataframe_build_start_time = time.perf_counter()
             metadata = _build_search_metadata(
                 patientUID,
                 specific_structure,
@@ -545,6 +664,19 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             if not tested_candidate_dataframe.empty:
                 patient_tested_dataframes.append(tested_candidate_dataframe)
 
+            _runtime_checkpoint(
+                "optimizer_v2.structure.outputs.end",
+                "Built optimizer-v2 structure outputs.",
+                patient_uid=patientUID,
+                structure_id=structureID,
+                details={
+                    "summary_rows": len(summary_dataframe),
+                    "ranked_rows": len(ranked_candidate_dataframe),
+                    "tested_rows": len(tested_candidate_dataframe),
+                    "elapsed_seconds": round(time.perf_counter() - dataframe_build_start_time, 3),
+                },
+            )
+
             structures_progress.update(processing_structures_task, advance=1)
 
         structures_progress.remove_task(processing_structures_task)
@@ -564,6 +696,51 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
 
     patients_progress.update(processing_patients_task, visible=False)
     completed_progress.update(processing_patients_task_completed, visible=True)
+    if queued_render_selection_contexts:
+        render_queue_start_time = time.perf_counter()
+        _runtime_checkpoint(
+            "optimizer_v2.render_queue.start",
+            "Opening queued optimizer-v2 render selector.",
+            details={
+                "queued_structure_count": len(queued_render_selection_contexts),
+            },
+        )
+        live_display.stop()
+        try:
+            _run_optimizer_v2_render_selection_loop(
+                master_structure_info_dict=master_structure_info_dict,
+                queued_render_selection_contexts=tuple(queued_render_selection_contexts),
+                render_layer_style_by_name=render_layer_style_by_name,
+                render_stage_boundary_candidate_clouds_bool=render_stage_boundary_candidate_clouds_bool,
+                stage_render_backend_default=stage_render_backend_default,
+                candidate_render_backend_default=candidate_render_backend_default,
+                render_plotly_export_bool=render_plotly_export_bool,
+                render_plotly_export_formats=render_plotly_export_formats,
+                render_plotly_export_width=render_plotly_export_width,
+                render_plotly_export_height=render_plotly_export_height,
+                render_plotly_export_scale=render_plotly_export_scale,
+                render_plotly_export_camera_eye=render_plotly_export_camera_eye,
+                render_plotly_export_camera_center=render_plotly_export_camera_center,
+                render_plotly_export_camera_up=render_plotly_export_camera_up,
+                render_dialog_timeout_seconds=render_dialog_timeout_seconds,
+                render_dialog_timeout_extend_seconds=render_dialog_timeout_extend_seconds,
+                render_winner_containment_debug_bool=render_winner_containment_debug_bool,
+                render_include_target_points_bool=render_include_target_points_bool,
+                max_test_structures_per_call=resolved_max_test_structures_per_call,
+                include_edges_in_log=include_edges_in_log,
+                kernel_type=kernel_type,
+            )
+        finally:
+            live_display.start(refresh=True)
+            live_display.refresh()
+        _runtime_checkpoint(
+            "optimizer_v2.render_queue.end",
+            "Closed queued optimizer-v2 render selector.",
+            details={
+                "queued_structure_count": len(queued_render_selection_contexts),
+                "elapsed_seconds": round(time.perf_counter() - render_queue_start_time, 3),
+            },
+        )
     return live_display
 
 
@@ -927,14 +1104,11 @@ def _build_optimizer_v2_calibration_summary_description(
     else:
         resolution_mode = "cache hit" if calibration_result.from_cache else "cache miss"
     return (
-        "[green]Optimizer-v2 calibration: safe max_test_structures_per_call={} "
-        "({}; build={:.1f}s; verify={:.1f}s; attempts={}; {:.1f}s total)"
+        "[green]Optimizer-v2 calibration: max_test_structures_per_call={} "
+        "({}; {:.1f}s total)"
     ).format(
         int(resolved_max_test_structures_per_call),
         resolution_mode,
-        float(calibration_input_build_elapsed_seconds),
-        float(verification_elapsed_seconds),
-        int(calibration_result.verification_attempt_count),
         float(calibration_elapsed_seconds),
     )
 
@@ -1275,21 +1449,7 @@ def _sanitize_output_path_fragment(raw_fragment):
 
 def _run_optimizer_v2_render_selection_loop(
     master_structure_info_dict,
-    patientUID,
-    structureID,
-    search_result,
-    candidate_pool,
-    stage_boundary_render_jobs,
-    target_structure,
-    target_structure_centroid,
-    nominal_biopsy_points,
-    nominal_biopsy_centroid,
-    nominal_biopsy_centroid_line,
-    biopsy_transform_bank_prefix_provider,
-    target_relative_structures_nominal_plus_trials_provider,
-    target_transform_bank_prefix_provider,
-    downstream_comparable_trial_count,
-    additional_render_layers,
+    queued_render_selection_contexts,
     render_layer_style_by_name,
     render_stage_boundary_candidate_clouds_bool,
     stage_render_backend_default,
@@ -1310,37 +1470,96 @@ def _run_optimizer_v2_render_selection_loop(
     include_edges_in_log,
     kernel_type,
 ):
-    resolved_stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
-    candidate_replay_options = _build_optimizer_v2_candidate_containment_replay_options(
-        search_result,
-        downstream_comparable_trial_count,
-    )
+    resolved_queued_render_selection_contexts = tuple(queued_render_selection_contexts)
+    if len(resolved_queued_render_selection_contexts) == 0:
+        return
+
+    queued_structure_labels = []
+    stage_choice_options = []
+    stage_render_jobs_by_key = {}
+    candidate_choice_options = []
+    candidate_replay_context_by_key = {}
+
+    for context_index, render_context in enumerate(resolved_queued_render_selection_contexts, start=1):
+        queued_structure_labels.append(
+            "{} / {}".format(render_context.patient_uid, render_context.structure_id)
+        )
+        default_stage_export_output_dir = _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
+            master_structure_info_dict,
+            render_context.patient_uid,
+            render_context.structure_id,
+            "stage_boundary",
+        )
+        for stage_index, render_job in enumerate(render_context.stage_boundary_render_jobs, start=1):
+            option_key = "stage__{:04d}__{:03d}".format(context_index, stage_index)
+            stage_render_jobs_by_key[option_key] = render_job
+            stage_choice_options.append(
+                RenderBrokerChoiceOption(
+                    option_key=option_key,
+                    display_label=_format_optimizer_v2_stage_choice_label(
+                        render_job,
+                        stage_index,
+                        patient_uid=render_context.patient_uid,
+                        structure_id=render_context.structure_id,
+                    ),
+                    selected_by_default=False,
+                    suggested_export_output_dir=default_stage_export_output_dir,
+                )
+            )
+
+        candidate_replay_options = _build_optimizer_v2_candidate_containment_replay_options(
+            render_context.search_result,
+            render_context.downstream_comparable_trial_count,
+        )
+        for replay_option in candidate_replay_options:
+            option_key = "candidate__{:04d}__{}".format(
+                context_index,
+                _sanitize_output_path_fragment(replay_option.option_key),
+            )
+            candidate_replay_context_by_key[option_key] = (render_context, replay_option)
+            candidate_choice_options.append(
+                RenderBrokerChoiceOption(
+                    option_key=option_key,
+                    display_label="{} / {} | {}".format(
+                        render_context.patient_uid,
+                        render_context.structure_id,
+                        replay_option.display_label,
+                    ),
+                    selected_by_default=(len(candidate_choice_options) == 0),
+                    suggested_export_output_dir=_build_optimizer_v2_plotly_export_output_dir_for_scene_group(
+                        master_structure_info_dict,
+                        render_context.patient_uid,
+                        render_context.structure_id,
+                        replay_option.scene_group_name,
+                    ),
+                )
+            )
 
     stage_can_show_open3d = (
         bool(render_stage_boundary_candidate_clouds_bool)
         and stage_render_backend_default in ("open3d", "both")
-        and bool(resolved_stage_boundary_render_jobs)
+        and bool(stage_choice_options)
     )
     stage_can_show_plotly = (
         bool(render_stage_boundary_candidate_clouds_bool)
         and stage_render_backend_default in ("plotly", "both")
-        and bool(resolved_stage_boundary_render_jobs)
+        and bool(stage_choice_options)
     )
-    stage_can_export_plotly = bool(render_plotly_export_bool) and bool(resolved_stage_boundary_render_jobs)
+    stage_can_export_plotly = bool(render_plotly_export_bool) and bool(stage_choice_options)
     candidate_can_show_open3d = (
         bool(render_winner_containment_debug_bool)
         and candidate_render_backend_default in ("open3d", "both")
-        and len(candidate_replay_options) > 0
+        and len(candidate_choice_options) > 0
     )
     candidate_can_show_plotly = (
         bool(render_winner_containment_debug_bool)
         and candidate_render_backend_default in ("plotly", "both")
-        and len(candidate_replay_options) > 0
+        and len(candidate_choice_options) > 0
     )
     candidate_can_export_plotly = (
         bool(render_winner_containment_debug_bool)
         and bool(render_plotly_export_bool)
-        and len(candidate_replay_options) > 0
+        and len(candidate_choice_options) > 0
     )
 
     if not any(
@@ -1355,15 +1574,10 @@ def _run_optimizer_v2_render_selection_loop(
     ):
         return
 
-    candidate_replay_options_by_key = {
-        replay_option.option_key: replay_option for replay_option in candidate_replay_options
-    }
     render_broker_request = _build_optimizer_v2_render_broker_request(
-        master_structure_info_dict=master_structure_info_dict,
-        patientUID=patientUID,
-        structureID=structureID,
-        stage_boundary_render_jobs=resolved_stage_boundary_render_jobs,
-        candidate_replay_options=candidate_replay_options,
+        queued_structure_labels=tuple(queued_structure_labels),
+        stage_choice_options=tuple(stage_choice_options),
+        candidate_choice_options=tuple(candidate_choice_options),
         stage_can_show_open3d=stage_can_show_open3d,
         stage_can_show_plotly=stage_can_show_plotly,
         stage_can_export_plotly=stage_can_export_plotly,
@@ -1383,9 +1597,9 @@ def _run_optimizer_v2_render_selection_loop(
     def _handle_render_broker_decision(render_broker_decision: RenderBrokerDecision) -> None:
         if render_broker_decision.group_key == "stage_boundary":
             selected_stage_boundary_render_jobs = tuple(
-                render_job
-                for render_job in resolved_stage_boundary_render_jobs
-                if render_job.stage_name in render_broker_decision.selected_option_keys
+                stage_render_jobs_by_key[selected_option_key]
+                for selected_option_key in render_broker_decision.selected_option_keys
+                if selected_option_key in stage_render_jobs_by_key
             )
             stage_plotly_export_config = _build_optimizer_v2_plotly_export_config_from_broker_settings(
                 render_broker_export_settings=render_broker_decision.export_settings,
@@ -1410,33 +1624,36 @@ def _run_optimizer_v2_render_selection_loop(
         if len(render_broker_decision.selected_option_keys) != 1:
             raise ValueError("optimizer-v2 candidate containment expects exactly one selected option")
 
-        replay_option = candidate_replay_options_by_key.get(render_broker_decision.selected_option_keys[0])
-        if replay_option is None:
+        replay_context = candidate_replay_context_by_key.get(
+            render_broker_decision.selected_option_keys[0]
+        )
+        if replay_context is None:
             raise ValueError(
                 "unknown optimizer-v2 candidate replay option: {}".format(
                     render_broker_decision.selected_option_keys[0]
                 )
             )
+        render_context, replay_option = replay_context
 
         candidate_containment_render_job, candidate_containment_chunk_score_result = (
             _build_candidate_containment_debug_render_job(
-                patientUID=patientUID,
-                structureID=structureID,
+                patientUID=render_context.patient_uid,
+                structureID=render_context.structure_id,
                 candidate_index_global=replay_option.candidate_index_global,
                 resolved_trial_count=replay_option.num_trials,
                 scene_name_suffix=replay_option.scene_name_suffix,
-                candidate_pool=candidate_pool,
-                nominal_biopsy_points=nominal_biopsy_points,
-                nominal_biopsy_centroid=nominal_biopsy_centroid,
-                nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
-                target_structure=target_structure,
-                target_structure_centroid=target_structure_centroid,
-                biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                candidate_pool=render_context.candidate_pool,
+                nominal_biopsy_points=render_context.nominal_biopsy_points,
+                nominal_biopsy_centroid=render_context.nominal_biopsy_centroid,
+                nominal_biopsy_centroid_line=render_context.nominal_biopsy_centroid_line,
+                target_structure=render_context.target_structure,
+                target_structure_centroid=render_context.target_structure_centroid,
+                biopsy_transform_bank_prefix_provider=render_context.biopsy_transform_bank_prefix_provider,
                 target_relative_structures_nominal_plus_trials_provider=(
-                    target_relative_structures_nominal_plus_trials_provider
+                    render_context.target_relative_structures_nominal_plus_trials_provider
                 ),
-                target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
-                additional_render_layers=additional_render_layers,
+                target_transform_bank_prefix_provider=render_context.target_transform_bank_prefix_provider,
+                additional_render_layers=render_context.additional_render_layers,
                 render_layer_style_by_name=render_layer_style_by_name,
                 include_target_points=render_include_target_points_bool,
                 max_test_structures_per_call=max_test_structures_per_call,
@@ -1445,8 +1662,8 @@ def _run_optimizer_v2_render_selection_loop(
             )
         )
         _print_candidate_containment_debug_summary(
-            patientUID,
-            structureID,
+            render_context.patient_uid,
+            render_context.structure_id,
             candidate_containment_chunk_score_result,
             replay_option.scene_name_suffix,
         )
@@ -1471,11 +1688,9 @@ def _run_optimizer_v2_render_selection_loop(
 
 
 def _build_optimizer_v2_render_broker_request(
-    master_structure_info_dict,
-    patientUID,
-    structureID,
-    stage_boundary_render_jobs,
-    candidate_replay_options,
+    queued_structure_labels,
+    stage_choice_options,
+    candidate_choice_options,
     stage_can_show_open3d,
     stage_can_show_plotly,
     stage_can_export_plotly,
@@ -1491,31 +1706,18 @@ def _build_optimizer_v2_render_broker_request(
     render_dialog_timeout_seconds,
     render_dialog_timeout_extend_seconds,
 ):
-    stage_boundary_render_jobs = tuple(stage_boundary_render_jobs)
-    candidate_replay_options = tuple(candidate_replay_options)
-    default_stage_export_output_dir = _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
-        master_structure_info_dict,
-        patientUID,
-        structureID,
-        "stage_boundary",
-    )
+    queued_structure_labels = tuple(queued_structure_labels)
+    stage_choice_options = tuple(stage_choice_options)
+    candidate_choice_options = tuple(candidate_choice_options)
     stage_choice_group = RenderBrokerChoiceGroup(
         group_key="stage_boundary",
-        display_label="Stage boundary scenes",
+        display_label="Queued stage boundary scenes",
         description=(
-            "Choose any stage-boundary scenes to review. You can render them live, export Plotly outputs, "
-            "or do both in one action."
+            "Choose any queued stage-boundary scenes to review across patients and ROIs. You can render them live, "
+            "export Plotly outputs, or do both in one action."
         ),
         selection_mode="multi",
-        options=tuple(
-            RenderBrokerChoiceOption(
-                option_key=render_job.stage_name,
-                display_label=_format_optimizer_v2_stage_choice_label(render_job, stage_index),
-                selected_by_default=False,
-                suggested_export_output_dir=default_stage_export_output_dir,
-            )
-            for stage_index, render_job in enumerate(stage_boundary_render_jobs, start=1)
-        ),
+        options=stage_choice_options,
         allow_open3d=bool(stage_can_show_open3d),
         allow_plotly=bool(stage_can_show_plotly),
         allow_plotly_export=bool(stage_can_export_plotly),
@@ -1531,32 +1733,17 @@ def _build_optimizer_v2_render_broker_request(
             )
         ),
         render_action_label="Render selected stages",
-        empty_state_message="No stage-boundary render jobs are available for this structure.",
+        empty_state_message="No queued stage-boundary render jobs are available.",
     )
     candidate_choice_group = RenderBrokerChoiceGroup(
         group_key="candidate_containment",
-        display_label="Candidate containment replay",
+        display_label="Queued candidate containment replay",
         description=(
-            "Choose one candidate replay to inspect. This reruns that candidate at the selected trial count "
+            "Choose one queued candidate replay to inspect. This reruns that candidate at the selected trial count "
             "and can render or export the resulting success and failure cloud scene."
         ),
         selection_mode="single",
-        options=tuple(
-            RenderBrokerChoiceOption(
-                option_key=replay_option.option_key,
-                display_label=replay_option.display_label,
-                selected_by_default=(replay_option.option_key == candidate_replay_options[0].option_key)
-                if len(candidate_replay_options) > 0
-                else False,
-                suggested_export_output_dir=_build_optimizer_v2_plotly_export_output_dir_for_scene_group(
-                    master_structure_info_dict,
-                    patientUID,
-                    structureID,
-                    replay_option.scene_group_name,
-                ),
-            )
-            for replay_option in candidate_replay_options
-        ),
+        options=candidate_choice_options,
         allow_open3d=bool(candidate_can_show_open3d),
         allow_plotly=bool(candidate_can_show_plotly),
         allow_plotly_export=bool(candidate_can_export_plotly),
@@ -1572,7 +1759,7 @@ def _build_optimizer_v2_render_broker_request(
             )
         ),
         render_action_label="Render selected candidate containment",
-        empty_state_message="No candidate containment replay options are available for this structure.",
+        empty_state_message="No queued candidate containment replay options are available.",
     )
     timeout_policy = None
     if render_dialog_timeout_seconds is not None:
@@ -1586,16 +1773,35 @@ def _build_optimizer_v2_render_broker_request(
     return RenderBrokerRequest(
         title="Optimizer-v2 render selector",
         summary_lines=(
-            "Structure: {} / {}".format(patientUID, structureID),
+            "Queued structures: {} | stage scenes: {} | candidate replays: {}".format(
+                len(queued_structure_labels),
+                len(stage_choice_options),
+                len(candidate_choice_options),
+            ),
+            "Structure preview: {}".format(
+                _summarize_optimizer_v2_render_queue_labels(queued_structure_labels)
+            ),
             (
-                "Select stage-boundary scenes or a candidate containment replay. After each render the dialog "
-                "will reopen until you choose Continue with code."
+                "Select queued stage-boundary scenes or a queued candidate containment replay. After each render "
+                "the dialog will reopen until you choose Continue with code."
             ),
             "Timeout, when enabled, always auto-continues without opening new windows or exports.",
         ),
         choice_groups=(stage_choice_group, candidate_choice_group),
         continue_button_label="Continue with code",
         timeout_policy=timeout_policy,
+    )
+
+
+def _summarize_optimizer_v2_render_queue_labels(queued_structure_labels):
+    resolved_labels = tuple(str(label) for label in queued_structure_labels)
+    if len(resolved_labels) == 0:
+        return "no queued structures"
+    if len(resolved_labels) <= 4:
+        return ", ".join(resolved_labels)
+    return "{}, ... (+{} more)".format(
+        ", ".join(resolved_labels[:4]),
+        len(resolved_labels) - 4,
     )
 
 
@@ -1619,7 +1825,12 @@ def _build_optimizer_v2_plotly_export_output_dir_for_scene_group(
     )
 
 
-def _format_optimizer_v2_stage_choice_label(render_job, stage_index):
+def _format_optimizer_v2_stage_choice_label(
+    render_job,
+    stage_index,
+    patient_uid=None,
+    structure_id=None,
+):
     input_candidate_count = int(np.asarray(render_job.input_candidate_points).shape[0])
     survivor_candidate_count = int(np.asarray(render_job.survivor_candidate_points).shape[0])
     stage_name = str(render_job.stage_name)
@@ -1629,12 +1840,17 @@ def _format_optimizer_v2_stage_choice_label(render_job, stage_index):
             trial_count_text = "{} trials".format(int(stage_name.rsplit("_n", 1)[1]))
         except Exception:
             trial_count_text = stage_name
-    return "Round {} | {} | {} -> {} candidates".format(
+    stage_label = "Round {} | {} | {} -> {} candidates".format(
         int(stage_index),
         trial_count_text,
         input_candidate_count,
         survivor_candidate_count,
     )
+    if patient_uid is None and structure_id is None:
+        return stage_label
+    if structure_id is None:
+        return "{} | {}".format(patient_uid, stage_label)
+    return "{} / {} | {}".format(patient_uid, structure_id, stage_label)
 
 
 def _build_optimizer_v2_plotly_export_config_from_broker_settings(

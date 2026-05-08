@@ -56,6 +56,19 @@ def build_target_dil_optimization_summary_dataframe(
             "Stage appended trial block size",
             np.nan,
         ),
+        "Target optimizer final stage chunk count": winner_row.get("Stage chunk count", np.nan),
+        "Target optimizer final stage chunk scoring elapsed seconds": winner_row.get(
+            "Stage chunk scoring elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage ranking elapsed seconds": winner_row.get(
+            "Stage ranking elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage total elapsed seconds": winner_row.get(
+            "Stage total elapsed seconds",
+            np.nan,
+        ),
         "Target optimizer final stage minimum cumulative trial prefix floor": winner_row.get(
             "Stage minimum cumulative trial prefix floor",
             np.nan,
@@ -69,6 +82,9 @@ def build_target_dil_optimization_summary_dataframe(
             np.nan,
         ),
         "Target optimizer num stages": len(search_result.stage_results),
+        "Target optimizer cumulative stage elapsed seconds": float(
+            sum(float(stage_result.total_elapsed_seconds) for stage_result in search_result.stage_results)
+        ),
         "Target optimizer num tested candidate rows": len(search_result.tested_candidate_dataframe),
         "Target optimizer num final ranked candidates": len(search_result.ranked_candidate_dataframe),
         "Target optimizer operational winner candidate index": int(
@@ -177,6 +193,10 @@ def build_target_dil_ranked_candidate_output_dataframe(
             "Stage name": "Target optimizer stage name",
             "Stage round index": "Target optimizer stage round index",
             "Stage appended trial block size": "Target optimizer stage appended trial block size",
+            "Stage chunk count": "Target optimizer stage chunk count",
+            "Stage chunk scoring elapsed seconds": "Target optimizer stage chunk scoring elapsed seconds",
+            "Stage ranking elapsed seconds": "Target optimizer stage ranking elapsed seconds",
+            "Stage total elapsed seconds": "Target optimizer stage total elapsed seconds",
             "Stage minimum cumulative trial prefix floor": "Target optimizer stage minimum cumulative trial prefix floor",
             "Stage capacity-packed cumulative trial prefix target": "Target optimizer stage capacity-packed cumulative trial prefix target",
             "Stage max test structures per call budget": "Target optimizer stage max test structures per call budget",
@@ -270,6 +290,10 @@ def build_target_dil_tested_candidate_output_dataframe(
             "Stage name": "Target optimizer stage name",
             "Stage round index": "Target optimizer stage round index",
             "Stage appended trial block size": "Target optimizer stage appended trial block size",
+            "Stage chunk count": "Target optimizer stage chunk count",
+            "Stage chunk scoring elapsed seconds": "Target optimizer stage chunk scoring elapsed seconds",
+            "Stage ranking elapsed seconds": "Target optimizer stage ranking elapsed seconds",
+            "Stage total elapsed seconds": "Target optimizer stage total elapsed seconds",
             "Stage minimum cumulative trial prefix floor": "Target optimizer stage minimum cumulative trial prefix floor",
             "Stage capacity-packed cumulative trial prefix target": "Target optimizer stage capacity-packed cumulative trial prefix target",
             "Stage max test structures per call budget": "Target optimizer stage max test structures per call budget",

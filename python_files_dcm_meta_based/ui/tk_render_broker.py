@@ -19,7 +19,7 @@ from ui.render_broker import (
 
 
 class TkRenderBrokerDialogAdapter:
-    def __init__(self, default_geometry: str = "1180x860", min_size=(1020, 700)):
+    def __init__(self, default_geometry: str = "1260x920", min_size=(1080, 760)):
         self.default_geometry = str(default_geometry)
         self.min_size = tuple(min_size)
 
@@ -50,9 +50,72 @@ class TkRenderBrokerDialogAdapter:
         root.attributes("-topmost", True)
         root.after(250, lambda: root.attributes("-topmost", False))
 
-        main_canvas = tk.Canvas(root, borderwidth=0, highlightthickness=0)
+        palette = {
+            "background": "#f3f5f8",
+            "card": "#ffffff",
+            "option_bg": "#ffffff",
+            "option_selected_bg": "#dbeafe",
+            "option_active_bg": "#e8f1ff",
+            "text": "#18212f",
+            "muted": "#526174",
+            "accent": "#0f5fa8",
+            "border": "#c7d2df",
+        }
+
+        style = ttk.Style(root)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        root.configure(background=palette["background"])
+        style.configure("RenderBroker.TFrame", background=palette["background"])
+        style.configure("RenderBroker.Card.TFrame", background=palette["card"])
+        style.configure(
+            "RenderBroker.TLabelframe",
+            background=palette["card"],
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "RenderBroker.TLabelframe.Label",
+            background=palette["background"],
+            foreground=palette["accent"],
+            font=("TkDefaultFont", 10, "bold"),
+        )
+        style.configure("RenderBroker.TLabel", background=palette["background"], foreground=palette["text"])
+        style.configure("RenderBroker.Card.TLabel", background=palette["card"], foreground=palette["text"])
+        style.configure(
+            "RenderBroker.Title.TLabel",
+            background=palette["background"],
+            foreground=palette["text"],
+            font=("TkDefaultFont", 12, "bold"),
+        )
+        style.configure(
+            "RenderBroker.Section.TLabel",
+            background=palette["card"],
+            foreground=palette["muted"],
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        style.configure(
+            "RenderBroker.Count.TLabel",
+            background=palette["card"],
+            foreground=palette["accent"],
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        style.configure("RenderBroker.TButton", padding=(12, 7))
+        style.configure("RenderBroker.Primary.TButton", padding=(14, 8))
+        style.configure("RenderBroker.TCheckbutton", background=palette["card"], foreground=palette["text"])
+        style.configure("RenderBroker.TEntry", fieldbackground=palette["card"])
+        style.configure("RenderBroker.TCombobox", fieldbackground=palette["card"])
+
+        main_canvas = tk.Canvas(
+            root,
+            borderwidth=0,
+            highlightthickness=0,
+            background=palette["background"],
+        )
         main_scrollbar = ttk.Scrollbar(root, orient="vertical", command=main_canvas.yview)
-        scrollable_frame = ttk.Frame(main_canvas, padding=12)
+        scrollable_frame = ttk.Frame(main_canvas, padding=14, style="RenderBroker.TFrame")
         scrollable_frame.bind(
             "<Configure>",
             lambda event: main_canvas.configure(scrollregion=main_canvas.bbox("all")),
@@ -67,7 +130,7 @@ class TkRenderBrokerDialogAdapter:
         ttk.Label(
             scrollable_frame,
             text=request.title,
-            font=("TkDefaultFont", 11, "bold"),
+            style="RenderBroker.Title.TLabel",
         ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
         if len(request.summary_lines) > 0:
@@ -76,6 +139,7 @@ class TkRenderBrokerDialogAdapter:
                 text="\n".join(request.summary_lines),
                 justify="left",
                 wraplength=1080,
+                style="RenderBroker.TLabel",
             ).grid(row=1, column=0, sticky="w", pady=(0, 12))
 
         def _resolve_initial_backend_flags(choice_group: RenderBrokerChoiceGroup):
@@ -103,6 +167,7 @@ class TkRenderBrokerDialogAdapter:
                 scrollable_frame,
                 text=choice_group.display_label,
                 padding=10,
+                style="RenderBroker.TLabelframe",
             )
             group_frame.grid(row=current_row_index, column=0, sticky="nsew", pady=(0, 10))
             group_frame.columnconfigure(0, weight=1)
@@ -114,6 +179,7 @@ class TkRenderBrokerDialogAdapter:
                     text=choice_group.description,
                     justify="left",
                     wraplength=1040,
+                    style="RenderBroker.Card.TLabel",
                 ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
             backend_vars = _resolve_initial_backend_flags(choice_group)
@@ -124,25 +190,28 @@ class TkRenderBrokerDialogAdapter:
                 "value": None if default_option is None else default_option.suggested_export_output_dir,
             }
 
-            backend_frame = ttk.Frame(group_frame)
+            backend_frame = ttk.Frame(group_frame, style="RenderBroker.Card.TFrame")
             backend_frame.grid(row=1, column=0, sticky="w", pady=(0, 8))
             ttk.Checkbutton(
                 backend_frame,
                 text="Open3D",
                 variable=backend_vars["open3d"],
                 state=("normal" if choice_group.allow_open3d else "disabled"),
+                style="RenderBroker.TCheckbutton",
             ).grid(row=0, column=0, sticky="w", padx=(0, 12))
             ttk.Checkbutton(
                 backend_frame,
                 text="Plotly figures",
                 variable=backend_vars["plotly"],
                 state=("normal" if choice_group.allow_plotly else "disabled"),
+                style="RenderBroker.TCheckbutton",
             ).grid(row=0, column=1, sticky="w", padx=(0, 12))
             ttk.Checkbutton(
                 backend_frame,
                 text="Plotly export",
                 variable=export_enabled_var,
                 state=("normal" if choice_group.allow_plotly_export else "disabled"),
+                style="RenderBroker.TCheckbutton",
             ).grid(row=0, column=2, sticky="w")
 
             option_state = {}
@@ -151,28 +220,97 @@ class TkRenderBrokerDialogAdapter:
                 ttk.Label(
                     group_frame,
                     text=choice_group.empty_state_message,
+                    style="RenderBroker.Card.TLabel",
                 ).grid(row=option_controls_row, column=0, sticky="w", pady=(0, 8))
                 option_controls_row += 1
             elif choice_group.selection_mode == "multi":
-                options_frame = ttk.Frame(group_frame)
-                options_frame.grid(row=option_controls_row, column=0, sticky="w", pady=(0, 8))
+                ttk.Label(
+                    group_frame,
+                    text="Selection",
+                    style="RenderBroker.Section.TLabel",
+                ).grid(row=option_controls_row, column=0, sticky="w", pady=(0, 4))
+                option_controls_row += 1
+
+                selected_count_var = tk.StringVar(value="0 selected")
+                ttk.Label(
+                    group_frame,
+                    textvariable=selected_count_var,
+                    style="RenderBroker.Count.TLabel",
+                ).grid(row=option_controls_row, column=0, sticky="w", pady=(0, 6))
+                option_controls_row += 1
+
+                options_frame = ttk.Frame(group_frame, style="RenderBroker.Card.TFrame")
+                options_frame.grid(row=option_controls_row, column=0, sticky="ew", pady=(0, 8))
+                options_frame.columnconfigure(0, weight=1)
+
+                def _update_multi_selected_count(
+                    option_state=option_state,
+                    selected_count_var=selected_count_var,
+                ):
+                    selected_count = sum(bool(option_var.get()) for option_var in option_state.values())
+                    selected_count_var.set(
+                        "{} selected of {}".format(selected_count, len(option_state))
+                    )
+
                 for option_index, choice_option in enumerate(choice_group.options):
                     option_var = tk.BooleanVar(value=bool(choice_option.selected_by_default))
                     option_state[choice_option.option_key] = option_var
-                    ttk.Checkbutton(
+
+                    option_checkbutton = tk.Checkbutton(
                         options_frame,
                         text=choice_option.display_label,
                         variable=option_var,
-                    ).grid(
-                        row=option_index // 2,
-                        column=option_index % 2,
-                        sticky="w",
-                        padx=(0, 18),
-                        pady=2,
+                        anchor="w",
+                        justify="left",
+                        wraplength=980,
+                        indicatoron=False,
+                        padx=12,
+                        pady=10,
+                        borderwidth=1,
+                        relief="solid",
+                        highlightthickness=0,
+                        background=palette["option_bg"],
+                        activebackground=palette["option_active_bg"],
+                        foreground=palette["text"],
+                        activeforeground=palette["text"],
                     )
+                    option_checkbutton.grid(
+                        row=option_index,
+                        column=0,
+                        sticky="ew",
+                        pady=(0, 6),
+                    )
+
+                    def _refresh_option_checkbutton(
+                        option_var=option_var,
+                        option_checkbutton=option_checkbutton,
+                        palette=palette,
+                    ):
+                        is_selected = bool(option_var.get())
+                        resolved_background = (
+                            palette["option_selected_bg"] if is_selected else palette["option_bg"]
+                        )
+                        option_checkbutton.configure(
+                            background=resolved_background,
+                            activebackground=resolved_background,
+                            relief=("sunken" if is_selected else "solid"),
+                        )
+
+                    def _handle_option_toggle(
+                        *_args,
+                        refresh_option_checkbutton=_refresh_option_checkbutton,
+                        update_multi_selected_count=_update_multi_selected_count,
+                    ):
+                        refresh_option_checkbutton()
+                        update_multi_selected_count()
+
+                    option_var.trace_add("write", _handle_option_toggle)
+                    _refresh_option_checkbutton()
+
+                _update_multi_selected_count()
                 option_controls_row += 1
 
-                option_buttons_frame = ttk.Frame(group_frame)
+                option_buttons_frame = ttk.Frame(group_frame, style="RenderBroker.Card.TFrame")
                 option_buttons_frame.grid(row=option_controls_row, column=0, sticky="w", pady=(0, 8))
 
                 def _select_all_multi_options(option_state=option_state):
@@ -187,11 +325,13 @@ class TkRenderBrokerDialogAdapter:
                     option_buttons_frame,
                     text="Select all",
                     command=_select_all_multi_options,
+                    style="RenderBroker.TButton",
                 ).grid(row=0, column=0, padx=(0, 8))
                 ttk.Button(
                     option_buttons_frame,
                     text="Clear",
                     command=_clear_all_multi_options,
+                    style="RenderBroker.TButton",
                 ).grid(row=0, column=1, padx=(0, 8))
                 option_controls_row += 1
             else:
@@ -213,6 +353,15 @@ class TkRenderBrokerDialogAdapter:
                     sticky="w",
                     pady=(0, 4),
                 )
+                ttk.Label(
+                    group_frame,
+                    text="Choose one replay option from the dropdown.",
+                    style="RenderBroker.Section.TLabel",
+                ).grid(
+                    row=option_controls_row,
+                    column=0,
+                    sticky="e",
+                )
                 option_controls_row += 1
                 candidate_combobox = ttk.Combobox(
                     group_frame,
@@ -220,6 +369,7 @@ class TkRenderBrokerDialogAdapter:
                     values=tuple(choice_option.display_label for choice_option in choice_group.options),
                     state="readonly",
                     width=120,
+                    style="RenderBroker.TCombobox",
                 )
                 candidate_combobox.grid(row=option_controls_row, column=0, sticky="ew", pady=(0, 8))
                 if default_option is not None:
@@ -228,16 +378,26 @@ class TkRenderBrokerDialogAdapter:
                     candidate_combobox.current(0)
                 option_controls_row += 1
 
-            export_frame = ttk.LabelFrame(group_frame, text="Plotly export", padding=8)
+            export_frame = ttk.LabelFrame(
+                group_frame,
+                text="Plotly export",
+                padding=8,
+                style="RenderBroker.TLabelframe",
+            )
             export_frame.grid(row=option_controls_row, column=0, sticky="ew", pady=(0, 8))
             export_frame.columnconfigure(1, weight=1)
             option_controls_row += 1
 
-            ttk.Label(export_frame, text="Output dir").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Label(export_frame, text="Output dir", style="RenderBroker.Card.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 8))
             output_dir_var = tk.StringVar(
                 value=("" if suggested_output_dir_ref["value"] is None else str(suggested_output_dir_ref["value"]))
             )
-            output_dir_entry = ttk.Entry(export_frame, textvariable=output_dir_var, width=90)
+            output_dir_entry = ttk.Entry(
+                export_frame,
+                textvariable=output_dir_var,
+                width=90,
+                style="RenderBroker.TEntry",
+            )
             output_dir_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
 
             def _browse_output_dir(output_dir_var=output_dir_var):
@@ -253,6 +413,7 @@ class TkRenderBrokerDialogAdapter:
                 export_frame,
                 text="Browse",
                 command=_browse_output_dir,
+                style="RenderBroker.TButton",
             )
             browse_button.grid(row=0, column=2, sticky="w")
 
@@ -268,29 +429,35 @@ class TkRenderBrokerDialogAdapter:
                 textvariable=suggested_output_dir_var,
                 justify="left",
                 wraplength=1000,
+                style="RenderBroker.Card.TLabel",
             ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 8))
 
-            ttk.Label(export_frame, text="Formats").grid(row=2, column=0, sticky="w", padx=(0, 8))
+            ttk.Label(export_frame, text="Formats", style="RenderBroker.Card.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 8))
             file_formats_var = tk.StringVar(
                 value=("svg,pdf" if export_defaults is None else ",".join(export_defaults.file_formats))
             )
-            file_formats_entry = ttk.Entry(export_frame, textvariable=file_formats_var, width=35)
+            file_formats_entry = ttk.Entry(
+                export_frame,
+                textvariable=file_formats_var,
+                width=35,
+                style="RenderBroker.TEntry",
+            )
             file_formats_entry.grid(row=2, column=1, sticky="w", padx=(0, 8))
 
-            numeric_fields_frame = ttk.Frame(export_frame)
+            numeric_fields_frame = ttk.Frame(export_frame, style="RenderBroker.Card.TFrame")
             numeric_fields_frame.grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 0))
             width_var = tk.StringVar(value=("1920" if export_defaults is None else str(export_defaults.width)))
             height_var = tk.StringVar(value=("1080" if export_defaults is None else str(export_defaults.height)))
             scale_var = tk.StringVar(value=("1.0" if export_defaults is None else str(export_defaults.scale)))
 
-            ttk.Label(numeric_fields_frame, text="Width").grid(row=0, column=0, sticky="w", padx=(0, 6))
-            width_entry = ttk.Entry(numeric_fields_frame, textvariable=width_var, width=12)
+            ttk.Label(numeric_fields_frame, text="Width", style="RenderBroker.Card.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
+            width_entry = ttk.Entry(numeric_fields_frame, textvariable=width_var, width=12, style="RenderBroker.TEntry")
             width_entry.grid(row=0, column=1, padx=(0, 12))
-            ttk.Label(numeric_fields_frame, text="Height").grid(row=0, column=2, sticky="w", padx=(0, 6))
-            height_entry = ttk.Entry(numeric_fields_frame, textvariable=height_var, width=12)
+            ttk.Label(numeric_fields_frame, text="Height", style="RenderBroker.Card.TLabel").grid(row=0, column=2, sticky="w", padx=(0, 6))
+            height_entry = ttk.Entry(numeric_fields_frame, textvariable=height_var, width=12, style="RenderBroker.TEntry")
             height_entry.grid(row=0, column=3, padx=(0, 12))
-            ttk.Label(numeric_fields_frame, text="Scale").grid(row=0, column=4, sticky="w", padx=(0, 6))
-            scale_entry = ttk.Entry(numeric_fields_frame, textvariable=scale_var, width=12)
+            ttk.Label(numeric_fields_frame, text="Scale", style="RenderBroker.Card.TLabel").grid(row=0, column=4, sticky="w", padx=(0, 6))
+            scale_entry = ttk.Entry(numeric_fields_frame, textvariable=scale_var, width=12, style="RenderBroker.TEntry")
             scale_entry.grid(row=0, column=5)
 
             def _set_export_widgets_state(
@@ -446,9 +613,10 @@ class TkRenderBrokerDialogAdapter:
                 group_frame,
                 text=choice_group.render_action_label,
                 command=_submit_group_selection,
+                style="RenderBroker.Primary.TButton",
             ).grid(row=option_controls_row, column=0, sticky="w")
 
-        footer_frame = ttk.Frame(scrollable_frame)
+        footer_frame = ttk.Frame(scrollable_frame, style="RenderBroker.TFrame")
         footer_frame.grid(row=current_row_index, column=0, sticky="ew", pady=(6, 0))
         footer_frame.columnconfigure(0, weight=1)
 
@@ -471,6 +639,7 @@ class TkRenderBrokerDialogAdapter:
                 footer_frame,
                 textvariable=timeout_status_var,
                 justify="left",
+                style="RenderBroker.TLabel",
             ).grid(row=0, column=0, sticky="w", padx=(0, 10))
 
             def _refresh_timeout_status() -> None:
@@ -500,6 +669,7 @@ class TkRenderBrokerDialogAdapter:
                     footer_frame,
                     text="More time",
                     command=_extend_timeout,
+                    style="RenderBroker.TButton",
                 ).grid(row=0, column=1, sticky="e", padx=(0, 8))
 
             if resolved_timeout_policy.allow_disable_timeout_for_run:
@@ -515,6 +685,7 @@ class TkRenderBrokerDialogAdapter:
                     footer_frame,
                     text="Wait indefinitely this run",
                     command=_disable_timeout_for_run,
+                    style="RenderBroker.TButton",
                 ).grid(row=0, column=2, sticky="e", padx=(0, 8))
 
             _refresh_timeout_status()
@@ -523,6 +694,7 @@ class TkRenderBrokerDialogAdapter:
             footer_frame,
             text=request.continue_button_label,
             command=_submit_continue_action,
+            style="RenderBroker.Primary.TButton",
         ).grid(row=0, column=3, sticky="e")
 
         root.protocol("WM_DELETE_WINDOW", _submit_continue_action)

@@ -11,7 +11,7 @@ from rich.progress import (
 )
 from rich.panel import Panel
 from rich.console import Console, Group
-from rich.table import Table
+from rich.table import Column, Table
 from rich.layout import Layout
 from rich.live import Live
 from rich.text import Text
@@ -75,7 +75,10 @@ def get_live_display(renderable,
 def get_completed_progress():
     completed_progress = Progress(
                 TextColumn(':heavy_check_mark:'),
-                TextColumn("{task.description}"),
+                TextColumn(
+                    "{task.description}",
+                    table_column=Column(ratio=1, overflow="ellipsis", no_wrap=True),
+                ),
                 MofNCompleteColumn(),
                 TimeElapsedColumn(),
             )
