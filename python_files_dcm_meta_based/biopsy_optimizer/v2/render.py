@@ -407,15 +407,16 @@ def _render_scene_render_jobs_plotly(
         from rich.progress import (
             BarColumn,
             MofNCompleteColumn,
-            Progress,
             SpinnerColumn,
             TextColumn,
             TimeElapsedColumn,
         )
+        from rich_preambles import get_runtime_logging_progress
 
         resolved_file_formats = _resolve_plotly_export_file_formats(plotly_export_config)
         total_output_files = len(resolved_render_jobs) * len(resolved_file_formats)
-        export_progress = Progress(
+        export_progress = get_runtime_logging_progress(
+            "optimizer_v2_plotly_export",
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),

@@ -72,6 +72,194 @@ def get_live_display(renderable,
                            screen=screen)
 
 
+class RuntimeLoggingProgress(Progress):
+    """Progress wrapper that mirrors active task lifecycle events into runtime logs."""
+
+    def __init__(self, *columns, progress_name="progress", **kwargs):
+        super().__init__(*columns, **kwargs)
+        self.progress_name = progress_name
+        self._logged_started_task_ids = set()
+        self._logged_terminal_task_ids = set()
+        self._paused_task_ids = set()
+
+    def _get_runtime_logger(self):
+        try:
+            from startup.runtime_logging import get_active_runtime_logger
+        except Exception:
+            return None
+
+        return get_active_runtime_logger()
+
+    def _get_task_snapshot(self, task_id):
+        for task in self.tasks:
+            if task.id == task_id:
+                return task
+        return None
+
+    def _build_task_details(self, task_id, task, source):
+        elapsed_seconds = getattr(task, "finished_time", None)
+        if elapsed_seconds is None:
+            elapsed_seconds = getattr(task, "elapsed", None)
+        if elapsed_seconds is not None:
+            try:
+                elapsed_seconds = round(float(elapsed_seconds), 3)
+            except (TypeError, ValueError):
+                elapsed_seconds = None
+
+        task_details = {
+            "progress_name": self.progress_name,
+            "task_id": task_id,
+            "source": source,
+            "description": getattr(task, "description", None),
+            "completed": getattr(task, "completed", None),
+            "total": getattr(task, "total", None),
+            "visible": getattr(task, "visible", None),
+            "finished": bool(getattr(task, "finished", False)),
+            "elapsed_sec": elapsed_seconds,
+        }
+
+        task_fields = dict(getattr(task, "fields", {}) or {})
+        if len(task_fields) > 0:
+            task_details["task_fields"] = task_fields
+
+        return task_details
+
+    def _emit_task_event(self, event_type, message, task_id, task, source, extra_details=None):
+        runtime_logger = self._get_runtime_logger()
+        if runtime_logger is None or task is None:
+            return
+
+        event_details = self._build_task_details(task_id, task, source)
+        if extra_details is not None:
+            event_details.update(extra_details)
+
+        runtime_logger.log_event(
+            level="INFO",
+            event_type=event_type,
+            phase=None,
+            message=message,
+            details=event_details,
+        )
+
+    def _maybe_log_task_start(self, task_id, task, source):
+        if task is None or task_id in self._logged_started_task_ids:
+            return
+        if getattr(task, "visible", True) is False:
+            return
+
+        self._logged_started_task_ids.add(task_id)
+        self._paused_task_ids.discard(task_id)
+        self._emit_task_event(
+            "rich_progress_task_start",
+            "Started Rich progress task.",
+            task_id,
+            task,
+            source,
+        )
+
+    def _maybe_log_task_complete(self, task_id, task, source):
+        if task is None or task_id in self._logged_terminal_task_ids:
+            return
+        if bool(getattr(task, "finished", False)) is False:
+            return
+
+        self._logged_terminal_task_ids.add(task_id)
+        self._paused_task_ids.discard(task_id)
+        self._emit_task_event(
+            "rich_progress_task_complete",
+            "Completed Rich progress task.",
+            task_id,
+            task,
+            source,
+        )
+
+    def add_task(self, *args, **kwargs):
+        task_id = super().add_task(*args, **kwargs)
+        task = self._get_task_snapshot(task_id)
+        self._maybe_log_task_start(task_id, task, "add_task")
+        self._maybe_log_task_complete(task_id, task, "add_task")
+        return task_id
+
+    def update(self, task_id, *args, **kwargs):
+        result = super().update(task_id, *args, **kwargs)
+        task = self._get_task_snapshot(task_id)
+        self._maybe_log_task_start(task_id, task, "update")
+        self._maybe_log_task_complete(task_id, task, "update")
+        return result
+
+    def advance(self, task_id, advance=1):
+        result = super().advance(task_id, advance)
+        task = self._get_task_snapshot(task_id)
+        self._maybe_log_task_start(task_id, task, "advance")
+        self._maybe_log_task_complete(task_id, task, "advance")
+        return result
+
+    def stop_task(self, task_id):
+        super().stop_task(task_id)
+        task = self._get_task_snapshot(task_id)
+        if task is None:
+            return
+        if task_id not in self._logged_started_task_ids:
+            return
+        if task_id in self._logged_terminal_task_ids:
+            return
+        if task_id in self._paused_task_ids:
+            return
+
+        self._paused_task_ids.add(task_id)
+        self._emit_task_event(
+            "rich_progress_task_pause",
+            "Paused Rich progress task.",
+            task_id,
+            task,
+            "stop_task",
+        )
+
+    def start_task(self, task_id):
+        super().start_task(task_id)
+        task = self._get_task_snapshot(task_id)
+        if task is None:
+            return
+        if task_id in self._logged_terminal_task_ids:
+            return
+
+        if task_id in self._paused_task_ids:
+            self._paused_task_ids.discard(task_id)
+            self._emit_task_event(
+                "rich_progress_task_resume",
+                "Resumed Rich progress task.",
+                task_id,
+                task,
+                "start_task",
+            )
+        else:
+            self._maybe_log_task_start(task_id, task, "start_task")
+
+        self._maybe_log_task_complete(task_id, task, "start_task")
+
+    def remove_task(self, task_id):
+        task = self._get_task_snapshot(task_id)
+        if task is not None:
+            self._maybe_log_task_complete(task_id, task, "remove_task")
+            if task_id in self._logged_started_task_ids and task_id not in self._logged_terminal_task_ids:
+                self._emit_task_event(
+                    "rich_progress_task_remove",
+                    "Removed Rich progress task before completion.",
+                    task_id,
+                    task,
+                    "remove_task",
+                )
+
+        super().remove_task(task_id)
+        self._logged_started_task_ids.discard(task_id)
+        self._logged_terminal_task_ids.discard(task_id)
+        self._paused_task_ids.discard(task_id)
+
+
+def get_runtime_logging_progress(progress_name, *columns, **kwargs):
+    return RuntimeLoggingProgress(*columns, progress_name=progress_name, **kwargs)
+
+
 def get_completed_progress():
     completed_progress = Progress(
                 TextColumn(':heavy_check_mark:'),
@@ -92,7 +280,8 @@ def get_completed_sections_progress():
     return completed_progress
 
 def get_patients_progress(spinner_type):
-    patients_progress = Progress(
+    patients_progress = get_runtime_logging_progress(
+        "patients_progress",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
@@ -106,7 +295,8 @@ def get_patients_progress(spinner_type):
     return patients_progress
 
 def get_structures_progress(spinner_type):
-    structures_progress = Progress(
+    structures_progress = get_runtime_logging_progress(
+        "structures_progress",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
@@ -134,7 +324,8 @@ def get_completed_biopsies_progress():
     return completed_biopsies_progress
 
 def get_biopsies_progress(spinner_type):
-    biopsies_progress = Progress(
+    biopsies_progress = get_runtime_logging_progress(
+        "biopsies_progress",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
@@ -148,7 +339,8 @@ def get_biopsies_progress(spinner_type):
     return biopsies_progress
 
 def get_indeterminate_progress_main(spinner_type):
-    indeterminate_progress_main = Progress(
+    indeterminate_progress_main = get_runtime_logging_progress(
+        "indeterminate_progress_main",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
@@ -168,7 +360,8 @@ def get_completed_indeterminate_progress_main():
     return completed_indeterminate_progress_main
 
 def get_indeterminate_progress_sub(spinner_type):
-    indeterminate_progress_sub = Progress(
+    indeterminate_progress_sub = get_runtime_logging_progress(
+        "indeterminate_progress_sub",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
@@ -181,7 +374,8 @@ def get_indeterminate_progress_sub(spinner_type):
 
 
 def get_MC_trial_progress(spinner_type):
-    MC_trial_progress = Progress(
+    MC_trial_progress = get_runtime_logging_progress(
+        "mc_trial_progress",
         SpinnerColumn(spinner_type),
         #*Progress.get_default_columns(),
         TextColumn("[progress.description]{task.description}"),
