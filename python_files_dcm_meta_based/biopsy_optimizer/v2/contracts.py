@@ -129,8 +129,14 @@ class OptimizerV2ChunkScoreResult:
     containment_elapsed_seconds: float = 0.0
     containment_grandmother_elapsed_seconds: float = 0.0
     containment_reshape_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_call_elapsed_seconds: float = 0.0
+    containment_grandmother_chunk_slicing_elapsed_seconds: float = 0.0
+    containment_grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
+    containment_grandmother_chunk_count: int = 0
+    containment_grandmother_used_chunking: bool = False
     score_reduction_elapsed_seconds: float = 0.0
     tested_candidate_dataframe_elapsed_seconds: float = 0.0
+    total_elapsed_seconds: float = 0.0
     candidate_trial_mean_point_scores: Optional[np.ndarray] = None
     relative_structure_localized_points: Optional[Any] = None
     tested_candidate_dataframe: Optional[Any] = None
@@ -157,6 +163,11 @@ class OptimizerV2StageRunResult:
     containment_elapsed_seconds: float = 0.0
     containment_grandmother_elapsed_seconds: float = 0.0
     containment_reshape_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_call_elapsed_seconds: float = 0.0
+    containment_grandmother_chunk_slicing_elapsed_seconds: float = 0.0
+    containment_grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
+    containment_grandmother_inner_chunk_count: int = 0
+    containment_grandmother_chunked_call_count: int = 0
     score_reduction_elapsed_seconds: float = 0.0
     tested_candidate_dataframe_elapsed_seconds: float = 0.0
     ranking_elapsed_seconds: float = 0.0

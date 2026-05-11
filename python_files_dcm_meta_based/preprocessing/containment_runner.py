@@ -31,6 +31,11 @@ class AlignedContainmentRunResult:
     grandmother_elapsed_seconds: float = 0.0
     reshape_elapsed_seconds: float = 0.0
     containment_results_dataframe_elapsed_seconds: float = 0.0
+    grandmother_mother_call_elapsed_seconds: float = 0.0
+    grandmother_chunk_slicing_elapsed_seconds: float = 0.0
+    grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
+    grandmother_chunk_count: int = 0
+    grandmother_used_chunking: bool = False
 
 
 def run_aligned_containment_batch(
@@ -56,7 +61,7 @@ def run_aligned_containment_batch(
 
     _synchronize_cuda_device()
     grandmother_start_time = time.perf_counter()
-    raw_containment_result_cp_arr, prepper_output_tuple = (
+    (raw_containment_result_cp_arr, prepper_output_tuple), grandmother_timing_report = (
         custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.custom_point_containment_grandmother_function(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays,
         aligned_containment_test_batch.test_structures,
@@ -68,6 +73,7 @@ def run_aligned_containment_batch(
         log_file_name=log_file_name,
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
+        return_timing_report=True,
         )
     )
     _synchronize_cuda_device()
@@ -112,6 +118,17 @@ def run_aligned_containment_batch(
         containment_results_dataframe_elapsed_seconds=float(
             containment_results_dataframe_elapsed_seconds
         ),
+        grandmother_mother_call_elapsed_seconds=float(
+            grandmother_timing_report.mother_call_elapsed_seconds
+        ),
+        grandmother_chunk_slicing_elapsed_seconds=float(
+            grandmother_timing_report.chunk_slicing_elapsed_seconds
+        ),
+        grandmother_chunk_concatenation_elapsed_seconds=float(
+            grandmother_timing_report.chunk_concatenation_elapsed_seconds
+        ),
+        grandmother_chunk_count=int(grandmother_timing_report.chunk_count),
+        grandmother_used_chunking=bool(grandmother_timing_report.used_chunking),
     )
 
 

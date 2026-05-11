@@ -232,6 +232,24 @@ def _build_optimizer_v2_stage_timing_details(search_result):
                 float(stage_result.containment_reshape_elapsed_seconds),
                 3,
             ),
+            "containment_grandmother_mother_call_elapsed_seconds": round(
+                float(stage_result.containment_grandmother_mother_call_elapsed_seconds),
+                3,
+            ),
+            "containment_grandmother_chunk_slicing_elapsed_seconds": round(
+                float(stage_result.containment_grandmother_chunk_slicing_elapsed_seconds),
+                3,
+            ),
+            "containment_grandmother_chunk_concatenation_elapsed_seconds": round(
+                float(stage_result.containment_grandmother_chunk_concatenation_elapsed_seconds),
+                3,
+            ),
+            "containment_grandmother_inner_chunk_count": int(
+                stage_result.containment_grandmother_inner_chunk_count
+            ),
+            "containment_grandmother_chunked_call_count": int(
+                stage_result.containment_grandmother_chunked_call_count
+            ),
             "score_reduction_elapsed_seconds": round(
                 float(stage_result.score_reduction_elapsed_seconds),
                 3,
@@ -253,6 +271,10 @@ def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
     return {
         "num_candidates": int(chunk_score_result.chunk_layout.num_candidates),
         "num_trials": int(chunk_score_result.chunk_layout.num_trials),
+        "total_elapsed_seconds": round(
+            float(chunk_score_result.total_elapsed_seconds),
+            3,
+        ),
         "biopsy_self_transform_elapsed_seconds": round(
             float(chunk_score_result.biopsy_self_transform_elapsed_seconds),
             3,
@@ -277,6 +299,24 @@ def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
             float(chunk_score_result.containment_reshape_elapsed_seconds),
             3,
         ),
+        "containment_grandmother_mother_call_elapsed_seconds": round(
+            float(chunk_score_result.containment_grandmother_mother_call_elapsed_seconds),
+            3,
+        ),
+        "containment_grandmother_chunk_slicing_elapsed_seconds": round(
+            float(chunk_score_result.containment_grandmother_chunk_slicing_elapsed_seconds),
+            3,
+        ),
+        "containment_grandmother_chunk_concatenation_elapsed_seconds": round(
+            float(chunk_score_result.containment_grandmother_chunk_concatenation_elapsed_seconds),
+            3,
+        ),
+        "containment_grandmother_chunk_count": int(
+            chunk_score_result.containment_grandmother_chunk_count
+        ),
+        "containment_grandmother_used_chunking": bool(
+            chunk_score_result.containment_grandmother_used_chunking
+        ),
         "score_reduction_elapsed_seconds": round(
             float(chunk_score_result.score_reduction_elapsed_seconds),
             3,
@@ -286,6 +326,155 @@ def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
             3,
         ),
     }
+
+
+def _run_optimizer_v2_isolated_winner_validation_benchmark(
+    *,
+    patient_uid,
+    structure_id,
+    search_result,
+    candidate_pool,
+    nominal_biopsy_points,
+    nominal_biopsy_centroid,
+    nominal_biopsy_centroid_line,
+    biopsy_transform_bank_prefix_provider,
+    target_relative_structures_nominal_plus_trials_provider,
+    target_structure_centroid,
+    target_transform_bank_prefix_provider,
+    downstream_comparable_trial_count,
+    resolved_max_test_structures_per_call,
+    include_edges_in_log,
+    kernel_type,
+):
+    winner_validation_result = search_result.winner_validation_result
+    if winner_validation_result is None:
+        _runtime_checkpoint(
+            "optimizer_v2.structure.winner_validation_benchmark.skipped",
+            "Skipped isolated winner-validation benchmark because no winner validation result was available.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={"reason": "missing_winner_validation_result"},
+        )
+        return
+    if not winner_validation_result.used_additional_rescore:
+        _runtime_checkpoint(
+            "optimizer_v2.structure.winner_validation_benchmark.skipped",
+            "Skipped isolated winner-validation benchmark because no additional downstream-comparable rescore was used.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={"reason": "no_additional_rescore"},
+        )
+        return
+    if downstream_comparable_trial_count is None or downstream_comparable_trial_count <= 0:
+        _runtime_checkpoint(
+            "optimizer_v2.structure.winner_validation_benchmark.skipped",
+            "Skipped isolated winner-validation benchmark because the downstream-comparable trial count was unavailable.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={"reason": "missing_downstream_comparable_trial_count"},
+        )
+        return
+
+    actual_chunk_score_result = winner_validation_result.chunk_score_result
+    actual_chunk_layout = actual_chunk_score_result.chunk_layout if actual_chunk_score_result is not None else None
+    include_nominal = True if actual_chunk_layout is None else actual_chunk_layout.include_nominal
+    nominal_relative_structure_index = (
+        0 if actual_chunk_layout is None else actual_chunk_layout.nominal_relative_structure_index
+    )
+    trial_relative_structure_start_index = (
+        1 if actual_chunk_layout is None else actual_chunk_layout.trial_relative_structure_start_index
+    )
+
+    setup_start_time = time.perf_counter()
+    biopsy_transform_bank_prefix = biopsy_transform_bank_prefix_provider(
+        downstream_comparable_trial_count
+    )
+    target_transform_bank_prefix = target_transform_bank_prefix_provider(
+        downstream_comparable_trial_count
+    )
+    target_relative_structures_nominal_plus_trials = target_relative_structures_nominal_plus_trials_provider(
+        downstream_comparable_trial_count
+    )
+    benchmark_chunk_layout = OptimizerV2ChunkLayout(
+        candidate_indices_global=(int(winner_validation_result.candidate_index_global),),
+        num_trials=int(downstream_comparable_trial_count),
+        include_nominal=include_nominal,
+        nominal_relative_structure_index=int(nominal_relative_structure_index),
+        trial_relative_structure_start_index=int(trial_relative_structure_start_index),
+    )
+    benchmark_setup_elapsed_seconds = time.perf_counter() - setup_start_time
+
+    benchmark_score_start_time = time.perf_counter()
+    benchmark_chunk_score_result = score_target_candidate_chunk(
+        candidate_pool=candidate_pool,
+        chunk_layout=benchmark_chunk_layout,
+        nominal_biopsy_points=nominal_biopsy_points,
+        nominal_biopsy_centroid=nominal_biopsy_centroid,
+        nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+        biopsy_transform_bank_prefix=biopsy_transform_bank_prefix,
+        target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials,
+        target_structure_centroid=target_structure_centroid,
+        target_transform_bank_prefix=target_transform_bank_prefix,
+        objective_reducer_name=winner_validation_result.objective_reducer_name,
+        max_test_structures_per_call=resolved_max_test_structures_per_call,
+        create_tested_candidate_dataframe=False,
+        include_edges_in_log=include_edges_in_log,
+        kernel_type=kernel_type,
+        return_array_as="numpy",
+    )
+    benchmark_score_elapsed_seconds = time.perf_counter() - benchmark_score_start_time
+    benchmark_total_elapsed_seconds = (
+        benchmark_setup_elapsed_seconds + benchmark_score_elapsed_seconds
+    )
+
+    actual_chunk_timing = _build_optimizer_v2_chunk_timing_details(actual_chunk_score_result)
+    benchmark_chunk_timing = _build_optimizer_v2_chunk_timing_details(
+        benchmark_chunk_score_result
+    )
+    actual_chunk_total_elapsed_seconds = (
+        0.0 if actual_chunk_score_result is None else float(actual_chunk_score_result.total_elapsed_seconds)
+    )
+    actual_setup_overhead_elapsed_seconds = max(
+        0.0,
+        float(search_result.winner_validation_elapsed_seconds) - actual_chunk_total_elapsed_seconds,
+    )
+
+    _runtime_checkpoint(
+        "optimizer_v2.structure.winner_validation_benchmark.end",
+        "Completed isolated winner-validation benchmark rerun.",
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        details={
+            "candidate_index_global": int(winner_validation_result.candidate_index_global),
+            "num_trials": int(downstream_comparable_trial_count),
+            "benchmark_setup_elapsed_seconds": round(
+                benchmark_setup_elapsed_seconds,
+                3,
+            ),
+            "benchmark_score_elapsed_seconds": round(
+                benchmark_score_elapsed_seconds,
+                3,
+            ),
+            "benchmark_total_elapsed_seconds": round(
+                benchmark_total_elapsed_seconds,
+                3,
+            ),
+            "actual_winner_validation_elapsed_seconds": round(
+                float(search_result.winner_validation_elapsed_seconds),
+                3,
+            ),
+            "actual_winner_validation_setup_overhead_elapsed_seconds": round(
+                actual_setup_overhead_elapsed_seconds,
+                3,
+            ),
+            "actual_winner_validation_chunk_timing": actual_chunk_timing,
+            "benchmark_chunk_timing": benchmark_chunk_timing,
+            "benchmark_minus_actual_total_elapsed_seconds": round(
+                benchmark_total_elapsed_seconds - float(search_result.winner_validation_elapsed_seconds),
+                3,
+            ),
+        },
+    )
 
 
 def run_target_dil_optimizer_v2_for_live_simulated_family(
@@ -311,6 +500,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     auto_calibrate_max_test_structures_per_call=True,
     verify_calibrated_max_test_structures_per_call=True,
     downstream_comparable_trial_count=None,
+    benchmark_isolated_winner_validation_bool=False,
     render_stage_boundary_candidate_clouds_bool=False,
     render_stage_names_to_render=None,
     render_backend="open3d",
@@ -640,6 +830,27 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     "stage_timings": _build_optimizer_v2_stage_timing_details(search_result),
                 },
             )
+
+            if benchmark_isolated_winner_validation_bool:
+                _run_optimizer_v2_isolated_winner_validation_benchmark(
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    search_result=search_result,
+                    candidate_pool=candidate_pool,
+                    nominal_biopsy_points=nominal_biopsy_points,
+                    nominal_biopsy_centroid=nominal_biopsy_centroid,
+                    nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
+                    biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                    target_relative_structures_nominal_plus_trials_provider=(
+                        target_relative_structures_nominal_plus_trials_provider
+                    ),
+                    target_structure_centroid=target_structure_centroid,
+                    target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+                    downstream_comparable_trial_count=downstream_comparable_trial_count,
+                    resolved_max_test_structures_per_call=resolved_max_test_structures_per_call,
+                    include_edges_in_log=include_edges_in_log,
+                    kernel_type=kernel_type,
+                )
 
             render_prep_start_time = time.perf_counter()
             winner_candidate_point = _resolve_operational_winner_candidate_point(

@@ -315,6 +315,11 @@ def _run_target_candidate_stage(
     stage_containment_elapsed_seconds = 0.0
     stage_containment_grandmother_elapsed_seconds = 0.0
     stage_containment_reshape_elapsed_seconds = 0.0
+    stage_containment_grandmother_mother_call_elapsed_seconds = 0.0
+    stage_containment_grandmother_chunk_slicing_elapsed_seconds = 0.0
+    stage_containment_grandmother_chunk_concatenation_elapsed_seconds = 0.0
+    stage_containment_grandmother_inner_chunk_count = 0
+    stage_containment_grandmother_chunked_call_count = 0
     stage_score_reduction_elapsed_seconds = 0.0
     stage_tested_candidate_dataframe_elapsed_seconds = 0.0
     for chunk_candidate_indices_global in _yield_candidate_index_chunks(candidate_indices_global, max_candidates_per_chunk):
@@ -366,6 +371,21 @@ def _run_target_candidate_stage(
         )
         stage_containment_reshape_elapsed_seconds += float(
             chunk_score_result.containment_reshape_elapsed_seconds
+        )
+        stage_containment_grandmother_mother_call_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_mother_call_elapsed_seconds
+        )
+        stage_containment_grandmother_chunk_slicing_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_chunk_slicing_elapsed_seconds
+        )
+        stage_containment_grandmother_chunk_concatenation_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_chunk_concatenation_elapsed_seconds
+        )
+        stage_containment_grandmother_inner_chunk_count += int(
+            chunk_score_result.containment_grandmother_chunk_count
+        )
+        stage_containment_grandmother_chunked_call_count += int(
+            chunk_score_result.containment_grandmother_used_chunking
         )
         stage_score_reduction_elapsed_seconds += float(
             chunk_score_result.score_reduction_elapsed_seconds
@@ -467,6 +487,21 @@ def _run_target_candidate_stage(
         ),
         containment_reshape_elapsed_seconds=float(
             stage_containment_reshape_elapsed_seconds
+        ),
+        containment_grandmother_mother_call_elapsed_seconds=float(
+            stage_containment_grandmother_mother_call_elapsed_seconds
+        ),
+        containment_grandmother_chunk_slicing_elapsed_seconds=float(
+            stage_containment_grandmother_chunk_slicing_elapsed_seconds
+        ),
+        containment_grandmother_chunk_concatenation_elapsed_seconds=float(
+            stage_containment_grandmother_chunk_concatenation_elapsed_seconds
+        ),
+        containment_grandmother_inner_chunk_count=int(
+            stage_containment_grandmother_inner_chunk_count
+        ),
+        containment_grandmother_chunked_call_count=int(
+            stage_containment_grandmother_chunked_call_count
         ),
         score_reduction_elapsed_seconds=float(stage_score_reduction_elapsed_seconds),
         tested_candidate_dataframe_elapsed_seconds=float(

@@ -83,6 +83,30 @@ class ContainmentCallCapacityCalibrationResult:
     signature: ContainmentCallCapacitySignature
 
 
+@dataclass(frozen=True)
+class ContainmentGrandmotherChunkTiming:
+    """One chunk-local mother-function timing inside grandmother batching."""
+
+    chunk_index: int
+    num_test_structures: int
+    mother_call_elapsed_seconds: float
+
+
+@dataclass(frozen=True)
+class ContainmentGrandmotherTimingReport:
+    """Timing breakdown for one grandmother containment call surface."""
+
+    num_test_structures: int
+    resolved_chunk_size: int
+    chunk_count: int
+    used_chunking: bool
+    mother_call_elapsed_seconds: float
+    chunk_slicing_elapsed_seconds: float
+    chunk_concatenation_elapsed_seconds: float
+    total_elapsed_seconds: float
+    chunk_timings: tuple[ContainmentGrandmotherChunkTiming, ...]
+
+
 _CONTAINMENT_CALL_CAPACITY_CACHE: dict[tuple[Any, ...], ContainmentCallCapacityCalibrationResult] = {}
 
 
@@ -488,6 +512,7 @@ def custom_point_containment_grandmother_function(
     log_file_name: str = "cuda_log.txt",
     include_edges_in_log: bool = False,
     kernel_type: str = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized",
+    return_timing_report: bool = False,
 ):
     """Run the mother function over one or more chunks.
 
@@ -508,8 +533,11 @@ def custom_point_containment_grandmother_function(
         raise ValueError("test_struct_to_relative_struct_1d_mapping_array must be 1D and match the number of test structures")
 
     resolved_chunk_size = _resolve_chunk_size(max_test_structures_per_call, num_test_structures)
+    total_start_time = time.perf_counter()
     if resolved_chunk_size >= num_test_structures:
-        return _run_single_containment_call(
+        _synchronize_cuda_device()
+        mother_call_start_time = time.perf_counter()
+        single_call_output = _run_single_containment_call(
             list_of_relative_structures_containting_list_of_constant_zslices_arrays,
             points_to_test_3d_arr_or_list_of_2d_arrays,
             normalized_mapping,
@@ -520,20 +548,53 @@ def custom_point_containment_grandmother_function(
             include_edges_in_log=include_edges_in_log,
             kernel_type=kernel_type,
         )
+        _synchronize_cuda_device()
+        mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
+        if not return_timing_report:
+            return single_call_output
+        return (
+            single_call_output,
+            ContainmentGrandmotherTimingReport(
+                num_test_structures=int(num_test_structures),
+                resolved_chunk_size=int(resolved_chunk_size),
+                chunk_count=1,
+                used_chunking=False,
+                mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+                chunk_slicing_elapsed_seconds=0.0,
+                chunk_concatenation_elapsed_seconds=0.0,
+                total_elapsed_seconds=float(time.perf_counter() - total_start_time),
+                chunk_timings=(
+                    ContainmentGrandmotherChunkTiming(
+                        chunk_index=0,
+                        num_test_structures=int(num_test_structures),
+                        mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+                    ),
+                ),
+            ),
+        )
 
     chunk_outputs = []
-    for chunk_start_index in range(0, num_test_structures, resolved_chunk_size):
+    chunk_timings = []
+    chunk_slicing_elapsed_seconds = 0.0
+    mother_call_elapsed_seconds = 0.0
+    for chunk_index, chunk_start_index in enumerate(range(0, num_test_structures, resolved_chunk_size)):
         chunk_end_index = min(chunk_start_index + resolved_chunk_size, num_test_structures)
-        chunk_outputs.append(
-            _run_single_containment_call(
+        chunk_slicing_start_time = time.perf_counter()
+        chunk_test_structures = _slice_test_structures(
+            points_to_test_3d_arr_or_list_of_2d_arrays,
+            chunk_start_index,
+            chunk_end_index,
+            input_mode,
+        )
+        chunk_mapping = normalized_mapping[chunk_start_index:chunk_end_index]
+        chunk_slicing_elapsed_seconds += time.perf_counter() - chunk_slicing_start_time
+
+        _synchronize_cuda_device()
+        mother_call_start_time = time.perf_counter()
+        chunk_output = _run_single_containment_call(
                 list_of_relative_structures_containting_list_of_constant_zslices_arrays,
-                _slice_test_structures(
-                    points_to_test_3d_arr_or_list_of_2d_arrays,
-                    chunk_start_index,
-                    chunk_end_index,
-                    input_mode,
-                ),
-                normalized_mapping[chunk_start_index:chunk_end_index],
+                chunk_test_structures,
+                chunk_mapping,
                 constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
                 remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
                 log_sub_dirs_list=log_sub_dirs_list,
@@ -541,9 +602,40 @@ def custom_point_containment_grandmother_function(
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
             )
+        _synchronize_cuda_device()
+        chunk_mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
+        mother_call_elapsed_seconds += chunk_mother_call_elapsed_seconds
+        chunk_timings.append(
+            ContainmentGrandmotherChunkTiming(
+                chunk_index=int(chunk_index),
+                num_test_structures=int(chunk_end_index - chunk_start_index),
+                mother_call_elapsed_seconds=float(chunk_mother_call_elapsed_seconds),
+            )
         )
+        chunk_outputs.append(chunk_output)
 
-    return _concatenate_chunk_outputs(chunk_outputs, input_mode)
+    _synchronize_cuda_device()
+    chunk_concatenation_start_time = time.perf_counter()
+    concatenated_output = _concatenate_chunk_outputs(chunk_outputs, input_mode)
+    _synchronize_cuda_device()
+    chunk_concatenation_elapsed_seconds = time.perf_counter() - chunk_concatenation_start_time
+
+    if not return_timing_report:
+        return concatenated_output
+    return (
+        concatenated_output,
+        ContainmentGrandmotherTimingReport(
+            num_test_structures=int(num_test_structures),
+            resolved_chunk_size=int(resolved_chunk_size),
+            chunk_count=int(len(chunk_timings)),
+            used_chunking=True,
+            mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+            chunk_slicing_elapsed_seconds=float(chunk_slicing_elapsed_seconds),
+            chunk_concatenation_elapsed_seconds=float(chunk_concatenation_elapsed_seconds),
+            total_elapsed_seconds=float(time.perf_counter() - total_start_time),
+            chunk_timings=tuple(chunk_timings),
+        ),
+    )
 
 
 def custom_point_containment_grandfather_function(
@@ -742,6 +834,13 @@ def _resolve_chunk_size(max_test_structures_per_call: Optional[int], num_test_st
     return min(int(max_test_structures_per_call), num_test_structures)
 
 
+def _synchronize_cuda_device() -> None:
+    try:
+        cp.cuda.runtime.deviceSynchronize()
+    except Exception:
+        pass
+
+
 def _slice_test_structures(
     points_to_test_3d_arr_or_list_of_2d_arrays: Any,
     chunk_start_index: int,
@@ -754,6 +853,8 @@ def _slice_test_structures(
 
 
 __all__ = [
+    "ContainmentGrandmotherChunkTiming",
+    "ContainmentGrandmotherTimingReport",
     "ContainmentChunkSpec",
     "custom_point_containment_grandfather_function",
     "custom_point_containment_grandmother_function",

@@ -549,6 +549,7 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = 8
+    optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
@@ -4424,6 +4425,7 @@ def main():
                                   if num_MC_containment_simulations_input > 0
                                   else None
                               ),
+                              benchmark_isolated_winner_validation_bool=optimizer_v2_benchmark_isolated_winner_validation_bool,
                               render_stage_boundary_candidate_clouds_bool=optimizer_v2_render_stage_boundary_candidate_clouds_bool,
                               render_stage_names_to_render=optimizer_v2_render_stage_names,
                               render_backend=optimizer_v2_render_backend,

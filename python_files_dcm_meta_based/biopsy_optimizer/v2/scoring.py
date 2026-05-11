@@ -52,6 +52,7 @@ def score_target_candidate_chunk(
     The selection score is computed from stochastic trials only. If nominal rows
     are present, their reducer value is emitted separately as metadata.
     """
+    chunk_total_start_time = time.perf_counter()
     normalized_candidate_points = _select_chunk_candidate_points(candidate_pool, chunk_layout)
     _validate_objective_reducer_name(objective_reducer_name)
     _validate_return_array_as(return_array_as)
@@ -108,6 +109,21 @@ def score_target_candidate_chunk(
     containment_reshape_elapsed_seconds = float(
         aligned_containment_run_result.reshape_elapsed_seconds
     )
+    containment_grandmother_mother_call_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_call_elapsed_seconds
+    )
+    containment_grandmother_chunk_slicing_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_chunk_slicing_elapsed_seconds
+    )
+    containment_grandmother_chunk_concatenation_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_chunk_concatenation_elapsed_seconds
+    )
+    containment_grandmother_chunk_count = int(
+        aligned_containment_run_result.grandmother_chunk_count
+    )
+    containment_grandmother_used_chunking = bool(
+        aligned_containment_run_result.grandmother_used_chunking
+    )
 
     score_reduction_start_time = time.perf_counter()
     structured_containment_result_cp_arr = cp.asarray(aligned_containment_run_result.structured_containment_result)
@@ -162,6 +178,8 @@ def score_target_candidate_chunk(
             time.perf_counter() - tested_candidate_dataframe_start_time
         )
 
+    total_elapsed_seconds = time.perf_counter() - chunk_total_start_time
+
     return OptimizerV2ChunkScoreResult(
         chunk_layout=chunk_layout,
         candidate_indices_global=np.asarray(chunk_layout.candidate_indices_global, dtype=np.int32),
@@ -184,8 +202,22 @@ def score_target_candidate_chunk(
             containment_grandmother_elapsed_seconds
         ),
         containment_reshape_elapsed_seconds=float(containment_reshape_elapsed_seconds),
+        containment_grandmother_mother_call_elapsed_seconds=float(
+            containment_grandmother_mother_call_elapsed_seconds
+        ),
+        containment_grandmother_chunk_slicing_elapsed_seconds=float(
+            containment_grandmother_chunk_slicing_elapsed_seconds
+        ),
+        containment_grandmother_chunk_concatenation_elapsed_seconds=float(
+            containment_grandmother_chunk_concatenation_elapsed_seconds
+        ),
+        containment_grandmother_chunk_count=int(containment_grandmother_chunk_count),
+        containment_grandmother_used_chunking=bool(
+            containment_grandmother_used_chunking
+        ),
         score_reduction_elapsed_seconds=float(score_reduction_elapsed_seconds),
         tested_candidate_dataframe_elapsed_seconds=float(tested_candidate_dataframe_elapsed_seconds),
+        total_elapsed_seconds=float(total_elapsed_seconds),
         relative_structure_localized_points=(
             _coerce_output_array(relative_structure_localized_biopsy_batch.transformed_points, return_array_as)
             if include_relative_structure_localized_points_for_debug
