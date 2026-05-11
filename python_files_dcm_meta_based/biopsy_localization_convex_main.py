@@ -549,10 +549,10 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = 8
-    optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
-    optimizer_v2_render_plotly_export_bool = True # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
+    optimizer_v2_render_plotly_export_bool = False # HERE # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
     optimizer_v2_render_plotly_export_formats = ("svg", "pdf")
     optimizer_v2_render_plotly_export_width = svg_image_width
     optimizer_v2_render_plotly_export_height = svg_image_height
@@ -562,7 +562,7 @@ def main():
     optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
     optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
     optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
-    optimizer_v2_render_winner_containment_debug_bool = True # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
+    optimizer_v2_render_winner_containment_debug_bool = False # HERE # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
     optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
     optimizer_v2_render_include_target_points_bool = False # If False, omit the raw DIL point cloud and rely on contour-style target layers instead.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.

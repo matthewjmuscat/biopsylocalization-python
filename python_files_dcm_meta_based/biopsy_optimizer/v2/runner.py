@@ -153,6 +153,7 @@ def run_target_staged_candidate_search(
 
     combined_tested_candidate_dataframe = pandas.concat(stage_tested_candidate_dataframes, ignore_index=True)
     final_ranked_candidate_dataframe = stage_results[-1].ranked_candidate_dataframe.copy()
+    winner_resolution_start_time = time.perf_counter()
     winner_resolution_result = _resolve_final_winner(
         candidate_pool=candidate_pool,
         search_config=search_config,
@@ -176,6 +177,7 @@ def run_target_staged_candidate_search(
         kernel_type=kernel_type,
         return_array_as=return_array_as,
     )
+    winner_resolution_elapsed_seconds = time.perf_counter() - winner_resolution_start_time
     if winner_resolution_result is not None:
         final_ranked_candidate_dataframe = _move_operational_winner_to_top(
             final_ranked_candidate_dataframe,
@@ -203,6 +205,7 @@ def run_target_staged_candidate_search(
     elif not final_ranked_candidate_dataframe.empty:
         operational_winner_candidate_index_global = int(final_ranked_candidate_dataframe.iloc[0]["Candidate global index"])
 
+    winner_validation_start_time = time.perf_counter()
     winner_validation_result = _build_winner_validation_result(
         final_ranked_candidate_dataframe=final_ranked_candidate_dataframe,
         winner_resolution_result=winner_resolution_result,
@@ -226,6 +229,7 @@ def run_target_staged_candidate_search(
         kernel_type=kernel_type,
         return_array_as=return_array_as,
     )
+    winner_validation_elapsed_seconds = time.perf_counter() - winner_validation_start_time
     if winner_validation_result is not None:
         final_ranked_candidate_dataframe = _apply_winner_validation_to_candidate_dataframe(
             final_ranked_candidate_dataframe,
@@ -251,6 +255,8 @@ def run_target_staged_candidate_search(
         operational_winner_candidate_index_global=operational_winner_candidate_index_global,
         winner_resolution_result=winner_resolution_result,
         winner_validation_result=winner_validation_result,
+        winner_resolution_elapsed_seconds=float(winner_resolution_elapsed_seconds),
+        winner_validation_elapsed_seconds=float(winner_validation_elapsed_seconds),
     )
 
 
@@ -303,6 +309,14 @@ def _run_target_candidate_stage(
     chunk_score_results = []
     stage_tested_candidate_frames = []
     chunk_scoring_elapsed_seconds = 0.0
+    stage_biopsy_self_transform_elapsed_seconds = 0.0
+    stage_relative_structure_localization_elapsed_seconds = 0.0
+    stage_flatten_for_containment_elapsed_seconds = 0.0
+    stage_containment_elapsed_seconds = 0.0
+    stage_containment_grandmother_elapsed_seconds = 0.0
+    stage_containment_reshape_elapsed_seconds = 0.0
+    stage_score_reduction_elapsed_seconds = 0.0
+    stage_tested_candidate_dataframe_elapsed_seconds = 0.0
     for chunk_candidate_indices_global in _yield_candidate_index_chunks(candidate_indices_global, max_candidates_per_chunk):
         chunk_score_start_time = time.perf_counter()
         chunk_layout = OptimizerV2ChunkLayout(
@@ -335,6 +349,30 @@ def _run_target_candidate_stage(
             return_array_as=return_array_as,
         )
         chunk_scoring_elapsed_seconds += time.perf_counter() - chunk_score_start_time
+        stage_biopsy_self_transform_elapsed_seconds += float(
+            chunk_score_result.biopsy_self_transform_elapsed_seconds
+        )
+        stage_relative_structure_localization_elapsed_seconds += float(
+            chunk_score_result.relative_structure_localization_elapsed_seconds
+        )
+        stage_flatten_for_containment_elapsed_seconds += float(
+            chunk_score_result.flatten_for_containment_elapsed_seconds
+        )
+        stage_containment_elapsed_seconds += float(
+            chunk_score_result.containment_elapsed_seconds
+        )
+        stage_containment_grandmother_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_elapsed_seconds
+        )
+        stage_containment_reshape_elapsed_seconds += float(
+            chunk_score_result.containment_reshape_elapsed_seconds
+        )
+        stage_score_reduction_elapsed_seconds += float(
+            chunk_score_result.score_reduction_elapsed_seconds
+        )
+        stage_tested_candidate_dataframe_elapsed_seconds += float(
+            chunk_score_result.tested_candidate_dataframe_elapsed_seconds
+        )
         chunk_score_results.append(chunk_score_result)
         stage_tested_candidate_frames.append(
             _annotate_stage_tested_candidate_dataframe(
@@ -350,6 +388,18 @@ def _run_target_candidate_stage(
                 max_test_structures_per_call_budget=max_test_structures_per_call_budget,
                 stage_chunk_count=len(chunk_score_results),
                 stage_chunk_scoring_elapsed_seconds=chunk_scoring_elapsed_seconds,
+                stage_biopsy_self_transform_elapsed_seconds=stage_biopsy_self_transform_elapsed_seconds,
+                stage_relative_structure_localization_elapsed_seconds=(
+                    stage_relative_structure_localization_elapsed_seconds
+                ),
+                stage_flatten_for_containment_elapsed_seconds=(
+                    stage_flatten_for_containment_elapsed_seconds
+                ),
+                stage_containment_elapsed_seconds=stage_containment_elapsed_seconds,
+                stage_score_reduction_elapsed_seconds=stage_score_reduction_elapsed_seconds,
+                stage_tested_candidate_dataframe_elapsed_seconds=(
+                    stage_tested_candidate_dataframe_elapsed_seconds
+                ),
             )
         )
 
@@ -368,6 +418,24 @@ def _run_target_candidate_stage(
     stage_ranked_candidate_dataframe["Stage chunk scoring elapsed seconds"] = float(
         chunk_scoring_elapsed_seconds
     )
+    stage_ranked_candidate_dataframe["Stage biopsy self-transform elapsed seconds"] = float(
+        stage_biopsy_self_transform_elapsed_seconds
+    )
+    stage_ranked_candidate_dataframe[
+        "Stage relative structure localization elapsed seconds"
+    ] = float(stage_relative_structure_localization_elapsed_seconds)
+    stage_ranked_candidate_dataframe[
+        "Stage flatten for containment elapsed seconds"
+    ] = float(stage_flatten_for_containment_elapsed_seconds)
+    stage_ranked_candidate_dataframe["Stage containment elapsed seconds"] = float(
+        stage_containment_elapsed_seconds
+    )
+    stage_ranked_candidate_dataframe["Stage score reduction elapsed seconds"] = float(
+        stage_score_reduction_elapsed_seconds
+    )
+    stage_ranked_candidate_dataframe[
+        "Stage tested candidate dataframe elapsed seconds"
+    ] = float(stage_tested_candidate_dataframe_elapsed_seconds)
     stage_ranked_candidate_dataframe["Stage ranking elapsed seconds"] = float(
         ranking_elapsed_seconds
     )
@@ -386,6 +454,24 @@ def _run_target_candidate_stage(
         appended_trial_block_size=int(appended_trial_block_size),
         num_candidate_chunks=int(len(chunk_score_results)),
         chunk_scoring_elapsed_seconds=float(chunk_scoring_elapsed_seconds),
+        biopsy_self_transform_elapsed_seconds=float(stage_biopsy_self_transform_elapsed_seconds),
+        relative_structure_localization_elapsed_seconds=float(
+            stage_relative_structure_localization_elapsed_seconds
+        ),
+        flatten_for_containment_elapsed_seconds=float(
+            stage_flatten_for_containment_elapsed_seconds
+        ),
+        containment_elapsed_seconds=float(stage_containment_elapsed_seconds),
+        containment_grandmother_elapsed_seconds=float(
+            stage_containment_grandmother_elapsed_seconds
+        ),
+        containment_reshape_elapsed_seconds=float(
+            stage_containment_reshape_elapsed_seconds
+        ),
+        score_reduction_elapsed_seconds=float(stage_score_reduction_elapsed_seconds),
+        tested_candidate_dataframe_elapsed_seconds=float(
+            stage_tested_candidate_dataframe_elapsed_seconds
+        ),
         ranking_elapsed_seconds=float(ranking_elapsed_seconds),
         total_elapsed_seconds=float(stage_total_elapsed_seconds),
     )
@@ -404,6 +490,12 @@ def _annotate_stage_tested_candidate_dataframe(
     max_test_structures_per_call_budget: Optional[int] = None,
     stage_chunk_count: Optional[int] = None,
     stage_chunk_scoring_elapsed_seconds: Optional[float] = None,
+    stage_biopsy_self_transform_elapsed_seconds: Optional[float] = None,
+    stage_relative_structure_localization_elapsed_seconds: Optional[float] = None,
+    stage_flatten_for_containment_elapsed_seconds: Optional[float] = None,
+    stage_containment_elapsed_seconds: Optional[float] = None,
+    stage_score_reduction_elapsed_seconds: Optional[float] = None,
+    stage_tested_candidate_dataframe_elapsed_seconds: Optional[float] = None,
 ):
     annotated_dataframe = tested_candidate_dataframe.copy()
     annotated_dataframe["Stage name"] = stage_config.stage_name
@@ -448,6 +540,42 @@ def _annotate_stage_tested_candidate_dataframe(
         annotated_dataframe["Stage chunk scoring elapsed seconds"] = float(
             stage_chunk_scoring_elapsed_seconds
         )
+    if stage_biopsy_self_transform_elapsed_seconds is None:
+        annotated_dataframe["Stage biopsy self-transform elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe["Stage biopsy self-transform elapsed seconds"] = float(
+            stage_biopsy_self_transform_elapsed_seconds
+        )
+    if stage_relative_structure_localization_elapsed_seconds is None:
+        annotated_dataframe["Stage relative structure localization elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe[
+            "Stage relative structure localization elapsed seconds"
+        ] = float(stage_relative_structure_localization_elapsed_seconds)
+    if stage_flatten_for_containment_elapsed_seconds is None:
+        annotated_dataframe["Stage flatten for containment elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe["Stage flatten for containment elapsed seconds"] = float(
+            stage_flatten_for_containment_elapsed_seconds
+        )
+    if stage_containment_elapsed_seconds is None:
+        annotated_dataframe["Stage containment elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe["Stage containment elapsed seconds"] = float(
+            stage_containment_elapsed_seconds
+        )
+    if stage_score_reduction_elapsed_seconds is None:
+        annotated_dataframe["Stage score reduction elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe["Stage score reduction elapsed seconds"] = float(
+            stage_score_reduction_elapsed_seconds
+        )
+    if stage_tested_candidate_dataframe_elapsed_seconds is None:
+        annotated_dataframe["Stage tested candidate dataframe elapsed seconds"] = np.nan
+    else:
+        annotated_dataframe[
+            "Stage tested candidate dataframe elapsed seconds"
+        ] = float(stage_tested_candidate_dataframe_elapsed_seconds)
     annotated_dataframe["Tie-break resolution method"] = DEFAULT_STAGE_PROVISIONAL_TIE_BREAK_METHOD
     annotated_dataframe["Tie-break warning flag"] = False
     annotated_dataframe["Tie-break fallback flag"] = False
@@ -876,7 +1004,7 @@ def _build_winner_validation_result(
         target_transform_bank_prefix=target_transform_bank_prefix,
         objective_reducer_name=objective_reducer_name,
         max_test_structures_per_call=max_test_structures_per_call,
-        create_tested_candidate_dataframe=True,
+        create_tested_candidate_dataframe=False,
         containment_log_sub_dirs_list=_resolve_stage_containment_log_sub_dirs(
             containment_log_sub_dirs_list,
             "winner_rescore",

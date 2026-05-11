@@ -7,6 +7,7 @@ outside this module.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional, Sequence
 
 import cupy as cp
@@ -57,6 +58,7 @@ def score_target_candidate_chunk(
     _validate_trial_alignment(chunk_layout, biopsy_transform_bank_prefix, target_transform_bank_prefix)
     _validate_target_relative_structure_pack(target_relative_structures_nominal_plus_trials, chunk_layout)
 
+    biopsy_self_transform_start_time = time.perf_counter()
     candidate_biopsy_self_transform_batch = localization_transformer.build_candidate_biopsy_self_transform_batch(
         nominal_biopsy_points=nominal_biopsy_points,
         nominal_biopsy_centroid=nominal_biopsy_centroid,
@@ -66,18 +68,29 @@ def score_target_candidate_chunk(
         include_nominal=chunk_layout.include_nominal,
         return_array_as="cupy",
     )
+    biopsy_self_transform_elapsed_seconds = time.perf_counter() - biopsy_self_transform_start_time
+
+    relative_structure_localization_start_time = time.perf_counter()
     relative_structure_localized_biopsy_batch = localization_transformer.build_relative_structure_localized_biopsy_batch(
         candidate_biopsy_self_transform_batch=candidate_biopsy_self_transform_batch,
         relative_structure_centroid=target_structure_centroid,
         relative_structure_transform_bank_prefix=target_transform_bank_prefix,
         return_array_as="cupy",
     )
+    relative_structure_localization_elapsed_seconds = (
+        time.perf_counter() - relative_structure_localization_start_time
+    )
+
+    flatten_for_containment_start_time = time.perf_counter()
     aligned_containment_test_batch = localization_transformer.flatten_relative_structure_localized_batch_for_containment(
         relative_structure_localized_biopsy_batch=relative_structure_localized_biopsy_batch,
         nominal_relative_structure_index=chunk_layout.nominal_relative_structure_index,
         trial_relative_structure_start_index=chunk_layout.trial_relative_structure_start_index,
         return_array_as="numpy",
     )
+    flatten_for_containment_elapsed_seconds = time.perf_counter() - flatten_for_containment_start_time
+
+    containment_start_time = time.perf_counter()
     aligned_containment_run_result = containment_runner.run_aligned_containment_batch(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays=target_relative_structures_nominal_plus_trials,
         aligned_containment_test_batch=aligned_containment_test_batch,
@@ -88,7 +101,15 @@ def score_target_candidate_chunk(
         return_array_as="cupy",
         max_test_structures_per_call=max_test_structures_per_call,
     )
+    containment_elapsed_seconds = time.perf_counter() - containment_start_time
+    containment_grandmother_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_elapsed_seconds
+    )
+    containment_reshape_elapsed_seconds = float(
+        aligned_containment_run_result.reshape_elapsed_seconds
+    )
 
+    score_reduction_start_time = time.perf_counter()
     structured_containment_result_cp_arr = cp.asarray(aligned_containment_run_result.structured_containment_result)
     stochastic_containment_result_cp_arr, nominal_containment_result_cp_arr = _split_nominal_and_stochastic_results(
         structured_containment_result_cp_arr,
@@ -121,9 +142,12 @@ def score_target_candidate_chunk(
         normalized_candidate_points - np.asarray(target_structure_centroid, dtype=float).reshape(1, 3),
         axis=1,
     ).astype(np.float32)
+    score_reduction_elapsed_seconds = time.perf_counter() - score_reduction_start_time
 
     tested_candidate_dataframe = None
+    tested_candidate_dataframe_elapsed_seconds = 0.0
     if create_tested_candidate_dataframe:
+        tested_candidate_dataframe_start_time = time.perf_counter()
         tested_candidate_dataframe = build_tested_candidate_dataframe_from_chunk_score_result(
             chunk_layout=chunk_layout,
             candidate_centroids=normalized_candidate_points,
@@ -133,6 +157,9 @@ def score_target_candidate_chunk(
             candidate_scores=candidate_scores_np_arr,
             candidate_nominal_scores=candidate_nominal_scores_np_arr,
             distance_to_target_centroid_mm=distance_to_target_centroid_mm,
+        )
+        tested_candidate_dataframe_elapsed_seconds = (
+            time.perf_counter() - tested_candidate_dataframe_start_time
         )
 
     return OptimizerV2ChunkScoreResult(
@@ -147,6 +174,18 @@ def score_target_candidate_chunk(
         candidate_scores=candidate_scores_np_arr,
         candidate_nominal_scores=candidate_nominal_scores_np_arr,
         distance_to_target_centroid_mm=distance_to_target_centroid_mm,
+        biopsy_self_transform_elapsed_seconds=float(biopsy_self_transform_elapsed_seconds),
+        relative_structure_localization_elapsed_seconds=float(
+            relative_structure_localization_elapsed_seconds
+        ),
+        flatten_for_containment_elapsed_seconds=float(flatten_for_containment_elapsed_seconds),
+        containment_elapsed_seconds=float(containment_elapsed_seconds),
+        containment_grandmother_elapsed_seconds=float(
+            containment_grandmother_elapsed_seconds
+        ),
+        containment_reshape_elapsed_seconds=float(containment_reshape_elapsed_seconds),
+        score_reduction_elapsed_seconds=float(score_reduction_elapsed_seconds),
+        tested_candidate_dataframe_elapsed_seconds=float(tested_candidate_dataframe_elapsed_seconds),
         relative_structure_localized_points=(
             _coerce_output_array(relative_structure_localized_biopsy_batch.transformed_points, return_array_as)
             if include_relative_structure_localized_points_for_debug

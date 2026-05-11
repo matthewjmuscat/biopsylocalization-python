@@ -61,6 +61,30 @@ def build_target_dil_optimization_summary_dataframe(
             "Stage chunk scoring elapsed seconds",
             np.nan,
         ),
+        "Target optimizer final stage biopsy self-transform elapsed seconds": winner_row.get(
+            "Stage biopsy self-transform elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage relative structure localization elapsed seconds": winner_row.get(
+            "Stage relative structure localization elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage flatten for containment elapsed seconds": winner_row.get(
+            "Stage flatten for containment elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage containment elapsed seconds": winner_row.get(
+            "Stage containment elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage score reduction elapsed seconds": winner_row.get(
+            "Stage score reduction elapsed seconds",
+            np.nan,
+        ),
+        "Target optimizer final stage tested candidate dataframe elapsed seconds": winner_row.get(
+            "Stage tested candidate dataframe elapsed seconds",
+            np.nan,
+        ),
         "Target optimizer final stage ranking elapsed seconds": winner_row.get(
             "Stage ranking elapsed seconds",
             np.nan,
@@ -84,6 +108,42 @@ def build_target_dil_optimization_summary_dataframe(
         "Target optimizer num stages": len(search_result.stage_results),
         "Target optimizer cumulative stage elapsed seconds": float(
             sum(float(stage_result.total_elapsed_seconds) for stage_result in search_result.stage_results)
+        ),
+        "Target optimizer cumulative stage biopsy self-transform elapsed seconds": float(
+            sum(
+                float(stage_result.biopsy_self_transform_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+        ),
+        "Target optimizer cumulative stage relative structure localization elapsed seconds": float(
+            sum(
+                float(stage_result.relative_structure_localization_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+        ),
+        "Target optimizer cumulative stage flatten for containment elapsed seconds": float(
+            sum(
+                float(stage_result.flatten_for_containment_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+        ),
+        "Target optimizer cumulative stage containment elapsed seconds": float(
+            sum(
+                float(stage_result.containment_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+        ),
+        "Target optimizer cumulative stage score reduction elapsed seconds": float(
+            sum(
+                float(stage_result.score_reduction_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+        ),
+        "Target optimizer cumulative stage tested candidate dataframe elapsed seconds": float(
+            sum(
+                float(stage_result.tested_candidate_dataframe_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
         ),
         "Target optimizer num tested candidate rows": len(search_result.tested_candidate_dataframe),
         "Target optimizer num final ranked candidates": len(search_result.ranked_candidate_dataframe),
@@ -195,6 +255,12 @@ def build_target_dil_ranked_candidate_output_dataframe(
             "Stage appended trial block size": "Target optimizer stage appended trial block size",
             "Stage chunk count": "Target optimizer stage chunk count",
             "Stage chunk scoring elapsed seconds": "Target optimizer stage chunk scoring elapsed seconds",
+            "Stage biopsy self-transform elapsed seconds": "Target optimizer stage biopsy self-transform elapsed seconds",
+            "Stage relative structure localization elapsed seconds": "Target optimizer stage relative structure localization elapsed seconds",
+            "Stage flatten for containment elapsed seconds": "Target optimizer stage flatten for containment elapsed seconds",
+            "Stage containment elapsed seconds": "Target optimizer stage containment elapsed seconds",
+            "Stage score reduction elapsed seconds": "Target optimizer stage score reduction elapsed seconds",
+            "Stage tested candidate dataframe elapsed seconds": "Target optimizer stage tested candidate dataframe elapsed seconds",
             "Stage ranking elapsed seconds": "Target optimizer stage ranking elapsed seconds",
             "Stage total elapsed seconds": "Target optimizer stage total elapsed seconds",
             "Stage minimum cumulative trial prefix floor": "Target optimizer stage minimum cumulative trial prefix floor",
@@ -292,6 +358,12 @@ def build_target_dil_tested_candidate_output_dataframe(
             "Stage appended trial block size": "Target optimizer stage appended trial block size",
             "Stage chunk count": "Target optimizer stage chunk count",
             "Stage chunk scoring elapsed seconds": "Target optimizer stage chunk scoring elapsed seconds",
+            "Stage biopsy self-transform elapsed seconds": "Target optimizer stage biopsy self-transform elapsed seconds",
+            "Stage relative structure localization elapsed seconds": "Target optimizer stage relative structure localization elapsed seconds",
+            "Stage flatten for containment elapsed seconds": "Target optimizer stage flatten for containment elapsed seconds",
+            "Stage containment elapsed seconds": "Target optimizer stage containment elapsed seconds",
+            "Stage score reduction elapsed seconds": "Target optimizer stage score reduction elapsed seconds",
+            "Stage tested candidate dataframe elapsed seconds": "Target optimizer stage tested candidate dataframe elapsed seconds",
             "Stage ranking elapsed seconds": "Target optimizer stage ranking elapsed seconds",
             "Stage total elapsed seconds": "Target optimizer stage total elapsed seconds",
             "Stage minimum cumulative trial prefix floor": "Target optimizer stage minimum cumulative trial prefix floor",

@@ -208,11 +208,84 @@ def _build_optimizer_v2_stage_timing_details(search_result):
                 float(stage_result.chunk_scoring_elapsed_seconds),
                 3,
             ),
+            "biopsy_self_transform_elapsed_seconds": round(
+                float(stage_result.biopsy_self_transform_elapsed_seconds),
+                3,
+            ),
+            "relative_structure_localization_elapsed_seconds": round(
+                float(stage_result.relative_structure_localization_elapsed_seconds),
+                3,
+            ),
+            "flatten_for_containment_elapsed_seconds": round(
+                float(stage_result.flatten_for_containment_elapsed_seconds),
+                3,
+            ),
+            "containment_elapsed_seconds": round(
+                float(stage_result.containment_elapsed_seconds),
+                3,
+            ),
+            "containment_grandmother_elapsed_seconds": round(
+                float(stage_result.containment_grandmother_elapsed_seconds),
+                3,
+            ),
+            "containment_reshape_elapsed_seconds": round(
+                float(stage_result.containment_reshape_elapsed_seconds),
+                3,
+            ),
+            "score_reduction_elapsed_seconds": round(
+                float(stage_result.score_reduction_elapsed_seconds),
+                3,
+            ),
+            "tested_candidate_dataframe_elapsed_seconds": round(
+                float(stage_result.tested_candidate_dataframe_elapsed_seconds),
+                3,
+            ),
             "ranking_elapsed_seconds": round(float(stage_result.ranking_elapsed_seconds), 3),
             "total_elapsed_seconds": round(float(stage_result.total_elapsed_seconds), 3),
         }
         for stage_result in search_result.stage_results
     ]
+
+
+def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
+    if chunk_score_result is None:
+        return None
+    return {
+        "num_candidates": int(chunk_score_result.chunk_layout.num_candidates),
+        "num_trials": int(chunk_score_result.chunk_layout.num_trials),
+        "biopsy_self_transform_elapsed_seconds": round(
+            float(chunk_score_result.biopsy_self_transform_elapsed_seconds),
+            3,
+        ),
+        "relative_structure_localization_elapsed_seconds": round(
+            float(chunk_score_result.relative_structure_localization_elapsed_seconds),
+            3,
+        ),
+        "flatten_for_containment_elapsed_seconds": round(
+            float(chunk_score_result.flatten_for_containment_elapsed_seconds),
+            3,
+        ),
+        "containment_elapsed_seconds": round(
+            float(chunk_score_result.containment_elapsed_seconds),
+            3,
+        ),
+        "containment_grandmother_elapsed_seconds": round(
+            float(chunk_score_result.containment_grandmother_elapsed_seconds),
+            3,
+        ),
+        "containment_reshape_elapsed_seconds": round(
+            float(chunk_score_result.containment_reshape_elapsed_seconds),
+            3,
+        ),
+        "score_reduction_elapsed_seconds": round(
+            float(chunk_score_result.score_reduction_elapsed_seconds),
+            3,
+        ),
+        "tested_candidate_dataframe_elapsed_seconds": round(
+            float(chunk_score_result.tested_candidate_dataframe_elapsed_seconds),
+            3,
+        ),
+    }
 
 
 def run_target_dil_optimizer_v2_for_live_simulated_family(
@@ -503,6 +576,34 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 downstream_comparable_trial_count=downstream_comparable_trial_count,
                 return_array_as="numpy",
             )
+            search_elapsed_seconds = time.perf_counter() - search_start_time
+            stage_total_elapsed_seconds = sum(
+                float(stage_result.total_elapsed_seconds)
+                for stage_result in search_result.stage_results
+            )
+            winner_resolution_elapsed_seconds = float(
+                search_result.winner_resolution_elapsed_seconds
+            )
+            winner_validation_elapsed_seconds = float(
+                search_result.winner_validation_elapsed_seconds
+            )
+            unattributed_search_elapsed_seconds = max(
+                0.0,
+                search_elapsed_seconds
+                - stage_total_elapsed_seconds
+                - winner_resolution_elapsed_seconds
+                - winner_validation_elapsed_seconds,
+            )
+            winner_resolution_chunk_score_result = (
+                search_result.winner_resolution_result.chunk_score_result
+                if search_result.winner_resolution_result is not None
+                else None
+            )
+            winner_validation_chunk_score_result = (
+                search_result.winner_validation_result.chunk_score_result
+                if search_result.winner_validation_result is not None
+                else None
+            )
             _runtime_checkpoint(
                 "optimizer_v2.structure.search.end",
                 "Completed optimizer-v2 staged candidate search.",
@@ -513,7 +614,29 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     "winner_candidate_index_global": (
                         search_result.operational_winner_candidate_index_global
                     ),
-                    "elapsed_seconds": round(time.perf_counter() - search_start_time, 3),
+                    "elapsed_seconds": round(search_elapsed_seconds, 3),
+                    "stage_total_elapsed_seconds": round(
+                        stage_total_elapsed_seconds,
+                        3,
+                    ),
+                    "winner_resolution_elapsed_seconds": round(
+                        winner_resolution_elapsed_seconds,
+                        3,
+                    ),
+                    "winner_validation_elapsed_seconds": round(
+                        winner_validation_elapsed_seconds,
+                        3,
+                    ),
+                    "unattributed_search_elapsed_seconds": round(
+                        unattributed_search_elapsed_seconds,
+                        3,
+                    ),
+                    "winner_resolution_chunk_timing": _build_optimizer_v2_chunk_timing_details(
+                        winner_resolution_chunk_score_result
+                    ),
+                    "winner_validation_chunk_timing": _build_optimizer_v2_chunk_timing_details(
+                        winner_validation_chunk_score_result
+                    ),
                     "stage_timings": _build_optimizer_v2_stage_timing_details(search_result),
                 },
             )

@@ -8,6 +8,7 @@ consumers without owning the generalized grandmother execution logic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Any, Optional, Sequence
 
 import cupy as cp
@@ -27,6 +28,9 @@ class AlignedContainmentRunResult:
     structured_containment_result: Any
     nearest_zslice_index_and_values_3d_arr: Any
     containment_results_dataframe: Optional[Any] = None
+    grandmother_elapsed_seconds: float = 0.0
+    reshape_elapsed_seconds: float = 0.0
+    containment_results_dataframe_elapsed_seconds: float = 0.0
 
 
 def run_aligned_containment_batch(
@@ -50,6 +54,8 @@ def run_aligned_containment_batch(
     if create_containment_results_dataframe and structure_info is None:
         raise ValueError("structure_info is required when create_containment_results_dataframe is True")
 
+    _synchronize_cuda_device()
+    grandmother_start_time = time.perf_counter()
     raw_containment_result_cp_arr, prepper_output_tuple = (
         custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents.custom_point_containment_grandmother_function(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays,
@@ -64,15 +70,21 @@ def run_aligned_containment_batch(
         kernel_type=kernel_type,
         )
     )
+    _synchronize_cuda_device()
+    grandmother_elapsed_seconds = time.perf_counter() - grandmother_start_time
 
+    reshape_start_time = time.perf_counter()
     structured_containment_result = reshape_aligned_containment_result(
         raw_containment_result_cp_arr,
         aligned_containment_test_batch,
         return_array_as=return_array_as,
     )
+    reshape_elapsed_seconds = time.perf_counter() - reshape_start_time
 
     containment_results_dataframe = None
+    containment_results_dataframe_elapsed_seconds = 0.0
     if create_containment_results_dataframe:
+        containment_results_dataframe_start_time = time.perf_counter()
         containment_results_dataframe = (
             custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_2II(
                 structure_info,
@@ -85,6 +97,9 @@ def run_aligned_containment_batch(
                 int_dtype=np.int32,
             )
         )
+        containment_results_dataframe_elapsed_seconds = (
+            time.perf_counter() - containment_results_dataframe_start_time
+        )
 
     return AlignedContainmentRunResult(
         aligned_containment_test_batch=aligned_containment_test_batch,
@@ -92,6 +107,11 @@ def run_aligned_containment_batch(
         structured_containment_result=structured_containment_result,
         nearest_zslice_index_and_values_3d_arr=_coerce_output_array(prepper_output_tuple[0], return_array_as),
         containment_results_dataframe=containment_results_dataframe,
+        grandmother_elapsed_seconds=float(grandmother_elapsed_seconds),
+        reshape_elapsed_seconds=float(reshape_elapsed_seconds),
+        containment_results_dataframe_elapsed_seconds=float(
+            containment_results_dataframe_elapsed_seconds
+        ),
     )
 
 
@@ -132,6 +152,13 @@ def _coerce_output_array(output_array: Any, return_array_as: str):
     if return_array_as == "cupy":
         return output_array
     return cp.asnumpy(output_array)
+
+
+def _synchronize_cuda_device() -> None:
+    try:
+        cp.cuda.runtime.deviceSynchronize()
+    except Exception:
+        pass
 
 
 def _validate_aligned_containment_test_batch(aligned_containment_test_batch: AlignedContainmentTestBatch) -> None:

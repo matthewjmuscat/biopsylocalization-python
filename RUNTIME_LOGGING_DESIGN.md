@@ -1,6 +1,6 @@
 # Runtime Logging Design
 
-Last updated: 2026-04-30
+Last updated: 2026-05-10
 
 ## Purpose
 
@@ -160,6 +160,29 @@ Recommended event categories:
 - `pickle_load_start`
 - `pickle_load_end`
 
+The current implementation now also benefits from lightweight Rich progress lifecycle events for active in-progress bars.
+
+Those events are intentionally coarse and should remain coarse.
+
+They are useful for answering questions such as:
+
+- which long-running Rich task started last,
+- whether a task was paused or resumed,
+- whether a task completed cleanly or was removed before completion,
+- how the UI-visible elapsed time for a task lines up with the runtime log.
+
+Recommended Rich lifecycle event categories:
+
+- `rich_progress_task_start`
+- `rich_progress_task_pause`
+- `rich_progress_task_resume`
+- `rich_progress_task_complete`
+- `rich_progress_task_remove`
+
+These should be emitted for active progress bars only.
+
+Completed-summary or mirror bars should generally not emit their own lifecycle events, because that duplicates the same underlying work and makes the event stream noisy.
+
 ## Critical Checkpoints For This Pipeline
 
 The first pass should log only the high-value steps where runs historically get stuck or die.
@@ -178,6 +201,10 @@ Recommended checkpoints:
 10. pickle export start and end
 11. preprocessed pickle load start and end
 12. results bundle load start and end
+
+Guidance-map rendering should now be treated as its own modular post-finalization stage rather than as part of a legacy end-of-main production-plot tail.
+
+Legacy production plots at the end of main are now intentionally skipped in the live pipeline, so docs and checkpoints should describe that phase as skipped legacy behavior rather than as an active export stage.
 
 ## Memory-Focused Fields
 

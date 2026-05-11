@@ -185,7 +185,17 @@ That includes:
 - backend choice inside the dialog,
 - export choice inside the dialog,
 - timeout inside the dialog,
-- re-open-until-continue loop.
+- one queued selector session that opens after optimizer-v2 finishes processing its current run slice.
+
+The important behavioral change is that optimizer-v2 no longer interrupts the numerical loop to open the selector for each biopsy or ROI.
+
+Instead it:
+
+1. builds replayable render payloads while optimizer-v2 is running,
+2. queues one render-review context per eligible structure,
+3. opens the broker once after the optimizer loop finishes,
+4. lets the user review queued scenes from that single selector session,
+5. resumes the main Rich live display after the selector closes.
 
 This pass does not migrate the older direct Open3D debug calls elsewhere in the repository.
 
@@ -231,4 +241,5 @@ After this pass:
 - Tkinter is only an adapter,
 - export path and resolution overrides are user-configurable inside the dialog,
 - timeout is supported and can be disabled for the rest of the run,
+- optimizer-v2 queues render-review contexts during execution and opens one aggregated selector after the run slice finishes,
 - the system is positioned for later migration of legacy render paths without redesigning the render-control contract again.

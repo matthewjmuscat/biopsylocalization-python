@@ -123,6 +123,14 @@ class OptimizerV2ChunkScoreResult:
     candidate_scores: np.ndarray
     candidate_nominal_scores: np.ndarray
     distance_to_target_centroid_mm: np.ndarray
+    biopsy_self_transform_elapsed_seconds: float = 0.0
+    relative_structure_localization_elapsed_seconds: float = 0.0
+    flatten_for_containment_elapsed_seconds: float = 0.0
+    containment_elapsed_seconds: float = 0.0
+    containment_grandmother_elapsed_seconds: float = 0.0
+    containment_reshape_elapsed_seconds: float = 0.0
+    score_reduction_elapsed_seconds: float = 0.0
+    tested_candidate_dataframe_elapsed_seconds: float = 0.0
     candidate_trial_mean_point_scores: Optional[np.ndarray] = None
     relative_structure_localized_points: Optional[Any] = None
     tested_candidate_dataframe: Optional[Any] = None
@@ -143,6 +151,14 @@ class OptimizerV2StageRunResult:
     appended_trial_block_size: int = 0
     num_candidate_chunks: int = 0
     chunk_scoring_elapsed_seconds: float = 0.0
+    biopsy_self_transform_elapsed_seconds: float = 0.0
+    relative_structure_localization_elapsed_seconds: float = 0.0
+    flatten_for_containment_elapsed_seconds: float = 0.0
+    containment_elapsed_seconds: float = 0.0
+    containment_grandmother_elapsed_seconds: float = 0.0
+    containment_reshape_elapsed_seconds: float = 0.0
+    score_reduction_elapsed_seconds: float = 0.0
+    tested_candidate_dataframe_elapsed_seconds: float = 0.0
     ranking_elapsed_seconds: float = 0.0
     total_elapsed_seconds: float = 0.0
 
@@ -157,6 +173,8 @@ class OptimizerV2SearchRunResult:
     operational_winner_candidate_index_global: Optional[int] = None
     winner_resolution_result: Optional[Any] = None
     winner_validation_result: Optional[Any] = None
+    winner_resolution_elapsed_seconds: float = 0.0
+    winner_validation_elapsed_seconds: float = 0.0
 
 
 @dataclass
