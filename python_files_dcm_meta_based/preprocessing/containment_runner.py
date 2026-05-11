@@ -37,6 +37,13 @@ class AlignedContainmentRunResult:
     grandmother_mother_nearest_z_helper_validation_enabled: bool = False
     grandmother_mother_nearest_z_helper_validation_elapsed_seconds: float = 0.0
     grandmother_mother_nearest_z_helper_validation_match: bool = True
+    grandmother_mother_prepper_elapsed_seconds: float = 0.0
+    grandmother_mother_containment_execution_elapsed_seconds: float = 0.0
+    grandmother_mother_valid_point_compaction_elapsed_seconds: float = 0.0
+    grandmother_mother_valid_point_upload_elapsed_seconds: float = 0.0
+    grandmother_mother_kernel_input_prepare_elapsed_seconds: float = 0.0
+    grandmother_mother_kernel_execution_elapsed_seconds: float = 0.0
+    grandmother_mother_result_writeback_elapsed_seconds: float = 0.0
     grandmother_chunk_slicing_elapsed_seconds: float = 0.0
     grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
     grandmother_chunk_count: int = 0
@@ -142,6 +149,27 @@ def run_aligned_containment_batch(
         ),
         grandmother_mother_nearest_z_helper_validation_match=bool(
             grandmother_timing_report.nearest_z_helper_validation_match
+        ),
+        grandmother_mother_prepper_elapsed_seconds=float(
+            grandmother_timing_report.prepper_elapsed_seconds
+        ),
+        grandmother_mother_containment_execution_elapsed_seconds=float(
+            grandmother_timing_report.containment_execution_elapsed_seconds
+        ),
+        grandmother_mother_valid_point_compaction_elapsed_seconds=float(
+            grandmother_timing_report.valid_point_compaction_elapsed_seconds
+        ),
+        grandmother_mother_valid_point_upload_elapsed_seconds=float(
+            grandmother_timing_report.valid_point_upload_elapsed_seconds
+        ),
+        grandmother_mother_kernel_input_prepare_elapsed_seconds=float(
+            grandmother_timing_report.kernel_input_prepare_elapsed_seconds
+        ),
+        grandmother_mother_kernel_execution_elapsed_seconds=float(
+            grandmother_timing_report.kernel_execution_elapsed_seconds
+        ),
+        grandmother_mother_result_writeback_elapsed_seconds=float(
+            grandmother_timing_report.result_writeback_elapsed_seconds
         ),
         grandmother_chunk_slicing_elapsed_seconds=float(
             grandmother_timing_report.chunk_slicing_elapsed_seconds

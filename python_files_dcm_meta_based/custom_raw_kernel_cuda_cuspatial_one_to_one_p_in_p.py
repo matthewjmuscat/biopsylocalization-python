@@ -29,8 +29,46 @@ class ContainmentNearestZHelperTimingReport:
     validation_match: bool = True
 
 
+@dataclass(frozen=True)
+class ContainmentExecutionTimingReport:
+    execution_elapsed_seconds: float = 0.0
+    valid_point_compaction_elapsed_seconds: float = 0.0
+    valid_point_upload_elapsed_seconds: float = 0.0
+    kernel_input_prepare_elapsed_seconds: float = 0.0
+    kernel_execution_elapsed_seconds: float = 0.0
+    result_writeback_elapsed_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class ContainmentMotherTimingReport:
+    helper_name: str = ""
+    helper_elapsed_seconds: float = 0.0
+    validation_enabled: bool = False
+    validation_elapsed_seconds: float = 0.0
+    validation_match: bool = True
+    prepper_elapsed_seconds: float = 0.0
+    containment_execution_elapsed_seconds: float = 0.0
+    valid_point_compaction_elapsed_seconds: float = 0.0
+    valid_point_upload_elapsed_seconds: float = 0.0
+    kernel_input_prepare_elapsed_seconds: float = 0.0
+    kernel_execution_elapsed_seconds: float = 0.0
+    result_writeback_elapsed_seconds: float = 0.0
+
+
 def _build_default_nearest_z_helper_timing_report():
     return ContainmentNearestZHelperTimingReport()
+
+
+def _build_default_execution_timing_report():
+    return ContainmentExecutionTimingReport()
+
+
+def _build_default_mother_timing_report():
+    return ContainmentMotherTimingReport()
+
+
+def _synchronize_cuda_device_for_timing():
+    cp.cuda.runtime.deviceSynchronize()
 
 
 def _run_nearest_z_helper_with_optional_validation(
@@ -1556,6 +1594,7 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
                                                 log_file_name="cuda_log.txt", 
                                                 include_edges_in_log = False, 
                                                 return_array_as = "cupy",
+                                                return_timing_report = False,
                                                 max_total_edges_log_entries = 100000000 # This is the maximum number of edge entries that can be logged. If the number of edge entries exceeds this number, the log file will not include edges
                                                 ):
     """
@@ -1571,6 +1610,9 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
     - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
     - return_array_as: The type of array to return the results as. The default is "cupy" which returns the results as a CuPy array. The other option is anything (but should type "numpy" for clarity) which returns the results as a NumPy array. Cupy is slightly faster because there is no conversion step before return, but then the array remains on gpu memory.
     """
+
+    execution_start_time = time.perf_counter()
+    kernel_input_prepare_start_time = time.perf_counter()
 
     num_test_points_1 = cp.int32(points.shape[0])
     num_structures = cp.int32(stacked_structures_stacked_slices_indices_indices_2d_arr_4.shape[0])
@@ -1691,11 +1733,19 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
     
     # Compute the grid size
     grid_size = (num_test_points_1.item() + block_size - 1) // block_size
+    kernel_input_prepare_elapsed_seconds = (
+        time.perf_counter() - kernel_input_prepare_start_time
+    )
 
 
     ### IMPORTANT NOTE: WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
     ### IMPORTANT NOTE: THE POLYGONS THAT ARE PASSED TO THIS KERNEL IS ASSUMED TO BE BUILT SUCH THAT THE FIRST AND LAST POINTS ARE THE SAME!
     ### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
+
+    kernel_execution_elapsed_seconds = 0.0
+    if return_timing_report:
+        _synchronize_cuda_device_for_timing()
+        kernel_execution_start_time = time.perf_counter()
 
     one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized(
             (grid_size,), (block_size,),
@@ -1710,6 +1760,12 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
              num_test_points_1,
              num_structures, 
              log_buffer)
+        )
+
+    if return_timing_report:
+        _synchronize_cuda_device_for_timing()
+        kernel_execution_elapsed_seconds = (
+            time.perf_counter() - kernel_execution_start_time
         )
 
     if log_file_name is not None:
@@ -1804,9 +1860,17 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
                             f"angle={angle:.3f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
 
     if return_array_as == "cupy":
-        return results
+        returned_results = results
     else:
-        return results.get()
+        returned_results = results.get()
+
+    if not return_timing_report:
+        return returned_results
+    return returned_results, ContainmentExecutionTimingReport(
+        execution_elapsed_seconds=float(time.perf_counter() - execution_start_time),
+        kernel_input_prepare_elapsed_seconds=float(kernel_input_prepare_elapsed_seconds),
+        kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+    )
 
 
 
@@ -2161,6 +2225,8 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
     
 
     nearest_z_helper_timing_report = _build_default_nearest_z_helper_timing_report()
+    containment_execution_timing_report = _build_default_execution_timing_report()
+    prepper_start_time = time.perf_counter()
     prepper_output = test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
                                                           points_to_test_3d_arr_or_list_of_2d_arrays,
                                                           test_struct_to_relative_struct_1d_mapping_array,
@@ -2168,6 +2234,7 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                                           remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
                                                           return_timing_report = return_timing_report,
                                                           validate_nearest_z_helper_against_ver5 = validate_nearest_z_helper_against_ver5)
+    prepper_elapsed_seconds = time.perf_counter() - prepper_start_time
 
     if return_timing_report:
         prepper_output_tuple, nearest_z_helper_timing_report = prepper_output
@@ -2175,6 +2242,7 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
         prepper_output_tuple = prepper_output
 
     if prepper_output_tuple[0].ndim == 2:
+        containment_execution_start_time = time.perf_counter()
         result_cp_arr = test_points_against_polygons_cupy_2d_arr_version(prepper_output_tuple[0], 
                                  prepper_output_tuple[3],
                                  prepper_output_tuple[4], 
@@ -2184,13 +2252,27 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                  log_file_name=log_file_name,
                                  include_edges_in_log = include_edges_in_log,
                                  kernel_type=kernel_type)
+        containment_execution_elapsed_seconds = (
+            time.perf_counter() - containment_execution_start_time
+        )
+
+        mother_timing_report = ContainmentMotherTimingReport(
+            helper_name=nearest_z_helper_timing_report.helper_name,
+            helper_elapsed_seconds=float(nearest_z_helper_timing_report.helper_elapsed_seconds),
+            validation_enabled=bool(nearest_z_helper_timing_report.validation_enabled),
+            validation_elapsed_seconds=float(nearest_z_helper_timing_report.validation_elapsed_seconds),
+            validation_match=bool(nearest_z_helper_timing_report.validation_match),
+            prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+            containment_execution_elapsed_seconds=float(containment_execution_elapsed_seconds),
+        )
 
         if not return_timing_report:
             return result_cp_arr, prepper_output_tuple
-        return (result_cp_arr, prepper_output_tuple), nearest_z_helper_timing_report
+        return (result_cp_arr, prepper_output_tuple), mother_timing_report
 
     elif prepper_output_tuple[0].ndim == 3:
-        result_cp_arr = test_points_against_polygons_cupy_3d_arr_version(prepper_output_tuple[0], 
+        containment_execution_start_time = time.perf_counter()
+        execution_output = test_points_against_polygons_cupy_3d_arr_version(prepper_output_tuple[0], 
                                  points_to_test_3d_arr_or_list_of_2d_arrays, 
                                  prepper_output_tuple[1], 
                                  prepper_output_tuple[2],
@@ -2201,11 +2283,45 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                  log_sub_dirs_list = log_sub_dirs_list,
                                  log_file_name=log_file_name,
                                  include_edges_in_log = include_edges_in_log,
-                                 kernel_type=kernel_type)
+                                 kernel_type=kernel_type,
+                                 return_timing_report=return_timing_report)
+        containment_execution_elapsed_seconds = (
+            time.perf_counter() - containment_execution_start_time
+        )
+
+        if return_timing_report:
+            result_cp_arr, containment_execution_timing_report = execution_output
+        else:
+            result_cp_arr = execution_output
+
+        mother_timing_report = ContainmentMotherTimingReport(
+            helper_name=nearest_z_helper_timing_report.helper_name,
+            helper_elapsed_seconds=float(nearest_z_helper_timing_report.helper_elapsed_seconds),
+            validation_enabled=bool(nearest_z_helper_timing_report.validation_enabled),
+            validation_elapsed_seconds=float(nearest_z_helper_timing_report.validation_elapsed_seconds),
+            validation_match=bool(nearest_z_helper_timing_report.validation_match),
+            prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+            containment_execution_elapsed_seconds=float(containment_execution_elapsed_seconds),
+            valid_point_compaction_elapsed_seconds=float(
+                containment_execution_timing_report.valid_point_compaction_elapsed_seconds
+            ),
+            valid_point_upload_elapsed_seconds=float(
+                containment_execution_timing_report.valid_point_upload_elapsed_seconds
+            ),
+            kernel_input_prepare_elapsed_seconds=float(
+                containment_execution_timing_report.kernel_input_prepare_elapsed_seconds
+            ),
+            kernel_execution_elapsed_seconds=float(
+                containment_execution_timing_report.kernel_execution_elapsed_seconds
+            ),
+            result_writeback_elapsed_seconds=float(
+                containment_execution_timing_report.result_writeback_elapsed_seconds
+            ),
+        )
 
         if not return_timing_report:
             return result_cp_arr, prepper_output_tuple
-        return (result_cp_arr, prepper_output_tuple), nearest_z_helper_timing_report
+        return (result_cp_arr, prepper_output_tuple), mother_timing_report
 
     else:
         raise ValueError("The nearest zslice index and values array must be either a 2d or 3d array!")
@@ -2293,7 +2409,8 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                  log_sub_dirs_list = [],
                                  log_file_name="cuda_log.txt",
                                  include_edges_in_log = False,
-                                 kernel_type="one_to_one_pip_kernel_advanced"):
+                                 kernel_type="one_to_one_pip_kernel_advanced",
+                                 return_timing_report = False):
     """
     Important! This verion is to handle test structures with EQUAL number of points per test structure. 
 
@@ -2311,23 +2428,40 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
     Returns:
     - result_cp_arr: Array indicating whether each point is inside the corresponding polygon. Shape of the output array is (num_trials, num_points_per_trial) full of True/False values.
     """
+    execution_start_time = time.perf_counter()
     num_test_structures = nearest_zslice_index_and_values_3d_arr.shape[0]
     num_points_in_every_test_structure = nearest_zslice_index_and_values_3d_arr.shape[1]
     
     # Initialize an array to store the results
     result_cp_arr = cp.zeros((num_test_structures, num_points_in_every_test_structure), dtype=cp.bool_)
     
+    valid_point_compaction_start_time = time.perf_counter()
     # Flatten the input arrays for easier processing
     flat_points = points_to_test_3d_arr[:, :, :3].reshape(-1, 3)
     
     # Filter out invalid points using the flag in column 3 (1 = out of bounds, 0 = valid)
     valid_mask = nearest_zslice_index_and_values_3d_arr[:, :, 3].flatten() == 0
     
+    nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr.reshape(-1, 4)
+
     # Get the valid points
     valid_points = flat_points[valid_mask]
+    valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = (
+        nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4[valid_mask]
+    )
+    valid_point_compaction_elapsed_seconds = (
+        time.perf_counter() - valid_point_compaction_start_time
+    )
     
     # Create CuPy arrays for the points
+    valid_point_upload_start_time = time.perf_counter()
     valid_points_cp_arr = cp.array(valid_points)
+    valid_point_upload_elapsed_seconds = (
+        time.perf_counter() - valid_point_upload_start_time
+    )
+
+    kernel_input_prepare_elapsed_seconds = 0.0
+    kernel_execution_elapsed_seconds = 0.0
     
     # This method is slightly slower
     """
@@ -2358,6 +2492,7 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
 
     if kernel_type in ("one_to_one_pip_kernel_advanced_reparameterized_version","one_to_one_pip_kernel_advanced"):
         # Create CuPy arrays for the polygons and indices
+        kernel_input_prepare_start_time = time.perf_counter()
         poly_points = []
         poly_indices = []
         current_index = 0
@@ -2377,10 +2512,9 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
         #poly_points = [np.ascontiguousarray(arr) for arr in poly_points]
         poly_points = cp.array(np.vstack(poly_points), dtype=cp.float64)
         poly_indices = cp.array(poly_indices)
-    elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized":
-        # Mask the nearest zslice index and values array to get only the valid points
-        nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr.reshape(-1, 4)
-        valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4[valid_mask]
+        kernel_input_prepare_elapsed_seconds = (
+            time.perf_counter() - kernel_input_prepare_start_time
+        )
 
     #poly_points_old = cp.array(np.vstack(poly_points_old))
     #poly_indices_old = cp.array(poly_indices_old)
@@ -2392,6 +2526,9 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
     
     # Test each point against the corresponding polygon
     if kernel_type in ("one_to_one_pip_kernel_advanced_reparameterized_version","one_to_one_pip_kernel_advanced"):
+        if return_timing_report:
+            _synchronize_cuda_device_for_timing()
+            kernel_execution_start_time = time.perf_counter()
         valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver1(valid_points_cp_arr, 
                                                                     poly_points,
                                                                     poly_indices, 
@@ -2400,8 +2537,13 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                                                     include_edges_in_log = include_edges_in_log, 
                                                                     kernel_type=kernel_type, 
                                                                     return_array_as="cupy")
+        if return_timing_report:
+            _synchronize_cuda_device_for_timing()
+            kernel_execution_elapsed_seconds = (
+                time.perf_counter() - kernel_execution_start_time
+            )
     elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized":
-        valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver2(valid_points_cp_arr, 
+        kernel_wrapper_output = one_to_one_point_in_polygon_cupy_arr_version_ver2(valid_points_cp_arr, 
                                                                     valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4, 
                                                                     stacked_structures_stacked_slices_2d_arr_1, 
                                                                     stacked_structures_stacked_slices_indices_2d_arr_2, 
@@ -2410,16 +2552,38 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                                                     log_sub_dirs_list = log_sub_dirs_list, 
                                                                     log_file_name=log_file_name, 
                                                                     include_edges_in_log = include_edges_in_log, 
-                                                                    return_array_as="cupy")
+                                                                    return_array_as="cupy",
+                                                                    return_timing_report=return_timing_report)
+        if return_timing_report:
+            valid_results, kernel_wrapper_timing_report = kernel_wrapper_output
+            kernel_input_prepare_elapsed_seconds = float(
+                kernel_wrapper_timing_report.kernel_input_prepare_elapsed_seconds
+            )
+            kernel_execution_elapsed_seconds = float(
+                kernel_wrapper_timing_report.kernel_execution_elapsed_seconds
+            )
+        else:
+            valid_results = kernel_wrapper_output
     
     # Map the valid results back to the original result array
+    result_writeback_start_time = time.perf_counter()
     result_cp_arr_flat = result_cp_arr.flatten()
     result_cp_arr_flat[valid_mask] = valid_results
     
     # Reshape the result array back to the original shape
     result_cp_arr = result_cp_arr_flat.reshape(num_test_structures, num_points_in_every_test_structure)
+    result_writeback_elapsed_seconds = time.perf_counter() - result_writeback_start_time
     
-    return result_cp_arr # result is 2d array with shape (num_test_structures, num_points_in_every_test_structure)
+    if not return_timing_report:
+        return result_cp_arr
+    return result_cp_arr, ContainmentExecutionTimingReport(
+        execution_elapsed_seconds=float(time.perf_counter() - execution_start_time),
+        valid_point_compaction_elapsed_seconds=float(valid_point_compaction_elapsed_seconds),
+        valid_point_upload_elapsed_seconds=float(valid_point_upload_elapsed_seconds),
+        kernel_input_prepare_elapsed_seconds=float(kernel_input_prepare_elapsed_seconds),
+        kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+        result_writeback_elapsed_seconds=float(result_writeback_elapsed_seconds),
+    )
 
 
 

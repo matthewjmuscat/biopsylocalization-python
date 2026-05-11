@@ -257,6 +257,46 @@ def _build_optimizer_v2_stage_timing_details(search_result):
             "containment_grandmother_mother_nearest_z_helper_validation_match": bool(
                 stage_result.containment_grandmother_mother_nearest_z_helper_validation_match
             ),
+            "containment_grandmother_mother_prepper_elapsed_seconds": round(
+                float(stage_result.containment_grandmother_mother_prepper_elapsed_seconds),
+                3,
+            ),
+            "containment_grandmother_mother_containment_execution_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_containment_execution_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_valid_point_compaction_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_valid_point_compaction_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_valid_point_upload_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_valid_point_upload_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_kernel_input_prepare_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_kernel_input_prepare_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_kernel_execution_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_kernel_execution_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_result_writeback_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_result_writeback_elapsed_seconds
+                ),
+                3,
+            ),
             "containment_grandmother_chunk_slicing_elapsed_seconds": round(
                 float(stage_result.containment_grandmother_chunk_slicing_elapsed_seconds),
                 3,
@@ -344,6 +384,46 @@ def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
         ),
         "containment_grandmother_mother_nearest_z_helper_validation_match": bool(
             chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_match
+        ),
+        "containment_grandmother_mother_prepper_elapsed_seconds": round(
+            float(chunk_score_result.containment_grandmother_mother_prepper_elapsed_seconds),
+            3,
+        ),
+        "containment_grandmother_mother_containment_execution_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_containment_execution_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_valid_point_compaction_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_valid_point_compaction_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_valid_point_upload_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_valid_point_upload_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_kernel_input_prepare_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_kernel_input_prepare_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_kernel_execution_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_kernel_execution_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_result_writeback_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_result_writeback_elapsed_seconds
+            ),
+            3,
         ),
         "containment_grandmother_chunk_slicing_elapsed_seconds": round(
             float(chunk_score_result.containment_grandmother_chunk_slicing_elapsed_seconds),

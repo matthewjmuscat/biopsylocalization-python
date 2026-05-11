@@ -129,6 +129,27 @@ def score_target_candidate_chunk(
     containment_grandmother_mother_nearest_z_helper_validation_match = bool(
         aligned_containment_run_result.grandmother_mother_nearest_z_helper_validation_match
     )
+    containment_grandmother_mother_prepper_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_prepper_elapsed_seconds
+    )
+    containment_grandmother_mother_containment_execution_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_containment_execution_elapsed_seconds
+    )
+    containment_grandmother_mother_valid_point_compaction_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_valid_point_compaction_elapsed_seconds
+    )
+    containment_grandmother_mother_valid_point_upload_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_valid_point_upload_elapsed_seconds
+    )
+    containment_grandmother_mother_kernel_input_prepare_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_kernel_input_prepare_elapsed_seconds
+    )
+    containment_grandmother_mother_kernel_execution_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_kernel_execution_elapsed_seconds
+    )
+    containment_grandmother_mother_result_writeback_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_result_writeback_elapsed_seconds
+    )
     containment_grandmother_chunk_slicing_elapsed_seconds = float(
         aligned_containment_run_result.grandmother_chunk_slicing_elapsed_seconds
     )
@@ -236,6 +257,27 @@ def score_target_candidate_chunk(
         ),
         containment_grandmother_mother_nearest_z_helper_validation_match=bool(
             containment_grandmother_mother_nearest_z_helper_validation_match
+        ),
+        containment_grandmother_mother_prepper_elapsed_seconds=float(
+            containment_grandmother_mother_prepper_elapsed_seconds
+        ),
+        containment_grandmother_mother_containment_execution_elapsed_seconds=float(
+            containment_grandmother_mother_containment_execution_elapsed_seconds
+        ),
+        containment_grandmother_mother_valid_point_compaction_elapsed_seconds=float(
+            containment_grandmother_mother_valid_point_compaction_elapsed_seconds
+        ),
+        containment_grandmother_mother_valid_point_upload_elapsed_seconds=float(
+            containment_grandmother_mother_valid_point_upload_elapsed_seconds
+        ),
+        containment_grandmother_mother_kernel_input_prepare_elapsed_seconds=float(
+            containment_grandmother_mother_kernel_input_prepare_elapsed_seconds
+        ),
+        containment_grandmother_mother_kernel_execution_elapsed_seconds=float(
+            containment_grandmother_mother_kernel_execution_elapsed_seconds
+        ),
+        containment_grandmother_mother_result_writeback_elapsed_seconds=float(
+            containment_grandmother_mother_result_writeback_elapsed_seconds
         ),
         containment_grandmother_chunk_slicing_elapsed_seconds=float(
             containment_grandmother_chunk_slicing_elapsed_seconds

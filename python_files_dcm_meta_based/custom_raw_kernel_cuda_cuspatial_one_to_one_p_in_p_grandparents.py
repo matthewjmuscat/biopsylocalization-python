@@ -95,6 +95,13 @@ class ContainmentGrandmotherChunkTiming:
     nearest_z_helper_validation_enabled: bool = False
     nearest_z_helper_validation_elapsed_seconds: float = 0.0
     nearest_z_helper_validation_match: bool = True
+    prepper_elapsed_seconds: float = 0.0
+    containment_execution_elapsed_seconds: float = 0.0
+    valid_point_compaction_elapsed_seconds: float = 0.0
+    valid_point_upload_elapsed_seconds: float = 0.0
+    kernel_input_prepare_elapsed_seconds: float = 0.0
+    kernel_execution_elapsed_seconds: float = 0.0
+    result_writeback_elapsed_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -111,6 +118,13 @@ class ContainmentGrandmotherTimingReport:
     nearest_z_helper_validation_enabled: bool
     nearest_z_helper_validation_elapsed_seconds: float
     nearest_z_helper_validation_match: bool
+    prepper_elapsed_seconds: float
+    containment_execution_elapsed_seconds: float
+    valid_point_compaction_elapsed_seconds: float
+    valid_point_upload_elapsed_seconds: float
+    kernel_input_prepare_elapsed_seconds: float
+    kernel_execution_elapsed_seconds: float
+    result_writeback_elapsed_seconds: float
     chunk_slicing_elapsed_seconds: float
     chunk_concatenation_elapsed_seconds: float
     total_elapsed_seconds: float
@@ -566,6 +580,13 @@ def custom_point_containment_grandmother_function(
         nearest_z_helper_validation_enabled = False
         nearest_z_helper_validation_elapsed_seconds = 0.0
         nearest_z_helper_validation_match = True
+        prepper_elapsed_seconds = 0.0
+        containment_execution_elapsed_seconds = 0.0
+        valid_point_compaction_elapsed_seconds = 0.0
+        valid_point_upload_elapsed_seconds = 0.0
+        kernel_input_prepare_elapsed_seconds = 0.0
+        kernel_execution_elapsed_seconds = 0.0
+        result_writeback_elapsed_seconds = 0.0
         if return_timing_report:
             single_call_output, mother_timing_report = single_call_output
             nearest_z_helper_name = str(mother_timing_report.helper_name)
@@ -580,6 +601,25 @@ def custom_point_containment_grandmother_function(
             )
             nearest_z_helper_validation_match = bool(
                 mother_timing_report.validation_match
+            )
+            prepper_elapsed_seconds = float(mother_timing_report.prepper_elapsed_seconds)
+            containment_execution_elapsed_seconds = float(
+                mother_timing_report.containment_execution_elapsed_seconds
+            )
+            valid_point_compaction_elapsed_seconds = float(
+                mother_timing_report.valid_point_compaction_elapsed_seconds
+            )
+            valid_point_upload_elapsed_seconds = float(
+                mother_timing_report.valid_point_upload_elapsed_seconds
+            )
+            kernel_input_prepare_elapsed_seconds = float(
+                mother_timing_report.kernel_input_prepare_elapsed_seconds
+            )
+            kernel_execution_elapsed_seconds = float(
+                mother_timing_report.kernel_execution_elapsed_seconds
+            )
+            result_writeback_elapsed_seconds = float(
+                mother_timing_report.result_writeback_elapsed_seconds
             )
         _synchronize_cuda_device()
         mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
@@ -602,6 +642,21 @@ def custom_point_containment_grandmother_function(
                 nearest_z_helper_validation_match=bool(
                     nearest_z_helper_validation_match
                 ),
+                prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+                containment_execution_elapsed_seconds=float(
+                    containment_execution_elapsed_seconds
+                ),
+                valid_point_compaction_elapsed_seconds=float(
+                    valid_point_compaction_elapsed_seconds
+                ),
+                valid_point_upload_elapsed_seconds=float(
+                    valid_point_upload_elapsed_seconds
+                ),
+                kernel_input_prepare_elapsed_seconds=float(
+                    kernel_input_prepare_elapsed_seconds
+                ),
+                kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+                result_writeback_elapsed_seconds=float(result_writeback_elapsed_seconds),
                 chunk_slicing_elapsed_seconds=0.0,
                 chunk_concatenation_elapsed_seconds=0.0,
                 total_elapsed_seconds=float(time.perf_counter() - total_start_time),
@@ -619,6 +674,25 @@ def custom_point_containment_grandmother_function(
                         nearest_z_helper_validation_match=bool(
                             nearest_z_helper_validation_match
                         ),
+                        prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+                        containment_execution_elapsed_seconds=float(
+                            containment_execution_elapsed_seconds
+                        ),
+                        valid_point_compaction_elapsed_seconds=float(
+                            valid_point_compaction_elapsed_seconds
+                        ),
+                        valid_point_upload_elapsed_seconds=float(
+                            valid_point_upload_elapsed_seconds
+                        ),
+                        kernel_input_prepare_elapsed_seconds=float(
+                            kernel_input_prepare_elapsed_seconds
+                        ),
+                        kernel_execution_elapsed_seconds=float(
+                            kernel_execution_elapsed_seconds
+                        ),
+                        result_writeback_elapsed_seconds=float(
+                            result_writeback_elapsed_seconds
+                        ),
                     ),
                 ),
             ),
@@ -633,6 +707,13 @@ def custom_point_containment_grandmother_function(
     nearest_z_helper_validation_enabled = False
     nearest_z_helper_validation_elapsed_seconds = 0.0
     nearest_z_helper_validation_match = True
+    prepper_elapsed_seconds = 0.0
+    containment_execution_elapsed_seconds = 0.0
+    valid_point_compaction_elapsed_seconds = 0.0
+    valid_point_upload_elapsed_seconds = 0.0
+    kernel_input_prepare_elapsed_seconds = 0.0
+    kernel_execution_elapsed_seconds = 0.0
+    result_writeback_elapsed_seconds = 0.0
     for chunk_index, chunk_start_index in enumerate(range(0, num_test_structures, resolved_chunk_size)):
         chunk_end_index = min(chunk_start_index + resolved_chunk_size, num_test_structures)
         chunk_slicing_start_time = time.perf_counter()
@@ -665,6 +746,13 @@ def custom_point_containment_grandmother_function(
         chunk_nearest_z_helper_validation_enabled = False
         chunk_nearest_z_helper_validation_elapsed_seconds = 0.0
         chunk_nearest_z_helper_validation_match = True
+        chunk_prepper_elapsed_seconds = 0.0
+        chunk_containment_execution_elapsed_seconds = 0.0
+        chunk_valid_point_compaction_elapsed_seconds = 0.0
+        chunk_valid_point_upload_elapsed_seconds = 0.0
+        chunk_kernel_input_prepare_elapsed_seconds = 0.0
+        chunk_kernel_execution_elapsed_seconds = 0.0
+        chunk_result_writeback_elapsed_seconds = 0.0
         if return_timing_report:
             chunk_output, mother_timing_report = chunk_output
             chunk_nearest_z_helper_name = str(mother_timing_report.helper_name)
@@ -680,6 +768,27 @@ def custom_point_containment_grandmother_function(
             chunk_nearest_z_helper_validation_match = bool(
                 mother_timing_report.validation_match
             )
+            chunk_prepper_elapsed_seconds = float(
+                mother_timing_report.prepper_elapsed_seconds
+            )
+            chunk_containment_execution_elapsed_seconds = float(
+                mother_timing_report.containment_execution_elapsed_seconds
+            )
+            chunk_valid_point_compaction_elapsed_seconds = float(
+                mother_timing_report.valid_point_compaction_elapsed_seconds
+            )
+            chunk_valid_point_upload_elapsed_seconds = float(
+                mother_timing_report.valid_point_upload_elapsed_seconds
+            )
+            chunk_kernel_input_prepare_elapsed_seconds = float(
+                mother_timing_report.kernel_input_prepare_elapsed_seconds
+            )
+            chunk_kernel_execution_elapsed_seconds = float(
+                mother_timing_report.kernel_execution_elapsed_seconds
+            )
+            chunk_result_writeback_elapsed_seconds = float(
+                mother_timing_report.result_writeback_elapsed_seconds
+            )
             if not nearest_z_helper_name:
                 nearest_z_helper_name = chunk_nearest_z_helper_name
             elif nearest_z_helper_name != chunk_nearest_z_helper_name:
@@ -694,6 +803,19 @@ def custom_point_containment_grandmother_function(
             nearest_z_helper_validation_match = (
                 nearest_z_helper_validation_match and chunk_nearest_z_helper_validation_match
             )
+            prepper_elapsed_seconds += chunk_prepper_elapsed_seconds
+            containment_execution_elapsed_seconds += (
+                chunk_containment_execution_elapsed_seconds
+            )
+            valid_point_compaction_elapsed_seconds += (
+                chunk_valid_point_compaction_elapsed_seconds
+            )
+            valid_point_upload_elapsed_seconds += chunk_valid_point_upload_elapsed_seconds
+            kernel_input_prepare_elapsed_seconds += (
+                chunk_kernel_input_prepare_elapsed_seconds
+            )
+            kernel_execution_elapsed_seconds += chunk_kernel_execution_elapsed_seconds
+            result_writeback_elapsed_seconds += chunk_result_writeback_elapsed_seconds
         _synchronize_cuda_device()
         chunk_mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
         mother_call_elapsed_seconds += chunk_mother_call_elapsed_seconds
@@ -712,6 +834,25 @@ def custom_point_containment_grandmother_function(
                 ),
                 nearest_z_helper_validation_match=bool(
                     chunk_nearest_z_helper_validation_match
+                ),
+                prepper_elapsed_seconds=float(chunk_prepper_elapsed_seconds),
+                containment_execution_elapsed_seconds=float(
+                    chunk_containment_execution_elapsed_seconds
+                ),
+                valid_point_compaction_elapsed_seconds=float(
+                    chunk_valid_point_compaction_elapsed_seconds
+                ),
+                valid_point_upload_elapsed_seconds=float(
+                    chunk_valid_point_upload_elapsed_seconds
+                ),
+                kernel_input_prepare_elapsed_seconds=float(
+                    chunk_kernel_input_prepare_elapsed_seconds
+                ),
+                kernel_execution_elapsed_seconds=float(
+                    chunk_kernel_execution_elapsed_seconds
+                ),
+                result_writeback_elapsed_seconds=float(
+                    chunk_result_writeback_elapsed_seconds
                 ),
             )
         )
@@ -740,6 +881,19 @@ def custom_point_containment_grandmother_function(
                 nearest_z_helper_validation_elapsed_seconds
             ),
             nearest_z_helper_validation_match=bool(nearest_z_helper_validation_match),
+            prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+            containment_execution_elapsed_seconds=float(
+                containment_execution_elapsed_seconds
+            ),
+            valid_point_compaction_elapsed_seconds=float(
+                valid_point_compaction_elapsed_seconds
+            ),
+            valid_point_upload_elapsed_seconds=float(valid_point_upload_elapsed_seconds),
+            kernel_input_prepare_elapsed_seconds=float(
+                kernel_input_prepare_elapsed_seconds
+            ),
+            kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+            result_writeback_elapsed_seconds=float(result_writeback_elapsed_seconds),
             chunk_slicing_elapsed_seconds=float(chunk_slicing_elapsed_seconds),
             chunk_concatenation_elapsed_seconds=float(chunk_concatenation_elapsed_seconds),
             total_elapsed_seconds=float(time.perf_counter() - total_start_time),
