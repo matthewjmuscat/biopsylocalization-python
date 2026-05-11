@@ -265,10 +265,11 @@ def get_completed_progress():
                 TextColumn(':heavy_check_mark:'),
                 TextColumn(
                     "{task.description}",
-                    table_column=Column(ratio=1, overflow="ellipsis", no_wrap=True),
+                    table_column=Column(ratio=1, min_width=24, overflow="fold"),
                 ),
                 MofNCompleteColumn(),
                 TimeElapsedColumn(),
+                expand=True,
             )
     return completed_progress
 
