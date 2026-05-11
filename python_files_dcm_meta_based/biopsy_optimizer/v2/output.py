@@ -325,6 +325,18 @@ def build_target_dil_tested_candidate_output_dataframe(
         "Target optimizer downstream comparable trial count",
         np.nan,
     )
+    tested_candidate_dataframe[
+        "Target optimizer selected winner downstream-comparable target score"
+    ] = tested_candidate_dataframe.get(
+        "Target optimizer downstream comparable target score",
+        np.nan,
+    )
+    tested_candidate_dataframe[
+        "Target optimizer selected winner downstream-comparable trial count"
+    ] = tested_candidate_dataframe.get(
+        "Target optimizer downstream comparable trial count",
+        np.nan,
+    )
     tested_candidate_dataframe = _initialize_optimizer_output_placeholder_columns(
         tested_candidate_dataframe
     )
@@ -463,11 +475,7 @@ def annotate_target_dil_optimizer_dataframe_with_downstream_mc(
         "Target optimizer selected winner downstream MC trial count"
     ] = np.int32(int(downstream_trial_count))
 
-    downstream_comparable_score = merged_dataframe[
-        "Target optimizer selected winner downstream-comparable target score"
-    ].combine_first(
-        merged_dataframe.get("Target optimizer downstream comparable target score")
-    )
+    downstream_comparable_score = _resolve_downstream_comparable_score_series(merged_dataframe)
     merged_dataframe[
         "Target optimizer selected winner downstream MC agreement delta"
     ] = merged_dataframe[
@@ -601,6 +609,24 @@ def _initialize_optimizer_output_placeholder_columns(
 ) -> pandas.DataFrame:
     updated_dataframe = _initialize_biopsy_sampling_audit_placeholder_columns(dataframe)
     return _initialize_downstream_mc_placeholder_columns(updated_dataframe)
+
+
+def _resolve_downstream_comparable_score_series(
+    dataframe: pandas.DataFrame,
+) -> pandas.Series:
+    selected_winner_series = dataframe.get(
+        "Target optimizer selected winner downstream-comparable target score"
+    )
+    general_series = dataframe.get("Target optimizer downstream comparable target score")
+
+    if isinstance(selected_winner_series, pandas.Series) and isinstance(general_series, pandas.Series):
+        return selected_winner_series.combine_first(general_series)
+    if isinstance(selected_winner_series, pandas.Series):
+        return selected_winner_series
+    if isinstance(general_series, pandas.Series):
+        return general_series
+
+    return pandas.Series(np.nan, index=dataframe.index, dtype=float)
 
 
 def _resolve_selected_winner_score_surface_delta(row) -> float:
