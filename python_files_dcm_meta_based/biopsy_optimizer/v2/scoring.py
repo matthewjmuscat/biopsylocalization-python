@@ -39,6 +39,7 @@ def score_target_candidate_chunk(
     target_transform_bank_prefix: SharedTransformBankPrefix,
     objective_reducer_name: str = "mean_pd",
     max_test_structures_per_call: Optional[int] = None,
+    validate_nearest_z_helper_against_ver5: bool = True,
     create_tested_candidate_dataframe: bool = True,
     include_relative_structure_localized_points_for_debug: bool = False,
     containment_log_sub_dirs_list: Optional[Sequence[str]] = None,
@@ -101,6 +102,7 @@ def score_target_candidate_chunk(
         kernel_type=kernel_type,
         return_array_as="cupy",
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
     )
     containment_elapsed_seconds = time.perf_counter() - containment_start_time
     containment_grandmother_elapsed_seconds = float(
@@ -111,6 +113,21 @@ def score_target_candidate_chunk(
     )
     containment_grandmother_mother_call_elapsed_seconds = float(
         aligned_containment_run_result.grandmother_mother_call_elapsed_seconds
+    )
+    containment_grandmother_mother_nearest_z_helper_name = str(
+        aligned_containment_run_result.grandmother_mother_nearest_z_helper_name
+    )
+    containment_grandmother_mother_nearest_z_helper_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_nearest_z_helper_elapsed_seconds
+    )
+    containment_grandmother_mother_nearest_z_helper_validation_enabled = bool(
+        aligned_containment_run_result.grandmother_mother_nearest_z_helper_validation_enabled
+    )
+    containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds = float(
+        aligned_containment_run_result.grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+    )
+    containment_grandmother_mother_nearest_z_helper_validation_match = bool(
+        aligned_containment_run_result.grandmother_mother_nearest_z_helper_validation_match
     )
     containment_grandmother_chunk_slicing_elapsed_seconds = float(
         aligned_containment_run_result.grandmother_chunk_slicing_elapsed_seconds
@@ -204,6 +221,21 @@ def score_target_candidate_chunk(
         containment_reshape_elapsed_seconds=float(containment_reshape_elapsed_seconds),
         containment_grandmother_mother_call_elapsed_seconds=float(
             containment_grandmother_mother_call_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_name=(
+            containment_grandmother_mother_nearest_z_helper_name
+        ),
+        containment_grandmother_mother_nearest_z_helper_elapsed_seconds=float(
+            containment_grandmother_mother_nearest_z_helper_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_enabled=bool(
+            containment_grandmother_mother_nearest_z_helper_validation_enabled
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds=float(
+            containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_match=bool(
+            containment_grandmother_mother_nearest_z_helper_validation_match
         ),
         containment_grandmother_chunk_slicing_elapsed_seconds=float(
             containment_grandmother_chunk_slicing_elapsed_seconds

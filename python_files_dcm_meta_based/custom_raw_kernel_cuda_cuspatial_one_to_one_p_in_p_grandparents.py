@@ -90,6 +90,11 @@ class ContainmentGrandmotherChunkTiming:
     chunk_index: int
     num_test_structures: int
     mother_call_elapsed_seconds: float
+    nearest_z_helper_name: str = ""
+    nearest_z_helper_elapsed_seconds: float = 0.0
+    nearest_z_helper_validation_enabled: bool = False
+    nearest_z_helper_validation_elapsed_seconds: float = 0.0
+    nearest_z_helper_validation_match: bool = True
 
 
 @dataclass(frozen=True)
@@ -101,6 +106,11 @@ class ContainmentGrandmotherTimingReport:
     chunk_count: int
     used_chunking: bool
     mother_call_elapsed_seconds: float
+    nearest_z_helper_name: str
+    nearest_z_helper_elapsed_seconds: float
+    nearest_z_helper_validation_enabled: bool
+    nearest_z_helper_validation_elapsed_seconds: float
+    nearest_z_helper_validation_match: bool
     chunk_slicing_elapsed_seconds: float
     chunk_concatenation_elapsed_seconds: float
     total_elapsed_seconds: float
@@ -512,6 +522,7 @@ def custom_point_containment_grandmother_function(
     log_file_name: str = "cuda_log.txt",
     include_edges_in_log: bool = False,
     kernel_type: str = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized",
+    validate_nearest_z_helper_against_ver5: bool = False,
     return_timing_report: bool = False,
 ):
     """Run the mother function over one or more chunks.
@@ -547,7 +558,29 @@ def custom_point_containment_grandmother_function(
             log_file_name=log_file_name,
             include_edges_in_log=include_edges_in_log,
             kernel_type=kernel_type,
+            return_timing_report=return_timing_report,
+            validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         )
+        nearest_z_helper_name = ""
+        nearest_z_helper_elapsed_seconds = 0.0
+        nearest_z_helper_validation_enabled = False
+        nearest_z_helper_validation_elapsed_seconds = 0.0
+        nearest_z_helper_validation_match = True
+        if return_timing_report:
+            single_call_output, mother_timing_report = single_call_output
+            nearest_z_helper_name = str(mother_timing_report.helper_name)
+            nearest_z_helper_elapsed_seconds = float(
+                mother_timing_report.helper_elapsed_seconds
+            )
+            nearest_z_helper_validation_enabled = bool(
+                mother_timing_report.validation_enabled
+            )
+            nearest_z_helper_validation_elapsed_seconds = float(
+                mother_timing_report.validation_elapsed_seconds
+            )
+            nearest_z_helper_validation_match = bool(
+                mother_timing_report.validation_match
+            )
         _synchronize_cuda_device()
         mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
         if not return_timing_report:
@@ -560,6 +593,15 @@ def custom_point_containment_grandmother_function(
                 chunk_count=1,
                 used_chunking=False,
                 mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+                nearest_z_helper_name=nearest_z_helper_name,
+                nearest_z_helper_elapsed_seconds=float(nearest_z_helper_elapsed_seconds),
+                nearest_z_helper_validation_enabled=bool(nearest_z_helper_validation_enabled),
+                nearest_z_helper_validation_elapsed_seconds=float(
+                    nearest_z_helper_validation_elapsed_seconds
+                ),
+                nearest_z_helper_validation_match=bool(
+                    nearest_z_helper_validation_match
+                ),
                 chunk_slicing_elapsed_seconds=0.0,
                 chunk_concatenation_elapsed_seconds=0.0,
                 total_elapsed_seconds=float(time.perf_counter() - total_start_time),
@@ -568,6 +610,15 @@ def custom_point_containment_grandmother_function(
                         chunk_index=0,
                         num_test_structures=int(num_test_structures),
                         mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+                        nearest_z_helper_name=nearest_z_helper_name,
+                        nearest_z_helper_elapsed_seconds=float(nearest_z_helper_elapsed_seconds),
+                        nearest_z_helper_validation_enabled=bool(nearest_z_helper_validation_enabled),
+                        nearest_z_helper_validation_elapsed_seconds=float(
+                            nearest_z_helper_validation_elapsed_seconds
+                        ),
+                        nearest_z_helper_validation_match=bool(
+                            nearest_z_helper_validation_match
+                        ),
                     ),
                 ),
             ),
@@ -577,6 +628,11 @@ def custom_point_containment_grandmother_function(
     chunk_timings = []
     chunk_slicing_elapsed_seconds = 0.0
     mother_call_elapsed_seconds = 0.0
+    nearest_z_helper_name = ""
+    nearest_z_helper_elapsed_seconds = 0.0
+    nearest_z_helper_validation_enabled = False
+    nearest_z_helper_validation_elapsed_seconds = 0.0
+    nearest_z_helper_validation_match = True
     for chunk_index, chunk_start_index in enumerate(range(0, num_test_structures, resolved_chunk_size)):
         chunk_end_index = min(chunk_start_index + resolved_chunk_size, num_test_structures)
         chunk_slicing_start_time = time.perf_counter()
@@ -601,6 +657,42 @@ def custom_point_containment_grandmother_function(
                 log_file_name=log_file_name,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
+                return_timing_report=return_timing_report,
+                validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
+            )
+        chunk_nearest_z_helper_name = ""
+        chunk_nearest_z_helper_elapsed_seconds = 0.0
+        chunk_nearest_z_helper_validation_enabled = False
+        chunk_nearest_z_helper_validation_elapsed_seconds = 0.0
+        chunk_nearest_z_helper_validation_match = True
+        if return_timing_report:
+            chunk_output, mother_timing_report = chunk_output
+            chunk_nearest_z_helper_name = str(mother_timing_report.helper_name)
+            chunk_nearest_z_helper_elapsed_seconds = float(
+                mother_timing_report.helper_elapsed_seconds
+            )
+            chunk_nearest_z_helper_validation_enabled = bool(
+                mother_timing_report.validation_enabled
+            )
+            chunk_nearest_z_helper_validation_elapsed_seconds = float(
+                mother_timing_report.validation_elapsed_seconds
+            )
+            chunk_nearest_z_helper_validation_match = bool(
+                mother_timing_report.validation_match
+            )
+            if not nearest_z_helper_name:
+                nearest_z_helper_name = chunk_nearest_z_helper_name
+            elif nearest_z_helper_name != chunk_nearest_z_helper_name:
+                nearest_z_helper_name = "mixed"
+            nearest_z_helper_elapsed_seconds += chunk_nearest_z_helper_elapsed_seconds
+            nearest_z_helper_validation_enabled = (
+                nearest_z_helper_validation_enabled or chunk_nearest_z_helper_validation_enabled
+            )
+            nearest_z_helper_validation_elapsed_seconds += (
+                chunk_nearest_z_helper_validation_elapsed_seconds
+            )
+            nearest_z_helper_validation_match = (
+                nearest_z_helper_validation_match and chunk_nearest_z_helper_validation_match
             )
         _synchronize_cuda_device()
         chunk_mother_call_elapsed_seconds = time.perf_counter() - mother_call_start_time
@@ -610,6 +702,17 @@ def custom_point_containment_grandmother_function(
                 chunk_index=int(chunk_index),
                 num_test_structures=int(chunk_end_index - chunk_start_index),
                 mother_call_elapsed_seconds=float(chunk_mother_call_elapsed_seconds),
+                nearest_z_helper_name=chunk_nearest_z_helper_name,
+                nearest_z_helper_elapsed_seconds=float(chunk_nearest_z_helper_elapsed_seconds),
+                nearest_z_helper_validation_enabled=bool(
+                    chunk_nearest_z_helper_validation_enabled
+                ),
+                nearest_z_helper_validation_elapsed_seconds=float(
+                    chunk_nearest_z_helper_validation_elapsed_seconds
+                ),
+                nearest_z_helper_validation_match=bool(
+                    chunk_nearest_z_helper_validation_match
+                ),
             )
         )
         chunk_outputs.append(chunk_output)
@@ -630,6 +733,13 @@ def custom_point_containment_grandmother_function(
             chunk_count=int(len(chunk_timings)),
             used_chunking=True,
             mother_call_elapsed_seconds=float(mother_call_elapsed_seconds),
+            nearest_z_helper_name=nearest_z_helper_name,
+            nearest_z_helper_elapsed_seconds=float(nearest_z_helper_elapsed_seconds),
+            nearest_z_helper_validation_enabled=bool(nearest_z_helper_validation_enabled),
+            nearest_z_helper_validation_elapsed_seconds=float(
+                nearest_z_helper_validation_elapsed_seconds
+            ),
+            nearest_z_helper_validation_match=bool(nearest_z_helper_validation_match),
             chunk_slicing_elapsed_seconds=float(chunk_slicing_elapsed_seconds),
             chunk_concatenation_elapsed_seconds=float(chunk_concatenation_elapsed_seconds),
             total_elapsed_seconds=float(time.perf_counter() - total_start_time),
@@ -715,6 +825,8 @@ def _run_single_containment_call(
     log_file_name: str,
     include_edges_in_log: bool,
     kernel_type: str,
+    return_timing_report: bool = False,
+    validate_nearest_z_helper_against_ver5: bool = False,
 ):
     return custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays,
@@ -726,6 +838,8 @@ def _run_single_containment_call(
         log_file_name=log_file_name,
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
+        return_timing_report=return_timing_report,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
     )
 
 

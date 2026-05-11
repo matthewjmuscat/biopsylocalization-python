@@ -798,6 +798,118 @@ def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver7(
     return out, methods_used
 
 
+def nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver8_grouped_searchsorted(
+    relative_structures_list_of_zvals_1d_arrays_or_lists,
+    points_to_test_3d_arr,
+    test_struct_to_relative_struct_1d_mapping_array,
+):
+    """
+    Contract-preserving grouped nearest-z helper.
+
+    This returns the same float32 array contract as ver5:
+      [:, :, 0] = relative_structure_index
+      [:, :, 1] = nearest z-slice index (float32-encoded)
+      [:, :, 2] = nearest z value
+      [:, :, 3] = out-of-bounds flag (1 if point z < min(zvals) or > max(zvals), else 0)
+
+    The speedup comes from grouping test rows by relative-structure index and
+    running one host-side searchsorted pass per unique relative structure,
+    rather than uploading one tiny z-array and one tiny point array to CuPy for
+    every test structure.
+    """
+
+    num_test_structures = points_to_test_3d_arr.shape[0]
+    num_points_per_trial = points_to_test_3d_arr.shape[1]
+    nearest_zslice_index_and_values_3d_arr = np.empty(
+        (num_test_structures, num_points_per_trial, 4), dtype=np.float32
+    )
+
+    normalized_mapping = np.asarray(test_struct_to_relative_struct_1d_mapping_array, dtype=np.int32)
+    if normalized_mapping.ndim != 1 or normalized_mapping.shape[0] != num_test_structures:
+        raise ValueError(
+            "test_struct_to_relative_struct_1d_mapping_array must be 1D and match points_to_test_3d_arr.shape[0]"
+        )
+
+    sorted_row_order = np.argsort(normalized_mapping, kind="stable")
+    sorted_mapping = normalized_mapping[sorted_row_order]
+    unique_relative_structure_indices, group_start_indices, group_counts = np.unique(
+        sorted_mapping,
+        return_index=True,
+        return_counts=True,
+    )
+
+    for relative_structure_index, group_start_index, group_count in zip(
+        unique_relative_structure_indices,
+        group_start_indices,
+        group_counts,
+    ):
+        group_row_indices = sorted_row_order[
+            group_start_index: group_start_index + group_count
+        ]
+        zvals_array = np.asarray(
+            relative_structures_list_of_zvals_1d_arrays_or_lists[int(relative_structure_index)],
+            dtype=np.float32,
+        )
+        pts_to_test_z_coords = np.asarray(
+            points_to_test_3d_arr[group_row_indices, :, 2],
+            dtype=np.float32,
+        )
+        flat_pts_to_test_z_coords = pts_to_test_z_coords.reshape(-1)
+
+        is_sorted = (
+            zvals_array.size < 2
+            or bool(np.all(zvals_array[1:] >= zvals_array[:-1]))
+        )
+
+        if not is_sorted:
+            order = np.argsort(zvals_array)
+            zvals_sorted = zvals_array[order]
+
+            idx_insert = np.searchsorted(zvals_sorted, flat_pts_to_test_z_coords, side="left")
+            idx0 = np.clip(idx_insert - 1, 0, zvals_sorted.size - 1)
+            idx1 = np.clip(idx_insert, 0, zvals_sorted.size - 1)
+            choose_right = np.abs(zvals_sorted[idx1] - flat_pts_to_test_z_coords) < np.abs(
+                flat_pts_to_test_z_coords - zvals_sorted[idx0]
+            )
+            nearest_sorted_idx = np.where(choose_right, idx1, idx0)
+            nearest_zslice_indices = order[nearest_sorted_idx]
+        else:
+            idx_insert = np.searchsorted(zvals_array, flat_pts_to_test_z_coords, side="left")
+            idx0 = np.clip(idx_insert - 1, 0, zvals_array.size - 1)
+            idx1 = np.clip(idx_insert, 0, zvals_array.size - 1)
+            choose_right = np.abs(zvals_array[idx1] - flat_pts_to_test_z_coords) < np.abs(
+                flat_pts_to_test_z_coords - zvals_array[idx0]
+            )
+            nearest_zslice_indices = np.where(choose_right, idx1, idx0)
+
+        nearest_zslice_vals = zvals_array[nearest_zslice_indices].astype(np.float32)
+
+        min_zval = float(np.min(zvals_array))
+        max_zval = float(np.max(zvals_array))
+        outside_min_mask = flat_pts_to_test_z_coords < min_zval
+        outside_max_mask = flat_pts_to_test_z_coords > max_zval
+        out_of_bounds_flag = np.where(
+            outside_min_mask | outside_max_mask,
+            1,
+            0,
+        ).astype(np.float32)
+
+        nearest_zslice_index_and_values_3d_arr[group_row_indices, :, 0] = np.float32(
+            relative_structure_index
+        )
+        nearest_zslice_index_and_values_3d_arr[group_row_indices, :, 1] = (
+            nearest_zslice_indices.astype(np.float32).reshape(pts_to_test_z_coords.shape)
+        )
+        nearest_zslice_index_and_values_3d_arr[group_row_indices, :, 2] = (
+            nearest_zslice_vals.reshape(pts_to_test_z_coords.shape)
+        )
+        nearest_zslice_index_and_values_3d_arr[group_row_indices, :, 3] = (
+            out_of_bounds_flag.reshape(pts_to_test_z_coords.shape)
+        )
+
+    return nearest_zslice_index_and_values_3d_arr
+
+
 
 
 ## Also very slow compared to nearest_zslice_vals_and_indices_all_structures_3d_point_arr for large arrays points_to_test_3d_arr.shape = (1750,10000,3)

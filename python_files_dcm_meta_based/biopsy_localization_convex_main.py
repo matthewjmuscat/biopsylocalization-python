@@ -549,6 +549,7 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = 8
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = True # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
     optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
@@ -4420,6 +4421,7 @@ def main():
                               verify_calibrated_max_test_structures_per_call=(
                                   optimizer_v2_verify_calibrated_max_test_structures_per_call
                               ),
+                              validate_nearest_z_helper_against_ver5=optimizer_v2_validate_nearest_z_helper_against_ver5_bool,
                               downstream_comparable_trial_count=(
                                   int(num_MC_containment_simulations_input)
                                   if num_MC_containment_simulations_input > 0

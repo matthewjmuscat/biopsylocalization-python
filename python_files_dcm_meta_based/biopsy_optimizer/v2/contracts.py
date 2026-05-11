@@ -130,6 +130,11 @@ class OptimizerV2ChunkScoreResult:
     containment_grandmother_elapsed_seconds: float = 0.0
     containment_reshape_elapsed_seconds: float = 0.0
     containment_grandmother_mother_call_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_name: str = ""
+    containment_grandmother_mother_nearest_z_helper_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_validation_enabled: bool = False
+    containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_validation_match: bool = True
     containment_grandmother_chunk_slicing_elapsed_seconds: float = 0.0
     containment_grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
     containment_grandmother_chunk_count: int = 0
@@ -164,6 +169,11 @@ class OptimizerV2StageRunResult:
     containment_grandmother_elapsed_seconds: float = 0.0
     containment_reshape_elapsed_seconds: float = 0.0
     containment_grandmother_mother_call_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_name: str = ""
+    containment_grandmother_mother_nearest_z_helper_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_validation_enabled: bool = False
+    containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds: float = 0.0
+    containment_grandmother_mother_nearest_z_helper_validation_match: bool = True
     containment_grandmother_chunk_slicing_elapsed_seconds: float = 0.0
     containment_grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
     containment_grandmother_inner_chunk_count: int = 0

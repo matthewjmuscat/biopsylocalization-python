@@ -32,6 +32,11 @@ class AlignedContainmentRunResult:
     reshape_elapsed_seconds: float = 0.0
     containment_results_dataframe_elapsed_seconds: float = 0.0
     grandmother_mother_call_elapsed_seconds: float = 0.0
+    grandmother_mother_nearest_z_helper_name: str = ""
+    grandmother_mother_nearest_z_helper_elapsed_seconds: float = 0.0
+    grandmother_mother_nearest_z_helper_validation_enabled: bool = False
+    grandmother_mother_nearest_z_helper_validation_elapsed_seconds: float = 0.0
+    grandmother_mother_nearest_z_helper_validation_match: bool = True
     grandmother_chunk_slicing_elapsed_seconds: float = 0.0
     grandmother_chunk_concatenation_elapsed_seconds: float = 0.0
     grandmother_chunk_count: int = 0
@@ -51,6 +56,7 @@ def run_aligned_containment_batch(
     create_containment_results_dataframe: bool = False,
     return_array_as: str = "cupy",
     max_test_structures_per_call: Optional[int] = None,
+    validate_nearest_z_helper_against_ver5: bool = False,
 ) -> AlignedContainmentRunResult:
     """Run an aligned batch through the general-use custom-PIP grandmother surface."""
     _validate_return_array_as(return_array_as)
@@ -73,6 +79,7 @@ def run_aligned_containment_batch(
         log_file_name=log_file_name,
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         return_timing_report=True,
         )
     )
@@ -120,6 +127,21 @@ def run_aligned_containment_batch(
         ),
         grandmother_mother_call_elapsed_seconds=float(
             grandmother_timing_report.mother_call_elapsed_seconds
+        ),
+        grandmother_mother_nearest_z_helper_name=str(
+            grandmother_timing_report.nearest_z_helper_name
+        ),
+        grandmother_mother_nearest_z_helper_elapsed_seconds=float(
+            grandmother_timing_report.nearest_z_helper_elapsed_seconds
+        ),
+        grandmother_mother_nearest_z_helper_validation_enabled=bool(
+            grandmother_timing_report.nearest_z_helper_validation_enabled
+        ),
+        grandmother_mother_nearest_z_helper_validation_elapsed_seconds=float(
+            grandmother_timing_report.nearest_z_helper_validation_elapsed_seconds
+        ),
+        grandmother_mother_nearest_z_helper_validation_match=bool(
+            grandmother_timing_report.nearest_z_helper_validation_match
         ),
         grandmother_chunk_slicing_elapsed_seconds=float(
             grandmother_timing_report.chunk_slicing_elapsed_seconds

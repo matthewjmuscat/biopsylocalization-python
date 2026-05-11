@@ -53,6 +53,7 @@ def run_target_staged_candidate_search(
     trial_relative_structure_start_index: int = 1,
     downstream_comparable_trial_count: Optional[int] = None,
     max_test_structures_per_call: Optional[int] = None,
+    validate_nearest_z_helper_against_ver5: bool = True,
     containment_log_sub_dirs_list: Optional[Sequence[str]] = None,
     containment_log_file_name: Optional[str] = None,
     include_edges_in_log: bool = False,
@@ -105,6 +106,7 @@ def run_target_staged_candidate_search(
             nominal_relative_structure_index=nominal_relative_structure_index,
             trial_relative_structure_start_index=trial_relative_structure_start_index,
             max_test_structures_per_call=max_test_structures_per_call,
+            validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
             containment_log_sub_dirs_list=containment_log_sub_dirs_list,
             containment_log_file_name=containment_log_file_name,
             include_edges_in_log=include_edges_in_log,
@@ -138,6 +140,7 @@ def run_target_staged_candidate_search(
                 nominal_relative_structure_index=nominal_relative_structure_index,
                 trial_relative_structure_start_index=trial_relative_structure_start_index,
                 max_test_structures_per_call=max_test_structures_per_call,
+                validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                 containment_log_sub_dirs_list=containment_log_sub_dirs_list,
                 containment_log_file_name=containment_log_file_name,
                 include_edges_in_log=include_edges_in_log,
@@ -171,6 +174,7 @@ def run_target_staged_candidate_search(
         nominal_relative_structure_index=nominal_relative_structure_index,
         trial_relative_structure_start_index=trial_relative_structure_start_index,
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         containment_log_sub_dirs_list=containment_log_sub_dirs_list,
         containment_log_file_name=containment_log_file_name,
         include_edges_in_log=include_edges_in_log,
@@ -223,6 +227,7 @@ def run_target_staged_candidate_search(
         trial_relative_structure_start_index=trial_relative_structure_start_index,
         downstream_comparable_trial_count=downstream_comparable_trial_count,
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         containment_log_sub_dirs_list=containment_log_sub_dirs_list,
         containment_log_file_name=containment_log_file_name,
         include_edges_in_log=include_edges_in_log,
@@ -280,6 +285,7 @@ def _run_target_candidate_stage(
     nominal_relative_structure_index: int,
     trial_relative_structure_start_index: int,
     max_test_structures_per_call: Optional[int],
+    validate_nearest_z_helper_against_ver5: bool,
     containment_log_sub_dirs_list: Optional[Sequence[str]],
     containment_log_file_name: Optional[str],
     include_edges_in_log: bool,
@@ -316,6 +322,11 @@ def _run_target_candidate_stage(
     stage_containment_grandmother_elapsed_seconds = 0.0
     stage_containment_reshape_elapsed_seconds = 0.0
     stage_containment_grandmother_mother_call_elapsed_seconds = 0.0
+    stage_containment_grandmother_mother_nearest_z_helper_name = ""
+    stage_containment_grandmother_mother_nearest_z_helper_elapsed_seconds = 0.0
+    stage_containment_grandmother_mother_nearest_z_helper_validation_enabled = False
+    stage_containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds = 0.0
+    stage_containment_grandmother_mother_nearest_z_helper_validation_match = True
     stage_containment_grandmother_chunk_slicing_elapsed_seconds = 0.0
     stage_containment_grandmother_chunk_concatenation_elapsed_seconds = 0.0
     stage_containment_grandmother_inner_chunk_count = 0
@@ -343,6 +354,7 @@ def _run_target_candidate_stage(
             target_transform_bank_prefix=target_transform_bank_prefix,
             objective_reducer_name=objective_reducer_name,
             max_test_structures_per_call=max_test_structures_per_call,
+            validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
             create_tested_candidate_dataframe=True,
             containment_log_sub_dirs_list=_resolve_stage_containment_log_sub_dirs(
                 containment_log_sub_dirs_list,
@@ -374,6 +386,32 @@ def _run_target_candidate_stage(
         )
         stage_containment_grandmother_mother_call_elapsed_seconds += float(
             chunk_score_result.containment_grandmother_mother_call_elapsed_seconds
+        )
+        if not stage_containment_grandmother_mother_nearest_z_helper_name:
+            stage_containment_grandmother_mother_nearest_z_helper_name = str(
+                chunk_score_result.containment_grandmother_mother_nearest_z_helper_name
+            )
+        elif stage_containment_grandmother_mother_nearest_z_helper_name != str(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_name
+        ):
+            stage_containment_grandmother_mother_nearest_z_helper_name = "mixed"
+        stage_containment_grandmother_mother_nearest_z_helper_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_elapsed_seconds
+        )
+        stage_containment_grandmother_mother_nearest_z_helper_validation_enabled = (
+            stage_containment_grandmother_mother_nearest_z_helper_validation_enabled
+            or bool(
+                chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_enabled
+            )
+        )
+        stage_containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds += float(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+        )
+        stage_containment_grandmother_mother_nearest_z_helper_validation_match = (
+            stage_containment_grandmother_mother_nearest_z_helper_validation_match
+            and bool(
+                chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_match
+            )
         )
         stage_containment_grandmother_chunk_slicing_elapsed_seconds += float(
             chunk_score_result.containment_grandmother_chunk_slicing_elapsed_seconds
@@ -490,6 +528,21 @@ def _run_target_candidate_stage(
         ),
         containment_grandmother_mother_call_elapsed_seconds=float(
             stage_containment_grandmother_mother_call_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_name=(
+            stage_containment_grandmother_mother_nearest_z_helper_name
+        ),
+        containment_grandmother_mother_nearest_z_helper_elapsed_seconds=float(
+            stage_containment_grandmother_mother_nearest_z_helper_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_enabled=bool(
+            stage_containment_grandmother_mother_nearest_z_helper_validation_enabled
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds=float(
+            stage_containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+        ),
+        containment_grandmother_mother_nearest_z_helper_validation_match=bool(
+            stage_containment_grandmother_mother_nearest_z_helper_validation_match
         ),
         containment_grandmother_chunk_slicing_elapsed_seconds=float(
             stage_containment_grandmother_chunk_slicing_elapsed_seconds
@@ -856,6 +909,7 @@ def _run_target_adaptive_candidate_rounds(
     nominal_relative_structure_index: int,
     trial_relative_structure_start_index: int,
     max_test_structures_per_call: Optional[int],
+    validate_nearest_z_helper_against_ver5: bool,
     containment_log_sub_dirs_list: Optional[Sequence[str]],
     containment_log_file_name: Optional[str],
     include_edges_in_log: bool,
@@ -926,6 +980,7 @@ def _run_target_adaptive_candidate_rounds(
             nominal_relative_structure_index=nominal_relative_structure_index,
             trial_relative_structure_start_index=trial_relative_structure_start_index,
             max_test_structures_per_call=max_test_structures_per_call,
+            validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
             containment_log_sub_dirs_list=containment_log_sub_dirs_list,
             containment_log_file_name=containment_log_file_name,
             include_edges_in_log=include_edges_in_log,
@@ -988,6 +1043,7 @@ def _build_winner_validation_result(
     trial_relative_structure_start_index: int,
     downstream_comparable_trial_count: Optional[int],
     max_test_structures_per_call: Optional[int],
+    validate_nearest_z_helper_against_ver5: bool,
     containment_log_sub_dirs_list: Optional[Sequence[str]],
     containment_log_file_name: Optional[str],
     include_edges_in_log: bool,
@@ -1039,6 +1095,7 @@ def _build_winner_validation_result(
         target_transform_bank_prefix=target_transform_bank_prefix,
         objective_reducer_name=objective_reducer_name,
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         create_tested_candidate_dataframe=False,
         containment_log_sub_dirs_list=_resolve_stage_containment_log_sub_dirs(
             containment_log_sub_dirs_list,
@@ -1099,6 +1156,7 @@ def _resolve_final_winner(
     nominal_relative_structure_index: int,
     trial_relative_structure_start_index: int,
     max_test_structures_per_call: Optional[int],
+    validate_nearest_z_helper_against_ver5: bool,
     containment_log_sub_dirs_list: Optional[Sequence[str]],
     containment_log_file_name: Optional[str],
     include_edges_in_log: bool,
@@ -1157,6 +1215,7 @@ def _resolve_final_winner(
             nominal_relative_structure_index=nominal_relative_structure_index,
             trial_relative_structure_start_index=trial_relative_structure_start_index,
             max_test_structures_per_call=max_test_structures_per_call,
+            validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
             containment_log_sub_dirs_list=_resolve_stage_containment_log_sub_dirs(
                 containment_log_sub_dirs_list,
                 "winner_tie_break",
@@ -1229,6 +1288,7 @@ def _score_candidate_subset_for_winner_resolution(
     nominal_relative_structure_index: int,
     trial_relative_structure_start_index: int,
     max_test_structures_per_call: Optional[int],
+    validate_nearest_z_helper_against_ver5: bool,
     containment_log_sub_dirs_list: Optional[Sequence[str]],
     containment_log_file_name: Optional[str],
     include_edges_in_log: bool,
@@ -1254,6 +1314,7 @@ def _score_candidate_subset_for_winner_resolution(
         target_transform_bank_prefix=target_transform_bank_prefix_provider(trial_count),
         objective_reducer_name=objective_reducer_name,
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         create_tested_candidate_dataframe=True,
         containment_log_sub_dirs_list=containment_log_sub_dirs_list,
         containment_log_file_name=containment_log_file_name,

@@ -236,6 +236,27 @@ def _build_optimizer_v2_stage_timing_details(search_result):
                 float(stage_result.containment_grandmother_mother_call_elapsed_seconds),
                 3,
             ),
+            "containment_grandmother_mother_nearest_z_helper_name": str(
+                stage_result.containment_grandmother_mother_nearest_z_helper_name
+            ),
+            "containment_grandmother_mother_nearest_z_helper_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_nearest_z_helper_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_nearest_z_helper_validation_enabled": bool(
+                stage_result.containment_grandmother_mother_nearest_z_helper_validation_enabled
+            ),
+            "containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds": round(
+                float(
+                    stage_result.containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+                ),
+                3,
+            ),
+            "containment_grandmother_mother_nearest_z_helper_validation_match": bool(
+                stage_result.containment_grandmother_mother_nearest_z_helper_validation_match
+            ),
             "containment_grandmother_chunk_slicing_elapsed_seconds": round(
                 float(stage_result.containment_grandmother_chunk_slicing_elapsed_seconds),
                 3,
@@ -303,6 +324,27 @@ def _build_optimizer_v2_chunk_timing_details(chunk_score_result):
             float(chunk_score_result.containment_grandmother_mother_call_elapsed_seconds),
             3,
         ),
+        "containment_grandmother_mother_nearest_z_helper_name": str(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_name
+        ),
+        "containment_grandmother_mother_nearest_z_helper_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_nearest_z_helper_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_nearest_z_helper_validation_enabled": bool(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_enabled
+        ),
+        "containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds": round(
+            float(
+                chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_elapsed_seconds
+            ),
+            3,
+        ),
+        "containment_grandmother_mother_nearest_z_helper_validation_match": bool(
+            chunk_score_result.containment_grandmother_mother_nearest_z_helper_validation_match
+        ),
         "containment_grandmother_chunk_slicing_elapsed_seconds": round(
             float(chunk_score_result.containment_grandmother_chunk_slicing_elapsed_seconds),
             3,
@@ -343,6 +385,7 @@ def _run_optimizer_v2_isolated_winner_validation_benchmark(
     target_transform_bank_prefix_provider,
     downstream_comparable_trial_count,
     resolved_max_test_structures_per_call,
+    validate_nearest_z_helper_against_ver5,
     include_edges_in_log,
     kernel_type,
 ):
@@ -417,6 +460,7 @@ def _run_optimizer_v2_isolated_winner_validation_benchmark(
         target_transform_bank_prefix=target_transform_bank_prefix,
         objective_reducer_name=winner_validation_result.objective_reducer_name,
         max_test_structures_per_call=resolved_max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         create_tested_candidate_dataframe=False,
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
@@ -499,6 +543,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     max_test_structures_per_call=None,
     auto_calibrate_max_test_structures_per_call=True,
     verify_calibrated_max_test_structures_per_call=True,
+    validate_nearest_z_helper_against_ver5=True,
     downstream_comparable_trial_count=None,
     benchmark_isolated_winner_validation_bool=False,
     render_stage_boundary_candidate_clouds_bool=False,
@@ -745,6 +790,9 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 details={
                     "candidate_count": int(np.asarray(candidate_pool.candidate_points).shape[0]),
                     "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+                    "validate_nearest_z_helper_against_ver5": bool(
+                        validate_nearest_z_helper_against_ver5
+                    ),
                     "downstream_comparable_trial_count": downstream_comparable_trial_count,
                 },
             )
@@ -761,6 +809,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                 max_candidates_per_chunk=max_candidates_per_chunk,
                 max_test_structures_per_call=resolved_max_test_structures_per_call,
+                validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
                 downstream_comparable_trial_count=downstream_comparable_trial_count,
@@ -848,6 +897,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                     downstream_comparable_trial_count=downstream_comparable_trial_count,
                     resolved_max_test_structures_per_call=resolved_max_test_structures_per_call,
+                    validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                     include_edges_in_log=include_edges_in_log,
                     kernel_type=kernel_type,
                 )
@@ -1061,6 +1111,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 render_winner_containment_debug_bool=render_winner_containment_debug_bool,
                 render_include_target_points_bool=render_include_target_points_bool,
                 max_test_structures_per_call=resolved_max_test_structures_per_call,
+                validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
             )
@@ -1801,6 +1852,7 @@ def _run_optimizer_v2_render_selection_loop(
     render_winner_containment_debug_bool,
     render_include_target_points_bool,
     max_test_structures_per_call,
+    validate_nearest_z_helper_against_ver5,
     include_edges_in_log,
     kernel_type,
 ):
@@ -1991,6 +2043,7 @@ def _run_optimizer_v2_render_selection_loop(
                 render_layer_style_by_name=render_layer_style_by_name,
                 include_target_points=render_include_target_points_bool,
                 max_test_structures_per_call=max_test_structures_per_call,
+                validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                 include_edges_in_log=include_edges_in_log,
                 kernel_type=kernel_type,
             )
@@ -2355,6 +2408,7 @@ def _build_winner_containment_debug_render_job(
     additional_render_layers,
     render_layer_style_by_name,
     max_test_structures_per_call,
+    validate_nearest_z_helper_against_ver5,
     include_edges_in_log,
     kernel_type,
 ):
@@ -2384,6 +2438,7 @@ def _build_winner_containment_debug_render_job(
         additional_render_layers=additional_render_layers,
         render_layer_style_by_name=render_layer_style_by_name,
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
     )
@@ -2407,6 +2462,7 @@ def _build_candidate_containment_debug_render_job(
     additional_render_layers,
     render_layer_style_by_name,
     max_test_structures_per_call,
+    validate_nearest_z_helper_against_ver5,
     include_edges_in_log,
     kernel_type,
     include_target_points=True,
@@ -2432,6 +2488,7 @@ def _build_candidate_containment_debug_render_job(
         target_transform_bank_prefix=target_transform_bank_prefix_provider(int(resolved_trial_count)),
         objective_reducer_name="mean_pd",
         max_test_structures_per_call=max_test_structures_per_call,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
         create_tested_candidate_dataframe=True,
         include_relative_structure_localized_points_for_debug=True,
         include_edges_in_log=include_edges_in_log,
