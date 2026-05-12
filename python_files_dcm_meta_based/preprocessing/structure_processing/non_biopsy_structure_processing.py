@@ -21,6 +21,26 @@ from startup.runtime_logging import get_active_runtime_logger
 
 
 STRUCTURE_PREPROCESSING_TIMINGS_DF_KEY = "Structure preprocessing timings"
+_PRIMARY_PHASE_TIMING_KEYS = (
+    "raw_data_elapsed_seconds",
+    "interpolate_elapsed_seconds",
+    "mr_adc_determine_containment_elapsed_seconds",
+    "mr_adc_compute_statistics_elapsed_seconds",
+    "mr_adc_update_prostate_only_elapsed_seconds",
+    "volume_elapsed_seconds",
+    "dimensions_elapsed_seconds",
+    "triangle_mesh_elapsed_seconds",
+    "surface_area_elapsed_seconds",
+    "shape_features_elapsed_seconds",
+    "store_outputs_elapsed_seconds",
+)
+_INTERPOLATION_SUBPHASE_TIMING_KEYS = (
+    "interpolate_interslice_elapsed_seconds",
+    "interpolate_intraslice_elapsed_seconds",
+    "interpolate_intraslice_setup_elapsed_seconds",
+    "interpolate_end_caps_elapsed_seconds",
+    "interpolate_point_clouds_elapsed_seconds",
+)
 
 
 @dataclass(frozen=True)
@@ -191,6 +211,47 @@ def _build_dil_shape_feature_overrides(
     }
 
 
+def _timing_key_to_phase_label(timing_key):
+    if timing_key.endswith("_elapsed_seconds"):
+        timing_key = timing_key[: -len("_elapsed_seconds")]
+    return timing_key.replace("_", " ")
+
+
+def _build_dominant_phase_summary(
+    phase_timings,
+    timing_keys,
+    *,
+    denominator_key=None,
+    label_prefix,
+    label_noun,
+):
+    available_timing_items = [
+        (timing_key, phase_timings[timing_key])
+        for timing_key in timing_keys
+        if timing_key in phase_timings
+    ]
+    if not available_timing_items:
+        return {}
+
+    dominant_timing_key, dominant_elapsed_seconds = max(
+        available_timing_items,
+        key=lambda item: item[1],
+    )
+    dominant_label = f"{label_prefix} {label_noun}".strip()
+    summary_dict = {
+        dominant_label: _timing_key_to_phase_label(dominant_timing_key),
+        f"{label_prefix} elapsed seconds": float(dominant_elapsed_seconds),
+    }
+
+    denominator_seconds = phase_timings.get(denominator_key) if denominator_key is not None else None
+    if denominator_seconds not in (None, 0):
+        summary_dict[f"{label_prefix} fraction"] = (
+            float(dominant_elapsed_seconds) / float(denominator_seconds)
+        )
+
+    return summary_dict
+
+
 def preprocess_non_biopsy_structure(
     *,
     patient_uid,
@@ -274,12 +335,30 @@ def preprocess_non_biopsy_structure(
     )
 
     def interpolate_structure():
-        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = (
-            anatomy_reconstructor_tools.inter_zslice_interpolator(
+        def run_interpolation_subphase(subphase_key, phase_callable):
+            subphase_start_time = time.perf_counter()
+            result = phase_callable()
+            elapsed_seconds = time.perf_counter() - subphase_start_time
+            timing_key = f"interpolate_{subphase_key}_elapsed_seconds"
+            phase_timings[timing_key] = elapsed_seconds
+            _log_phase_timing(
+                runtime_logger,
+                f"preprocessing.structure.interpolate.{subphase_key}",
+                elapsed_seconds,
+                patient_uid=patient_uid,
+                structure_id=structure_id,
+                structure_ref_type=struct_ref_type,
+                structure_index=specific_structure_index,
+            )
+            return result
+
+        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = run_interpolation_subphase(
+            "interslice",
+            lambda: anatomy_reconstructor_tools.inter_zslice_interpolator(
                 parallel_pool,
                 threeDdata_zslice_list,
                 config.interp_inter_slice_dist,
-            )
+            ),
         )
         threeDdata_to_intra_zslice_interpolate_zslice_list = (
             interslice_interpolation_information.interpolated_pts_list
@@ -287,25 +366,36 @@ def preprocess_non_biopsy_structure(
         num_z_slices_data_to_intra_slice_interpolate = len(
             threeDdata_to_intra_zslice_interpolate_zslice_list
         )
-        interpolation_information = interpolation_information_obj(
-            num_z_slices_data_to_intra_slice_interpolate
+        interpolation_information = run_interpolation_subphase(
+            "intraslice_setup",
+            lambda: interpolation_information_obj(
+                num_z_slices_data_to_intra_slice_interpolate
+            ),
         )
-        interpolation_information.serial_analyze(
-            threeDdata_to_intra_zslice_interpolate_zslice_list,
-            config.interp_intra_slice_dist,
+        run_interpolation_subphase(
+            "intraslice",
+            lambda: interpolation_information.serial_analyze(
+                threeDdata_to_intra_zslice_interpolate_zslice_list,
+                config.interp_intra_slice_dist,
+            ),
         )
 
         first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
         last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-        interpolation_information.create_fill_new_v2(
-            first_zslice,
-            config.interp_dist_caps,
-            kernel_type=config.custom_cuda_kernel_type,
-        )
-        interpolation_information.create_fill_new_v2(
-            last_zslice,
-            config.interp_dist_caps,
-            kernel_type=config.custom_cuda_kernel_type,
+        run_interpolation_subphase(
+            "end_caps",
+            lambda: (
+                interpolation_information.create_fill_new_v2(
+                    first_zslice,
+                    config.interp_dist_caps,
+                    kernel_type=config.custom_cuda_kernel_type,
+                ),
+                interpolation_information.create_fill_new_v2(
+                    last_zslice,
+                    config.interp_dist_caps,
+                    kernel_type=config.custom_cuda_kernel_type,
+                ),
+            ),
         )
 
         pcd_color = structs_referenced_dict[struct_ref_type]["PCD color"]
@@ -320,17 +410,26 @@ def preprocess_non_biopsy_structure(
         threeDdata_array_interslice_interpolation = np.vstack(
             interslice_interpolation_information.interpolated_pts_list
         )
-        interslice_interp_pcd = point_containment_tools.create_point_cloud(
-            threeDdata_array_interslice_interpolation,
-            pcd_color,
-        )
-        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(
-            threeDdata_array_fully_interpolated,
-            pcd_color,
-        )
-        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(
-            threeDdata_array_fully_interpolated_with_end_caps,
-            pcd_color,
+        (
+            interslice_interp_pcd,
+            inter_and_intra_interp_pcd,
+            inter_and_intra_and_end_caps_interp_pcd,
+        ) = run_interpolation_subphase(
+            "point_clouds",
+            lambda: (
+                point_containment_tools.create_point_cloud(
+                    threeDdata_array_interslice_interpolation,
+                    pcd_color,
+                ),
+                point_containment_tools.create_point_cloud(
+                    threeDdata_array_fully_interpolated,
+                    pcd_color,
+                ),
+                point_containment_tools.create_point_cloud(
+                    threeDdata_array_fully_interpolated_with_end_caps,
+                    pcd_color,
+                ),
+            ),
         )
         interpolated_pcd_dict = {
             "Interslice": interslice_interp_pcd,
@@ -776,6 +875,26 @@ def preprocess_non_biopsy_structure(
         6,
     )
 
+    timing_row_summary_dict = {}
+    timing_row_summary_dict.update(
+        _build_dominant_phase_summary(
+            phase_timings,
+            _PRIMARY_PHASE_TIMING_KEYS,
+            denominator_key="total_elapsed_seconds",
+            label_prefix="Dominant primary",
+            label_noun="phase",
+        )
+    )
+    timing_row_summary_dict.update(
+        _build_dominant_phase_summary(
+            phase_timings,
+            _INTERPOLATION_SUBPHASE_TIMING_KEYS,
+            denominator_key="interpolate_elapsed_seconds",
+            label_prefix="Dominant interpolation subphase",
+            label_noun="",
+        )
+    )
+
     timing_row_dict = {
         "Patient ID": [patient_uid],
         "Structure ID": [structure_id],
@@ -792,6 +911,8 @@ def preprocess_non_biopsy_structure(
             int(len(interpolation_information.interpolated_pts_with_end_caps_np_arr))
         ],
     }
+    for summary_key, summary_value in timing_row_summary_dict.items():
+        timing_row_dict[summary_key] = [summary_value]
     for timing_key, timing_value in phase_timings.items():
         timing_row_dict[timing_key] = [timing_value]
     timing_dataframe = pandas.DataFrame(timing_row_dict)

@@ -26,6 +26,15 @@ class ArtifactConfig:
     skip_preprocessing: bool = False
 
 
+FROZEN_PREPROCESSED_BUNDLE_CONFIG_METADATA_KEY = "Frozen preprocessed bundle config"
+_FROZEN_PREPROCESSED_BUNDLE_CONFIG_FIELD_NAMES = (
+    "interp_inter_slice_dist",
+    "interp_intra_slice_dist",
+    "radius_for_normals_estimation",
+    "max_nn_for_normals_estimation",
+)
+
+
 @dataclass(frozen=True)
 class FrozenPreprocessedBundleConfig:
     interp_inter_slice_dist: float
@@ -42,6 +51,45 @@ class FrozenPreprocessedBundleConfig:
             raise ValueError("radius_for_normals_estimation must be positive")
         if self.max_nn_for_normals_estimation <= 0:
             raise ValueError("max_nn_for_normals_estimation must be positive")
+
+    def to_metadata_dict(self) -> dict[str, Any]:
+        return {
+            field_name: getattr(self, field_name)
+            for field_name in _FROZEN_PREPROCESSED_BUNDLE_CONFIG_FIELD_NAMES
+        }
+
+    @classmethod
+    def from_metadata_dict(cls, config_dict: dict[str, Any]) -> "FrozenPreprocessedBundleConfig":
+        missing_field_names = [
+            field_name
+            for field_name in _FROZEN_PREPROCESSED_BUNDLE_CONFIG_FIELD_NAMES
+            if field_name not in config_dict
+        ]
+        if missing_field_names:
+            raise ValueError(
+                "Frozen preprocessed bundle config metadata is missing fields: "
+                + ", ".join(missing_field_names)
+            )
+
+        return cls(
+            **{
+                field_name: config_dict[field_name]
+                for field_name in _FROZEN_PREPROCESSED_BUNDLE_CONFIG_FIELD_NAMES
+            }
+        )
+
+    def diff(self, other: "FrozenPreprocessedBundleConfig") -> dict[str, dict[str, Any]]:
+        mismatch_dict = {}
+        for field_name in _FROZEN_PREPROCESSED_BUNDLE_CONFIG_FIELD_NAMES:
+            bundle_value = getattr(self, field_name)
+            runtime_value = getattr(other, field_name)
+            if bundle_value == runtime_value:
+                continue
+            mismatch_dict[field_name] = {
+                "bundle_value": bundle_value,
+                "runtime_value": runtime_value,
+            }
+        return mismatch_dict
 
 
 @dataclass(frozen=True)

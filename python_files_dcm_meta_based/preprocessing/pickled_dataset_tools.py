@@ -11,6 +11,7 @@ import lattice_reconstruction_tools
 import misc_tools
 import plotting_funcs
 import point_containment_tools
+from config import FROZEN_PREPROCESSED_BUNDLE_CONFIG_METADATA_KEY
 from config import FrozenPreprocessedBundleConfig
 from config import RuntimeReplayConfig
 
@@ -370,7 +371,8 @@ def _build_export_metadata(export_mode,
                            export_dir,
                            reference_dict_filename,
                            info_dict_filename,
-                           summary_filename=None):
+                           summary_filename=None,
+                           frozen_preprocessed_bundle_config=None):
     export_metadata = {
         "export mode": export_mode,
         "export boundary": EXPORT_BOUNDARY_STAGE_BY_MODE.get(export_mode, export_mode),
@@ -391,6 +393,11 @@ def _build_export_metadata(export_mode,
 
     if summary_filename is not None:
         export_metadata["summary filename"] = summary_filename
+
+    if frozen_preprocessed_bundle_config is not None:
+        export_metadata[FROZEN_PREPROCESSED_BUNDLE_CONFIG_METADATA_KEY] = (
+            frozen_preprocessed_bundle_config.to_metadata_dict()
+        )
 
     git_metadata = _build_git_metadata(export_dir)
     if git_metadata is not None:
@@ -463,6 +470,67 @@ def load_pickle_bundle(master_structure_reference_dict_path,
     return master_structure_reference_dict, master_structure_info_dict
 
 
+def resolve_loaded_frozen_preprocessed_bundle_config(master_structure_info_dict,
+                                                     requested_frozen_bundle_config,
+                                                     runtime_logger=None):
+    export_metadata = (
+        master_structure_info_dict.get("Global", {}).get(EXPORT_METADATA_KEY) or {}
+    )
+    loaded_bundle_config_dict = export_metadata.get(
+        FROZEN_PREPROCESSED_BUNDLE_CONFIG_METADATA_KEY
+    )
+    if loaded_bundle_config_dict is None:
+        if runtime_logger is not None:
+            runtime_logger.warning(
+                "pickle_load.preprocessed.config.missing",
+                "Loaded preprocessed bundle is missing frozen preprocessing config metadata; using current runtime config.",
+                details={
+                    "requested_frozen_bundle_config": requested_frozen_bundle_config.to_metadata_dict(),
+                },
+            )
+        return requested_frozen_bundle_config
+
+    try:
+        loaded_frozen_bundle_config = FrozenPreprocessedBundleConfig.from_metadata_dict(
+            loaded_bundle_config_dict
+        )
+    except Exception as exc:
+        if runtime_logger is not None:
+            runtime_logger.warning(
+                "pickle_load.preprocessed.config.invalid",
+                "Loaded preprocessed bundle frozen preprocessing config metadata is invalid; using current runtime config.",
+                details={
+                    "requested_frozen_bundle_config": requested_frozen_bundle_config.to_metadata_dict(),
+                    "loaded_bundle_config_metadata": loaded_bundle_config_dict,
+                    "error": str(exc),
+                },
+            )
+        return requested_frozen_bundle_config
+
+    mismatch_dict = loaded_frozen_bundle_config.diff(requested_frozen_bundle_config)
+    if runtime_logger is not None:
+        if mismatch_dict:
+            runtime_logger.warning(
+                "pickle_load.preprocessed.config.mismatch",
+                "Loaded preprocessed bundle frozen preprocessing config differs from current runtime config; using bundle snapshot for runtime rebuild.",
+                details={
+                    "loaded_frozen_bundle_config": loaded_frozen_bundle_config.to_metadata_dict(),
+                    "requested_frozen_bundle_config": requested_frozen_bundle_config.to_metadata_dict(),
+                    "mismatches": mismatch_dict,
+                },
+            )
+        else:
+            runtime_logger.checkpoint(
+                "pickle_load.preprocessed.config.match",
+                "Loaded preprocessed bundle frozen preprocessing config matches current runtime config.",
+                details={
+                    "loaded_frozen_bundle_config": loaded_frozen_bundle_config.to_metadata_dict(),
+                },
+            )
+
+    return loaded_frozen_bundle_config
+
+
 def export_preprocessed_pickle_bundle(master_structure_reference_dict,
                                       master_structure_info_dict,
                                       export_dir,
@@ -470,6 +538,7 @@ def export_preprocessed_pickle_bundle(master_structure_reference_dict,
                                       info_dict_filename,
                                       summary_filename,
                                       structs_referenced_list,
+                                      frozen_preprocessed_bundle_config,
                                       bx_ref,
                                       oar_ref,
                                       dil_ref,
@@ -494,6 +563,7 @@ def export_preprocessed_pickle_bundle(master_structure_reference_dict,
         reference_dict_filename,
         info_dict_filename,
         summary_filename=summary_filename,
+        frozen_preprocessed_bundle_config=frozen_preprocessed_bundle_config,
     )
     master_structure_info_dict_safe = _build_exportable_master_structure_info_dict(
         master_structure_info_dict,

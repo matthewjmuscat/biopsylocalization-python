@@ -116,6 +116,7 @@ from preprocessing.transform_bank import resolve_required_generated_transform_sa
 from preprocessing.uncertainty_attachment import prepare_and_attach_uncertainty_data
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
+from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
@@ -5807,6 +5808,7 @@ def main():
                         pipeline_config.artifacts.preprocessed_info_dict_filename,
                         preprocessed_info_file_name,
                         structs_referenced_list,
+                        pipeline_config.preprocessing.build_frozen_preprocessed_bundle_config(),
                         bx_ref,
                         oar_ref,
                         dil_ref,
@@ -5893,6 +5895,14 @@ def main():
 
                 #### REBUILD NON-PICKLABLE OBJECTS
 
+                resolved_frozen_preprocessed_bundle_config = (
+                    resolve_loaded_frozen_preprocessed_bundle_config(
+                        master_structure_info_dict,
+                        pipeline_config.preprocessing.build_frozen_preprocessed_bundle_config(),
+                        runtime_logger=runtime_logger,
+                    )
+                )
+
                 live_display = rebuild_loaded_preprocessed_runtime_objects(
                     master_structure_reference_dict,
                     master_structure_info_dict,
@@ -5901,7 +5911,7 @@ def main():
                     bx_ref,
                     dose_ref,
                     mr_adc_ref,
-                    pipeline_config.preprocessing.build_frozen_preprocessed_bundle_config(),
+                    resolved_frozen_preprocessed_bundle_config,
                     pipeline_config.replay,
                     patients_progress,
                     completed_progress,

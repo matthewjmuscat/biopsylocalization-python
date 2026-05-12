@@ -30,6 +30,53 @@ This rewrite should extend that idea to the broader repo rather than inventing a
 4. Domain modules should receive only the config slice they need.
 5. Artifact loads must distinguish frozen-with-artifact config from current runtime config.
 6. `master_structure_info_dict` should not remain the primary config authority.
+7. The config rewrite must not outrun full-cohort run viability and validation.
+
+## Execution guardrails
+
+This rewrite has to be treated as a careful enabling pass, not just a cleanliness pass.
+
+The repo has not yet completed a successful full cohort run under the current refactor direction.
+
+That means the config work must stay subordinate to three practical goals:
+
+1. reduce RAM-retention surfaces enough that a full cohort run can complete,
+2. validate the modularized preprocessing path on a successful cohort-scale run,
+3. compare the resulting outputs against the March 3 baseline run to ensure the refactor has not regressed behavior.
+
+The reference baseline artifact for downstream comparison is the March 3 full cohort output currently referenced in QA tooling:
+
+- `/home/matthew-muscat/Documents/UBC/Research/Data/Output data/MC_sim_out- Date-Mar-03-2026 Time-15,34,07 -- full 51 biopsy cohort with simulated centroid and optimal bxs - good for QA or tissue class analysis`
+
+## Cohort-run gating
+
+Before broadening the config migration, the next slices should improve the probability of one successful end-to-end cohort run.
+
+Current known blockers or suspected blockers include:
+
+- native triangle-mesh generation abrupt-stop surfaces during preprocessing,
+- optimizer-v2 prepared-pack host-RAM pressure,
+- deferred render retention of heavy live optimizer-v2 objects.
+
+The render-surface rewrite is therefore not just a design cleanup. It is part of the memory-reduction path needed to make full-cohort validation feasible.
+
+That means the render work should prefer:
+
+- lightweight manifests,
+- on-demand scene regeneration,
+- explicit release of heavy per-target state,
+- avoiding durable dependence on live queued render contexts.
+
+## Validation gates
+
+The intended validation order should be explicit:
+
+1. complete one successful cohort run with the current refactor stack,
+2. review the modular preprocessing validation outputs on that run,
+3. compare key exported outputs against the March 3 baseline run,
+4. only then widen the config rewrite beyond the current enabling slices.
+
+This protects against a failure mode where the config layer becomes cleaner while the scientific or operational behavior quietly drifts.
 
 ## Dataclass recommendation
 
@@ -198,6 +245,8 @@ Deliverables:
 
 This phase is the first place where the config rewrite directly fixes the pickle/load mixing problem.
 
+This phase should still be treated as gated by cohort-run viability work. If RAM-retention or abrupt-stop surfaces are still preventing one successful cohort run, resolve those blockers first.
+
 ### Phase 3: migrate domain call sites to narrow config slices
 
 Deliverables:
@@ -229,9 +278,9 @@ Deliverables:
 
 The next implementation slice should be:
 
-1. add the root config scaffolding,
-2. wrap existing typed configs into that root,
-3. split frozen artifact config from runtime replay config,
-4. then build the optimizer-v2-specific render manifest on top of that cleaner boundary.
+1. continue the render-surface RAM reduction work needed for a successful full cohort run,
+2. move the preprocessed export to the real post-preprocessing boundary,
+3. attach an explicit frozen config snapshot to that bundle,
+4. then build the optimizer-v2-specific render manifest on top of that cleaner and cohort-validated boundary.
 
 That keeps the config rewrite aligned with both the GUI plan and the pickle/replay work without trying to solve the entire repo in one patch.
