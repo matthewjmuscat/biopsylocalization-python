@@ -11,6 +11,8 @@ import lattice_reconstruction_tools
 import misc_tools
 import plotting_funcs
 import point_containment_tools
+from config import FrozenPreprocessedBundleConfig
+from config import RuntimeReplayConfig
 
 
 PREPROCESSED_EXPORT_MODE = "preprocessed"
@@ -609,15 +611,8 @@ def rebuild_loaded_preprocessed_runtime_objects(master_structure_reference_dict,
                                                 bx_ref,
                                                 dose_ref,
                                                 mr_adc_ref,
-                                                interp_inter_slice_dist,
-                                                interp_intra_slice_dist,
-                                                radius_for_normals_estimation,
-                                                max_nn_for_normals_estimation,
-                                                lower_bound_dose_value,
-                                                lower_bound_dose_gradient_value,
-                                                lower_bound_mr_adc_value,
-                                                upper_bound_mr_adc_value,
-                                                color_flattening_deg_MR,
+                                                frozen_bundle_config,
+                                                runtime_replay_config,
                                                 patients_progress,
                                                 completed_progress,
                                                 indeterminate_progress_sub,
@@ -651,8 +646,8 @@ def rebuild_loaded_preprocessed_runtime_objects(master_structure_reference_dict,
             phys_space_dose_map_and_gradient_map_3d_arr,
             paint_dose_color=True,
             arrow_scale=1.0,
-            truncate_below_dose=lower_bound_dose_value,
-            truncate_below_gradient_norm=lower_bound_dose_gradient_value,
+            truncate_below_dose=runtime_replay_config.lower_bound_dose_value,
+            truncate_below_gradient_norm=runtime_replay_config.lower_bound_dose_gradient_value,
         )
 
         dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
@@ -690,15 +685,15 @@ def rebuild_loaded_preprocessed_runtime_objects(master_structure_reference_dict,
 
         mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(
             filtered_non_negative_adc_mr_phys_space_arr,
-            color_flattening_deg_MR,
+            runtime_replay_config.color_flattening_deg_mr,
             paint_mr_color=True,
         )
         thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(
             filtered_non_negative_adc_mr_phys_space_arr,
-            color_flattening_deg_MR,
+            runtime_replay_config.color_flattening_deg_mr,
             paint_mr_color=True,
-            lower_bound=lower_bound_mr_adc_value,
-            upper_bound=upper_bound_mr_adc_value,
+            lower_bound=runtime_replay_config.lower_bound_mr_adc_value,
+            upper_bound=runtime_replay_config.upper_bound_mr_adc_value,
         )
 
         mr_adc_subdict["MR ADC grid point cloud"] = mr_adc_point_cloud
@@ -748,11 +743,11 @@ def rebuild_loaded_preprocessed_runtime_objects(master_structure_reference_dict,
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Creating trimesh [{}]".format(specific_structure_roi), total=None)
                 live_display.refresh()
                 fully_interp_with_end_caps_structure_triangle_mesh, _ = misc_tools.compute_structure_triangle_mesh(
-                    interp_inter_slice_dist,
-                    interp_intra_slice_dist,
+                    frozen_bundle_config.interp_inter_slice_dist,
+                    frozen_bundle_config.interp_intra_slice_dist,
                     three_d_data_array_fully_interpolated_with_end_caps,
-                    radius_for_normals_estimation,
-                    max_nn_for_normals_estimation,
+                    frozen_bundle_config.radius_for_normals_estimation,
+                    frozen_bundle_config.max_nn_for_normals_estimation,
                 )
                 master_structure_reference_dict[patient_uid][structure_type][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
                 indeterminate_progress_sub.update(indeterminate_task, visible=False)

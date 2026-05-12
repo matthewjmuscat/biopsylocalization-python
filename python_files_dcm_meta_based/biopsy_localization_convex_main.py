@@ -134,6 +134,14 @@ from biopsy_optimizer.v2.live_integration import (
     annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
+from config import ArtifactConfig
+from config import GuidanceMapConfig
+from config import OptimizerRuntimeConfig
+from config import PipelineConfig
+from config import PreprocessingConfig
+from config import RandomSeedConfig
+from config import RuntimeReplayConfig
+from config import RuntimeUIConfig
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -991,32 +999,108 @@ def main():
     #num_simulated_bxs_to_create = len(bx_sim_locations)
     #if num_simulated_bxs_to_create == 0:
     #    simulate_biopsies_relative_to = []
-    guidance_map_render_config = GuidanceMapRenderConfig(
-        enabled=render_guidance_maps_after_simulated_core_finalization,
-        plot_name=guidance_map_plot_name,
-        output_dir_name=guidance_map_output_dir_name,
-        save_formats=guidance_map_save_formats,
-        image_width=guidance_map_image_width,
-        image_height=guidance_map_image_height,
-        image_scale=svg_image_scale,
-        axis_title_font_size=24,
-        axis_tick_font_size=20,
-        legend_font_size=20,
-        annotation_font_size=20,
-        distance_annotation_font_size=20,
-        fire_annotation_font_size=20,
-        colorbar_tick_font_size=20,
-        template_label_font_size=20,
-        colorbar_title_font_size=20,
-        fire_annotation_style="compact_table",
-        fire_table_position="outside top center",
-        draw_orientation_diagram=False,
-        show_titles=show_titles_for_guidance_maps,
-        show_euler_annotation_box=show_euler_annotation_box_behavior,
-        candidate_plot_rank=candidate_plot_ranks_behavior,
-        validate_firing_df_builder=validate_firing_df_builder_behavior,
-        strict_precomputed_guidance=strict_precomputed_guidance_behavior,
+    pipeline_config = PipelineConfig(
+        ui=RuntimeUIConfig(
+            spinner_type=spinner_type,
+            rich_live_display_bool=rich_live_display_bool,
+        ),
+        artifacts=ArtifactConfig(
+            output_folder_name=output_folder_name,
+            preprocessed_data_folder_name=preprocessed_data_folder_name,
+            preprocessed_reference_dict_filename=preprocessed_master_structure_ref_dict_for_export_name,
+            preprocessed_info_dict_filename=preprocessed_master_structure_info_dict_for_export_name,
+            export_pickled_preprocessed_data=export_pickled_preprocessed_data,
+            skip_preprocessing=skip_preprocessing,
+        ),
+        preprocessing=PreprocessingConfig(
+            interp_inter_slice_dist=interp_inter_slice_dist,
+            interp_intra_slice_dist=interp_intra_slice_dist,
+            interp_dist_caps=interp_dist_caps,
+            radius_for_normals_estimation=radius_for_normals_estimation,
+            max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+            voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
+            voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
+            factor_for_voxel_size=factor_for_voxel_size,
+            cupy_array_upper_limit_nxn_size_input=cupy_array_upper_limit_NxN_size_input,
+            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                nearest_zslice_vals_and_indices_cupy_generic_max_size
+            ),
+            generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
+            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                remove_consecutive_duplicate_points_in_polygons
+            ),
+            include_edges_in_log_files=include_edges_in_log_files,
+            custom_cuda_kernel_type=custom_cuda_kernel_type,
+            demonstrate_volume_calculation_correctness_bool_1=(
+                demonstrate_volume_calculation_correctness_bool_1
+            ),
+            plot_volume_calculation_containment_result_bool_1_old=(
+                plot_volume_calculation_containment_result_bool_1_old
+            ),
+            plot_binary_mask_bool=plot_binary_mask_bool,
+            generate_cuda_log_files_structure_dimension_calculation=(
+                generate_cuda_log_files_structure_dimension_calculation
+            ),
+            demonstrate_structure_dimension_calculation_correctness_bool_1=(
+                demonstrate_structure_dimension_calculation_correctness_bool_1
+            ),
+            demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
+                demonstrate_structure_dimension_calculation_correctness_bool_1_old
+            ),
+            demonstrate_mr_adc_pcd_containment_correctness_bool=(
+                demonstrate_mr_adc_pcd_containment_correctness_bool
+            ),
+            display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
+            show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
+        ),
+        replay=RuntimeReplayConfig(
+            lower_bound_dose_value=lower_bound_dose_value,
+            lower_bound_dose_gradient_value=lower_bound_dose_gradient_value,
+            lower_bound_mr_adc_value=lower_bound_mr_adc_value,
+            upper_bound_mr_adc_value=upper_bound_mr_adc_value,
+            color_flattening_deg_mr=color_flattening_deg_MR,
+        ),
+        guidance_maps=GuidanceMapConfig(
+            render_config=GuidanceMapRenderConfig(
+                enabled=render_guidance_maps_after_simulated_core_finalization,
+                plot_name=guidance_map_plot_name,
+                output_dir_name=guidance_map_output_dir_name,
+                save_formats=guidance_map_save_formats,
+                image_width=guidance_map_image_width,
+                image_height=guidance_map_image_height,
+                image_scale=svg_image_scale,
+                axis_title_font_size=24,
+                axis_tick_font_size=20,
+                legend_font_size=20,
+                annotation_font_size=20,
+                distance_annotation_font_size=20,
+                fire_annotation_font_size=20,
+                colorbar_tick_font_size=20,
+                template_label_font_size=20,
+                colorbar_title_font_size=20,
+                fire_annotation_style="compact_table",
+                fire_table_position="outside top center",
+                draw_orientation_diagram=False,
+                show_titles=show_titles_for_guidance_maps,
+                show_euler_annotation_box=show_euler_annotation_box_behavior,
+                candidate_plot_rank=candidate_plot_ranks_behavior,
+                validate_firing_df_builder=validate_firing_df_builder_behavior,
+                strict_precomputed_guidance=strict_precomputed_guidance_behavior,
+            )
+        ),
+        optimizer=OptimizerRuntimeConfig(
+            optimizer_v2_search_config=optimizer_v2_search_config,
+            num_stochastic_targeting_transform_samples_input=(
+                num_stochastic_targeting_transform_samples_input
+            ),
+        ),
+        random_seeds=RandomSeedConfig(
+            transform_generation_random_seed=transform_generation_random_seed,
+            optimizer_v1_random_seed=optimizer_v1_random_seed,
+        ),
     )
+    guidance_map_render_config = pipeline_config.guidance_maps.render_config
     if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
         fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
     else:
@@ -1155,7 +1239,7 @@ def main():
             section_start_time = datetime.now() 
             runtime_logger.phase_start("section.simulations", "Starting section: Simulations.")
     
-            if skip_preprocessing == False:
+            if pipeline_config.artifacts.skip_preprocessing == False:
                 runtime_logger.phase_start(
                     "input.discovery",
                     "Starting DICOM input discovery.",
@@ -1418,13 +1502,13 @@ def main():
 
                 configure_transform_precompute_settings(
                     master_structure_info_dict,
-                    optimizer_v2_search_config,
-                    num_stochastic_targeting_transform_samples_input,
+                    pipeline_config.optimizer.optimizer_v2_search_config,
+                    pipeline_config.optimizer.num_stochastic_targeting_transform_samples_input,
                 )
                 configure_runtime_random_seed_settings(
                     master_structure_info_dict,
-                    transform_generation_random_seed,
-                    optimizer_v1_random_seed,
+                    pipeline_config.random_seeds.transform_generation_random_seed,
+                    pipeline_config.random_seeds.optimizer_v1_random_seed,
                 )
 
                 specific_output_dir, raw_mc_output_dir = create_run_output_directories(
@@ -2078,51 +2162,11 @@ def main():
 
 
 
-                non_bx_structure_preprocessing_config = NonBiopsyStructurePreprocessingConfig(
+                non_bx_structure_preprocessing_config = pipeline_config.preprocessing.build_non_biopsy_structure_preprocessing_config(
                     all_ref_key=all_ref_key,
                     oar_ref=oar_ref,
                     dil_ref=dil_ref,
                     mr_adc_ref=mr_adc_ref,
-                    interp_inter_slice_dist=interp_inter_slice_dist,
-                    interp_intra_slice_dist=interp_intra_slice_dist,
-                    interp_dist_caps=interp_dist_caps,
-                    radius_for_normals_estimation=radius_for_normals_estimation,
-                    max_nn_for_normals_estimation=max_nn_for_normals_estimation,
-                    voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
-                    voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
-                    factor_for_voxel_size=factor_for_voxel_size,
-                    cupy_array_upper_limit_NxN_size_input=cupy_array_upper_limit_NxN_size_input,
-                    nearest_zslice_vals_and_indices_cupy_generic_max_size=(
-                        nearest_zslice_vals_and_indices_cupy_generic_max_size
-                    ),
-                    generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
-                    constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-                    remove_consecutive_duplicate_points_in_polygons=(
-                        remove_consecutive_duplicate_points_in_polygons
-                    ),
-                    include_edges_in_log_files=include_edges_in_log_files,
-                    custom_cuda_kernel_type=custom_cuda_kernel_type,
-                    demonstrate_volume_calculation_correctness_bool_1=(
-                        demonstrate_volume_calculation_correctness_bool_1
-                    ),
-                    plot_volume_calculation_containment_result_bool_1_old=(
-                        plot_volume_calculation_containment_result_bool_1_old
-                    ),
-                    plot_binary_mask_bool=plot_binary_mask_bool,
-                    generate_cuda_log_files_structure_dimension_calculation=(
-                        generate_cuda_log_files_structure_dimension_calculation
-                    ),
-                    demonstrate_structure_dimension_calculation_correctness_bool_1=(
-                        demonstrate_structure_dimension_calculation_correctness_bool_1
-                    ),
-                    demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
-                        demonstrate_structure_dimension_calculation_correctness_bool_1_old
-                    ),
-                    demonstrate_mr_adc_pcd_containment_correctness_bool=(
-                        demonstrate_mr_adc_pcd_containment_correctness_bool
-                    ),
-                    display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
-                    show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
                 )
 
                 ### PREPROCESSING OARs
@@ -5735,7 +5779,7 @@ def main():
                 ## The preprocessed bundle exporter prunes the in-memory structure tree back to the post-preprocessing boundary before pickling.
 
                 # Now can export the preprocessing-bounded master structure dict to file.
-                if export_pickled_preprocessed_data == True:
+                if pipeline_config.artifacts.export_pickled_preprocessed_data == True:
                     export_preprocessed_data_task_indeterminate = indeterminate_progress_main.add_task("[red]Exporting preprocessed data...", total=None)
                     export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False, total=master_structure_info_dict["Global"]["Num cases"])
                     
@@ -5759,8 +5803,8 @@ def main():
                         master_structure_reference_dict,
                         master_structure_info_dict,
                         specific_preprocessed_data_dir,
-                        preprocessed_master_structure_ref_dict_for_export_name,
-                        preprocessed_master_structure_info_dict_for_export_name,
+                        pipeline_config.artifacts.preprocessed_reference_dict_filename,
+                        pipeline_config.artifacts.preprocessed_info_dict_filename,
                         preprocessed_info_file_name,
                         structs_referenced_list,
                         bx_ref,
@@ -5790,7 +5834,7 @@ def main():
                 
                 
 
-            elif skip_preprocessing == True:
+            elif pipeline_config.artifacts.skip_preprocessing == True:
                 live_display.stop()
                 live_display.console.print("[bold red]User input required:")
                 
@@ -5857,15 +5901,8 @@ def main():
                     bx_ref,
                     dose_ref,
                     mr_adc_ref,
-                    interp_inter_slice_dist,
-                    interp_intra_slice_dist,
-                    radius_for_normals_estimation,
-                    max_nn_for_normals_estimation,
-                    lower_bound_dose_value,
-                    lower_bound_dose_gradient_value,
-                    lower_bound_mr_adc_value,
-                    upper_bound_mr_adc_value,
-                    color_flattening_deg_MR,
+                    pipeline_config.preprocessing.build_frozen_preprocessed_bundle_config(),
+                    pipeline_config.replay,
                     patients_progress,
                     completed_progress,
                     indeterminate_progress_sub,
@@ -5874,13 +5911,13 @@ def main():
 
                 configure_transform_precompute_settings(
                     master_structure_info_dict,
-                    optimizer_v2_search_config,
-                    num_stochastic_targeting_transform_samples_input,
+                    pipeline_config.optimizer.optimizer_v2_search_config,
+                    pipeline_config.optimizer.num_stochastic_targeting_transform_samples_input,
                 )
                 configure_runtime_random_seed_settings(
                     master_structure_info_dict,
-                    transform_generation_random_seed,
-                    optimizer_v1_random_seed,
+                    pipeline_config.random_seeds.transform_generation_random_seed,
+                    pipeline_config.random_seeds.optimizer_v1_random_seed,
                 )
             ###
             
