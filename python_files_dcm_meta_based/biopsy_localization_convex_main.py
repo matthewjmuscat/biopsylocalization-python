@@ -118,6 +118,8 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
+from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
+from preprocessing.structure_processing.non_biopsy_structure_processing import preprocess_non_biopsy_structure
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_adaptive_block_search_config
@@ -2071,6 +2073,53 @@ def main():
 
 
 
+                non_bx_structure_preprocessing_config = NonBiopsyStructurePreprocessingConfig(
+                    all_ref_key=all_ref_key,
+                    oar_ref=oar_ref,
+                    dil_ref=dil_ref,
+                    mr_adc_ref=mr_adc_ref,
+                    interp_inter_slice_dist=interp_inter_slice_dist,
+                    interp_intra_slice_dist=interp_intra_slice_dist,
+                    interp_dist_caps=interp_dist_caps,
+                    radius_for_normals_estimation=radius_for_normals_estimation,
+                    max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+                    voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
+                    voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
+                    factor_for_voxel_size=factor_for_voxel_size,
+                    cupy_array_upper_limit_NxN_size_input=cupy_array_upper_limit_NxN_size_input,
+                    nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                        nearest_zslice_vals_and_indices_cupy_generic_max_size
+                    ),
+                    generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
+                    constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+                    remove_consecutive_duplicate_points_in_polygons=(
+                        remove_consecutive_duplicate_points_in_polygons
+                    ),
+                    include_edges_in_log_files=include_edges_in_log_files,
+                    custom_cuda_kernel_type=custom_cuda_kernel_type,
+                    demonstrate_volume_calculation_correctness_bool_1=(
+                        demonstrate_volume_calculation_correctness_bool_1
+                    ),
+                    plot_volume_calculation_containment_result_bool_1_old=(
+                        plot_volume_calculation_containment_result_bool_1_old
+                    ),
+                    plot_binary_mask_bool=plot_binary_mask_bool,
+                    generate_cuda_log_files_structure_dimension_calculation=(
+                        generate_cuda_log_files_structure_dimension_calculation
+                    ),
+                    demonstrate_structure_dimension_calculation_correctness_bool_1=(
+                        demonstrate_structure_dimension_calculation_correctness_bool_1
+                    ),
+                    demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
+                        demonstrate_structure_dimension_calculation_correctness_bool_1_old
+                    ),
+                    demonstrate_mr_adc_pcd_containment_correctness_bool=(
+                        demonstrate_mr_adc_pcd_containment_correctness_bool
+                    ),
+                    display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
+                    show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
+                )
+
                 ### PREPROCESSING OARs
 
 
@@ -2101,6 +2150,25 @@ def main():
                         structure_reference_number = specific_structure["Ref #"]
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                        live_display = preprocess_non_biopsy_structure(
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        structures_progress.update(processing_structures_task, advance=1)
+                        continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -2608,6 +2676,25 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
+                        live_display = preprocess_non_biopsy_structure(
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        structures_progress.update(processing_structures_task, advance=1)
+                        continue
+
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
@@ -3077,6 +3164,25 @@ def main():
                         structure_reference_number = specific_structure["Ref #"]
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                        live_display = preprocess_non_biopsy_structure(
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        structures_progress.update(processing_structures_task, advance=1)
+                        continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -3598,6 +3704,28 @@ def main():
                         structure_reference_number = specific_structure["Ref #"]
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                        live_display = preprocess_non_biopsy_structure(
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                            sp_patient_selected_structure_info_dataframe=(
+                                sp_patient_selected_structure_info_dataframe
+                            ),
+                        )
+                        structures_progress.update(processing_structures_task, advance=1)
+                        continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -4162,6 +4290,8 @@ def main():
                         ###
                         indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR ADC statistics (Prostate - UDR)", total = None)
                         ###
+
+                        mr_adc_value_column_name_str = "MR ADC value"
 
                         # Create a summary statistics dataframe of the column 
                         mr_adc_value_summary_statistics_prostate_only_excluding_UDR = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
