@@ -99,6 +99,30 @@ def _log_phase_timing(
     )
 
 
+def _log_memory_snapshot(
+    runtime_logger,
+    phase_name,
+    message,
+    *,
+    patient_uid,
+    structure_id,
+    structure_ref_type,
+    structure_index,
+    details=None,
+) -> None:
+    if runtime_logger is None:
+        return
+    runtime_logger.memory_snapshot(
+        phase_name,
+        message,
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        structure_ref_type=structure_ref_type,
+        structure_index=structure_index,
+        details=details,
+    )
+
+
 def _build_dil_shape_feature_overrides(
     *,
     pydicom_item,
@@ -542,6 +566,23 @@ def preprocess_non_biopsy_structure(
             config.max_nn_for_normals_estimation,
         )
 
+    _log_memory_snapshot(
+        runtime_logger,
+        "preprocessing.structure.triangle_mesh.memory.before",
+        "Captured memory snapshot before structure triangle-mesh reconstruction.",
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        structure_ref_type=struct_ref_type,
+        structure_index=specific_structure_index,
+        details={
+            "raw_contour_point_count": int(len(threeDdata_array)),
+            "interpolated_point_count": int(len(interpolation_information.interpolated_pts_np_arr)),
+            "interpolated_with_end_caps_point_count": int(
+                len(interpolation_information.interpolated_pts_with_end_caps_np_arr)
+            ),
+        },
+    )
+
     (
         fully_interp_with_end_caps_structure_triangle_mesh,
         water_tight_bool,
@@ -550,6 +591,21 @@ def preprocess_non_biopsy_structure(
         "[cyan]~~Calculating structure triangle mesh",
         compute_triangle_mesh,
         refresh_live_display=True,
+    )
+
+    _log_memory_snapshot(
+        runtime_logger,
+        "preprocessing.structure.triangle_mesh.memory.after",
+        "Captured memory snapshot after structure triangle-mesh reconstruction.",
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        structure_ref_type=struct_ref_type,
+        structure_index=specific_structure_index,
+        details={
+            "mesh_vertex_count": int(len(fully_interp_with_end_caps_structure_triangle_mesh.vertices)),
+            "mesh_triangle_count": int(len(fully_interp_with_end_caps_structure_triangle_mesh.triangles)),
+            "mesh_watertight": bool(water_tight_bool),
+        },
     )
 
     if water_tight_bool is False:

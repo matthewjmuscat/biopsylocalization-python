@@ -136,6 +136,62 @@ def _runtime_checkpoint(
     )
 
 
+def _runtime_memory_snapshot(
+    phase,
+    message,
+    *,
+    patient_uid=None,
+    structure_id=None,
+    details=None,
+):
+    runtime_logger = get_active_runtime_logger()
+    if runtime_logger is None:
+        return
+    runtime_logger.memory_snapshot(
+        phase,
+        message,
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+        details=details,
+    )
+
+
+def _release_optimizer_v2_target_structure_cache_entries(
+    *,
+    target_structure_cache_key,
+    candidate_pool_cache,
+    target_structure_pack_cache,
+    target_structure_prepared_pack_cache,
+):
+    candidate_pool_cache.pop(target_structure_cache_key, None)
+
+    raw_pack_keys_to_delete = [
+        cache_key
+        for cache_key in target_structure_pack_cache.keys()
+        if cache_key[0] == target_structure_cache_key
+    ]
+    for cache_key in raw_pack_keys_to_delete:
+        target_structure_pack_cache.pop(cache_key, None)
+
+    prepared_pack_keys_to_delete = [
+        cache_key
+        for cache_key in target_structure_prepared_pack_cache.keys()
+        if cache_key[0] == target_structure_cache_key
+    ]
+    for cache_key in prepared_pack_keys_to_delete:
+        target_structure_prepared_pack_cache.pop(cache_key, None)
+
+    return {
+        "released_raw_pack_entries": int(len(raw_pack_keys_to_delete)),
+        "released_prepared_pack_entries": int(len(prepared_pack_keys_to_delete)),
+        "remaining_candidate_pool_cache_entries": int(len(candidate_pool_cache)),
+        "remaining_target_structure_pack_cache_entries": int(len(target_structure_pack_cache)),
+        "remaining_target_structure_prepared_pack_cache_entries": int(
+            len(target_structure_prepared_pack_cache)
+        ),
+    }
+
+
 def _build_bound_biopsy_transform_bank_prefix_provider(specific_structure):
     def _provider(num_trials, specific_structure=specific_structure):
         return get_biopsy_transform_bank_prefix(specific_structure, num_trials)
@@ -172,6 +228,16 @@ def _build_bound_target_relative_structures_nominal_plus_trials_provider(
         if cached_target_structure_pack is not None:
             return cached_target_structure_pack
 
+        _runtime_memory_snapshot(
+            "optimizer_v2.structure.target_pack.memory.before",
+            "Captured memory snapshot before building optimizer-v2 target structure trial pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "target_structure_pack_cache_entries": int(len(target_structure_pack_cache)),
+            },
+        )
         pack_build_start_time = time.perf_counter()
         resolved_target_structure_pack = _build_target_structure_nominal_plus_trials(
             target_structure,
@@ -179,6 +245,17 @@ def _build_bound_target_relative_structures_nominal_plus_trials_provider(
             parallel_pool,
         )
         target_structure_pack_cache[cache_key] = resolved_target_structure_pack
+        _runtime_memory_snapshot(
+            "optimizer_v2.structure.target_pack.memory.after",
+            "Captured memory snapshot after building optimizer-v2 target structure trial pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "relative_structure_count": int(len(resolved_target_structure_pack)),
+                "target_structure_pack_cache_entries": int(len(target_structure_pack_cache)),
+            },
+        )
         _runtime_checkpoint(
             "optimizer_v2.structure.target_pack.end",
             "Built optimizer-v2 target structure trial pack.",
@@ -221,6 +298,21 @@ def _build_bound_prepared_target_relative_structures_pack_provider(
         target_relative_structures_nominal_plus_trials = (
             target_relative_structures_nominal_plus_trials_provider(num_trials)
         )
+        _runtime_memory_snapshot(
+            "optimizer_v2.structure.prepared_target_pack.memory.before",
+            "Captured memory snapshot before preparing optimizer-v2 target structure containment pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "relative_structure_count": int(
+                    len(target_relative_structures_nominal_plus_trials)
+                ),
+                "target_structure_prepared_pack_cache_entries": int(
+                    len(target_structure_prepared_pack_cache)
+                ),
+            },
+        )
         prepare_start_time = time.perf_counter()
         prepared_pack = (
             custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.prepare_relative_structures_for_containment(
@@ -228,6 +320,23 @@ def _build_bound_prepared_target_relative_structures_pack_provider(
             )
         )
         target_structure_prepared_pack_cache[cache_key] = prepared_pack
+        _runtime_memory_snapshot(
+            "optimizer_v2.structure.prepared_target_pack.memory.after",
+            "Captured memory snapshot after preparing optimizer-v2 target structure containment pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "relative_structure_count": int(
+                    prepared_pack.audit_report.num_relative_structures
+                ),
+                "total_z_slices": int(prepared_pack.audit_report.num_total_z_slices),
+                "total_points": int(prepared_pack.audit_report.num_total_points),
+                "target_structure_prepared_pack_cache_entries": int(
+                    len(target_structure_prepared_pack_cache)
+                ),
+            },
+        )
         _runtime_checkpoint(
             "optimizer_v2.structure.prepared_target_pack.end",
             "Prepared optimizer-v2 target structure containment pack.",
@@ -839,6 +948,11 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
         },
     )
+    render_asset_persistence_requested = bool(
+        render_stage_boundary_candidate_clouds_bool
+        or render_winner_containment_debug_bool
+        or render_plotly_export_bool
+    )
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
         processing_patients_task_main_description = "[red]Running optimizer-v2 sim-bx targeting [{}]...".format(
@@ -1127,98 +1241,99 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     kernel_type=kernel_type,
                 )
 
-            render_prep_start_time = time.perf_counter()
-            winner_candidate_point = _resolve_operational_winner_candidate_point(
-                search_result,
-                candidate_pool,
-            )
-            additional_render_layers = tuple(_build_additional_stage_boundary_render_layers(
-                structs_referenced_dict=structs_referenced_dict,
-                pydicom_item=pydicom_item,
-                specific_structure=specific_structure,
-                nominal_biopsy_centroid=nominal_biopsy_centroid,
-                winner_candidate_point=winner_candidate_point,
-                bx_ref=bx_ref,
-                target_structure=target_structure,
-                render_include_planned_sampled_points_bool=render_include_planned_sampled_points_bool,
-                render_include_planned_core_structure_bool=render_include_planned_core_structure_bool,
-                render_include_planned_centroid_line_bool=render_include_planned_centroid_line_bool,
-                render_include_target_surface_bool=render_include_target_surface_bool,
-                render_include_selected_anatomy_bool=render_include_selected_anatomy_bool,
-                render_layer_style_by_name=render_layer_style_by_name,
-                oar_ref=oar_ref,
-                rectum_ref=rectum_ref,
-                urethra_ref=urethra_ref,
-            ))
+            if render_asset_persistence_requested:
+                render_prep_start_time = time.perf_counter()
+                winner_candidate_point = _resolve_operational_winner_candidate_point(
+                    search_result,
+                    candidate_pool,
+                )
+                additional_render_layers = tuple(_build_additional_stage_boundary_render_layers(
+                    structs_referenced_dict=structs_referenced_dict,
+                    pydicom_item=pydicom_item,
+                    specific_structure=specific_structure,
+                    nominal_biopsy_centroid=nominal_biopsy_centroid,
+                    winner_candidate_point=winner_candidate_point,
+                    bx_ref=bx_ref,
+                    target_structure=target_structure,
+                    render_include_planned_sampled_points_bool=render_include_planned_sampled_points_bool,
+                    render_include_planned_core_structure_bool=render_include_planned_core_structure_bool,
+                    render_include_planned_centroid_line_bool=render_include_planned_centroid_line_bool,
+                    render_include_target_surface_bool=render_include_target_surface_bool,
+                    render_include_selected_anatomy_bool=render_include_selected_anatomy_bool,
+                    render_layer_style_by_name=render_layer_style_by_name,
+                    oar_ref=oar_ref,
+                    rectum_ref=rectum_ref,
+                    urethra_ref=urethra_ref,
+                ))
 
-            stage_boundary_render_jobs = build_stage_boundary_render_jobs(
-                search_result=search_result,
-                candidate_pool=candidate_pool,
-                target_points_array=np.asarray(
-                    target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
-                    dtype=float,
-                ),
-                nominal_biopsy_centroid=nominal_biopsy_centroid,
-                stage_names_to_render=render_stage_names_to_render,
-                include_target_points=render_include_target_points_bool,
-                additional_render_layers=additional_render_layers,
-                scene_name_prefix="{}__{}".format(patientUID, structureID),
-                render_layer_style_by_name=render_layer_style_by_name,
-            )
-            _runtime_checkpoint(
-                "optimizer_v2.structure.render_prep.end",
-                "Prepared optimizer-v2 render assets.",
-                patient_uid=patientUID,
-                structure_id=structureID,
-                details={
-                    "stage_scene_count": len(stage_boundary_render_jobs),
-                    "additional_render_layer_count": len(additional_render_layers),
-                    "elapsed_seconds": round(time.perf_counter() - render_prep_start_time, 3),
-                },
-            )
-            specific_structure[
-                TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
-            ] = stage_boundary_render_jobs
-            should_render_structure = _should_render_structure_stage_boundary_candidate_clouds(
-                patientUID,
-                structureID,
-                render_patient_whitelist,
-                render_roi_whitelist,
-            )
-            if should_render_structure:
-                queued_render_selection_contexts.append(
-                    OptimizerV2QueuedRenderContext(
-                        patient_uid=str(patientUID),
-                        structure_id=str(structureID),
-                        search_result=search_result,
-                        candidate_pool=candidate_pool,
-                        stage_boundary_render_jobs=tuple(stage_boundary_render_jobs),
-                        target_structure=target_structure,
-                        target_structure_centroid=np.asarray(target_structure_centroid, dtype=float).copy(),
-                        nominal_biopsy_points=np.asarray(nominal_biopsy_points, dtype=float).copy(),
-                        nominal_biopsy_centroid=np.asarray(nominal_biopsy_centroid, dtype=float).copy(),
-                        nominal_biopsy_centroid_line=np.asarray(
-                            nominal_biopsy_centroid_line,
-                            dtype=float,
-                        ).copy(),
-                        biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
-                        target_relative_structures_nominal_plus_trials_provider=(
-                            target_relative_structures_nominal_plus_trials_provider
-                        ),
-                        target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
-                        downstream_comparable_trial_count=downstream_comparable_trial_count,
-                        additional_render_layers=tuple(additional_render_layers),
-                    )
+                stage_boundary_render_jobs = build_stage_boundary_render_jobs(
+                    search_result=search_result,
+                    candidate_pool=candidate_pool,
+                    target_points_array=np.asarray(
+                        target_structure["Inter-slice interpolation information"].interpolated_pts_np_arr,
+                        dtype=float,
+                    ),
+                    nominal_biopsy_centroid=nominal_biopsy_centroid,
+                    stage_names_to_render=render_stage_names_to_render,
+                    include_target_points=render_include_target_points_bool,
+                    additional_render_layers=additional_render_layers,
+                    scene_name_prefix="{}__{}".format(patientUID, structureID),
+                    render_layer_style_by_name=render_layer_style_by_name,
                 )
                 _runtime_checkpoint(
-                    "optimizer_v2.structure.render.queued",
-                    "Queued optimizer-v2 render review for end-of-run selection.",
+                    "optimizer_v2.structure.render_prep.end",
+                    "Prepared optimizer-v2 render assets.",
                     patient_uid=patientUID,
                     structure_id=structureID,
                     details={
                         "stage_scene_count": len(stage_boundary_render_jobs),
+                        "additional_render_layer_count": len(additional_render_layers),
+                        "elapsed_seconds": round(time.perf_counter() - render_prep_start_time, 3),
                     },
                 )
+                specific_structure[
+                    TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY
+                ] = stage_boundary_render_jobs
+                should_render_structure = _should_render_structure_stage_boundary_candidate_clouds(
+                    patientUID,
+                    structureID,
+                    render_patient_whitelist,
+                    render_roi_whitelist,
+                )
+                if should_render_structure:
+                    queued_render_selection_contexts.append(
+                        OptimizerV2QueuedRenderContext(
+                            patient_uid=str(patientUID),
+                            structure_id=str(structureID),
+                            search_result=search_result,
+                            candidate_pool=candidate_pool,
+                            stage_boundary_render_jobs=tuple(stage_boundary_render_jobs),
+                            target_structure=target_structure,
+                            target_structure_centroid=np.asarray(target_structure_centroid, dtype=float).copy(),
+                            nominal_biopsy_points=np.asarray(nominal_biopsy_points, dtype=float).copy(),
+                            nominal_biopsy_centroid=np.asarray(nominal_biopsy_centroid, dtype=float).copy(),
+                            nominal_biopsy_centroid_line=np.asarray(
+                                nominal_biopsy_centroid_line,
+                                dtype=float,
+                            ).copy(),
+                            biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
+                            target_relative_structures_nominal_plus_trials_provider=(
+                                target_relative_structures_nominal_plus_trials_provider
+                            ),
+                            target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
+                            downstream_comparable_trial_count=downstream_comparable_trial_count,
+                            additional_render_layers=tuple(additional_render_layers),
+                        )
+                    )
+                    _runtime_checkpoint(
+                        "optimizer_v2.structure.render.queued",
+                        "Queued optimizer-v2 render review for end-of-run selection.",
+                        patient_uid=patientUID,
+                        structure_id=structureID,
+                        details={
+                            "stage_scene_count": len(stage_boundary_render_jobs),
+                        },
+                    )
 
             dataframe_build_start_time = time.perf_counter()
             metadata = _build_search_metadata(
@@ -1285,6 +1400,21 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     "elapsed_seconds": round(time.perf_counter() - dataframe_build_start_time, 3),
                 },
             )
+
+            if not render_asset_persistence_requested:
+                released_cache_details = _release_optimizer_v2_target_structure_cache_entries(
+                    target_structure_cache_key=target_structure_cache_key,
+                    candidate_pool_cache=candidate_pool_cache,
+                    target_structure_pack_cache=target_structure_pack_cache,
+                    target_structure_prepared_pack_cache=target_structure_prepared_pack_cache,
+                )
+                _runtime_checkpoint(
+                    "optimizer_v2.structure.cache_release.end",
+                    "Released optimizer-v2 per-target caches after structure completion.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details=released_cache_details,
+                )
 
             structures_progress.update(processing_structures_task, advance=1)
 
