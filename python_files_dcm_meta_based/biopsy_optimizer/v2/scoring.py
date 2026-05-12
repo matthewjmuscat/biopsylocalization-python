@@ -37,6 +37,7 @@ def score_target_candidate_chunk(
     target_relative_structures_nominal_plus_trials: Sequence[Sequence[np.ndarray]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix: SharedTransformBankPrefix,
+    prepared_relative_structures_pack: Optional[Any] = None,
     objective_reducer_name: str = "mean_pd",
     max_test_structures_per_call: Optional[int] = None,
     validate_nearest_z_helper_against_ver5: bool = True,
@@ -96,6 +97,7 @@ def score_target_candidate_chunk(
     aligned_containment_run_result = containment_runner.run_aligned_containment_batch(
         list_of_relative_structures_containting_list_of_constant_zslices_arrays=target_relative_structures_nominal_plus_trials,
         aligned_containment_test_batch=aligned_containment_test_batch,
+        prepared_relative_structures_pack=prepared_relative_structures_pack,
         log_sub_dirs_list=containment_log_sub_dirs_list,
         log_file_name=containment_log_file_name,
         include_edges_in_log=include_edges_in_log,

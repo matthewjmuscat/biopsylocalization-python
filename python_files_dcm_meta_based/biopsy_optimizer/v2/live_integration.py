@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 import pandas
 
+import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p_grandparents
 import polygon_dilation_helpers_numpy
 from biopsy_optimizer.v2.contracts import OptimizerV2ChunkLayout
@@ -192,6 +193,95 @@ def _build_bound_target_relative_structures_nominal_plus_trials_provider(
         return resolved_target_structure_pack
 
     return _provider
+
+
+def _build_bound_prepared_target_relative_structures_pack_provider(
+    *,
+    target_structure_cache_key,
+    target_structure_prepared_pack_cache,
+    target_relative_structures_nominal_plus_trials_provider,
+    patient_uid,
+    structure_id,
+):
+    def _provider(
+        num_trials,
+        target_structure_cache_key=target_structure_cache_key,
+        target_structure_prepared_pack_cache=target_structure_prepared_pack_cache,
+        target_relative_structures_nominal_plus_trials_provider=(
+            target_relative_structures_nominal_plus_trials_provider
+        ),
+        patient_uid=patient_uid,
+        structure_id=structure_id,
+    ):
+        cache_key = (target_structure_cache_key, int(num_trials))
+        cached_prepared_pack = target_structure_prepared_pack_cache.get(cache_key)
+        if cached_prepared_pack is not None:
+            return cached_prepared_pack
+
+        target_relative_structures_nominal_plus_trials = (
+            target_relative_structures_nominal_plus_trials_provider(num_trials)
+        )
+        prepare_start_time = time.perf_counter()
+        prepared_pack = (
+            custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.prepare_relative_structures_for_containment(
+                target_relative_structures_nominal_plus_trials
+            )
+        )
+        target_structure_prepared_pack_cache[cache_key] = prepared_pack
+        _runtime_checkpoint(
+            "optimizer_v2.structure.prepared_target_pack.end",
+            "Prepared optimizer-v2 target structure containment pack.",
+            patient_uid=patient_uid,
+            structure_id=structure_id,
+            details={
+                "num_trials": int(num_trials),
+                "relative_structure_count": int(
+                    prepared_pack.audit_report.num_relative_structures
+                ),
+                "total_z_slices": int(prepared_pack.audit_report.num_total_z_slices),
+                "total_points": int(prepared_pack.audit_report.num_total_points),
+                "elapsed_seconds": round(time.perf_counter() - prepare_start_time, 3),
+            },
+        )
+        return prepared_pack
+
+    return _provider
+
+
+def _resolve_optimizer_v2_max_candidates_per_chunk(
+    *,
+    requested_max_candidates_per_chunk,
+    resolved_max_test_structures_per_call,
+    search_config,
+    downstream_comparable_trial_count,
+    include_nominal=True,
+):
+    if requested_max_candidates_per_chunk is not None:
+        if int(requested_max_candidates_per_chunk) <= 0:
+            raise ValueError("max_candidates_per_chunk must be positive when provided")
+        return int(requested_max_candidates_per_chunk), "manual"
+
+    if resolved_max_test_structures_per_call is None:
+        return None, "unbounded"
+
+    optimizer_max_trial_prefix = int(search_config.resolve_max_optimizer_trial_prefix())
+    resolved_max_trial_prefix = optimizer_max_trial_prefix
+    if downstream_comparable_trial_count is not None:
+        resolved_max_trial_prefix = max(
+            resolved_max_trial_prefix,
+            int(downstream_comparable_trial_count),
+        )
+
+    num_test_structures_per_candidate = resolved_max_trial_prefix + int(bool(include_nominal))
+    if num_test_structures_per_candidate <= 0:
+        raise ValueError("resolved per-candidate test-structure count must be positive")
+
+    resolved_max_candidates_per_chunk = max(
+        1,
+        int(resolved_max_test_structures_per_call)
+        // int(num_test_structures_per_candidate),
+    )
+    return resolved_max_candidates_per_chunk, "dynamic_from_calibrated_structure_budget"
 
 
 def _build_optimizer_v2_stage_timing_details(search_result):
@@ -461,6 +551,7 @@ def _run_optimizer_v2_isolated_winner_validation_benchmark(
     nominal_biopsy_centroid_line,
     biopsy_transform_bank_prefix_provider,
     target_relative_structures_nominal_plus_trials_provider,
+    prepared_target_relative_structures_pack_provider,
     target_structure_centroid,
     target_transform_bank_prefix_provider,
     downstream_comparable_trial_count,
@@ -518,6 +609,13 @@ def _run_optimizer_v2_isolated_winner_validation_benchmark(
     target_relative_structures_nominal_plus_trials = target_relative_structures_nominal_plus_trials_provider(
         downstream_comparable_trial_count
     )
+    prepared_target_relative_structures_pack = None
+    if prepared_target_relative_structures_pack_provider is not None:
+        prepared_target_relative_structures_pack = (
+            prepared_target_relative_structures_pack_provider(
+                downstream_comparable_trial_count
+            )
+        )
     benchmark_chunk_layout = OptimizerV2ChunkLayout(
         candidate_indices_global=(int(winner_validation_result.candidate_index_global),),
         num_trials=int(downstream_comparable_trial_count),
@@ -536,6 +634,7 @@ def _run_optimizer_v2_isolated_winner_validation_benchmark(
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
         biopsy_transform_bank_prefix=biopsy_transform_bank_prefix,
         target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials,
+        prepared_relative_structures_pack=prepared_target_relative_structures_pack,
         target_structure_centroid=target_structure_centroid,
         target_transform_bank_prefix=target_transform_bank_prefix,
         objective_reducer_name=winner_validation_result.objective_reducer_name,
@@ -619,7 +718,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     structures_progress,
     completed_progress,
     live_display,
-    max_candidates_per_chunk=8,
+    max_candidates_per_chunk=None,
     max_test_structures_per_call=None,
     auto_calibrate_max_test_structures_per_call=True,
     verify_calibrated_max_test_structures_per_call=True,
@@ -718,6 +817,25 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             "downstream_comparable_trial_count": downstream_comparable_trial_count,
         },
     )
+    resolved_max_candidates_per_chunk, resolved_max_candidates_per_chunk_mode = (
+        _resolve_optimizer_v2_max_candidates_per_chunk(
+            requested_max_candidates_per_chunk=max_candidates_per_chunk,
+            resolved_max_test_structures_per_call=resolved_max_test_structures_per_call,
+            search_config=search_config,
+            downstream_comparable_trial_count=downstream_comparable_trial_count,
+            include_nominal=True,
+        )
+    )
+    _runtime_checkpoint(
+        "optimizer_v2.chunking.end",
+        "Resolved optimizer-v2 outer candidate chunking policy.",
+        details={
+            "requested_max_candidates_per_chunk": max_candidates_per_chunk,
+            "resolved_max_candidates_per_chunk": resolved_max_candidates_per_chunk,
+            "resolved_max_candidates_per_chunk_mode": resolved_max_candidates_per_chunk_mode,
+            "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+        },
+    )
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
         processing_patients_task_main_description = "[red]Running optimizer-v2 sim-bx targeting [{}]...".format(
@@ -761,6 +879,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
 
         candidate_pool_cache = {}
         target_structure_pack_cache = {}
+        target_structure_prepared_pack_cache = {}
         patient_summary_dataframes = []
         patient_ranked_dataframes = []
         patient_tested_dataframes = []
@@ -861,6 +980,19 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     structure_id=structureID,
                 )
             )
+            prepared_target_relative_structures_pack_provider = (
+                _build_bound_prepared_target_relative_structures_pack_provider(
+                    target_structure_cache_key=target_structure_cache_key,
+                    target_structure_prepared_pack_cache=(
+                        target_structure_prepared_pack_cache
+                    ),
+                    target_relative_structures_nominal_plus_trials_provider=(
+                        target_relative_structures_nominal_plus_trials_provider
+                    ),
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                )
+            )
 
             _runtime_checkpoint(
                 "optimizer_v2.structure.search.start",
@@ -870,6 +1002,10 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 details={
                     "candidate_count": int(np.asarray(candidate_pool.candidate_points).shape[0]),
                     "resolved_max_test_structures_per_call": resolved_max_test_structures_per_call,
+                    "resolved_max_candidates_per_chunk": resolved_max_candidates_per_chunk,
+                    "resolved_max_candidates_per_chunk_mode": (
+                        resolved_max_candidates_per_chunk_mode
+                    ),
                     "validate_nearest_z_helper_against_ver5": bool(
                         validate_nearest_z_helper_against_ver5
                     ),
@@ -885,9 +1021,12 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                 nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
                 biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
                 target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+                prepared_target_relative_structures_pack_provider=(
+                    prepared_target_relative_structures_pack_provider
+                ),
                 target_structure_centroid=target_structure_centroid,
                 target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
-                max_candidates_per_chunk=max_candidates_per_chunk,
+                max_candidates_per_chunk=resolved_max_candidates_per_chunk,
                 max_test_structures_per_call=resolved_max_test_structures_per_call,
                 validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
                 include_edges_in_log=include_edges_in_log,
@@ -972,6 +1111,9 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
                     biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
                     target_relative_structures_nominal_plus_trials_provider=(
                         target_relative_structures_nominal_plus_trials_provider
+                    ),
+                    prepared_target_relative_structures_pack_provider=(
+                        prepared_target_relative_structures_pack_provider
                     ),
                     target_structure_centroid=target_structure_centroid,
                     target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,

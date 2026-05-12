@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 import pandas
@@ -45,6 +45,7 @@ def run_target_staged_candidate_search(
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]] = None,
     initial_candidate_indices_global: Optional[Sequence[int]] = None,
     objective_reducer_name: str = "mean_pd",
     max_candidates_per_chunk: Optional[int] = None,
@@ -98,6 +99,9 @@ def run_target_staged_candidate_search(
             nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
             biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
             target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+            prepared_target_relative_structures_pack_provider=(
+                prepared_target_relative_structures_pack_provider
+            ),
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
             objective_reducer_name=objective_reducer_name,
@@ -131,6 +135,9 @@ def run_target_staged_candidate_search(
                 nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
                 biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
                 target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+                prepared_target_relative_structures_pack_provider=(
+                    prepared_target_relative_structures_pack_provider
+                ),
                 target_structure_centroid=target_structure_centroid,
                 target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
                 objective_reducer_name=objective_reducer_name,
@@ -167,6 +174,9 @@ def run_target_staged_candidate_search(
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
         biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
         target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+        prepared_target_relative_structures_pack_provider=(
+            prepared_target_relative_structures_pack_provider
+        ),
         target_structure_centroid=target_structure_centroid,
         target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
         objective_reducer_name=objective_reducer_name,
@@ -219,6 +229,9 @@ def run_target_staged_candidate_search(
         candidate_pool=candidate_pool,
         biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
         target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+        prepared_target_relative_structures_pack_provider=(
+            prepared_target_relative_structures_pack_provider
+        ),
         target_structure_centroid=target_structure_centroid,
         target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
         objective_reducer_name=objective_reducer_name,
@@ -276,6 +289,7 @@ def _run_target_candidate_stage(
     nominal_biopsy_centroid_line: np.ndarray,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
@@ -311,6 +325,11 @@ def _run_target_candidate_stage(
     target_relative_structures_nominal_plus_trials = target_relative_structures_nominal_plus_trials_provider(
         stage_config.num_trials
     )
+    prepared_target_relative_structures_pack = None
+    if prepared_target_relative_structures_pack_provider is not None:
+        prepared_target_relative_structures_pack = (
+            prepared_target_relative_structures_pack_provider(stage_config.num_trials)
+        )
 
     chunk_score_results = []
     stage_tested_candidate_frames = []
@@ -357,6 +376,7 @@ def _run_target_candidate_stage(
             nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
             biopsy_transform_bank_prefix=biopsy_transform_bank_prefix,
             target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials,
+            prepared_relative_structures_pack=prepared_target_relative_structures_pack,
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix=target_transform_bank_prefix,
             objective_reducer_name=objective_reducer_name,
@@ -950,6 +970,7 @@ def _run_target_adaptive_candidate_rounds(
     nominal_biopsy_centroid_line: np.ndarray,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
@@ -1020,6 +1041,9 @@ def _run_target_adaptive_candidate_rounds(
             nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
             biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
             target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+            prepared_target_relative_structures_pack_provider=(
+                prepared_target_relative_structures_pack_provider
+            ),
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
             objective_reducer_name=objective_reducer_name,
@@ -1084,6 +1108,7 @@ def _build_winner_validation_result(
     candidate_pool: OptimizerV2CandidatePool,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
@@ -1125,6 +1150,13 @@ def _build_winner_validation_result(
     target_relative_structures_nominal_plus_trials = target_relative_structures_nominal_plus_trials_provider(
         downstream_comparable_trial_count
     )
+    prepared_target_relative_structures_pack = None
+    if prepared_target_relative_structures_pack_provider is not None:
+        prepared_target_relative_structures_pack = (
+            prepared_target_relative_structures_pack_provider(
+                downstream_comparable_trial_count
+            )
+        )
     winner_chunk_layout = OptimizerV2ChunkLayout(
         candidate_indices_global=(winner_candidate_index_global,),
         num_trials=downstream_comparable_trial_count,
@@ -1140,6 +1172,7 @@ def _build_winner_validation_result(
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
         biopsy_transform_bank_prefix=biopsy_transform_bank_prefix,
         target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials,
+        prepared_relative_structures_pack=prepared_target_relative_structures_pack,
         target_structure_centroid=target_structure_centroid,
         target_transform_bank_prefix=target_transform_bank_prefix,
         objective_reducer_name=objective_reducer_name,
@@ -1198,6 +1231,7 @@ def _resolve_final_winner(
     nominal_biopsy_centroid_line: np.ndarray,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
@@ -1257,6 +1291,9 @@ def _resolve_final_winner(
             nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
             biopsy_transform_bank_prefix_provider=biopsy_transform_bank_prefix_provider,
             target_relative_structures_nominal_plus_trials_provider=target_relative_structures_nominal_plus_trials_provider,
+            prepared_target_relative_structures_pack_provider=(
+                prepared_target_relative_structures_pack_provider
+            ),
             target_structure_centroid=target_structure_centroid,
             target_transform_bank_prefix_provider=target_transform_bank_prefix_provider,
             objective_reducer_name=objective_reducer_name,
@@ -1330,6 +1367,7 @@ def _score_candidate_subset_for_winner_resolution(
     nominal_biopsy_centroid_line: np.ndarray,
     biopsy_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     target_relative_structures_nominal_plus_trials_provider: Callable[[int], Sequence[Sequence[np.ndarray]]],
+    prepared_target_relative_structures_pack_provider: Optional[Callable[[int], Any]],
     target_structure_centroid: np.ndarray,
     target_transform_bank_prefix_provider: Callable[[int], SharedTransformBankPrefix],
     objective_reducer_name: str,
@@ -1359,6 +1397,11 @@ def _score_candidate_subset_for_winner_resolution(
         nominal_biopsy_centroid_line=nominal_biopsy_centroid_line,
         biopsy_transform_bank_prefix=biopsy_transform_bank_prefix_provider(trial_count),
         target_relative_structures_nominal_plus_trials=target_relative_structures_nominal_plus_trials_provider(trial_count),
+        prepared_relative_structures_pack=(
+            None
+            if prepared_target_relative_structures_pack_provider is None
+            else prepared_target_relative_structures_pack_provider(trial_count)
+        ),
         target_structure_centroid=target_structure_centroid,
         target_transform_bank_prefix=target_transform_bank_prefix_provider(trial_count),
         objective_reducer_name=objective_reducer_name,
