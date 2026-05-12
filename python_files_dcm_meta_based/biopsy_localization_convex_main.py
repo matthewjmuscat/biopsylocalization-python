@@ -5732,9 +5732,9 @@ def main():
                 
                 #live_display.stop()
 
-                ## Up until this point, the master structure reference dictionary contains only pickleable objects!
+                ## The preprocessed bundle exporter prunes the in-memory structure tree back to the post-preprocessing boundary before pickling.
 
-                # Now can export master structure dict to file!
+                # Now can export the preprocessing-bounded master structure dict to file.
                 if export_pickled_preprocessed_data == True:
                     export_preprocessed_data_task_indeterminate = indeterminate_progress_main.add_task("[red]Exporting preprocessed data...", total=None)
                     export_preprocessed_data_task_indeterminate_completed = completed_progress.add_task("[green]Exporting preprocessed data", visible = False, total=master_structure_info_dict["Global"]["Num cases"])

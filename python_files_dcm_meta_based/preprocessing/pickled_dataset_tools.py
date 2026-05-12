@@ -16,7 +16,31 @@ import point_containment_tools
 PREPROCESSED_EXPORT_MODE = "preprocessed"
 RESULTS_EXPORT_MODE = "results"
 EXPORT_METADATA_KEY = "Dataset export metadata"
-PICKLE_SANITIZER_VERSION = 2
+PICKLE_SANITIZER_VERSION = 3
+
+EXPORT_BOUNDARY_STAGE_BY_MODE = {
+    PREPROCESSED_EXPORT_MODE: "post_preprocessing",
+    RESULTS_EXPORT_MODE: "post_results",
+}
+
+EXPORT_EXCLUDED_KEYS_BY_MODE = {
+    PREPROCESSED_EXPORT_MODE: {
+        "Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe",
+        "Simulated biopsy transport request dict",
+    },
+    RESULTS_EXPORT_MODE: {
+        "Biopsy optimization - Target DIL optimizer v2 stage boundary render jobs",
+    },
+}
+
+EXPORT_EXCLUDED_KEY_PREFIXES_BY_MODE = {
+    PREPROCESSED_EXPORT_MODE: (
+        "Biopsy optimization - ",
+        "MC data:",
+        "FANOVA:",
+    ),
+    RESULTS_EXPORT_MODE: (),
+}
 
 
 GENERAL_STRUCTURE_RUNTIME_KEYS = {
@@ -77,6 +101,34 @@ DROP_VALUE = _DropValueType()
 def _pop_keys(mapping_obj, key_names):
     for key_name in key_names:
         mapping_obj.pop(key_name, None)
+
+
+def _should_drop_key_for_export_mode(key, export_mode):
+    if not isinstance(key, str):
+        return False
+
+    if key in EXPORT_EXCLUDED_KEYS_BY_MODE.get(export_mode, set()):
+        return True
+
+    return any(
+        key.startswith(key_prefix)
+        for key_prefix in EXPORT_EXCLUDED_KEY_PREFIXES_BY_MODE.get(export_mode, ())
+    )
+
+
+def _prune_value_for_export_mode(value, export_mode):
+    if isinstance(value, dict):
+        keys_to_drop = [
+            key for key in value.keys() if _should_drop_key_for_export_mode(key, export_mode)
+        ]
+        _pop_keys(value, keys_to_drop)
+        for nested_value in value.values():
+            _prune_value_for_export_mode(nested_value, export_mode)
+        return
+
+    if isinstance(value, (list, tuple, set)):
+        for nested_value in value:
+            _prune_value_for_export_mode(nested_value, export_mode)
 
 
 def _is_known_non_picklable_runtime_object(value):
@@ -192,8 +244,9 @@ def _clone_simulated_biopsy_planning_dict_for_pickle(simulated_biopsy_planning_d
 
 
 def _clone_general_structure_for_pickle(specific_structure,
-                                        remove_uncertainty_data=False):
+                                        export_mode):
     specific_structure_safe = {}
+    remove_uncertainty_data = export_mode == RESULTS_EXPORT_MODE
 
     for key, value in specific_structure.items():
         if key in GENERAL_STRUCTURE_RUNTIME_KEYS:
@@ -206,6 +259,8 @@ def _clone_general_structure_for_pickle(specific_structure,
         if value_safe is DROP_VALUE:
             continue
         specific_structure_safe[key] = value_safe
+
+    _prune_value_for_export_mode(specific_structure_safe, export_mode)
 
     return specific_structure_safe
 
@@ -242,10 +297,13 @@ def _clone_bx_structure_for_pickle(specific_bx_structure,
             continue
         specific_bx_structure_safe[key] = value_safe
 
+    _prune_value_for_export_mode(specific_bx_structure_safe, export_mode)
+
     return specific_bx_structure_safe
 
 
-def _clone_dose_dict_for_pickle(dose_ref_dict):
+def _clone_dose_dict_for_pickle(dose_ref_dict,
+                                export_mode):
     dose_ref_dict_safe = {}
 
     for key, value in dose_ref_dict.items():
@@ -257,10 +315,13 @@ def _clone_dose_dict_for_pickle(dose_ref_dict):
             continue
         dose_ref_dict_safe[key] = value_safe
 
+    _prune_value_for_export_mode(dose_ref_dict_safe, export_mode)
+
     return dose_ref_dict_safe
 
 
-def _clone_mr_dict_for_pickle(mr_adc_subdict):
+def _clone_mr_dict_for_pickle(mr_adc_subdict,
+                              export_mode):
     mr_adc_subdict_safe = {}
 
     for key, value in mr_adc_subdict.items():
@@ -271,6 +332,8 @@ def _clone_mr_dict_for_pickle(mr_adc_subdict):
         if value_safe is DROP_VALUE:
             continue
         mr_adc_subdict_safe[key] = value_safe
+
+    _prune_value_for_export_mode(mr_adc_subdict_safe, export_mode)
 
     return mr_adc_subdict_safe
 
@@ -308,12 +371,21 @@ def _build_export_metadata(export_mode,
                            summary_filename=None):
     export_metadata = {
         "export mode": export_mode,
+        "export boundary": EXPORT_BOUNDARY_STAGE_BY_MODE.get(export_mode, export_mode),
         "generated at utc": datetime.now(timezone.utc).isoformat(),
         "sanitizer version": PICKLE_SANITIZER_VERSION,
         "python version": sys.version.split()[0],
         "reference dict filename": reference_dict_filename,
         "info dict filename": info_dict_filename,
     }
+
+    excluded_keys = sorted(EXPORT_EXCLUDED_KEYS_BY_MODE.get(export_mode, set()))
+    if excluded_keys:
+        export_metadata["excluded keys"] = excluded_keys
+
+    excluded_key_prefixes = list(EXPORT_EXCLUDED_KEY_PREFIXES_BY_MODE.get(export_mode, ()))
+    if excluded_key_prefixes:
+        export_metadata["excluded key prefixes"] = excluded_key_prefixes
 
     if summary_filename is not None:
         export_metadata["summary filename"] = summary_filename
@@ -352,25 +424,26 @@ def build_pickle_safe_master_structure_reference_dict(master_structure_reference
                 continue
 
             if key in {oar_ref, dil_ref, rectum_ref_key, urethra_ref_key}:
-                remove_uncertainty_data = export_mode == RESULTS_EXPORT_MODE
                 pydicom_item_safe[key] = [
-                    _clone_general_structure_for_pickle(specific_structure, remove_uncertainty_data=remove_uncertainty_data)
+                    _clone_general_structure_for_pickle(specific_structure, export_mode)
                     for specific_structure in value
                 ]
                 continue
 
             if key == dose_ref:
-                pydicom_item_safe[key] = _clone_dose_dict_for_pickle(value)
+                pydicom_item_safe[key] = _clone_dose_dict_for_pickle(value, export_mode)
                 continue
 
             if key == mr_adc_ref:
-                pydicom_item_safe[key] = _clone_mr_dict_for_pickle(value)
+                pydicom_item_safe[key] = _clone_mr_dict_for_pickle(value, export_mode)
                 continue
 
             value_safe = _clone_value_for_pickle(value)
             if value_safe is DROP_VALUE:
                 continue
             pydicom_item_safe[key] = value_safe
+
+        _prune_value_for_export_mode(pydicom_item_safe, export_mode)
 
         master_structure_reference_dict_safe[patient_uid] = pydicom_item_safe
 
