@@ -5975,7 +5975,8 @@ def main():
 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 2.5", total = None)
                 cohort_simulated_biopsy_preparation_dataframe = dataframe_builders.cohort_simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
-                                       all_ref_key)
+                                       all_ref_key,
+                                       bx_ref)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Simulated biopsy preparation dataframe"] = cohort_simulated_biopsy_preparation_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 

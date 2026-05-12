@@ -3,6 +3,7 @@ import pandas
 import pandas as pd
 import csv
 import math
+import re
 import math_funcs as mf
 import misc_tools
 from pandas.api.types import union_categoricals
@@ -14,6 +15,266 @@ from scipy.interpolate import interp1d
 from scipy.stats import skew, kurtosis
 import cupy as cp
 import warnings
+
+
+BIOPSY_IDENTIFIER_KEY_COLS = [
+    "Patient ID",
+    "Bx ID",
+    "Bx refnum",
+    "Bx index",
+    "Simulated bool",
+    "Simulated type",
+]
+
+BIOPSY_IDENTIFIER_ADDITIVE_COLS = [
+    "Base patient ID",
+    "Fraction label",
+    "Fraction number",
+    "Lesion lineage ID",
+    "Lesion instance ID",
+    "Biopsy member ID",
+    "Real biopsy attempt ID",
+    "Attempt family ID",
+    "Attempt family role",
+    "Attempt family source",
+]
+
+
+def _normalize_identifier_value(value):
+    if value is None:
+        return None
+
+    try:
+        if pandas.isna(value):
+            return None
+    except TypeError:
+        pass
+
+    if isinstance(value, (np.integer, int)):
+        return str(int(value))
+
+    if isinstance(value, (np.floating, float)):
+        if np.isnan(value):
+            return None
+        if float(value).is_integer():
+            return str(int(value))
+
+    value_str = str(value).strip()
+    return value_str if value_str != "" else None
+
+
+def _extract_base_patient_id(patient_id):
+    patient_id_str = _normalize_identifier_value(patient_id)
+    if patient_id_str is None:
+        return None
+
+    match = re.match(r"^(\d+)", patient_id_str)
+    if match is not None:
+        return match.group(1)
+
+    return patient_id_str
+
+
+def _extract_fraction_number(patient_id, fallback_fraction_number=None):
+    fallback_fraction_number_str = _normalize_identifier_value(fallback_fraction_number)
+    if fallback_fraction_number_str is not None:
+        try:
+            return int(float(fallback_fraction_number_str))
+        except (TypeError, ValueError):
+            pass
+
+    patient_id_str = _normalize_identifier_value(patient_id)
+    if patient_id_str is None:
+        return None
+
+    match = re.search(r"\(F(\d+)\)", patient_id_str)
+    if match is None:
+        return None
+
+    return int(match.group(1))
+
+
+def _extract_fraction_label(patient_id, fallback_fraction_number=None):
+    patient_id_str = _normalize_identifier_value(patient_id)
+    if patient_id_str is not None:
+        match = re.search(r"\((F\d+)\)", patient_id_str)
+        if match is not None:
+            return match.group(1)
+
+    fraction_number = _extract_fraction_number(patient_id, fallback_fraction_number)
+    if fraction_number is None:
+        return None
+
+    return f"F{fraction_number}"
+
+
+def _resolve_biopsy_lesion_index(specific_structure):
+    relative_structure_type = specific_structure.get("Relative structure type")
+    relative_structure_index = specific_structure.get("Relative structure index")
+    if relative_structure_type == "DIL ref" and relative_structure_index is not None:
+        return relative_structure_index
+
+    simulated_biopsy_preparation_dict = specific_structure.get("Simulated biopsy preparation dict") or {}
+    target_structure_type = simulated_biopsy_preparation_dict.get("Target structure type")
+    target_structure_index = simulated_biopsy_preparation_dict.get("Target structure index")
+    if target_structure_type == "DIL ref" and target_structure_index is not None:
+        return target_structure_index
+
+    return None
+
+
+def _build_real_biopsy_attempt_id(patient_id,
+                                  real_biopsy_index=None,
+                                  real_biopsy_refnum=None):
+    patient_id_str = _normalize_identifier_value(patient_id)
+    if patient_id_str is None:
+        return None
+
+    real_biopsy_index_str = _normalize_identifier_value(real_biopsy_index)
+    if real_biopsy_index_str is not None:
+        return f"{patient_id_str}::real::{real_biopsy_index_str}"
+
+    real_biopsy_refnum_str = _normalize_identifier_value(real_biopsy_refnum)
+    if real_biopsy_refnum_str is not None:
+        return f"{patient_id_str}::real-ref::{real_biopsy_refnum_str}"
+
+    return None
+
+
+def _build_extra_attempt_family_id(patient_id,
+                                   lesion_instance_id=None,
+                                   multiplicity_index=None,
+                                   multiplicity_base_refnum=None,
+                                   multiplicity_base_roi=None):
+    anchor = _normalize_identifier_value(lesion_instance_id)
+    if anchor is None:
+        anchor = _normalize_identifier_value(patient_id)
+    if anchor is None:
+        return None
+
+    extra_attempt_family_id_parts = [anchor, "extra"]
+
+    multiplicity_index_str = _normalize_identifier_value(multiplicity_index)
+    if multiplicity_index_str is not None:
+        extra_attempt_family_id_parts.append(f"m{multiplicity_index_str}")
+        return "::".join(extra_attempt_family_id_parts)
+
+    multiplicity_base_refnum_str = _normalize_identifier_value(multiplicity_base_refnum)
+    if multiplicity_base_refnum_str is not None:
+        extra_attempt_family_id_parts.append(f"ref{multiplicity_base_refnum_str}")
+        return "::".join(extra_attempt_family_id_parts)
+
+    multiplicity_base_roi_str = _normalize_identifier_value(multiplicity_base_roi)
+    if multiplicity_base_roi_str is not None:
+        extra_attempt_family_id_parts.append(f"roi{multiplicity_base_roi_str}")
+
+    return "::".join(extra_attempt_family_id_parts)
+
+
+def _build_patient_biopsy_identifier_dataframe(patientUID,
+                                               pydicom_item,
+                                               bx_ref):
+    patient_id = _normalize_identifier_value(patientUID)
+    if patient_id is None:
+        return pandas.DataFrame()
+
+    fallback_fraction_number = pydicom_item.get("Fraction number")
+    patient_biopsy_identifier_rows = []
+
+    for specific_structure_index, specific_structure in enumerate(pydicom_item.get(bx_ref, [])):
+        bx_index = specific_structure.get("Index number", specific_structure_index)
+        bx_index_str = _normalize_identifier_value(bx_index)
+        biopsy_member_id = f"{patient_id}::bx::{bx_index_str}" if bx_index_str is not None else None
+
+        simulated_biopsy_preparation_dict = specific_structure.get("Simulated biopsy preparation dict") or {}
+        base_patient_id = _extract_base_patient_id(patient_id)
+        fraction_label = _extract_fraction_label(patient_id, fallback_fraction_number)
+        fraction_number = _extract_fraction_number(patient_id, fallback_fraction_number)
+
+        lesion_index = _resolve_biopsy_lesion_index(specific_structure)
+        lesion_index_str = _normalize_identifier_value(lesion_index)
+        lesion_lineage_id = None
+        lesion_instance_id = None
+        if lesion_index_str is not None:
+            if base_patient_id is not None:
+                lesion_lineage_id = f"{base_patient_id}::dil::{lesion_index_str}"
+            lesion_instance_id = f"{patient_id}::dil::{lesion_index_str}"
+
+        if specific_structure["Simulated bool"] == False:
+            real_biopsy_index = bx_index
+            real_biopsy_refnum = specific_structure.get("Ref #")
+            attempt_family_role = "Real biopsy"
+            attempt_family_source = "Real biopsy"
+        else:
+            real_biopsy_index = simulated_biopsy_preparation_dict.get("Matched real biopsy index")
+            real_biopsy_refnum = simulated_biopsy_preparation_dict.get("Matched real biopsy ref #")
+            if real_biopsy_index is not None or real_biopsy_refnum is not None:
+                attempt_family_role = "Matched simulated biopsy"
+                attempt_family_source = simulated_biopsy_preparation_dict.get("Family source") or "Matched real biopsy"
+            elif simulated_biopsy_preparation_dict.get("Extra biopsy bool") == True:
+                attempt_family_role = "Extra simulated biopsy"
+                attempt_family_source = simulated_biopsy_preparation_dict.get("Family source") or "Extra simulated biopsy"
+            else:
+                attempt_family_role = "Simulated biopsy"
+                attempt_family_source = simulated_biopsy_preparation_dict.get("Family source")
+
+        real_biopsy_attempt_id = _build_real_biopsy_attempt_id(patient_id,
+                                                               real_biopsy_index=real_biopsy_index,
+                                                               real_biopsy_refnum=real_biopsy_refnum)
+        attempt_family_id = real_biopsy_attempt_id
+        if attempt_family_id is None:
+            attempt_family_id = _build_extra_attempt_family_id(
+                patient_id,
+                lesion_instance_id=lesion_instance_id,
+                multiplicity_index=simulated_biopsy_preparation_dict.get("Multiplicity index"),
+                multiplicity_base_refnum=simulated_biopsy_preparation_dict.get("Multiplicity base ref #"),
+                multiplicity_base_roi=simulated_biopsy_preparation_dict.get("Multiplicity base ROI"),
+            )
+
+        patient_biopsy_identifier_rows.append({
+            "Patient ID": patient_id,
+            "Bx ID": specific_structure.get("ROI"),
+            "Bx refnum": specific_structure.get("Ref #"),
+            "Bx index": bx_index,
+            "Simulated bool": specific_structure.get("Simulated bool"),
+            "Simulated type": specific_structure.get("Simulated type"),
+            "Base patient ID": base_patient_id,
+            "Fraction label": fraction_label,
+            "Fraction number": fraction_number,
+            "Lesion lineage ID": lesion_lineage_id,
+            "Lesion instance ID": lesion_instance_id,
+            "Biopsy member ID": biopsy_member_id,
+            "Real biopsy attempt ID": real_biopsy_attempt_id,
+            "Attempt family ID": attempt_family_id,
+            "Attempt family role": attempt_family_role,
+            "Attempt family source": attempt_family_source,
+        })
+
+    return pandas.DataFrame(patient_biopsy_identifier_rows)
+
+
+def _merge_biopsy_identifier_columns(df,
+                                     biopsy_identifier_df,
+                                     key_cols=None):
+    if not isinstance(df, pandas.DataFrame) or df.empty:
+        return df
+    if not isinstance(biopsy_identifier_df, pandas.DataFrame) or biopsy_identifier_df.empty:
+        return df
+
+    if key_cols is None:
+        key_cols = [col for col in BIOPSY_IDENTIFIER_KEY_COLS if col in df.columns and col in biopsy_identifier_df.columns]
+    else:
+        key_cols = [col for col in key_cols if col in df.columns and col in biopsy_identifier_df.columns]
+
+    if len(key_cols) == 0:
+        return df
+
+    additive_cols = [col for col in BIOPSY_IDENTIFIER_ADDITIVE_COLS if col in biopsy_identifier_df.columns and col not in df.columns]
+    if len(additive_cols) == 0:
+        return df
+
+    merge_df = biopsy_identifier_df[key_cols + additive_cols].drop_duplicates(subset=key_cols, keep="first")
+    return df.merge(merge_df, on=key_cols, how="left", validate="m:1")
 
 
 def all_structure_shift_vectors_dataframe_builder(master_structure_reference_dict,
@@ -357,12 +618,18 @@ def cohort_and_multi_biopsy_mc_sum_to_one_pt_wise_results_dataframe_builder(mast
     cohort_mc_sum_to_one_pt_wise_results_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        biopsy_identifier_df = _build_patient_biopsy_identifier_dataframe(patientUID, pydicom_item, bx_ref)
         multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pandas.DataFrame()
         for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
 
             mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = specific_bx_structure["MC data: compiled sim sum-to-one results dataframe"]
 
             multi_structure_mc_sum_to_one_pt_wise_results_dataframe = pandas.concat([multi_structure_mc_sum_to_one_pt_wise_results_dataframe,mc_compiled_results_sum_to_one_for_fixed_bx_dataframe]).reset_index(drop = True)
+
+        multi_structure_mc_sum_to_one_pt_wise_results_dataframe = _merge_biopsy_identifier_columns(
+            multi_structure_mc_sum_to_one_pt_wise_results_dataframe,
+            biopsy_identifier_df,
+        )
 
         multi_structure_mc_sum_to_one_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_sum_to_one_pt_wise_results_dataframe, threshold=0.25)
 
@@ -429,6 +696,10 @@ def cohort_mc_sum_to_one_global_scores_dataframe_builder(cohort_mc_sum_to_one_pt
 
     # Calculate the statistics
     cohort_mc_sum_to_one_global_scores_dataframe = calculate_biopsy_statistics(df)
+    cohort_mc_sum_to_one_global_scores_dataframe = _merge_biopsy_identifier_columns(
+        cohort_mc_sum_to_one_global_scores_dataframe,
+        cohort_mc_sum_to_one_pt_wise_results_dataframe,
+    )
 
     # Downcast columns to optimize memory usage
     cohort_mc_sum_to_one_global_scores_dataframe = convert_columns_to_categorical_and_downcast(cohort_mc_sum_to_one_global_scores_dataframe, threshold=0.25)
@@ -872,6 +1143,7 @@ def cohort_relative_structure_distances_dataframe_builder(master_structure_refer
     cohort_mc_distances_voxel_wise_results_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        biopsy_identifier_df = _build_patient_biopsy_identifier_dataframe(patientUID, pydicom_item, bx_ref)
         multi_structure_mc_distances_global_results_dataframe = pandas.DataFrame()
         multi_structure_mc_distances_pt_wise_results_dataframe = pandas.DataFrame()
         multi_structure_mc_distances_voxel_wise_results_dataframe = pandas.DataFrame()
@@ -886,6 +1158,15 @@ def cohort_relative_structure_distances_dataframe_builder(master_structure_refer
             multi_structure_mc_distances_pt_wise_results_dataframe = pandas.concat([multi_structure_mc_distances_pt_wise_results_dataframe,sp_bx_pt_wise_distances_grand_all_structures_pandas_dataframe]).reset_index(drop = True)
             multi_structure_mc_distances_voxel_wise_results_dataframe = pandas.concat([multi_structure_mc_distances_voxel_wise_results_dataframe,sp_bx_voxel_wise_distances_grand_all_structures_pandas_dataframe]).reset_index(drop = True)
 
+
+        multi_structure_mc_distances_global_results_dataframe = _merge_biopsy_identifier_columns(
+            multi_structure_mc_distances_global_results_dataframe,
+            biopsy_identifier_df,
+        )
+        multi_structure_mc_distances_pt_wise_results_dataframe = _merge_biopsy_identifier_columns(
+            multi_structure_mc_distances_pt_wise_results_dataframe,
+            biopsy_identifier_df,
+        )
 
         multi_structure_mc_distances_global_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_distances_global_results_dataframe, threshold=0.25)
         multi_structure_mc_distances_pt_wise_results_dataframe = convert_columns_to_categorical_and_downcast(multi_structure_mc_distances_pt_wise_results_dataframe, threshold=0.25)
@@ -2635,6 +2916,7 @@ def biopsy_basic_spatial_features_information_dataframe_builder(master_structure
     cohort_biopsy_basic_spatial_features_dataframe = pandas.DataFrame()
 
     for patientUID,pydicom_item in master_structure_ref_dict.items():
+        biopsy_identifier_df = _build_patient_biopsy_identifier_dataframe(patientUID, pydicom_item, bx_ref)
         structure_ID_list = []
         structure_type_list = []
         structure_volume_list = []
@@ -2707,6 +2989,11 @@ def biopsy_basic_spatial_features_information_dataframe_builder(master_structure
                                                                                                                                                                   'Bx position in prostate SI']]
             
             structure_info_pandas_data_frame = pandas.merge(structure_info_pandas_data_frame, sp_patient_relative_dil_dataframe_subset, how='left', on= ['Patient ID', 'Bx ID', 'Simulated bool', 'Simulated type', 'Struct type', 'Bx refnum', 'Bx index'])
+
+        structure_info_pandas_data_frame = _merge_biopsy_identifier_columns(
+            structure_info_pandas_data_frame,
+            biopsy_identifier_df,
+        )
 
         cohort_biopsy_basic_spatial_features_dataframe = pandas.concat([cohort_biopsy_basic_spatial_features_dataframe,structure_info_pandas_data_frame]).reset_index(drop=True)
 
@@ -2867,6 +3154,7 @@ def bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
     
     cohort_nearest_dils_dataframe = pandas.DataFrame()
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        biopsy_identifier_df = _build_patient_biopsy_identifier_dataframe(patientUID, pydicom_item, bx_ref)
         sp_patient_relative_dil_dataframe_list = []
         for structs in structs_referenced_list:
             for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
@@ -3040,6 +3328,10 @@ def bx_nearest_dils_dataframe_builder(master_structure_reference_dict,
         
             
         sp_patient_relative_dil_dataframe = pandas.concat(sp_patient_relative_dil_dataframe_list).reset_index(drop=True)
+        sp_patient_relative_dil_dataframe = _merge_biopsy_identifier_columns(
+            sp_patient_relative_dil_dataframe,
+            biopsy_identifier_df,
+        )
 
         cohort_nearest_dils_dataframe = pandas.concat([cohort_nearest_dils_dataframe,sp_patient_relative_dil_dataframe]).reset_index(drop=True)
         
@@ -3157,17 +3449,23 @@ def cohort_guidance_map_firing_depth_recommendations_dataframe_builder(master_st
 
 def cohort_simulated_biopsy_preparation_dataframe_builder(master_structure_reference_dict,
                                                           all_ref_key,
+                                                          bx_ref,
                                                           downcast_threshold=0.25):
     cohort_simulated_biopsy_preparation_dataframe = pandas.DataFrame()
 
     for patientUID, pydicom_item in master_structure_reference_dict.items():
         preproc_df_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+        biopsy_identifier_df = _build_patient_biopsy_identifier_dataframe(patientUID, pydicom_item, bx_ref)
         patient_df = preproc_df_dict.get("Simulated biopsy preparation dataframe")
 
         if not isinstance(patient_df, pandas.DataFrame) or patient_df.empty:
             patient_df = pandas.DataFrame()
 
         if isinstance(patient_df, pandas.DataFrame) and not patient_df.empty:
+            patient_df = _merge_biopsy_identifier_columns(
+                patient_df,
+                biopsy_identifier_df,
+            )
             patient_df = convert_columns_to_categorical_and_downcast(
                 patient_df,
                 threshold=downcast_threshold,
