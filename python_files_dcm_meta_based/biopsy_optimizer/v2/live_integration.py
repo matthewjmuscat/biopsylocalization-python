@@ -720,6 +720,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
     live_display,
     max_candidates_per_chunk=None,
     max_test_structures_per_call=None,
+    fallback_max_test_structures_per_call=None,
     auto_calibrate_max_test_structures_per_call=True,
     verify_calibrated_max_test_structures_per_call=True,
     validate_nearest_z_helper_against_ver5=True,
@@ -780,6 +781,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         "Resolving optimizer-v2 containment call budget.",
         details={
             "requested_max_test_structures_per_call": max_test_structures_per_call,
+            "fallback_max_test_structures_per_call": fallback_max_test_structures_per_call,
             "auto_calibrate_max_test_structures_per_call": bool(
                 auto_calibrate_max_test_structures_per_call
             ),
@@ -801,6 +803,7 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
         include_edges_in_log=include_edges_in_log,
         kernel_type=kernel_type,
         max_test_structures_per_call=max_test_structures_per_call,
+        fallback_max_test_structures_per_call=fallback_max_test_structures_per_call,
         auto_calibrate_max_test_structures_per_call=auto_calibrate_max_test_structures_per_call,
         verify_calibrated_max_test_structures_per_call=(
             verify_calibrated_max_test_structures_per_call
@@ -1520,15 +1523,58 @@ def _resolve_effective_max_test_structures_per_call(
     include_edges_in_log,
     kernel_type,
     max_test_structures_per_call,
+    fallback_max_test_structures_per_call,
     auto_calibrate_max_test_structures_per_call,
     verify_calibrated_max_test_structures_per_call,
     downstream_comparable_trial_count,
     structures_progress=None,
     completed_progress=None,
 ):
+    resolved_fallback_max_test_structures_per_call = None
+    if fallback_max_test_structures_per_call is not None:
+        resolved_fallback_max_test_structures_per_call = int(
+            fallback_max_test_structures_per_call
+        )
+        if resolved_fallback_max_test_structures_per_call <= 0:
+            raise ValueError(
+                "fallback_max_test_structures_per_call must be positive when provided"
+            )
+
     if max_test_structures_per_call is not None:
         return int(max_test_structures_per_call)
+
     if not auto_calibrate_max_test_structures_per_call:
+        if resolved_fallback_max_test_structures_per_call is not None:
+            fallback_summary_description = _build_optimizer_v2_static_budget_summary_description(
+                resolved_fallback_max_test_structures_per_call,
+                reason_key="auto_calibration_disabled",
+            )
+            _runtime_checkpoint(
+                "optimizer_v2.calibration.fallback",
+                "Using configured static optimizer-v2 containment-call budget.",
+                details={
+                    "reason": "auto_calibration_disabled",
+                    "resolved_max_test_structures_per_call": (
+                        resolved_fallback_max_test_structures_per_call
+                    ),
+                },
+            )
+            if structures_progress is not None:
+                fallback_progress_task = structures_progress.add_task(
+                    "[yellow]Optimizer-v2 calibration: using configured static structure budget",
+                    total=1,
+                )
+                structures_progress.update(
+                    fallback_progress_task,
+                    advance=1,
+                    description=fallback_summary_description,
+                )
+                structures_progress.remove_task(fallback_progress_task)
+            _record_optimizer_v2_calibration_completion(
+                completed_progress,
+                fallback_summary_description,
+            )
+            return resolved_fallback_max_test_structures_per_call
         return None
 
     calibration_elapsed_start_time = time.perf_counter()
@@ -1691,6 +1737,35 @@ def _resolve_effective_max_test_structures_per_call(
         )
         return resolved_max_test_structures_per_call
     except Exception:
+        if resolved_fallback_max_test_structures_per_call is not None:
+            fallback_summary_description = _build_optimizer_v2_static_budget_summary_description(
+                resolved_fallback_max_test_structures_per_call,
+                reason_key="calibration_failed",
+            )
+            _runtime_checkpoint(
+                "optimizer_v2.calibration.fallback",
+                "Optimizer-v2 calibration failed; using configured static containment-call budget.",
+                details={
+                    "reason": "calibration_failed",
+                    "resolved_max_test_structures_per_call": (
+                        resolved_fallback_max_test_structures_per_call
+                    ),
+                },
+            )
+            if calibration_progress_task is not None:
+                structures_progress.update(
+                    calibration_progress_task,
+                    description=(
+                        "[yellow]Optimizer-v2 calibration: switching to configured "
+                        "static structure budget"
+                    ),
+                )
+                structures_progress.remove_task(calibration_progress_task)
+            _record_optimizer_v2_calibration_completion(
+                completed_progress,
+                fallback_summary_description,
+            )
+            return resolved_fallback_max_test_structures_per_call
         if calibration_progress_task is not None:
             structures_progress.update(
                 calibration_progress_task,
@@ -1717,6 +1792,23 @@ def _build_optimizer_v2_calibration_summary_description(
         int(resolved_max_test_structures_per_call),
         resolution_mode,
         float(calibration_elapsed_seconds),
+    )
+
+
+def _build_optimizer_v2_static_budget_summary_description(
+    resolved_max_test_structures_per_call,
+    *,
+    reason_key,
+):
+    reason_label_map = {
+        "auto_calibration_disabled": "auto-calibration disabled; using configured static fallback",
+        "calibration_failed": "calibration failed; using configured static fallback",
+    }
+    return (
+        "[green]Optimizer-v2 calibration: max_test_structures_per_call={} ({})"
+    ).format(
+        int(resolved_max_test_structures_per_call),
+        reason_label_map.get(reason_key, str(reason_key)),
     )
 
 

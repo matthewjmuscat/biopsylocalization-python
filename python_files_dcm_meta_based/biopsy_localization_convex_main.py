@@ -474,7 +474,7 @@ def main():
 
 
     spinner_type = 'moon' # other decent ones are 'point' and 'line' or 'line2'
-    rich_live_display_bool = True # [FIRST_PASS_CONFIG] If False, disables the Rich live screen and falls back to plain console status/prompt output.
+    rich_live_display_bool = False # [FIRST_PASS_CONFIG] If False, disables the Rich live screen and falls back to plain console status/prompt output.
     output_folder_name = 'Output data'
     preprocessed_data_folder_name = 'Preprocessed data'
     preprocessed_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict'
@@ -538,8 +538,9 @@ def main():
     optimizer_v2_trial_block_size = 16 # minimum appended shared trial block per adaptive prune round
     optimizer_v2_max_total_trials = 256 # hard optimizer ceiling before final winner-resolution rescoring
     optimizer_v2_max_test_structures_per_call = None # Fixed kernel-call structure budget override. Leave as None to auto-calibrate once per optimizer-v2 run.
-    optimizer_v2_auto_calibrate_max_test_structures_per_call = True # When True and no fixed override is supplied, calibrate a safe package-level call budget once against the run's worst-case geometry.
-    optimizer_v2_verify_calibrated_max_test_structures_per_call = False # False = use the VRAM-headroom estimate directly and skip the expensive real-call probe loop.
+    optimizer_v2_fallback_max_test_structures_per_call = 4000000 # Static carry-forward structure budget derived from the last successful ~4.4M calibration on this machine; used when auto-calibration is disabled or if calibration fails.
+    optimizer_v2_auto_calibrate_max_test_structures_per_call = True # When True and no fixed override is supplied, estimate a safe package-level call budget once against the run's worst-case geometry.
+    optimizer_v2_verify_calibrated_max_test_structures_per_call = False # Applies only to the auto-calibration path: False = use the estimated budget directly; True = run the expensive real-call verification loop.
     optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # Adaptive mean_pd rounds require a non-None threshold; tune this to prune more or less aggressively.
     optimizer_v2_search_config = build_optimizer_v2_adaptive_block_search_config(
         initial_trial_prefix=optimizer_v2_initial_trial_prefix,
@@ -4417,6 +4418,7 @@ def main():
                               live_display,
                               max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
                               max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
+                              fallback_max_test_structures_per_call=optimizer_v2_fallback_max_test_structures_per_call,
                               auto_calibrate_max_test_structures_per_call=optimizer_v2_auto_calibrate_max_test_structures_per_call,
                               verify_calibrated_max_test_structures_per_call=(
                                   optimizer_v2_verify_calibrated_max_test_structures_per_call

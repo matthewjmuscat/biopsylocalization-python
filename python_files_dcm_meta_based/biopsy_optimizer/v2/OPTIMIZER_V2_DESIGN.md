@@ -48,7 +48,7 @@ This should be treated as a first-class design constraint, not a late cleanup it
 
 ## Readiness Snapshot
 
-The repo now contains the first executable optimizer-v2 library slice.
+The repo now contains a live end-to-end optimizer-v2 lane, not just a standalone library slice.
 
 Completed implementation already in code:
 
@@ -58,15 +58,19 @@ Completed implementation already in code:
 4. shared transform-bank accessors, localization, and containment seams now exist outside optimizer v2,
 5. chunked target-only scoring, staged search, winner resolution, and winner-only downstream-comparable validation are implemented in `biopsy_optimizer/v2`,
 6. stage-boundary replayable render jobs and carry-down in-memory output dataframe builders are implemented,
-7. downstream post-realization biopsy processing is modular enough that optimizer-v2 can hand off to existing realization and downstream MC seams once the live integration layer is wired.
+7. main now declares `Target DIL v2` in `bx_sim_locations_dict` and the live bridge runs one active optimizer-v2 simulated family,
+8. the live bridge stores summary, ranked-candidate, and tested-candidate sidecars onto the per-patient pre-processing dataframe dict and the generic export loop writes them additively to CSV,
+9. transport handoff now uses `Simulated biopsy transport request dict` metadata so the generic transporter resolves identity, explicit-target-vector, centroid, or optimal transport families without a v2-only special case,
+10. downstream post-realization biopsy processing is modular enough that optimizer-v2 can already hand off to the existing realization and downstream MC seams.
 
 Remaining implementation work is therefore concentrated in:
 
-1. live family declaration and creation in the main simulated-biopsy flow,
-2. planner and transport integration for a v2 optimizer family,
-3. legacy export-block wiring for the new sidecar outputs,
-4. downstream shared-bank reuse validation on real cases,
-5. memory-safe activation policy when v2 materially increases simulated biopsy count.
+1. validating live family-creation semantics against the intended matched-real-biopsy contract,
+2. downstream shared-bank reuse and transport agreement validation on real cases,
+3. stabilizing schema and downstream-reader expectations for the new summary / ranked / tested sidecars,
+4. isolating the optimizer-v2 calibration abrupt-stop root cause and settling the durable structure-budget policy,
+5. memory-safe activation policy when v2 materially increases simulated biopsy count,
+6. profiling and reducing overall preprocessing walltime for prostate / rectum / DIL geometry, which is now the next broad performance target outside the v2 search loop.
 
 ## Canonical Reuse Surfaces
 
@@ -603,18 +607,21 @@ At the contract level, optimizer v2 already carries two distinct dataframe surfa
 1. `tested_candidate_dataframe` is the concatenation of all scored candidate rows across all stages in the `A -> B -> C` run, after any winner-resolution or downstream-comparable annotations are carried down.
 2. `ranked_candidate_dataframe` is the final retained set from the last stage after operational winner resolution has been applied.
 
-The live bridge and the current public sidecar-output path do not emit both of those surfaces yet.
+The live bridge and the current public sidecar-output path now emit all of the intended public candidate-review surfaces additively.
 
 They currently emit:
 
 1. a winner summary dataframe,
-2. a ranked candidate dataframe built from the final retained set.
+2. a ranked candidate dataframe built from the final retained set,
+3. a tested-candidate audit dataframe containing every candidate row that was actually scored across all stages.
 
-That means the current public ranked CSV is not the full candidate-history table.
+That means the current public ranked CSV is intentionally not the full candidate-history table.
 
 It is only the final review surface.
 
-Stage-A and stage-B losers already exist in memory during the run, and they are already counted in summary metadata through fields such as `Target optimizer num tested candidate rows`, but those earlier-stage rows are not yet exported as their own standalone audit table.
+Stage-A and stage-B losers no longer live only in memory.
+
+They are now exported through the tested-candidate audit table, while summary metadata still retains concise counts such as `Target optimizer num tested candidate rows`.
 
 The completed optimizer-v2 export contract should therefore keep two distinct public tables:
 
@@ -626,6 +633,8 @@ The recommended default moving forward is to retain and export the full tested-c
 That full manifest should be treated as the canonical research and audit surface for optimizer v2.
 
 The final ranked table should remain, but only as the concise operational subset used for transport, quick review, and winner-focused downstream checks.
+
+The winner summary dataframe should remain the narrow per-biopsy operational surface for joins, inventory, and quick cohort review.
 
 The ranked final-candidate table should stay intentionally narrow.
 
@@ -851,12 +860,16 @@ The runtime should define explicit fallbacks.
 
 Recommended order:
 
-1. use a cached verified capacity result when available,
-2. otherwise run the dynamic calibrator,
-3. if calibration is unavailable or verification is skipped, fall back to a conservative configured static `max_test_structures_per_call`,
-4. if no static fallback exists either, allow `None` and rely on the package's internal full-batch behavior.
+1. if the user supplies a fixed `max_test_structures_per_call` override, use it directly,
+2. otherwise use a cached verified capacity result when available,
+3. otherwise run the dynamic calibrator,
+4. if verification is skipped, allow the estimator result to stand as an estimate-only budget rather than forcing an immediate static fallback,
+5. if auto-calibration is disabled or calibration fails, fall back to a conservative configured static `max_test_structures_per_call` when one exists,
+6. if no static fallback exists either, allow `None` and rely on the package's internal full-batch behavior.
 
 That final `None` case should remain legal but should be treated as a deliberate escape hatch, not as the preferred research default.
+
+The verification toggle should therefore remain orthogonal to whether the runtime uses calibration at all.
 
 #### Rollout order for the next implementation pass
 
@@ -1344,13 +1357,15 @@ These should become configurables or auto-tuned limits later.
 
 Do not build the entire final optimizer in one pass.
 
-The first implementation slice should be:
+The historical first implementation slice was:
 
 1. generate and store the shared transform bank earlier in the pipeline
 2. build the target-DIL search lattice and prune it to target-interior candidates
 3. implement chunked candidate evaluation for one objective only
 4. emit ranked candidate outputs
 5. teach transport to consume the ranked candidate contract
+
+That basic slice is now in place, although full real-case validation and final matched-family semantics are still open work.
 
 The first objective should remain target-only mean binomial estimator.
 
@@ -1391,17 +1406,19 @@ It currently provides:
 4. shared transform-bank, localization, and containment seams outside optimizer v2,
 5. chunked target-only candidate-trial scoring,
 6. staged A -> B -> C search with final winner resolution and winner-only downstream-comparable validation,
-7. tested and ranked candidate dataframe emission,
+7. winner-summary, tested-candidate, and ranked-candidate dataframe emission,
 8. replayable render-job construction for stage-boundary and success/failure debug surfaces,
-9. carry-down in-memory output dataframe builders for the target lane.
+9. carry-down in-memory output dataframe builders for the target lane,
+10. live simulated-family declaration in main through `bx_sim_locations_dict` (`Target DIL v2`),
+11. planner / processor / transport handoff through the generic simulated-biopsy transport-request contract,
+12. additive sidecar export through the per-patient pre-processing dataframe dict and generic CSV writer.
 
-It does not yet provide:
+It still needs:
 
-1. live simulated-family declaration through `bx_sim_locations_dict` or an equivalent family registry,
-2. planner and transport integration through `simulated_biopsy_planner_processer(...)` and `simulated_biopsy_processer(...)`,
-3. legacy export-block wiring for the new target-lane sidecar outputs,
-4. full real-case validation of shared-bank reuse and transport handoff,
-5. a finalized memory-safe activation policy when total simulated biopsy count grows.
+1. full real-case validation of shared-bank reuse, transport handoff, and downstream agreement,
+2. final matched-family creation policy so the live family semantics match the intended one-simulated-core-per-real-biopsy regime,
+3. stable calibration and fallback-policy validation at full-cohort scale,
+4. a finalized memory-safe activation policy when total simulated biopsy count grows.
 
 ## Visualization Selector Recommendation
 
@@ -1534,7 +1551,7 @@ It should cover things like search policy, stage policy, scoring policy, visuali
 
 It should not pretend that the repo already has a fully separate optimizer-v2 biopsy family creation pathway wired end to end.
 
-That family-creation and transport integration work is a later integration pass, not a prerequisite for building the clean config surface now.
+That family-creation and transport integration work was correctly treated as a later integration pass for the config work. It is now implemented at the basic live-lane level, while matched-family semantics and full-cohort validation remain later work.
 
 For future GUI work, the most important design property is that the config surface should be pure data.
 
@@ -1803,21 +1820,22 @@ Concrete work:
 
 ### Phase 6: transport integration
 
-Goal:
+Current state:
 
-Teach transport to consume the ranked v2 candidate dataframe without special-case logic.
+Transport now consumes the v2 winner through the generic simulated-biopsy transport-request contract rather than a v2-only special case.
 
-Concrete work:
+Remaining work:
 
-1. map the winning ranked centroid back into the existing transport path,
-2. preserve tie-break metadata,
-3. keep the transport contract generic across v1 and v2 outputs.
+1. validate that the winning ranked centroid / explicit target vector matches downstream realized targeting on real cases,
+2. preserve and audit tie-break metadata end to end,
+3. keep the transport contract generic across v1 and v2 outputs as more families are added.
 
 ## Immediate Next Coding Pass
 
-The next pass should do two narrow things:
+The next pass should do three narrow things:
 
-1. wire one live optimizer-v2 simulated family into the planning and transport flow,
-2. export the new target-lane sidecar dataframes without mutating legacy CSV contracts.
+1. finish the current full-cohort no-Rich validation and use it to discriminate UI / threading effects from the native abrupt-stop surfaces now logged,
+2. validate live family-creation semantics, shared-bank reuse, and transport handoff on real cases for `Target DIL v2`,
+3. profile and reduce preprocessing walltime for prostate / rectum / DIL geometry, which now looks like the next broad runtime target once the v2 lane is live.
 
-That turns the already-implemented library slice into a real end-to-end pipeline lane while keeping the export migration additive.
+That keeps the next pass focused on validation and walltime reduction rather than reopening the already-completed basic live-wiring and additive-export work.
