@@ -1,0 +1,19 @@
+Baseline: /tmp/filtered_run_compare_28iny9b4/baseline
+Candidate: /tmp/filtered_run_compare_28iny9b4/candidate
+Inventory rows: 19
+Compared files: 19
+Structural differences: 9
+Drift-detected files: 1
+Manual-review files: 8
+
+Top numeric drift columns:
+- Cohort: sum-to-one mc results.csv :: Total successes | outside_tol=802 | max_abs_diff=1838
+- Cohort: sum-to-one mc results.csv :: CI upper vals | outside_tol=802 | max_abs_diff=0.184543
+- Cohort: sum-to-one mc results.csv :: Binomial estimator | outside_tol=802 | max_abs_diff=0.1838
+- Cohort: sum-to-one mc results.csv :: CI lower vals | outside_tol=802 | max_abs_diff=0.183057
+- Cohort: sum-to-one mc results.csv :: Binom est STD err | outside_tol=802 | max_abs_diff=0.00168763
+- Cohort: Global dosimetry by voxel.csv :: Dose (Gy).2 | outside_tol=188 | max_abs_diff=127.271
+- Cohort: Global dosimetry by voxel.csv :: Dose grad (Gy/mm).10 | outside_tol=188 | max_abs_diff=68.5842
+- Cohort: Global dosimetry by voxel.csv :: Dose grad (Gy/mm) | outside_tol=188 | max_abs_diff=56.693
+- Cohort: Global dosimetry by voxel.csv :: Dose (Gy).1 | outside_tol=188 | max_abs_diff=54.2421
+- Cohort: Global dosimetry by voxel.csv :: Dose (Gy).10 | outside_tol=188 | max_abs_diff=44.1061

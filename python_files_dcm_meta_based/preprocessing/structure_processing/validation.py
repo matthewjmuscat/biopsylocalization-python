@@ -50,6 +50,9 @@ class NullRuntimeLogger:
     def checkpoint(self, *args, **kwargs):
         return None
 
+    def memory_snapshot(self, *args, **kwargs):
+        return None
+
 
 def _build_sparse_structure_list(structures, indices_to_copy):
     if len(indices_to_copy) == 0:

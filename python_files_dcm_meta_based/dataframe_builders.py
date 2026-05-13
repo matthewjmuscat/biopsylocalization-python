@@ -261,19 +261,51 @@ def _merge_biopsy_identifier_columns(df,
     if not isinstance(biopsy_identifier_df, pandas.DataFrame) or biopsy_identifier_df.empty:
         return df
 
+    def _has_column_name(dataframe, column_name):
+        if not isinstance(dataframe, pandas.DataFrame):
+            return False
+        if isinstance(dataframe.columns, pandas.MultiIndex):
+            return column_name in dataframe.columns.get_level_values(0)
+        return column_name in dataframe.columns
+
+    def _to_multiindex_column(column_name, nlevels):
+        return (column_name,) + ("",) * (nlevels - 1)
+
     if key_cols is None:
-        key_cols = [col for col in BIOPSY_IDENTIFIER_KEY_COLS if col in df.columns and col in biopsy_identifier_df.columns]
+        key_cols = [
+            col
+            for col in BIOPSY_IDENTIFIER_KEY_COLS
+            if _has_column_name(df, col) and col in biopsy_identifier_df.columns
+        ]
     else:
-        key_cols = [col for col in key_cols if col in df.columns and col in biopsy_identifier_df.columns]
+        key_cols = [
+            col
+            for col in key_cols
+            if _has_column_name(df, col) and col in biopsy_identifier_df.columns
+        ]
 
     if len(key_cols) == 0:
         return df
 
-    additive_cols = [col for col in BIOPSY_IDENTIFIER_ADDITIVE_COLS if col in biopsy_identifier_df.columns and col not in df.columns]
+    additive_cols = [
+        col
+        for col in BIOPSY_IDENTIFIER_ADDITIVE_COLS
+        if col in biopsy_identifier_df.columns and not _has_column_name(df, col)
+    ]
     if len(additive_cols) == 0:
         return df
 
     merge_df = biopsy_identifier_df[key_cols + additive_cols].drop_duplicates(subset=key_cols, keep="first")
+
+    if isinstance(df.columns, pandas.MultiIndex):
+        nlevels = df.columns.nlevels
+        merge_df.columns = pandas.MultiIndex.from_tuples(
+            [_to_multiindex_column(col, nlevels) for col in merge_df.columns],
+            names=df.columns.names,
+        )
+        merge_key_cols = [_to_multiindex_column(col, nlevels) for col in key_cols]
+        return df.merge(merge_df, on=merge_key_cols, how="left", validate="m:1")
+
     return df.merge(merge_df, on=key_cols, how="left", validate="m:1")
 
 
