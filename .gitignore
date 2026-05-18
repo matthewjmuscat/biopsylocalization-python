@@ -19,6 +19,9 @@ figures
 # Local tactical planning and private development notes
 .private_notes/
 
+# Generated run-comparison artifacts
+validation_outputs/run_comparisons/*__vs__*
+
 
 
 
