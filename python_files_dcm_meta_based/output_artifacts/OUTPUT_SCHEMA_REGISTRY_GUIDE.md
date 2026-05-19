@@ -22,7 +22,7 @@ Do not add registry entries for short-lived scratch dataframes unless they becom
 
 ## Patient Fragment Route Pattern
 
-The remaining missing routes should follow the existing legacy formalism as much as possible while the old pathway is still present.
+New patient-fragment routes should follow the existing legacy formalism as much as possible while the old pathway is still present.
 
 For each route:
 
@@ -35,7 +35,7 @@ For each route:
 4. Use a stable key that corresponds to the registry `source_fragment_table_id` and still maps clearly to the legacy table name.
 5. Add or update the Phase 3B/3C exporter iterator only if the dataframe is not already picked up by the generic dictionary traversal.
 6. Stitch the patient fragments by the registry `stitch_method`.
-7. Validate the stitched table against the legacy final table before changing the registry status from `needs_phase3d_route` to `validated_phase3c`.
+7. Validate the stitched table against the legacy final table before changing the registry status from `needs_phase3d_route` or `needs_live_phase3c_validation` to `validated_phase3c`.
 
 This keeps traceability close to the current code style: dataframe builder, named dictionary storage, manifest/export route, registry contract, validation evidence.
 
@@ -93,13 +93,13 @@ The configuration area still needs the same treatment. A future config pass shou
 
 That pass should add docstrings or structured config metadata before broad refactoring, because configuration meaning is part of the run contract.
 
-## Current Missing Route Targets
+## Recently Wired Route Targets
 
-As of the Phase 3D registry pass, the remaining simple-concat route targets are:
+The first four simple-concat route targets have been wired through patient-level preprocessing dataframe fragments and stitch pairs:
 
 - `Cohort: 3D radiomic features all OAR and DIL structures`,
 - `Cohort: Per voxel prostate double sextant classification`,
 - `Cohort: Per sample point prostate double sextant classification`,
 - `Cohort: Simulated biopsy planned vs realized centroid variation validation`.
 
-These should be promoted one at a time or as a small focused group, with the registry and validation reports updated after each pass.
+Their cohort registry specs are marked `needs_live_phase3c_validation` until a full Phase 3C run confirms all four stitched outputs match the legacy final tables.

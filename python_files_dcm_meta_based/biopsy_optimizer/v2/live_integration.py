@@ -314,9 +314,30 @@ def _build_bound_prepared_target_relative_structures_pack_provider(
             },
         )
         prepare_start_time = time.perf_counter()
+
+        def _prepared_pack_progress_callback(stage, stage_details):
+            progress_details = {
+                "num_trials": int(num_trials),
+                "relative_structure_count": int(
+                    len(target_relative_structures_nominal_plus_trials)
+                ),
+                "target_structure_prepared_pack_cache_entries": int(
+                    len(target_structure_prepared_pack_cache)
+                ),
+            }
+            progress_details.update(stage_details)
+            _runtime_memory_snapshot(
+                "optimizer_v2.structure.prepared_target_pack.{}".format(stage),
+                "Captured optimizer-v2 prepared containment pack substep progress.",
+                patient_uid=patient_uid,
+                structure_id=structure_id,
+                details=progress_details,
+            )
+
         prepared_pack = (
             custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.prepare_relative_structures_for_containment(
-                target_relative_structures_nominal_plus_trials
+                target_relative_structures_nominal_plus_trials,
+                progress_callback=_prepared_pack_progress_callback,
             )
         )
         target_structure_prepared_pack_cache[cache_key] = prepared_pack
@@ -1402,11 +1423,33 @@ def run_target_dil_optimizer_v2_for_live_simulated_family(
             )
 
             if not render_asset_persistence_requested:
+                _runtime_memory_snapshot(
+                    "optimizer_v2.structure.cache_release.memory.before",
+                    "Captured memory snapshot before releasing optimizer-v2 per-target caches.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details={
+                        "candidate_pool_cache_entries": int(len(candidate_pool_cache)),
+                        "target_structure_pack_cache_entries": int(
+                            len(target_structure_pack_cache)
+                        ),
+                        "target_structure_prepared_pack_cache_entries": int(
+                            len(target_structure_prepared_pack_cache)
+                        ),
+                    },
+                )
                 released_cache_details = _release_optimizer_v2_target_structure_cache_entries(
                     target_structure_cache_key=target_structure_cache_key,
                     candidate_pool_cache=candidate_pool_cache,
                     target_structure_pack_cache=target_structure_pack_cache,
                     target_structure_prepared_pack_cache=target_structure_prepared_pack_cache,
+                )
+                _runtime_memory_snapshot(
+                    "optimizer_v2.structure.cache_release.memory.after",
+                    "Captured memory snapshot after releasing optimizer-v2 per-target caches.",
+                    patient_uid=patientUID,
+                    structure_id=structureID,
+                    details=released_cache_details,
                 )
                 _runtime_checkpoint(
                     "optimizer_v2.structure.cache_release.end",

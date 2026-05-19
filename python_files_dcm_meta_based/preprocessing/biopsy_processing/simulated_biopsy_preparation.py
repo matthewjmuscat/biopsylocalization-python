@@ -5,6 +5,28 @@ import numpy as np
 import pandas
 
 
+REMOVED_COHORT_DERIVED_SIMULATED_BIOPSY_LENGTH_METHODS = ("real mean", "real normal")
+SUPPORTED_SIMULATED_BIOPSY_LENGTH_METHODS = ("full", "match real")
+
+
+def _validate_simulated_biopsy_length_method(simulated_biopsy_length_method):
+	if simulated_biopsy_length_method in REMOVED_COHORT_DERIVED_SIMULATED_BIOPSY_LENGTH_METHODS:
+		raise ValueError(
+			"Simulated biopsy length method '{}' was removed because it depends on "
+			"all-patient real-biopsy length statistics. Use 'full' or 'match real'. "
+			"Reintroduce cohort-derived lengths later as explicit per-patient "
+			"sidecar inputs.".format(simulated_biopsy_length_method)
+		)
+
+	if simulated_biopsy_length_method not in SUPPORTED_SIMULATED_BIOPSY_LENGTH_METHODS:
+		raise ValueError(
+			"Unsupported simulated biopsy length method '{}'. Supported methods are: {}.".format(
+				simulated_biopsy_length_method,
+				", ".join(SUPPORTED_SIMULATED_BIOPSY_LENGTH_METHODS),
+			)
+		)
+
+
 def _create_default_simulated_biopsy_preparation_dict():
 	return {
 		"Length determined": False,
@@ -513,7 +535,8 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 									   biopsy_needle_compartment_length,
 									   live_display
 									   ):
-	real_biopsy_lengths_list = []
+	_validate_simulated_biopsy_length_method(simulated_biopsy_length_method)
+
 	real_bx_lengths_by_dil = defaultdict(lambda: defaultdict(list))
 
 	for patientUID, pydicom_item in master_structure_reference_dict.items():
@@ -542,21 +565,11 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 									contour_length_mm=contour_length_mm,
 									centroid_line_length_mm=centroid_line_length_mm)
 
-			real_biopsy_lengths_list.append(float(contour_length_mm))
-
 			simulated_biopsy_preparation_dict = _get_simulated_biopsy_preparation_dict(specific_structure)
 			target_structure_type = simulated_biopsy_preparation_dict.get("Target structure type")
 			target_structure_refnum = simulated_biopsy_preparation_dict.get("Target structure ref #")
 			if target_structure_type == dil_ref and target_structure_refnum is not None:
 				real_bx_lengths_by_dil[patientUID][target_structure_refnum].append(float(contour_length_mm))
-
-	if len(real_biopsy_lengths_list) >= 1:
-		real_biopsy_lengths_arr = np.array(real_biopsy_lengths_list, dtype=float)
-		mean_of_real_biopsy_lengths = float(np.mean(real_biopsy_lengths_arr))
-		std_of_real_biopsy_lengths = float(np.std(real_biopsy_lengths_arr))
-	else:
-		mean_of_real_biopsy_lengths = float(biopsy_needle_compartment_length)
-		std_of_real_biopsy_lengths = 0.0
 
 	for patientUID, pydicom_item in master_structure_reference_dict.items():
 		for specific_structure in pydicom_item[bx_ref]:
@@ -566,20 +579,6 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 			if simulated_biopsy_length_method == 'full':
 				length_mm = float(biopsy_needle_compartment_length)
 				length_source = 'full'
-			elif simulated_biopsy_length_method == 'real normal':
-				within_bounds = False
-				while within_bounds == False:
-					length_mm = np.random.normal(loc=mean_of_real_biopsy_lengths,
-										 scale=std_of_real_biopsy_lengths)
-					if std_of_real_biopsy_lengths == 0:
-						within_bounds = True
-					elif (length_mm >= mean_of_real_biopsy_lengths - 2 * std_of_real_biopsy_lengths) and (length_mm <= mean_of_real_biopsy_lengths + 2 * std_of_real_biopsy_lengths):
-						within_bounds = True
-				length_mm = float(length_mm)
-				length_source = 'real normal'
-			elif simulated_biopsy_length_method == 'real mean':
-				length_mm = float(mean_of_real_biopsy_lengths)
-				length_source = 'real mean'
 			elif simulated_biopsy_length_method == 'match real':
 				simulated_biopsy_preparation_dict = _get_simulated_biopsy_preparation_dict(specific_structure)
 				matched_real_biopsy_refnum = simulated_biopsy_preparation_dict.get("Matched real biopsy ref #")
@@ -593,7 +592,6 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 					length_mm = float(matched_real_biopsy["Reconstructed biopsy cylinder length (from contour data)"])
 					length_source = 'match real - matched biopsy'
 				else:
-					length_mm = float(mean_of_real_biopsy_lengths)
 					relative_structure_type = specific_structure.get("Relative structure type")
 					relative_structure_refnum = specific_structure.get("Relative structure ref #")
 					if relative_structure_type == dil_ref:
@@ -602,12 +600,13 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 							length_mm = float(np.mean(lengths_for_this_dil))
 							length_source = 'match real - DIL mean'
 						else:
-							length_source = 'match real - global mean'
+							length_mm = float(biopsy_needle_compartment_length)
+							length_source = 'match real - full fallback'
 					else:
-						length_source = 'match real - global mean'
+						length_mm = float(biopsy_needle_compartment_length)
+						length_source = 'match real - full fallback'
 			else:
-				length_mm = float(biopsy_needle_compartment_length)
-				length_source = 'full'
+				_validate_simulated_biopsy_length_method(simulated_biopsy_length_method)
 
 			contour_length_mm = specific_structure.get("Reconstructed biopsy cylinder length (from contour data)")
 			centroid_line_length_mm = specific_structure.get("Centroid line vec length (bx needle base to bx needle tip)")
@@ -622,10 +621,8 @@ def determine_simulated_biopsy_lengths(master_structure_reference_dict,
 		real_bx_lengths_by_dil_standard_dict[patientUID] = dict(patient_lengths_dict)
 
 	length_results_dict = {
-		"real_biopsy_lengths_list": real_biopsy_lengths_list,
 		"real_bx_lengths_by_dil": real_bx_lengths_by_dil_standard_dict,
-		"mean_of_real_biopsy_lengths": mean_of_real_biopsy_lengths,
-		"std_of_real_biopsy_lengths": std_of_real_biopsy_lengths,
+		"removed_cohort_derived_length_methods": REMOVED_COHORT_DERIVED_SIMULATED_BIOPSY_LENGTH_METHODS,
 	}
 
 	return length_results_dict, live_display

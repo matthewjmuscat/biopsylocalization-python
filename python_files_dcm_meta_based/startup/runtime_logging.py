@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import atexit
 from datetime import datetime, timezone
+import faulthandler
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -82,8 +84,14 @@ class RuntimeLogger:
         self._status_path = self._logs_dir.joinpath("run_status.json")
         self._run_log_file = self._run_log_path.open("a", encoding="utf-8", buffering=1)
         self._events_file = self._events_path.open("a", encoding="utf-8", buffering=1)
+        self._native_fault_log_file = None
+        self._native_fault_log_path = None
+        self._enable_native_fault_logging()
+        self._process_watchdog_process = None
+        self._process_watchdog_log_path = None
 
         self._write_status(force_fsync=True)
+        self._start_process_watchdog()
         self.log_event(
             level="INFO",
             event_type="run_start",
@@ -92,6 +100,12 @@ class RuntimeLogger:
             details={
                 "base_output_dir": str(self.base_output_dir),
                 "logs_dir": str(self._logs_dir),
+                "native_fault_log_path": None
+                if self._native_fault_log_path is None
+                else str(self._native_fault_log_path),
+                "process_watchdog_log_path": None
+                if self._process_watchdog_log_path is None
+                else str(self._process_watchdog_log_path),
                 "argv": self.argv,
             },
             write_status=True,
@@ -121,11 +135,14 @@ class RuntimeLogger:
             return final_logs_dir
 
         final_logs_dir.mkdir(parents=True, exist_ok=True)
+        self._stop_process_watchdog()
         self._flush_files(force_fsync=True)
 
         new_run_log_path = final_logs_dir.joinpath("run.log")
         new_events_path = final_logs_dir.joinpath("events.jsonl")
         new_status_path = final_logs_dir.joinpath("run_status.json")
+        new_native_fault_log_path = final_logs_dir.joinpath("native_fault.log")
+        new_process_watchdog_log_path = final_logs_dir.joinpath("process_watchdog.jsonl")
 
         if self._run_log_path.exists() and not new_run_log_path.exists():
             shutil.copyfile(self._run_log_path, new_run_log_path)
@@ -133,6 +150,12 @@ class RuntimeLogger:
             shutil.copyfile(self._events_path, new_events_path)
         if self._status_path.exists():
             shutil.copyfile(self._status_path, new_status_path)
+        if self._native_fault_log_path is not None and self._native_fault_log_path.exists():
+            if self._native_fault_log_file is not None:
+                self._native_fault_log_file.flush()
+            shutil.copyfile(self._native_fault_log_path, new_native_fault_log_path)
+        if self._process_watchdog_log_path is not None and self._process_watchdog_log_path.exists():
+            shutil.copyfile(self._process_watchdog_log_path, new_process_watchdog_log_path)
 
         old_run_log_file = self._run_log_file
         old_events_file = self._events_file
@@ -147,6 +170,8 @@ class RuntimeLogger:
         self._events_path = new_events_path
         self._status_path = new_status_path
         self._specific_output_dir = specific_output_dir
+        self._enable_native_fault_logging()
+        self._start_process_watchdog()
 
         self.log_event(
             level="INFO",
@@ -157,6 +182,9 @@ class RuntimeLogger:
                 "specific_output_dir": str(specific_output_dir),
                 "logs_dir": str(final_logs_dir),
                 "staging_logs_dir": str(self._staging_logs_dir),
+                "process_watchdog_log_path": None
+                if self._process_watchdog_log_path is None
+                else str(self._process_watchdog_log_path),
             },
             write_status=True,
             force_fsync=True,
@@ -370,6 +398,8 @@ class RuntimeLogger:
     def close(self) -> None:
         if self._finalized:
             return
+        self._stop_process_watchdog()
+        self._disable_native_fault_logging()
         self._flush_files(force_fsync=True)
         self._run_log_file.close()
         self._events_file.close()
@@ -510,10 +540,100 @@ class RuntimeLogger:
             "last_completed_checkpoint_utc": self._last_completed_checkpoint_utc,
             "output_dir": None if self._specific_output_dir is None else str(self._specific_output_dir),
             "logs_dir": str(self._logs_dir),
+            "native_fault_log_path": None
+            if self._native_fault_log_path is None
+            else str(self._native_fault_log_path),
+            "process_watchdog_log_path": None
+            if self._process_watchdog_log_path is None
+            else str(self._process_watchdog_log_path),
             "argv": self.argv,
         }
         payload.update(self._collect_memory_snapshot())
         return payload
+
+    def _start_process_watchdog(self) -> None:
+        self._stop_process_watchdog()
+        process_watchdog_path = Path(__file__).with_name("process_watchdog.py")
+        process_watchdog_log_path = self._logs_dir.joinpath("process_watchdog.jsonl")
+        try:
+            parent_start_time = psutil.Process(self.pid).create_time()
+            self._process_watchdog_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(process_watchdog_path),
+                    "--pid",
+                    str(self.pid),
+                    "--log-path",
+                    str(process_watchdog_log_path),
+                    "--status-path",
+                    str(self._status_path),
+                    "--interval-sec",
+                    "5",
+                    "--parent-start-time",
+                    str(parent_start_time),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                start_new_session=True,
+            )
+            self._process_watchdog_log_path = process_watchdog_log_path
+        except Exception:
+            self._process_watchdog_process = None
+            self._process_watchdog_log_path = None
+
+    def _stop_process_watchdog(self) -> None:
+        process_watchdog_process = self._process_watchdog_process
+        self._process_watchdog_process = None
+        if process_watchdog_process is None:
+            return
+        if process_watchdog_process.poll() is not None:
+            return
+        try:
+            process_watchdog_process.terminate()
+            process_watchdog_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                process_watchdog_process.kill()
+                process_watchdog_process.wait(timeout=2)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _enable_native_fault_logging(self) -> None:
+        native_fault_log_path = self._logs_dir.joinpath("native_fault.log")
+        native_fault_log_file = native_fault_log_path.open("a", encoding="utf-8", buffering=1)
+        previous_native_fault_log_file = self._native_fault_log_file
+        try:
+            faulthandler.enable(file=native_fault_log_file, all_threads=True)
+        except Exception:
+            native_fault_log_file.close()
+            return
+
+        self._native_fault_log_file = native_fault_log_file
+        self._native_fault_log_path = native_fault_log_path
+        if previous_native_fault_log_file is not None:
+            try:
+                previous_native_fault_log_file.close()
+            except Exception:
+                pass
+
+    def _disable_native_fault_logging(self) -> None:
+        native_fault_log_file = self._native_fault_log_file
+        self._native_fault_log_file = None
+        self._native_fault_log_path = None
+        if native_fault_log_file is None:
+            return
+        try:
+            faulthandler.disable()
+        except Exception:
+            pass
+        try:
+            native_fault_log_file.close()
+        except Exception:
+            pass
 
     def _write_status(self, *, force_fsync: bool = False) -> None:
         status_payload = _json_safe(self._build_status_payload())

@@ -295,13 +295,32 @@ def build_prepared_relative_structures_audit_report(
     )
 
 
+def _emit_prepared_relative_structures_progress(progress_callback, stage, details=None):
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(stage, details or {})
+    except Exception:
+        pass
+
+
 def prepare_relative_structures_for_containment(
     list_of_relative_structures_containting_list_of_constant_zslices_arrays,
     constant_z_slice_polygons_handler_option='auto-close-if-open',
     remove_consecutive_duplicate_points_in_polygons=False,
     return_timing_report=False,
+    progress_callback=None,
 ):
     pack_build_start_time = time.perf_counter()
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "start",
+        {
+            "input_relative_structure_count": int(
+                len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+            ),
+        },
+    )
     geometry_normalization_start_time = time.perf_counter()
     (
         all_structures_list_of_2d_arr,
@@ -316,6 +335,27 @@ def prepare_relative_structures_for_containment(
         remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
     )
     geometry_normalization_elapsed_seconds = time.perf_counter() - geometry_normalization_start_time
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "geometry_normalization.after",
+        {
+            "elapsed_seconds": round(float(geometry_normalization_elapsed_seconds), 3),
+            "all_structures_count": int(len(all_structures_list_of_2d_arr)),
+            "stacked_points_shape": tuple(
+                int(dim) for dim in stacked_structures_stacked_slices_2d_arr_1.shape
+            ),
+            "stacked_slice_indices_shape": tuple(
+                int(dim) for dim in stacked_structures_stacked_slices_indices_2d_arr_2.shape
+            ),
+            "stacked_structure_indices_shape": tuple(
+                int(dim) for dim in stacked_structures_stacked_slices_indices_2d_arr_3.shape
+            ),
+            "stacked_structure_index_indices_shape": tuple(
+                int(dim)
+                for dim in stacked_structures_stacked_slices_indices_indices_2d_arr_4.shape
+            ),
+        },
+    )
 
     z_value_extraction_start_time = time.perf_counter()
     relative_structures_list_of_zvals_1d_arrays = (
@@ -325,6 +365,52 @@ def prepare_relative_structures_for_containment(
         )
     )
     z_value_extraction_elapsed_seconds = time.perf_counter() - z_value_extraction_start_time
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "z_value_extraction.after",
+        {
+            "elapsed_seconds": round(float(z_value_extraction_elapsed_seconds), 3),
+            "z_value_array_count": int(len(relative_structures_list_of_zvals_1d_arrays)),
+        },
+    )
+
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "audit.before",
+        {
+            "relative_structure_count": int(
+                len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+            ),
+        },
+    )
+    audit_report = build_prepared_relative_structures_audit_report(
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=(
+            remove_consecutive_duplicate_points_in_polygons
+        ),
+    )
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "audit.after",
+        {
+            "relative_structure_count": int(audit_report.num_relative_structures),
+            "total_z_slices": int(audit_report.num_total_z_slices),
+            "total_points": int(audit_report.num_total_points),
+            "max_z_slices_per_structure": int(audit_report.max_num_z_slices_per_structure),
+            "max_points_per_structure": int(audit_report.max_num_points_per_structure),
+        },
+    )
+
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "pack_assembly.before",
+        {
+            "relative_structure_count": int(audit_report.num_relative_structures),
+            "total_z_slices": int(audit_report.num_total_z_slices),
+            "total_points": int(audit_report.num_total_points),
+        },
+    )
 
     prepared_relative_structures_pack = ContainmentPreparedRelativeStructuresPack(
         all_structures_list_of_2d_arr=tuple(all_structures_list_of_2d_arr),
@@ -338,13 +424,17 @@ def prepare_relative_structures_for_containment(
         relative_structures_list_of_zvals_1d_arrays=tuple(
             relative_structures_list_of_zvals_1d_arrays
         ),
-        audit_report=build_prepared_relative_structures_audit_report(
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays,
-            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=(
-                remove_consecutive_duplicate_points_in_polygons
-            ),
-        ),
+        audit_report=audit_report,
+    )
+    _emit_prepared_relative_structures_progress(
+        progress_callback,
+        "pack_assembly.after",
+        {
+            "relative_structure_count": int(audit_report.num_relative_structures),
+            "total_z_slices": int(audit_report.num_total_z_slices),
+            "total_points": int(audit_report.num_total_points),
+            "elapsed_seconds": round(float(time.perf_counter() - pack_build_start_time), 3),
+        },
     )
     if not return_timing_report:
         return prepared_relative_structures_pack
