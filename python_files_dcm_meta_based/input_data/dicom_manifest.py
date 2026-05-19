@@ -12,6 +12,9 @@ from typing import Any, Mapping, Optional, Sequence
 
 import pydicom
 
+from .dicom_routing_profile import DicomRoutingProfile
+from .dicom_routing_profile import build_legacy_variseed_mim_routing_profile
+
 
 INPUT_MANIFEST_SCHEMA_VERSION = 1
 DEFAULT_MANIFEST_DIR_NAME = "manifests"
@@ -23,6 +26,7 @@ class InputManifestWriteResult:
     summary_path: Path
     case_manifest_path: Path
     dicom_manifest_path: Path
+    routing_profile_path: Path
     warnings_path: Path
     num_cases: int
     num_dicom_files: int
@@ -34,6 +38,7 @@ class InputManifestWriteResult:
             "summary_path": str(self.summary_path),
             "case_manifest_path": str(self.case_manifest_path),
             "dicom_manifest_path": str(self.dicom_manifest_path),
+            "routing_profile_path": str(self.routing_profile_path),
             "warnings_path": str(self.warnings_path),
             "num_cases": self.num_cases,
             "num_dicom_files": self.num_dicom_files,
@@ -153,6 +158,26 @@ def _resolve_routing_reason(selected_role: str, modality: str, series_descriptio
     return "Unassigned by current routing rules"
 
 
+def _resolve_routing_rule_id(selected_role: str, modality: str, series_description: str, mr_acquisition_type: str) -> str:
+    if selected_role == "RTSTRUCT":
+        return "legacy_rtstruct_modality"
+    if selected_role == "RTDOSE":
+        return "legacy_rtdose_modality"
+    if selected_role == "RTPLAN":
+        return "legacy_rtplan_modality"
+    if selected_role == "US" and modality == "US":
+        return "legacy_us_modality"
+    if selected_role == "US" and modality == "MR" and mr_acquisition_type == "":
+        return "legacy_us_mr_empty_acquisition_type"
+    if selected_role == "MR_T2":
+        return "legacy_mr_t2_series_description"
+    if selected_role == "MR_ADC":
+        return "legacy_mr_adc_series_description"
+    if selected_role:
+        return "assigned_by_existing_role_dictionary"
+    return "unassigned_by_current_routing_rules"
+
+
 def _read_dicom_metadata(file_path: Path) -> dict[str, Any]:
     empty_metadata = {
         "patient_uid_generated": None,
@@ -192,6 +217,7 @@ def _read_dicom_metadata(file_path: Path) -> dict[str, Any]:
 def _build_dicom_manifest_rows(
     dicom_paths: Sequence[Any],
     role_map: Mapping[str, Mapping[str, Any]],
+    routing_profile: DicomRoutingProfile,
     warnings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows = []
@@ -258,6 +284,13 @@ def _build_dicom_manifest_rows(
             "SOP Instance UID": metadata["sop_instance_uid"],
             "Study Date": metadata["study_date"],
             "Read error": metadata["read_error"],
+            "Routing profile ID": routing_profile.profile_id,
+            "Routing rule ID": _resolve_routing_rule_id(
+                selected_role,
+                metadata["modality"],
+                metadata["series_description"],
+                metadata["mr_acquisition_type"],
+            ),
             "Selected role": selected_role,
             "Routing reason": _resolve_routing_reason(
                 selected_role,
@@ -396,15 +429,19 @@ def write_input_manifest_files(
     mr_t2_dcms_dict: Mapping[str, Any],
     mr_adc_dcms_dict: Mapping[str, Any],
     fraction_prefixes: Sequence[str],
+    routing_profile: Optional[DicomRoutingProfile] = None,
     runtime_logger: Any = None,
     manifest_dir_name: str = DEFAULT_MANIFEST_DIR_NAME,
 ) -> InputManifestWriteResult:
     start_time = time.perf_counter()
+    if routing_profile is None:
+        routing_profile = build_legacy_variseed_mim_routing_profile(fraction_prefixes)
     output_dir = Path(output_dir)
     manifest_dir = output_dir.joinpath(manifest_dir_name)
     summary_path = manifest_dir.joinpath("input_manifest_summary.json")
     case_manifest_path = manifest_dir.joinpath("input_case_manifest.csv")
     dicom_manifest_path = manifest_dir.joinpath("input_dicom_manifest.csv")
+    routing_profile_path = manifest_dir.joinpath("input_routing_profile.json")
     warnings_path = manifest_dir.joinpath("input_manifest_warnings.jsonl")
 
     if runtime_logger is not None:
@@ -414,6 +451,7 @@ def write_input_manifest_files(
             details={
                 "manifest_dir": str(manifest_dir),
                 "num_dicom_paths": len(dicom_paths),
+                "routing_profile_id": routing_profile.profile_id,
             },
         )
 
@@ -427,7 +465,7 @@ def write_input_manifest_files(
         mr_adc_dcms_dict=mr_adc_dcms_dict,
         warnings=warnings,
     )
-    dicom_rows = _build_dicom_manifest_rows(dicom_paths, role_map, warnings)
+    dicom_rows = _build_dicom_manifest_rows(dicom_paths, role_map, routing_profile, warnings)
     case_rows = _build_case_manifest_rows(
         dicom_rows=dicom_rows,
         rtstruct_dcms_dict=rtstruct_dcms_dict,
@@ -447,6 +485,10 @@ def write_input_manifest_files(
         "num_dicom_files": len(dicom_rows),
         "num_cases": len(case_rows),
         "warning_count": len(warnings),
+        "routing_profile": {
+            **routing_profile.to_summary_dict(),
+            "path": str(routing_profile_path),
+        },
         "file_counts_by_selected_role": _count_rows_by_value(dicom_rows, "Selected role"),
         "case_counts": {
             "rtstruct_patients": len(rtstruct_dcms_dict),
@@ -460,6 +502,7 @@ def write_input_manifest_files(
             "summary": str(summary_path),
             "case_manifest": str(case_manifest_path),
             "dicom_manifest": str(dicom_manifest_path),
+            "routing_profile": str(routing_profile_path),
             "warnings": str(warnings_path),
         },
     }
@@ -468,6 +511,9 @@ def write_input_manifest_files(
     _write_csv(dicom_manifest_path, dicom_rows)
     _write_csv(case_manifest_path, case_rows)
     _write_jsonl(warnings_path, warnings)
+    with routing_profile_path.open("w", encoding="utf-8") as file_obj:
+        json.dump(routing_profile.to_dict(), file_obj, indent=2, sort_keys=True, default=str)
+        file_obj.write("\n")
     with summary_path.open("w", encoding="utf-8") as file_obj:
         json.dump(summary, file_obj, indent=2, sort_keys=True, default=str)
         file_obj.write("\n")
@@ -477,6 +523,7 @@ def write_input_manifest_files(
         summary_path=summary_path,
         case_manifest_path=case_manifest_path,
         dicom_manifest_path=dicom_manifest_path,
+        routing_profile_path=routing_profile_path,
         warnings_path=warnings_path,
         num_cases=len(case_rows),
         num_dicom_files=len(dicom_rows),
