@@ -102,4 +102,4 @@ The first four simple-concat route targets have been wired through patient-level
 - `Cohort: Per sample point prostate double sextant classification`,
 - `Cohort: Simulated biopsy planned vs realized centroid variation validation`.
 
-Their cohort registry specs are marked `needs_live_phase3c_validation` until a full Phase 3C run confirms all four stitched outputs match the legacy final tables.
+The May 19, 2026 full Phase 3C run confirmed all four stitched outputs match the legacy final tables, so their cohort registry specs are now marked `validated_phase3c`.
