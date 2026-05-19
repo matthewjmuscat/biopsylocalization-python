@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping, MutableMapping
 
-from .contracts import DEFAULT_ALL_REF_KEY
-from .contracts import DEFAULT_BX_REF
 from .contracts import LegacyPatientRuntimeState
+from .contracts import LegacyRuntimeKeys
 from .contracts import PatientCase
 
 
@@ -34,8 +33,7 @@ def carve_patient_runtime_state_by_uid(patient_uid: str,
                                        master_structure_reference_dict: MutableMapping[str, Any],
                                        master_structure_info_dict: MutableMapping[str, Any],
                                        *,
-                                       all_ref_key: str = DEFAULT_ALL_REF_KEY,
-                                       bx_ref: str = DEFAULT_BX_REF,
+                                       legacy_keys: LegacyRuntimeKeys,
                                        patient_label: str = "",
                                        source_run_id: str = "",
                                        input_manifest_id: str = "",
@@ -53,8 +51,7 @@ def carve_patient_runtime_state_by_uid(patient_uid: str,
         patient_case,
         master_structure_reference_dict,
         master_structure_info_dict,
-        all_ref_key=all_ref_key,
-        bx_ref=bx_ref,
+        legacy_keys=legacy_keys,
         metadata=metadata,
     )
 
@@ -63,8 +60,7 @@ def carve_patient_runtime_state(patient_case: PatientCase,
                                 master_structure_reference_dict: MutableMapping[str, Any],
                                 master_structure_info_dict: MutableMapping[str, Any],
                                 *,
-                                all_ref_key: str = DEFAULT_ALL_REF_KEY,
-                                bx_ref: str = DEFAULT_BX_REF,
+                                legacy_keys: LegacyRuntimeKeys,
                                 metadata: Mapping[str, Any] | None = None) -> LegacyPatientRuntimeState:
     """Return a one-patient view of the current legacy runtime dictionaries.
 
@@ -84,8 +80,7 @@ def carve_patient_runtime_state(patient_case: PatientCase,
         patient_case=patient_case,
         master_structure_reference_dict=patient_reference_view,
         master_structure_info_dict=patient_info_view,
-        all_ref_key=all_ref_key,
-        bx_ref=bx_ref,
+        legacy_keys=legacy_keys,
         metadata=dict(metadata or {}),
     )
 

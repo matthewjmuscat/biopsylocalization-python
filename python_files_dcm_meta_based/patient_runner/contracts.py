@@ -13,10 +13,6 @@ from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Sequence
 
 
-DEFAULT_ALL_REF_KEY = "All ref"
-DEFAULT_BX_REF = "Bx ref"
-
-
 class PatientStageName(str, Enum):
     """Closed names for initial patient-runner stages."""
 
@@ -35,6 +31,29 @@ class PatientStageStatus(str, Enum):
     SKIPPED = "skipped"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyRuntimeKeys:
+    """Legacy dictionary key names supplied by the current pipeline config.
+
+    The patient runner must not define these names independently from the main
+    pipeline. The caller should build this from the same bootstrap/config state
+    that created the legacy dictionaries.
+    """
+
+    all_ref_key: str
+    bx_ref: str
+
+    def __post_init__(self) -> None:
+        all_ref_key = str(self.all_ref_key).strip()
+        bx_ref = str(self.bx_ref).strip()
+        if all_ref_key == "":
+            raise ValueError("all_ref_key cannot be empty")
+        if bx_ref == "":
+            raise ValueError("bx_ref cannot be empty")
+        object.__setattr__(self, "all_ref_key", all_ref_key)
+        object.__setattr__(self, "bx_ref", bx_ref)
 
 
 def _safe_path_name(value: str) -> str:
@@ -86,8 +105,7 @@ class PatientRunConfig:
     """Configuration slice needed by the initial patient runner scaffold."""
 
     output_root: Path
-    all_ref_key: str = DEFAULT_ALL_REF_KEY
-    bx_ref: str = DEFAULT_BX_REF
+    legacy_keys: LegacyRuntimeKeys
     run_id: str = ""
     write_preprocessing_artifacts: bool = True
     write_patient_mc_artifacts: bool = True
@@ -100,10 +118,18 @@ class PatientRunConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "output_root", Path(self.output_root))
-        object.__setattr__(self, "all_ref_key", str(self.all_ref_key).strip() or DEFAULT_ALL_REF_KEY)
-        object.__setattr__(self, "bx_ref", str(self.bx_ref).strip() or DEFAULT_BX_REF)
+        if not isinstance(self.legacy_keys, LegacyRuntimeKeys):
+            raise TypeError("legacy_keys must be a LegacyRuntimeKeys instance")
         object.__setattr__(self, "run_id", str(self.run_id).strip())
         object.__setattr__(self, "parquet_compression", str(self.parquet_compression).strip() or "snappy")
+
+    @property
+    def all_ref_key(self) -> str:
+        return self.legacy_keys.all_ref_key
+
+    @property
+    def bx_ref(self) -> str:
+        return self.legacy_keys.bx_ref
 
     def patient_output_dir(self, patient_case: PatientCase) -> Path:
         """Return the run-local output directory for one patient."""
@@ -117,16 +143,23 @@ class LegacyPatientRuntimeState:
     patient_case: PatientCase
     master_structure_reference_dict: MutableMapping[str, Any]
     master_structure_info_dict: MutableMapping[str, Any]
-    all_ref_key: str = DEFAULT_ALL_REF_KEY
-    bx_ref: str = DEFAULT_BX_REF
+    legacy_keys: LegacyRuntimeKeys
     metadata: MutableMapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.patient_case.patient_uid not in self.master_structure_reference_dict:
             raise KeyError(f"patient_uid not present in runtime state: {self.patient_case.patient_uid}")
-        self.all_ref_key = str(self.all_ref_key).strip() or DEFAULT_ALL_REF_KEY
-        self.bx_ref = str(self.bx_ref).strip() or DEFAULT_BX_REF
+        if not isinstance(self.legacy_keys, LegacyRuntimeKeys):
+            raise TypeError("legacy_keys must be a LegacyRuntimeKeys instance")
         self.metadata = dict(self.metadata)
+
+    @property
+    def all_ref_key(self) -> str:
+        return self.legacy_keys.all_ref_key
+
+    @property
+    def bx_ref(self) -> str:
+        return self.legacy_keys.bx_ref
 
     @property
     def patient_uid(self) -> str:

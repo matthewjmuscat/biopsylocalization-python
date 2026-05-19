@@ -9,6 +9,7 @@ from .artifacts import PatientArtifactStore
 from .artifacts import collect_patient_dataframe_artifacts
 from .artifacts import write_patient_dataframe_artifacts
 from .contracts import LegacyPatientRuntimeState
+from .contracts import LegacyRuntimeKeys
 from .contracts import PatientCase
 from .contracts import PatientRunConfig
 from .contracts import PatientRunResult
@@ -27,6 +28,7 @@ from .stages import write_patient_artifacts_stage
 
 __all__ = [
     "LegacyPatientRuntimeState",
+    "LegacyRuntimeKeys",
     "PatientArtifactStore",
     "PatientCase",
     "PatientRunConfig",
