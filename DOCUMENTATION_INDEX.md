@@ -44,6 +44,7 @@ Current module-local docs:
 - `python_files_dcm_meta_based/biopsy_optimizer/v2/OPTIMIZER_V2_PERFORMANCE.md`
 - `python_files_dcm_meta_based/guidance_maps/GUIDANCE_MAP_WORKFLOW.md`
 - `python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md`
+- `python_files_dcm_meta_based/patient_runner/README.md`
 - `python_files_dcm_meta_based/deprecated/README.md`
 - `python_files_dcm_meta_based/ui/RENDER_BROKER_DESIGN.md`
 
