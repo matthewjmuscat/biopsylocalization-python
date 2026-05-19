@@ -5,6 +5,19 @@ from .contracts import build_output_table_contracts
 from .contracts import normalize_legacy_table_name
 from .contracts import summarize_output_table_contracts
 from .contracts import write_output_table_contracts
+from .exporters import PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION
+from .exporters import DataframeArtifact
+from .exporters import iter_biopsy_mc_artifacts
+from .exporters import iter_cohort_artifacts
+from .exporters import iter_patient_mc_artifacts
+from .exporters import iter_patient_preprocessing_artifacts
+from .exporters import write_dataframe_artifact
+from .exporters import write_dataframe_artifacts
+from .in_memory_stitching import IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION
+from .in_memory_stitching import build_in_memory_stitch_validation
+from .in_memory_stitching import collect_patient_fragment_dataframes
+from .in_memory_stitching import summarize_in_memory_stitch_validation
+from .in_memory_stitching import write_in_memory_stitch_validation_outputs
 from .inventory import OUTPUT_ARTIFACT_INVENTORY_SCHEMA_VERSION
 from .inventory import build_output_artifact_inventory
 from .inventory import summarize_output_artifact_inventory
@@ -25,17 +38,30 @@ __all__ = [
     "PATIENT_ARTIFACT_MANIFEST_SCHEMA_VERSION",
     "PATIENT_STITCH_PLAN_SCHEMA_VERSION",
     "OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION",
+    "PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION",
     "SHADOW_STITCH_VALIDATION_SCHEMA_VERSION",
+    "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
+    "DataframeArtifact",
     "build_output_artifact_inventory",
+    "build_in_memory_stitch_validation",
     "build_patient_artifact_manifest",
     "build_patient_stitch_plan",
     "build_output_table_contracts",
+    "collect_patient_fragment_dataframes",
+    "iter_biopsy_mc_artifacts",
+    "iter_cohort_artifacts",
+    "iter_patient_mc_artifacts",
+    "iter_patient_preprocessing_artifacts",
     "normalize_legacy_table_name",
     "run_shadow_stitch_validation",
+    "summarize_in_memory_stitch_validation",
     "summarize_output_artifact_inventory",
     "summarize_patient_artifacts",
     "summarize_output_table_contracts",
     "summarize_shadow_stitch_validation",
+    "write_dataframe_artifact",
+    "write_dataframe_artifacts",
+    "write_in_memory_stitch_validation_outputs",
     "write_output_artifact_inventory",
     "write_patient_artifact_outputs",
     "write_output_table_contracts",
