@@ -61,6 +61,11 @@ def _normalize_legacy_table_name(row: pd.Series) -> str:
     return legacy_name
 
 
+def normalize_legacy_table_name(row: pd.Series) -> str:
+    """Return the contract-level table name for an inventory row."""
+    return _normalize_legacy_table_name(row)
+
+
 def _source_stage(output_section: str, table_name: str) -> str:
     if output_section == "Output CSVs/Preprocessing":
         return "preprocessing"
