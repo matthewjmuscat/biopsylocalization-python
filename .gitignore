@@ -8,6 +8,7 @@ Junk/
 cuda_containment_logs/
 __pycache__/
 figures
+png/
 .python-version
 .bashrc.swp
 # Ignore Python bytecode and cache folders

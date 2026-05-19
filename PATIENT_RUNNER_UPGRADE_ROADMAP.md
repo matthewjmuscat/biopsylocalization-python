@@ -66,6 +66,197 @@ summary aggregates, can be regenerated downstream from the base tables. They do
 not need to be core patient-runner outputs unless a downstream contract truly
 requires them.
 
+## Pipeline Boundary Map
+
+Use these labels when documenting, extracting, or removing blocks from
+`biopsy_localization_convex_main.py`. The labels are intentionally short so the
+whole pipeline can be reviewed at a high level before individual functions are
+rewired.
+
+| Block | Scope | Patient-runner status | Notes |
+| --- | --- | --- | --- |
+| Discovery | run/cohort | keep outside patient execution | Finds inputs, builds manifests, resolves shared config, creates run/output roots. Discovery ends when patient case manifests exist. |
+| Configuration/bootstrap | run/cohort | keep outside patient execution | Builds `PipelineConfig`, reference names, logging, UI, pools, and shared constants. |
+| Preprocessing | patient | modularize for patient execution | Structure selection, interpolation, volumes, shape/radiomic features, MR summaries, biopsy preprocessing, and simulated biopsy preparation/planning. |
+| Optimization | patient | modularize for patient execution | Optimizer v1/v2 should operate on one patient case plus shared config. |
+| Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores and validates planned-vs-realized per-biopsy geometry. |
+| Sampling/classification | patient | modularize for patient execution | Sampled biopsy processing, target audit annotation, and double-sextant classification. |
+| MC simulation | patient | modularize for patient execution | Transform generation, containment, dose, and MR simulation for one patient. |
+| Patient artifact writing | patient | core patient-runner output | Writes stable base artifacts with canonical keys. |
+| Cohort assembly | cohort/downstream | not per patient | Concatenates patient artifacts and builds required cohort outputs. |
+| Migration validation | cohort/downstream | not per patient | Compares assembled patient outputs against the legacy cohort oracle. |
+| Downstream analysis | sister repo or dedicated workflow | remove from main runtime | Random forest, derived joined summaries, production plots, and similar analysis products. |
+
+A block becomes patient-runnable when it can operate on one `PatientCase` plus
+shared configuration without reading other patients' in-memory state. If it
+requires concatenation, aggregation, model fitting, or validation against the
+legacy cohort output, it belongs in cohort assembly, migration validation, or a
+sister analysis workflow.
+
+## Run Plan Direction
+
+The migration runner should use ordered run plans rather than one mutually
+exclusive mode. A validation run may execute multiple steps in sequence, while a
+normal future run may execute only patient execution and assembly.
+
+Example validation plan:
+
+```text
+legacy_cohort -> patient_batch -> assemble_patient_outputs -> validate_against_legacy
+```
+
+Example future production plan:
+
+```text
+patient_batch -> assemble_patient_outputs
+```
+
+Given the native-heavy crash history, the long-term runner should allow these
+steps to run in separate processes or separate run directories so memory and GPU
+state can be released between major phases.
+
+## Output Simplification Audit
+
+Last reviewed: 2026-05-19.
+
+Search roots used for the first sister-repository scan:
+
+- `/home/matthew-muscat/Documents/UBC/Research/biopsy_dosimetry_analysis`
+- `/home/matthew-muscat/Documents/UBC/Research/biopsy_tissue_class_stat_analysis`
+- `/home/matthew-muscat/Documents/UBC/Research/biopsy_tissue_class_stat_analysis_corrected`
+
+This scan is an input to removal decisions, not an automatic deletion rule.
+"No direct sister reference found" means the exact cohort CSV name was not found
+in code/docs during the scan; the user should still confirm whether the output is
+scientifically useless, should be regenerated downstream, or should remain a
+base artifact.
+
+### Directly Referenced by Sister Repositories
+
+Keep these available until the sibling contract is updated or a replacement
+artifact is validated.
+
+- `Cohort: 3D radiomic features all OAR and DIL structures.csv`
+- `Cohort: Biopsy basic spatial features dataframe.csv`
+- `Cohort: Nearest DILs to each biopsy.csv`
+- `Cohort: Simulated biopsy preparation dataframe.csv`
+- `Cohort: sum-to-one mc results.csv`
+- `Cohort: global sum-to-one mc results.csv`
+- `Cohort: Tissue class - distances global results.csv`
+- `Cohort: Tissue class - distances pt-wise results.csv`
+- `Cohort: Tissue class - distances voxel-wise results.csv`
+- `Cohort: Per voxel prostate double sextant classification.csv`
+- `Cohort: Global dosimetry (NEW).csv`
+- `Cohort: Global dosimetry by voxel.csv`
+- `Cohort: Bx DVH metrics (generalized).csv`
+
+### No Direct Sister Reference Found in First Scan
+
+These are simplification candidates. Prefer removing them from the core output
+surface or regenerating them in cohort assembly/downstream unless the user
+confirms they are base outputs.
+
+- `Cohort: Global MR ADC statistics.csv` - summary product; may be optional unless MR analysis requires it.
+- `Cohort: Global by voxel MR ADC statistics.csv` - MR output candidate; no direct sibling reference found.
+- `Cohort: Guidance-map firing depth recommendations dataframe.csv` - likely useful for GUI/guidance workflow, not sister analysis.
+- `Cohort: Per sample point prostate double sextant classification.csv` - per-sample detail; voxel-level table is the referenced one.
+- `Cohort: tissue class global scores (structure).csv` - summary product; may be regenerated from lower-level artifacts.
+- `Cohort: All MC structure transformation values.csv` - no exact sister reference found in the first scan.
+- `Cohort: structure specific mc results.csv` - no exact sister reference found in the first scan, although it is a plausible base tissue-class artifact.
+
+### Removed or Gated After User Review
+
+These first-pass decisions simplify the core output schema before the patient
+orchestrator is built.
+
+- `Cohort: DIL global tissue scores and DIL features.csv` - removed from the core output schema; it is a derived join of base tissue-score and radiomic tables and should be regenerated downstream if needed.
+- `Cohort: tissue volume above threshold.csv` - removed from the core output schema; threshold summaries should be calculated by an analysis pipeline from base tissue-class outputs.
+- `Cohort: Bx DVH metrics.csv` - removed from the core output schema; this is the old deprecated DVH surface and is superseded by `Cohort: Bx DVH metrics (generalized).csv` until a clean DVH service replaces both.
+- `Cohort: Simulated biopsy planned vs realized centroid variation validation.csv` - validation-only; it should be gated into validation output, not written as a normal cohort CSV.
+
+### Tissue-Class Grain Clarification
+
+`Cohort: structure specific mc results.csv` and
+`Cohort: tissue class global scores (structure).csv` are related but not the
+same table.
+
+- `Cohort: structure specific mc results.csv` is the granular long-form MC output at approximately patient + biopsy + MC trial + point/voxel + relative structure grain. This is closer to a base artifact.
+- `Cohort: tissue class global scores (structure).csv` is an aggregated biopsy-level/by-relative-structure summary computed from the granular structure-specific MC results. This is a derived summary and can be regenerated from lower-level artifacts.
+
+### Removal and Quarantine Ledger
+
+Remove or quarantine non-core runtime surfaces before building the patient
+orchestrator, so the new lane does not inherit boundaries around code that should
+not survive.
+
+| Item | Current evidence | Direction |
+| --- | --- | --- |
+| Random forest tumor morphology analysis | Runs inside main when `num_patients > 1`; no reason to be core localization runtime. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
+| FANOVA/Sobol pathway | Inputs default to zero, but imports, flags, runtime branch, and CSV export path remain in main. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
+| Deprecated CSV writer calls | `csv_writers.csv_writer_containment` and `csv_writers.csv_writer_dosimetry` are commented legacy paths. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
+| Production plots | Already skipped in main. | Keep outside core runtime as a dedicated plotting workflow. |
+| Derived joined summaries | `Cohort: DIL global tissue scores and DIL features` is a convenience join. | Removed from core output schema; regenerate downstream from base artifacts if needed. |
+| Global sum-to-one MC summary | Directly referenced by tissue-class repos but derived from long-form sum-to-one rows. | Keep during migration, then rebuild in cohort assembly or sister repo. |
+| Tissue volume threshold summary | No direct sister-reference found; summary is downstream-calculable. | Removed from core output schema; calculate downstream if needed. |
+| Legacy/simple DVH metrics | Generalized DVH metrics are referenced; old `Cohort: Bx DVH metrics.csv` was not found directly. | Removed from core output schema; generalized DVH remains during migration. |
+
+### Deferred MC Simulator Cleanup Audit
+
+`python_files_dcm_meta_based/MC_simulator_convex.py` still contains substantial
+research-era and debug-era code that should not be inherited blindly by the
+patient runner. This is important cleanup work, but it should be handled as a
+separate audit lane rather than as a blocker for the first patient-runner
+scaffold.
+
+Candidate cleanup areas:
+
+- old commented-out implementation blocks that are clearly deprecated,
+- block-quoted timing/debug experiments that should either be deleted or gated
+  with explicit disabled branches such as `if False`,
+- tissue-volume-threshold calculations that are downstream-calculable from base
+  tissue-class artifacts,
+- old/simple DVH metric calculations that are superseded by generalized DVH or
+  can be rebuilt by dosimetry analysis workflows,
+- differential/cumulative DVH runtime dictionaries and dose-volume metric caches
+  if no current registered artifact, validation route, or sister workflow depends
+  on them being produced inside the main MC simulator.
+
+Cleanup rule: do not remove scientific calculations from the MC simulator solely
+because they are not currently exported. First trace whether they feed registered
+base artifacts, validation outputs, planning/guidance state, sister repositories,
+or manuscript-era results. Each removal should identify the replacement location:
+patient artifact, cohort assembly, dosimetry/tissue-class sister workflow, or
+deleted with no replacement.
+
+Recommended audit artifact: a table with one row per candidate block/function
+covering current producer, current consumer, output artifact if any, sister-repo
+or paper usage, proposed action, and validation requirement.
+
+### Deferred Render Asset Cleanup
+
+The repository root contains old Open3D camera/render JSON files and old screen
+capture PNGs. These should not become part of the patient-runner contract.
+
+Current evidence:
+
+- the optimizer-v2 render/GUI path does not rely on the loose root-level
+  `ScreenCamera_*.json`, `DepthCamera_*.json`, or `RenderOption_*.json` files,
+- the legacy main/MC demonstration plotting path still names a small set of
+  Open3D screen-camera JSONs through `dose_views_jsons_paths_list` and
+  `containment_views_jsons_paths_list`,
+- top-level PNG captures are old local artifacts and have been moved into the
+  ignored `png/` holding folder.
+
+Direction:
+
+- do not make root-level camera/render JSONs part of any new patient-runner or
+  GUI contract,
+- audit the remaining legacy demo plotting paths before deleting the JSONs,
+- if the legacy demo paths are removed or converted to the new render module,
+  delete the loose camera/depth/render JSONs or move any still-useful presets
+  into a named module-local render preset folder,
+- keep generated screenshots, timing captures, and exploratory images out of git.
+
 ## Runtime State Migration
 
 The current `master_structure_reference_dict` and `master_structure_info_dict`
@@ -104,6 +295,110 @@ Good first object candidates:
 Dataclasses are a good fit for these internal runtime objects because they are
 standard-library, typed, readable, and light. They should not replace table
 schema registries or manifests at external boundaries.
+
+## Patient Runner Data and Code Standards
+
+The patient-runner module should be treated as a clean new boundary around the
+existing scientific code, not as a place to copy the monolith's informal state
+style. New code should be explicit, typed, auditable, and boring to read.
+
+### Data Type Choices
+
+Use standard-library Python 3.11 typing first. Do not add a new validation
+dependency until a real external-boundary problem requires it.
+
+Recommended types:
+
+- `@dataclass(frozen=True, slots=True)` for immutable value objects, configs,
+  manifests, identity records, and completed stage results.
+- Plain `@dataclass(slots=True)` for intentionally mutable runtime wrappers,
+  such as a patient-local compatibility bridge around legacy dictionaries.
+- `Enum` or `Literal` for closed stage/status names that are used in logs,
+  manifests, and run plans.
+- `TypedDict` for narrow legacy-dictionary views when the dictionary shape must
+  remain visible during migration.
+- `Protocol` for small interfaces such as artifact writers, stage runners, and
+  validators when multiple implementations are expected.
+- `pathlib.Path` for filesystem contracts; avoid passing raw path strings across
+  new module boundaries.
+- `Mapping`, `MutableMapping`, `Sequence`, and `Iterable` in function signatures
+  when callers should not depend on concrete container classes.
+- `numpy.ndarray` and `pandas.DataFrame` remain acceptable for scientific arrays
+  and tables, but their expected shape, columns, grain, and key fields must be
+  documented at the boundary that accepts or returns them.
+
+Potential later option: Pydantic can be evaluated for serialized manifests,
+sidecar files, or user-editable configuration if plain dataclasses plus
+`__post_init__` validation become too weak. It should not be introduced for hot
+numeric loops, dataframe schemas, or internal scratch state unless there is a
+clear benefit.
+
+### Contract Layers
+
+Keep these contract layers separate:
+
+- Runtime contracts describe Python objects passed between patient-runner stages.
+- Artifact contracts describe files, table grain, keys, schemas, and registry
+  metadata.
+- Validation contracts describe how patient outputs are compared to legacy
+  cohort outputs.
+- Legacy bridge contracts describe the minimum subset of
+  `master_structure_reference_dict` and `master_structure_info_dict` required by
+  an existing stage.
+
+The patient runner should not smuggle all-patient state through a patient-local
+API. If a stage needs cohort-level information, that dependency must be an
+explicit sidecar input, cohort-assembly step, or validation step.
+
+Initial object contracts:
+
+- `PatientCase`: immutable patient identity plus input references needed to run
+  one patient.
+- `PatientRunConfig`: immutable patient-run settings derived from the shared
+  pipeline config.
+- `PatientRuntimeState`: patient-local wrapper around the existing legacy state,
+  used only while stages are being migrated.
+- `PatientArtifactStore`: controlled write surface for registered patient
+  artifacts and manifests.
+- `PatientStageResult`: immutable status, timing, warnings, and artifact summary
+  for one stage.
+- `PatientRunResult`: immutable run-level summary that can be consumed by cohort
+  assembly and validation.
+
+### Code Style Rules
+
+New patient-runner code should follow these rules unless a local module has a
+stronger convention:
+
+- small modules with one responsibility each,
+- small functions with explicit inputs and return values,
+- no hidden mutation of global state,
+- no bare string stage names spread across modules; centralize constants or
+  enums,
+- no block-quoted dead code or large commented-out implementation alternatives,
+- timing through a shared timing/logging helper rather than ad hoc stopwatch
+  snippets,
+- debug or demonstration code behind explicit config flags, not implicit
+  comments,
+- exceptions should identify patient ID, stage, and artifact or structure when
+  available,
+- logs should include stage start/end, elapsed seconds, artifact counts, and
+  validation summaries,
+- artifact writers should be idempotent where practical and should write a
+  manifest that can be audited without loading Python pickles.
+
+Docstrings should explain contract, grain, and side effects. They should not
+restate obvious assignments. Comments should be reserved for non-obvious
+scientific assumptions, legacy compatibility constraints, or invariants that a
+future maintainer could accidentally break.
+
+### Migration Discipline
+
+The first patient-runner code should wrap existing scientific implementation
+rather than rewrite it. Refactors should be contract-preserving until assembled
+patient outputs match the legacy cohort oracle. Cleanup passes, especially in
+`MC_simulator_convex.py`, should be separate from patient-runner scaffolding
+unless the cleanup is required to expose a patient-local boundary.
 
 ### master_structure_info_dict
 
@@ -195,6 +490,26 @@ input-manifest bug.
 Build a runner entrypoint that can execute one patient case independently using
 existing modules with minimal scientific drift. It should write patient artifacts
 only.
+
+Immediate Phase C.0 scope:
+
+- create a small patient-runner module/package without rewriting scientific
+  algorithms,
+- define the minimal contracts for `PatientCase`, patient-local runtime state,
+  run config, and patient-run result,
+- add a bridge that can carve one patient out of the legacy dictionaries and run
+  existing stages against that patient-local state,
+- write registered patient artifacts through the existing artifact/registry
+  surface,
+- keep the legacy all-patient monolith as the validation oracle during this
+  phase,
+- defer broad MC simulator cleanup until the audit above identifies safe removal
+  boundaries.
+
+The first patient-runner implementation should be boring on purpose: no new
+science, no output schema churn, and no deep cleanup mixed into the runner
+scaffold. Its job is to prove that one patient can move through the existing
+pipeline boundary with explicit inputs, outputs, timing, and logs.
 
 ### Phase D: Cohort Assembly
 
