@@ -48,6 +48,7 @@ Recommended layout inside the run output directory:
     events.jsonl
     run_status.json
     native_fault.log
+    process_watchdog.jsonl
 ```
 
 ## File Roles
@@ -146,6 +147,25 @@ This file will not help for `SIGKILL`, many kernel OOM kills, power/session
 loss, or cases where the process is terminated before Python can run any signal
 handler. It is still worth keeping because it can turn some otherwise silent
 C/CUDA/native-extension crashes into a durable Python stack trace.
+
+### 5. `process_watchdog.jsonl`
+
+Structured append-only event stream written by a sibling watchdog process.
+
+The watchdog samples:
+
+- target PID liveness,
+- target RSS/VMS,
+- child-process RSS/VMS,
+- process-tree RSS/VMS,
+- system RAM and swap pressure,
+- GPU memory when available,
+- the latest `run_status.json` phase/patient/structure/checkpoint context.
+
+This is the main evidence surface for hard exits that bypass the target Python
+process. It still cannot identify every possible cause, but it can usually tell
+whether the target process disappeared after a memory-pressure climb and what
+runtime stage was active at the last external sample.
 
 ## Event Categories
 
@@ -286,12 +306,16 @@ normal Python exception handling, for example `SIGKILL`, external process kill,
 kernel OOM, terminal/session termination, or a native crash that bypassed Python
 fault handling.
 
-For repeated suspected OOM failures, an external watchdog is more useful than
-more in-process logging. The watchdog should be a sibling process that samples
-the target PID's RSS/VMS, system memory, GPU memory, and process liveness every
-few seconds, then writes its own `watchdog.jsonl`. Because it is outside the
-target process, it can often record that the target disappeared even when the
-target itself was killed before flushing a final event.
+For repeated suspected OOM failures, the external watchdog is more useful than
+more in-process logging. Because it is outside the target process, it can often
+record that the target disappeared even when the target itself was killed before
+flushing a final event.
+
+The watchdog cannot prove kernel OOM by itself. It should be interpreted with
+system evidence such as `journalctl -k`, `dmesg`, and GPU driver logs when those
+logs are available. Its value is that it records the process-local memory and
+pipeline context immediately before disappearance, which kernel logs often do
+not include.
 
 ## Recommended Minimal First Implementation
 

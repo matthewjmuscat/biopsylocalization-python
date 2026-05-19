@@ -82,6 +82,13 @@ Recommended first-class surfaces:
 
 The package should prefer explicit typed contracts and shape assumptions over convenience magic.
 
+Diagnostic hooks should remain package-agnostic. A generic optional progress or
+observer callback is acceptable because downstream applications can use it to
+record stage/count/memory context without the containment package importing the
+downstream application's logger. The standalone package should not import biopsy
+runtime logging, optimizer-v2 logging, or repository-specific progress-bar
+surfaces.
+
 ## Current Input Contract Reminder
 
 The active mother-function contract already supports two distinct input modes for the test structures.
