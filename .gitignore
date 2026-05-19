@@ -16,6 +16,12 @@ figures
 *.json
 *.gif
 
+# Local tactical planning and private development notes
+.private_notes/
+
+# Generated run-comparison artifacts
+validation_outputs/run_comparisons/
+validation_outputs/output_inventory
 
 
 

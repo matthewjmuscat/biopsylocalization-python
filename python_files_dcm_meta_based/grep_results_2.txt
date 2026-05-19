@@ -1,0 +1,100 @@
+./biopsy_localization_convex_main.py:7695:                        #del specific_bx_structure['MC data: compiled sim results']
+./biopsy_localization_convex_main.py:10995:                         "MC data: compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:10997:                         #"MC data: mutual compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:10998:                         "MC data: compiled sim results": None, 
+./biopsy_localization_convex_main.py:10999:                         "MC data: mutual compiled sim results": None,
+./biopsy_localization_convex_main.py:11129:                                "MC data: compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:11131:                                #"MC data: mutual compiled sim results dataframe": None,
+./biopsy_localization_convex_main.py:11132:                                "MC data: compiled sim results": None,
+./biopsy_localization_convex_main.py:11133:                                "MC data: mutual compiled sim results": None, 
+./biopsy_localization_convex_main.py:11213:                                                                                 #"Tissue class - Pt wise mutual tissue class results": None,
+./production_plots.py:2071:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./production_plots.py:2103:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./production_plots.py:2350:        tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./production_plots.py:2366:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:33:./biopsy_localization_convex_main.py:7695:                        #del specific_bx_structure['MC data: compiled sim results']
+./grep_results.txt:77:./biopsy_localization_convex_main.py:10995:                         "MC data: compiled sim results dataframe": None,
+./grep_results.txt:79:./biopsy_localization_convex_main.py:10997:                         #"MC data: mutual compiled sim results dataframe": None,
+./grep_results.txt:80:./biopsy_localization_convex_main.py:10998:                         "MC data: compiled sim results": None, 
+./grep_results.txt:81:./biopsy_localization_convex_main.py:10999:                         "MC data: mutual compiled sim results": None,
+./grep_results.txt:82:./biopsy_localization_convex_main.py:11129:                                "MC data: compiled sim results dataframe": None,
+./grep_results.txt:84:./biopsy_localization_convex_main.py:11131:                                #"MC data: mutual compiled sim results dataframe": None,
+./grep_results.txt:85:./biopsy_localization_convex_main.py:11132:                                "MC data: compiled sim results": None,
+./grep_results.txt:86:./biopsy_localization_convex_main.py:11133:                                "MC data: mutual compiled sim results": None, 
+./grep_results.txt:88:./biopsy_localization_convex_main.py:11213:                                                                                 #"Tissue class - Pt wise mutual tissue class results": None,
+./grep_results.txt:89:./production_plots.py:2071:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:90:./production_plots.py:2103:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:91:./production_plots.py:2350:        tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./grep_results.txt:92:./production_plots.py:2366:        for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:118:./csv_writers.py:99:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:119:./csv_writers.py:152:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:120:./csv_writers.py:181:                    tumor_containment_structure_binom_est_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"].tolist()
+./grep_results.txt:121:./test_code.ipynb:1406:    "        #del specific_bx_structure['MC data: compiled sim results']\n",
+./grep_results.txt:128:./test_code.ipynb:19958:    "        \"Tumor tissue binomial est arr\": np.array([0.1, 0.2, 0.3]),\n",
+./grep_results.txt:129:./test_code.ipynb:19963:    "    \"MC data: compiled sim results\": {\n",
+./grep_results.txt:132:./test_code.ipynb:20016:    "    tumor_tissue_bionomial_est_arr = specific_bx_structure[\"MC data: tumor tissue probability\"][\"Tumor tissue binomial est arr\"]\n",
+./grep_results.txt:134:./test_code.ipynb:20034:    "    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./grep_results.txt:138:./test_code.ipynb:20146:    "        \"Mean probability (binom est)\": tumor_data[\"Tumor tissue binomial est arr\"].tolist() + specific_bx_structure[\"MC data: miss structure tissue probability\"][\"OAR tissue miss binomial est arr\"].tolist(),\n",
+./grep_results.txt:139:./test_code.ipynb:20153:    "    for key_tuple, value_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./grep_results.txt:141:./test_code.ipynb:20485:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./grep_results.txt:142:./test_code.ipynb:20575:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./grep_results.txt:143:./test_code.ipynb:20661:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./grep_results.txt:144:./test_code.ipynb:20704:    "            specific_bx_structure[\"MC data: compiled sim results dataframe\"] = containment_output_by_rel_structure_pandas_data_frame\n",
+./grep_results.txt:161:./MC_simulator_convex.py:1756:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
+./grep_results.txt:163:./MC_simulator_convex.py:1758:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
+./grep_results.txt:164:./MC_simulator_convex.py:1762:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./grep_results.txt:165:./MC_simulator_convex.py:1763:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./grep_results.txt:166:./MC_simulator_convex.py:1963:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./grep_results.txt:167:./MC_simulator_convex.py:1964:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./grep_results.txt:168:./MC_simulator_convex.py:1987:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./grep_results.txt:169:./MC_simulator_convex.py:2003:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./grep_results.txt:172:./MC_simulator_convex.py:2083:        specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est arr": None, 
+./grep_results.txt:173:./MC_simulator_convex.py:2113:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./grep_results.txt:174:./MC_simulator_convex.py:2114:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./grep_results.txt:175:./MC_simulator_convex.py:2183:                specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est arr"] = probability_pt_wise_dil_tissue_arr
+./grep_results.txt:178:./MC_simulator_convex.py:2328:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./grep_results.txt:199:./fanova.py:605:                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"] = mutual_fanova_compiled_results_for_fixed_bx_dict
+./grep_results.txt:200:./fanova.py:641:                    mutual_fanova_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"]
+./grep_results.txt:203:./dataframe_builders.py:218:    tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./grep_results.txt:205:./dataframe_builders.py:236:    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./grep_results.txt:206:./dataframe_builders.py:315:            sp_bx_mc_structure_specific_pt_wise_results_dataframe = specific_bx_structure["MC data: compiled sim results dataframe"]
+./grep_results.txt:209:./dataframe_builders.py:429:            sp_bx_mc_tissue_class_pt_wise_results_dataframe = specific_bx_structure["MC data: mutual compiled sim results dataframe"]
+./grep_results.txt:210:./dataframe_builders.py:435:        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Pt wise mutual tissue class results"] = multi_structure_mc_tissue_class_pt_wise_results_dataframe
+./grep_results.txt:211:./dataframe_builders.py:603:            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure["MC data: compiled sim results dataframe"] 
+./grep_results.txt:212:./dataframe_builders.py:646:            specific_bx_structure["MC data: compiled sim results dataframe"] = containment_output_by_rel_structure_pandas_data_frame
+./csv_writers.py:99:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./csv_writers.py:152:                    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./csv_writers.py:181:                    tumor_containment_structure_binom_est_list = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"].tolist()
+./test_code.ipynb:1406:    "        #del specific_bx_structure['MC data: compiled sim results']\n",
+./test_code.ipynb:19958:    "        \"Tumor tissue binomial est arr\": np.array([0.1, 0.2, 0.3]),\n",
+./test_code.ipynb:19963:    "    \"MC data: compiled sim results\": {\n",
+./test_code.ipynb:20016:    "    tumor_tissue_bionomial_est_arr = specific_bx_structure[\"MC data: tumor tissue probability\"][\"Tumor tissue binomial est arr\"]\n",
+./test_code.ipynb:20034:    "    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./test_code.ipynb:20146:    "        \"Mean probability (binom est)\": tumor_data[\"Tumor tissue binomial est arr\"].tolist() + specific_bx_structure[\"MC data: miss structure tissue probability\"][\"OAR tissue miss binomial est arr\"].tolist(),\n",
+./test_code.ipynb:20153:    "    for key_tuple, value_dict in specific_bx_structure['MC data: compiled sim results'].items():\n",
+./test_code.ipynb:20485:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20575:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20661:    "            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure[\"MC data: compiled sim results dataframe\"] \n",
+./test_code.ipynb:20704:    "            specific_bx_structure[\"MC data: compiled sim results dataframe\"] = containment_output_by_rel_structure_pandas_data_frame\n",
+./MC_simulator_convex.py:1756:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results dataframe"] = mc_compiled_results_for_fixed_bx_dataframe
+./MC_simulator_convex.py:1758:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results dataframe"] = bx_mutual_containment_by_org_pt_all_combos_dataframe
+./MC_simulator_convex.py:1762:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1763:                #master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1963:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] = MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1964:                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"] = mutual_MC_compiled_results_for_fixed_bx_dict
+./MC_simulator_convex.py:1987:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./MC_simulator_convex.py:2003:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./MC_simulator_convex.py:2083:        specific_bx_structure_tumor_tissue_dict_empty = {"Tumor tissue binomial est arr": None, 
+./MC_simulator_convex.py:2113:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./MC_simulator_convex.py:2114:                mutual_MC_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: mutual compiled sim results"]
+./MC_simulator_convex.py:2183:                specific_bx_structure_tumor_tissue_dict["Tumor tissue binomial est arr"] = probability_pt_wise_dil_tissue_arr
+./MC_simulator_convex.py:2328:                specific_bx_results_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim results"] 
+./fanova.py:605:                    master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"] = mutual_fanova_compiled_results_for_fixed_bx_dict
+./fanova.py:641:                    mutual_fanova_compiled_results_for_fixed_bx_dict = master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["FANOVA: mutual compiled sim results"]
+./dataframe_builders.py:218:    tumor_tissue_bionomial_est_arr = specific_bx_structure["MC data: tumor tissue probability"]["Tumor tissue binomial est arr"]
+./dataframe_builders.py:236:    for containment_structure_key_tuple, containment_structure_dict in specific_bx_structure['MC data: compiled sim results'].items():
+./dataframe_builders.py:315:            sp_bx_mc_structure_specific_pt_wise_results_dataframe = specific_bx_structure["MC data: compiled sim results dataframe"]
+./dataframe_builders.py:429:            sp_bx_mc_tissue_class_pt_wise_results_dataframe = specific_bx_structure["MC data: mutual compiled sim results dataframe"]
+./dataframe_builders.py:435:        pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]["Tissue class - Pt wise mutual tissue class results"] = multi_structure_mc_tissue_class_pt_wise_results_dataframe
+./dataframe_builders.py:603:            containment_output_by_rel_structure_pandas_data_frame = specific_bx_structure["MC data: compiled sim results dataframe"] 
+./dataframe_builders.py:646:            specific_bx_structure["MC data: compiled sim results dataframe"] = containment_output_by_rel_structure_pandas_data_frame

@@ -2,6 +2,7 @@ import cupy as cp
 import cuspatial
 import cudf
 import geopandas as gpd
+from dataclasses import dataclass, field
 from shapely.geometry import Polygon, Point
 import numpy as np
 import time
@@ -14,9 +15,384 @@ import struct
 import pathlib
 from line_profiler import LineProfiler
 import copy
+from typing import Any, Optional, Sequence
 import polygon_dilation_helpers_numpy
 import dataframe_builders
 import plotting_funcs
+
+
+@dataclass(frozen=True)
+class ContainmentPreparedRelativeStructuresAuditReport:
+    num_relative_structures: int = 0
+    num_total_z_slices: int = 0
+    num_total_points: int = 0
+    max_num_z_slices_per_structure: int = 0
+    max_num_points_per_structure: int = 0
+    constant_z_slice_polygons_handler_option: Optional[str] = None
+    remove_consecutive_duplicate_points_in_polygons: bool = False
+
+
+@dataclass(frozen=True)
+class ContainmentPreparedRelativeStructuresTimingReport:
+    reused_prepared_pack: bool = False
+    relative_structure_pack_elapsed_seconds: float = 0.0
+    geometry_normalization_elapsed_seconds: float = 0.0
+    z_value_extraction_elapsed_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class ContainmentPreparedRelativeStructuresPack:
+    all_structures_list_of_2d_arr: tuple[Any, ...] = ()
+    all_structures_slices_indices_list: tuple[Any, ...] = ()
+    stacked_structures_stacked_slices_2d_arr_1: Optional[np.ndarray] = None
+    stacked_structures_stacked_slices_indices_2d_arr_2: Optional[np.ndarray] = None
+    stacked_structures_stacked_slices_indices_2d_arr_3: Optional[np.ndarray] = None
+    stacked_structures_stacked_slices_indices_indices_2d_arr_4: Optional[np.ndarray] = None
+    relative_structures_list_of_zvals_1d_arrays: tuple[Any, ...] = ()
+    audit_report: ContainmentPreparedRelativeStructuresAuditReport = field(
+        default_factory=ContainmentPreparedRelativeStructuresAuditReport
+    )
+
+
+@dataclass(frozen=True)
+class ContainmentNearestZHelperTimingReport:
+    helper_name: str = ""
+    helper_elapsed_seconds: float = 0.0
+    validation_enabled: bool = False
+    validation_elapsed_seconds: float = 0.0
+    validation_match: bool = True
+
+
+@dataclass(frozen=True)
+class ContainmentExecutionTimingReport:
+    execution_elapsed_seconds: float = 0.0
+    valid_point_compaction_elapsed_seconds: float = 0.0
+    valid_point_upload_elapsed_seconds: float = 0.0
+    kernel_input_prepare_elapsed_seconds: float = 0.0
+    kernel_execution_elapsed_seconds: float = 0.0
+    result_writeback_elapsed_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class ContainmentMotherTimingReport:
+    helper_name: str = ""
+    helper_elapsed_seconds: float = 0.0
+    validation_enabled: bool = False
+    validation_elapsed_seconds: float = 0.0
+    validation_match: bool = True
+    prepared_relative_structures_reused: bool = False
+    prepared_relative_structures_elapsed_seconds: float = 0.0
+    prepper_elapsed_seconds: float = 0.0
+    containment_execution_elapsed_seconds: float = 0.0
+    valid_point_compaction_elapsed_seconds: float = 0.0
+    valid_point_upload_elapsed_seconds: float = 0.0
+    kernel_input_prepare_elapsed_seconds: float = 0.0
+    kernel_execution_elapsed_seconds: float = 0.0
+    result_writeback_elapsed_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class ContainmentPrepperTimingReport:
+    nearest_z_helper_timing_report: ContainmentNearestZHelperTimingReport = field(
+        default_factory=ContainmentNearestZHelperTimingReport
+    )
+    prepared_relative_structures_timing_report: ContainmentPreparedRelativeStructuresTimingReport = field(
+        default_factory=ContainmentPreparedRelativeStructuresTimingReport
+    )
+
+
+def _build_default_nearest_z_helper_timing_report():
+    return ContainmentNearestZHelperTimingReport()
+
+
+def _build_default_execution_timing_report():
+    return ContainmentExecutionTimingReport()
+
+
+def _build_default_mother_timing_report():
+    return ContainmentMotherTimingReport()
+
+
+def _build_default_prepared_relative_structures_timing_report():
+    return ContainmentPreparedRelativeStructuresTimingReport()
+
+
+def _build_default_prepper_timing_report():
+    return ContainmentPrepperTimingReport()
+
+
+def _synchronize_cuda_device_for_timing():
+    cp.cuda.runtime.deviceSynchronize()
+
+
+def _run_nearest_z_helper_with_optional_validation(
+    relative_structures_list_of_zvals_1d_arrays,
+    points_to_test_3d_arr,
+    test_struct_to_relative_struct_1d_mapping_array,
+    *,
+    validate_against_ver5=False,
+):
+    helper_name = "ver8_grouped_searchsorted"
+    helper_start_time = time.perf_counter()
+    nearest_zslice_index_and_values_3d_arr = (
+        polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver8_grouped_searchsorted(
+            relative_structures_list_of_zvals_1d_arrays,
+            points_to_test_3d_arr,
+            test_struct_to_relative_struct_1d_mapping_array,
+        )
+    )
+    helper_elapsed_seconds = time.perf_counter() - helper_start_time
+
+    validation_elapsed_seconds = 0.0
+    validation_match = True
+    if validate_against_ver5:
+        validation_start_time = time.perf_counter()
+        nearest_zslice_index_and_values_3d_arr_ver5 = (
+            polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver5(
+                relative_structures_list_of_zvals_1d_arrays,
+                points_to_test_3d_arr,
+                test_struct_to_relative_struct_1d_mapping_array,
+            )
+        )
+        validation_elapsed_seconds = time.perf_counter() - validation_start_time
+        validation_match = bool(
+            np.array_equal(
+                nearest_zslice_index_and_values_3d_arr,
+                nearest_zslice_index_and_values_3d_arr_ver5,
+            )
+        )
+        if not validation_match:
+            raise AssertionError(
+                "Grouped nearest-z helper output did not match ver5 during validation"
+            )
+
+    return nearest_zslice_index_and_values_3d_arr, ContainmentNearestZHelperTimingReport(
+        helper_name=helper_name,
+        helper_elapsed_seconds=float(helper_elapsed_seconds),
+        validation_enabled=bool(validate_against_ver5),
+        validation_elapsed_seconds=float(validation_elapsed_seconds),
+        validation_match=bool(validation_match),
+    )
+
+
+def convert_list_of_2d_arrays_to_2d_array_and_indices_array(list_of_2d_arrays):
+    return polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(
+        list_of_2d_arrays,
+        main_arr_dtype=np.float64,
+        indices_arr_dtype=np.int64,
+    )
+
+
+def convert_list_of_constant_zslice_polygons_to_list_of_2d_arrays_and_indices_arrays(
+    list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+    constant_z_slice_polygons_handler_option='auto-close-if-open',
+    remove_consecutive_duplicate_points_in_polygons=False,
+):
+    num_relative_structures = len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+
+    if remove_consecutive_duplicate_points_in_polygons == True:
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = [None] * num_relative_structures
+        for relative_structure_index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
+            relative_structure_zslices_list_no_consecutive_duplicates = [None] * len(relative_structure_zslices_list)
+            for sp_rel_struct_zslice_index, zslice_arr in enumerate(relative_structure_zslices_list):
+                relative_structure_zslices_list_no_consecutive_duplicates[sp_rel_struct_zslice_index] = polygon_dilation_helpers_numpy.remove_consecutive_duplicate_points_numpy(zslice_arr)
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates[relative_structure_index] = relative_structure_zslices_list_no_consecutive_duplicates
+    else:
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = copy.deepcopy(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+
+    if constant_z_slice_polygons_handler_option == 'auto-close-if-open':
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None] * num_relative_structures
+        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates):
+            relative_structure_zslices_list_closed_polygons = [None] * len(relative_structure_zslices_list)
+            for i, zslice_arr in enumerate(relative_structure_zslices_list):
+                if not np.all(zslice_arr[0] == zslice_arr[-1]):
+                    relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+                else:
+                    relative_structure_zslices_list_closed_polygons[i] = zslice_arr
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
+    elif constant_z_slice_polygons_handler_option == 'close-all':
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None] * num_relative_structures
+        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates):
+            relative_structure_zslices_list_closed_polygons = [None] * len(relative_structure_zslices_list)
+            for i, zslice_arr in enumerate(relative_structure_zslices_list):
+                relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
+
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
+    elif constant_z_slice_polygons_handler_option == None:
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates
+    else:
+        raise ValueError("Unsupported constant_z_slice_polygons_handler_option")
+
+    all_structures_list_of_2d_arr = [None] * num_relative_structures
+    all_structures_slices_indices_list = [None] * num_relative_structures
+    for index, relative_structure_zslices_list_closed_polygons in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons):
+        relative_structure_closed_polygons_2d_arr, relative_structure_closed_polygons_indices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(
+            relative_structure_zslices_list_closed_polygons,
+            main_arr_dtype=np.float64,
+            indices_arr_dtype=np.int64,
+        )
+        all_structures_list_of_2d_arr[index] = relative_structure_closed_polygons_2d_arr
+        all_structures_slices_indices_list[index] = relative_structure_closed_polygons_indices_arr
+
+    stacked_structures_stacked_slices_2d_arr_1, stacked_structures_stacked_slices_indices_2d_arr_2 = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(
+        all_structures_list_of_2d_arr,
+        main_arr_dtype=np.float64,
+        indices_arr_dtype=np.int64,
+    )
+    stacked_structures_stacked_slices_indices_2d_arr_3, stacked_structures_stacked_slices_indices_indices_2d_arr_4 = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(
+        all_structures_slices_indices_list,
+        num_columns=2,
+        main_arr_dtype=np.int64,
+        indices_arr_dtype=np.int64,
+    )
+
+    return (
+        all_structures_list_of_2d_arr,
+        all_structures_slices_indices_list,
+        stacked_structures_stacked_slices_2d_arr_1,
+        stacked_structures_stacked_slices_indices_2d_arr_2,
+        stacked_structures_stacked_slices_indices_2d_arr_3,
+        stacked_structures_stacked_slices_indices_indices_2d_arr_4,
+    )
+
+
+def build_prepared_relative_structures_audit_report(
+    list_of_relative_structures_containting_list_of_constant_zslices_arrays: Sequence[Sequence[np.ndarray]],
+    *,
+    constant_z_slice_polygons_handler_option: Optional[str],
+    remove_consecutive_duplicate_points_in_polygons: bool,
+) -> ContainmentPreparedRelativeStructuresAuditReport:
+    num_relative_structures = int(
+        len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+    )
+    num_total_z_slices = 0
+    num_total_points = 0
+    max_num_z_slices_per_structure = 0
+    max_num_points_per_structure = 0
+
+    for relative_structure_zslices_list in list_of_relative_structures_containting_list_of_constant_zslices_arrays:
+        num_z_slices = int(len(relative_structure_zslices_list))
+        num_points = int(
+            sum(np.asarray(zslice_arr).shape[0] for zslice_arr in relative_structure_zslices_list)
+        )
+        num_total_z_slices += num_z_slices
+        num_total_points += num_points
+        max_num_z_slices_per_structure = max(max_num_z_slices_per_structure, num_z_slices)
+        max_num_points_per_structure = max(max_num_points_per_structure, num_points)
+
+    return ContainmentPreparedRelativeStructuresAuditReport(
+        num_relative_structures=num_relative_structures,
+        num_total_z_slices=int(num_total_z_slices),
+        num_total_points=int(num_total_points),
+        max_num_z_slices_per_structure=int(max_num_z_slices_per_structure),
+        max_num_points_per_structure=int(max_num_points_per_structure),
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=bool(
+            remove_consecutive_duplicate_points_in_polygons
+        ),
+    )
+
+
+def prepare_relative_structures_for_containment(
+    list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+    constant_z_slice_polygons_handler_option='auto-close-if-open',
+    remove_consecutive_duplicate_points_in_polygons=False,
+    return_timing_report=False,
+):
+    pack_build_start_time = time.perf_counter()
+    geometry_normalization_start_time = time.perf_counter()
+    (
+        all_structures_list_of_2d_arr,
+        all_structures_slices_indices_list,
+        stacked_structures_stacked_slices_2d_arr_1,
+        stacked_structures_stacked_slices_indices_2d_arr_2,
+        stacked_structures_stacked_slices_indices_2d_arr_3,
+        stacked_structures_stacked_slices_indices_indices_2d_arr_4,
+    ) = convert_list_of_constant_zslice_polygons_to_list_of_2d_arrays_and_indices_arrays(
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
+    )
+    geometry_normalization_elapsed_seconds = time.perf_counter() - geometry_normalization_start_time
+
+    z_value_extraction_start_time = time.perf_counter()
+    relative_structures_list_of_zvals_1d_arrays = (
+        polygon_dilation_helpers_numpy.extract_constant_z_values_arr_version(
+            all_structures_list_of_2d_arr,
+            all_structures_slices_indices_list,
+        )
+    )
+    z_value_extraction_elapsed_seconds = time.perf_counter() - z_value_extraction_start_time
+
+    prepared_relative_structures_pack = ContainmentPreparedRelativeStructuresPack(
+        all_structures_list_of_2d_arr=tuple(all_structures_list_of_2d_arr),
+        all_structures_slices_indices_list=tuple(all_structures_slices_indices_list),
+        stacked_structures_stacked_slices_2d_arr_1=stacked_structures_stacked_slices_2d_arr_1,
+        stacked_structures_stacked_slices_indices_2d_arr_2=stacked_structures_stacked_slices_indices_2d_arr_2,
+        stacked_structures_stacked_slices_indices_2d_arr_3=stacked_structures_stacked_slices_indices_2d_arr_3,
+        stacked_structures_stacked_slices_indices_indices_2d_arr_4=(
+            stacked_structures_stacked_slices_indices_indices_2d_arr_4
+        ),
+        relative_structures_list_of_zvals_1d_arrays=tuple(
+            relative_structures_list_of_zvals_1d_arrays
+        ),
+        audit_report=build_prepared_relative_structures_audit_report(
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                remove_consecutive_duplicate_points_in_polygons
+            ),
+        ),
+    )
+    if not return_timing_report:
+        return prepared_relative_structures_pack
+    return prepared_relative_structures_pack, ContainmentPreparedRelativeStructuresTimingReport(
+        reused_prepared_pack=False,
+        relative_structure_pack_elapsed_seconds=float(
+            time.perf_counter() - pack_build_start_time
+        ),
+        geometry_normalization_elapsed_seconds=float(
+            geometry_normalization_elapsed_seconds
+        ),
+        z_value_extraction_elapsed_seconds=float(
+            z_value_extraction_elapsed_seconds
+        ),
+    )
+
+
+def _validate_prepared_relative_structures_pack(
+    prepared_relative_structures_pack: ContainmentPreparedRelativeStructuresPack,
+):
+    if not isinstance(
+        prepared_relative_structures_pack,
+        ContainmentPreparedRelativeStructuresPack,
+    ):
+        raise TypeError(
+            "prepared_relative_structures_pack must be a ContainmentPreparedRelativeStructuresPack"
+        )
+
+    audit_report = prepared_relative_structures_pack.audit_report
+    num_relative_structures = len(
+        prepared_relative_structures_pack.all_structures_list_of_2d_arr
+    )
+    if num_relative_structures != len(
+        prepared_relative_structures_pack.all_structures_slices_indices_list
+    ):
+        raise ValueError(
+            "prepared_relative_structures_pack structure arrays and slice indices must align"
+        )
+    if num_relative_structures != len(
+        prepared_relative_structures_pack.relative_structures_list_of_zvals_1d_arrays
+    ):
+        raise ValueError(
+            "prepared_relative_structures_pack z-value arrays must align with structure arrays"
+        )
+    if int(audit_report.num_relative_structures) != int(num_relative_structures):
+        raise ValueError(
+            "prepared_relative_structures_pack audit report does not match the prepared structure count"
+        )
 
 
 ### IMPORTANT NOTE: NOTE THAT WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
@@ -1409,6 +1785,7 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
                                                 log_file_name="cuda_log.txt", 
                                                 include_edges_in_log = False, 
                                                 return_array_as = "cupy",
+                                                return_timing_report = False,
                                                 max_total_edges_log_entries = 100000000 # This is the maximum number of edge entries that can be logged. If the number of edge entries exceeds this number, the log file will not include edges
                                                 ):
     """
@@ -1424,6 +1801,9 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
     - kernel_type: The type of kernel to use. The default is "one_to_one_pip_kernel_advanced" which is the most advanced version of the kernel. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays.
     - return_array_as: The type of array to return the results as. The default is "cupy" which returns the results as a CuPy array. The other option is anything (but should type "numpy" for clarity) which returns the results as a NumPy array. Cupy is slightly faster because there is no conversion step before return, but then the array remains on gpu memory.
     """
+
+    execution_start_time = time.perf_counter()
+    kernel_input_prepare_start_time = time.perf_counter()
 
     num_test_points_1 = cp.int32(points.shape[0])
     num_structures = cp.int32(stacked_structures_stacked_slices_indices_indices_2d_arr_4.shape[0])
@@ -1544,11 +1924,19 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
     
     # Compute the grid size
     grid_size = (num_test_points_1.item() + block_size - 1) // block_size
+    kernel_input_prepare_elapsed_seconds = (
+        time.perf_counter() - kernel_input_prepare_start_time
+    )
 
 
     ### IMPORTANT NOTE: WHEN CALLING THIS KERNEL, ALL DATA STORED ON GPU MUST BE CONTIGUOUSLY STORED IN MEMORY
     ### IMPORTANT NOTE: THE POLYGONS THAT ARE PASSED TO THIS KERNEL IS ASSUMED TO BE BUILT SUCH THAT THE FIRST AND LAST POINTS ARE THE SAME!
     ### IMPORTANT NOTE: POLYGONS WITH WITH EDGES THAT ARE TOO SHORT WILL BE SKIPPED AND THEREFORE MAY GIVE INCORRECT RESULTS! ENSURE THAT POLYGON EDGES ARE NOT TOO SHORT!
+
+    kernel_execution_elapsed_seconds = 0.0
+    if return_timing_report:
+        _synchronize_cuda_device_for_timing()
+        kernel_execution_start_time = time.perf_counter()
 
     one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized(
             (grid_size,), (block_size,),
@@ -1563,6 +1951,12 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
              num_test_points_1,
              num_structures, 
              log_buffer)
+        )
+
+    if return_timing_report:
+        _synchronize_cuda_device_for_timing()
+        kernel_execution_elapsed_seconds = (
+            time.perf_counter() - kernel_execution_start_time
         )
 
     if log_file_name is not None:
@@ -1657,9 +2051,17 @@ def one_to_one_point_in_polygon_cupy_arr_version_ver2(points,
                             f"angle={angle:.3f}, edge_log_offset={log_offset_debug}, log_position={log_position_debug}\n")
 
     if return_array_as == "cupy":
-        return results
+        returned_results = results
     else:
-        return results.get()
+        returned_results = results.get()
+
+    if not return_timing_report:
+        return returned_results
+    return returned_results, ContainmentExecutionTimingReport(
+        execution_elapsed_seconds=float(time.perf_counter() - execution_start_time),
+        kernel_input_prepare_elapsed_seconds=float(kernel_input_prepare_elapsed_seconds),
+        kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+    )
 
 
 
@@ -1985,10 +2387,13 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                             test_struct_to_relative_struct_1d_mapping_array,
                                             constant_z_slice_polygons_handler_option = 'auto-close-if-open',
                                             remove_consecutive_duplicate_points_in_polygons = False,
+                                            prepared_relative_structures_pack = None,
                                             log_sub_dirs_list = [],
                                             log_file_name = "cuda_log.txt",
                                             include_edges_in_log = False,
-                                            kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"):
+                                            kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized",
+                                            return_timing_report = False,
+                                            validate_nearest_z_helper_against_ver5 = False):
     """
     This function is the mother function that calls the appropriate function to test points against polygons.
     It first prepares the data for the custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function.
@@ -2011,13 +2416,37 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
     """
     
 
-    prepper_output_tuple = test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_structures_containting_list_of_constant_zslices_arrays,
-                                                          points_to_test_3d_arr_or_list_of_2d_arrays,
-                                                          test_struct_to_relative_struct_1d_mapping_array,
-                                                          constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                                                          remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons)
+    nearest_z_helper_timing_report = _build_default_nearest_z_helper_timing_report()
+    prepared_relative_structures_timing_report = (
+        _build_default_prepared_relative_structures_timing_report()
+    )
+    containment_execution_timing_report = _build_default_execution_timing_report()
+    prepper_start_time = time.perf_counter()
+    prepper_output = test_points_against_polygons_cupy_arr_version_prepper(
+        list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+        points_to_test_3d_arr_or_list_of_2d_arrays,
+        test_struct_to_relative_struct_1d_mapping_array,
+        constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
+        prepared_relative_structures_pack=prepared_relative_structures_pack,
+        return_timing_report=return_timing_report,
+        validate_nearest_z_helper_against_ver5=validate_nearest_z_helper_against_ver5,
+    )
+    prepper_elapsed_seconds = time.perf_counter() - prepper_start_time
+
+    if return_timing_report:
+        prepper_output_tuple, prepper_timing_report = prepper_output
+        nearest_z_helper_timing_report = (
+            prepper_timing_report.nearest_z_helper_timing_report
+        )
+        prepared_relative_structures_timing_report = (
+            prepper_timing_report.prepared_relative_structures_timing_report
+        )
+    else:
+        prepper_output_tuple = prepper_output
 
     if prepper_output_tuple[0].ndim == 2:
+        containment_execution_start_time = time.perf_counter()
         result_cp_arr = test_points_against_polygons_cupy_2d_arr_version(prepper_output_tuple[0], 
                                  prepper_output_tuple[3],
                                  prepper_output_tuple[4], 
@@ -2027,11 +2456,33 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                  log_file_name=log_file_name,
                                  include_edges_in_log = include_edges_in_log,
                                  kernel_type=kernel_type)
-        
-        return result_cp_arr, prepper_output_tuple
-    
+        containment_execution_elapsed_seconds = (
+            time.perf_counter() - containment_execution_start_time
+        )
+
+        mother_timing_report = ContainmentMotherTimingReport(
+            helper_name=nearest_z_helper_timing_report.helper_name,
+            helper_elapsed_seconds=float(nearest_z_helper_timing_report.helper_elapsed_seconds),
+            validation_enabled=bool(nearest_z_helper_timing_report.validation_enabled),
+            validation_elapsed_seconds=float(nearest_z_helper_timing_report.validation_elapsed_seconds),
+            validation_match=bool(nearest_z_helper_timing_report.validation_match),
+            prepared_relative_structures_reused=bool(
+                prepared_relative_structures_timing_report.reused_prepared_pack
+            ),
+            prepared_relative_structures_elapsed_seconds=float(
+                prepared_relative_structures_timing_report.relative_structure_pack_elapsed_seconds
+            ),
+            prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+            containment_execution_elapsed_seconds=float(containment_execution_elapsed_seconds),
+        )
+
+        if not return_timing_report:
+            return result_cp_arr, prepper_output_tuple
+        return (result_cp_arr, prepper_output_tuple), mother_timing_report
+
     elif prepper_output_tuple[0].ndim == 3:
-        result_cp_arr = test_points_against_polygons_cupy_3d_arr_version(prepper_output_tuple[0], 
+        containment_execution_start_time = time.perf_counter()
+        execution_output = test_points_against_polygons_cupy_3d_arr_version(prepper_output_tuple[0], 
                                  points_to_test_3d_arr_or_list_of_2d_arrays, 
                                  prepper_output_tuple[1], 
                                  prepper_output_tuple[2],
@@ -2042,9 +2493,52 @@ def custom_point_containment_mother_function(list_of_relative_structures_contain
                                  log_sub_dirs_list = log_sub_dirs_list,
                                  log_file_name=log_file_name,
                                  include_edges_in_log = include_edges_in_log,
-                                 kernel_type=kernel_type)
-        
-        return result_cp_arr, prepper_output_tuple
+                                 kernel_type=kernel_type,
+                                 return_timing_report=return_timing_report)
+        containment_execution_elapsed_seconds = (
+            time.perf_counter() - containment_execution_start_time
+        )
+
+        if return_timing_report:
+            result_cp_arr, containment_execution_timing_report = execution_output
+        else:
+            result_cp_arr = execution_output
+
+        mother_timing_report = ContainmentMotherTimingReport(
+            helper_name=nearest_z_helper_timing_report.helper_name,
+            helper_elapsed_seconds=float(nearest_z_helper_timing_report.helper_elapsed_seconds),
+            validation_enabled=bool(nearest_z_helper_timing_report.validation_enabled),
+            validation_elapsed_seconds=float(nearest_z_helper_timing_report.validation_elapsed_seconds),
+            validation_match=bool(nearest_z_helper_timing_report.validation_match),
+            prepared_relative_structures_reused=bool(
+                prepared_relative_structures_timing_report.reused_prepared_pack
+            ),
+            prepared_relative_structures_elapsed_seconds=float(
+                prepared_relative_structures_timing_report.relative_structure_pack_elapsed_seconds
+            ),
+            prepper_elapsed_seconds=float(prepper_elapsed_seconds),
+            containment_execution_elapsed_seconds=float(containment_execution_elapsed_seconds),
+            valid_point_compaction_elapsed_seconds=float(
+                containment_execution_timing_report.valid_point_compaction_elapsed_seconds
+            ),
+            valid_point_upload_elapsed_seconds=float(
+                containment_execution_timing_report.valid_point_upload_elapsed_seconds
+            ),
+            kernel_input_prepare_elapsed_seconds=float(
+                containment_execution_timing_report.kernel_input_prepare_elapsed_seconds
+            ),
+            kernel_execution_elapsed_seconds=float(
+                containment_execution_timing_report.kernel_execution_elapsed_seconds
+            ),
+            result_writeback_elapsed_seconds=float(
+                containment_execution_timing_report.result_writeback_elapsed_seconds
+            ),
+        )
+
+        if not return_timing_report:
+            return result_cp_arr, prepper_output_tuple
+        return (result_cp_arr, prepper_output_tuple), mother_timing_report
+
     else:
         raise ValueError("The nearest zslice index and values array must be either a 2d or 3d array!")
 
@@ -2054,7 +2548,10 @@ def test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_struc
                                                           points_to_test_3d_arr_or_list_of_2d_arrays,
                                                           test_struct_to_relative_struct_1d_mapping_array,
                                                           constant_z_slice_polygons_handler_option = 'auto-close-if-open',
-                                                          remove_consecutive_duplicate_points_in_polygons = False):
+                                                          remove_consecutive_duplicate_points_in_polygons = False,
+                                                          prepared_relative_structures_pack = None,
+                                                          return_timing_report = False,
+                                                          validate_nearest_z_helper_against_ver5 = False):
     """
     This function prepares the data for the custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function.
     It takes the list of relative structures containing the constant z slices arrays and the points to test, and then it closes the polygons if they are not closed, and then converts the structures to 2d arrays with accompanying indices arrays.
@@ -2063,90 +2560,58 @@ def test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_struc
     Parameters:
     - list_of_relative_structures_containting_list_of_constant_zslices_arrays: A list of relative structures where each relative structure is a list of constant z slices arrays.
     - points_to_test_3d_arr_or_list_of_2d_arrays: Either a list of 2d arrays or a 3d array where the first dimension (or element of the list) are constant 2 dimensional arrays assoicated with each structure to test against in the relative structures list.
-    - test_struct_to_relative_struct_2d_mapping_array: A 1d array of length the number of test objects, so either same as the number of slices of the 3d test array or same number of elements of the list of 2d arrays. Each element indicates which test structure (indicated by the index of the array itself) should be tested against which relative structure (indicated by the value stored at that index). This is used to map the test structures to test against the correct relative structure. Therefore the number of relative structures need not be the same as the number of test structures.
-    - constant_z_slice_polygons_handler_option: Note that for the test_points_against_polygons_cupy_3d_arr_version or test_points_against_polygons_cupy_2d_arr_version function that this function feeds, all polygons must be closed. The option for handling the constant z slice polygons. The default is 'auto-close-if-open' which closes the polygons if they are not closed. The other options are 'close-all' which closes every single polygon, and None which makes no changes to the polygons.
-    
-    Returns:
-    - nearest_zslice_index_and_values_3d_arr or nearest_zslice_index_and_values_2d_arr: Either a 3d array Shape: (num_test_structures, num_test_points_per, 4) or a 2d array Shape: (total num test points, 4) indicating for each test point the assoicated relative structure index, the nearest z index on that structure, the nearest z val on that structure and a flag whether the point lies outside the z extent of the relative structure.
-    - all_structures_list_of_2d_arr: A list of 2d arrays where each 2d array is a structure with accompanying indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
-    - all_structures_slices_indices_list: A list of indices arrays where each array is a structure with accompanying indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
-    - points_to_test_2d_arr: only output if the input test points were a list of 2d arrays
-    - points_to_test_indices_arr: only output if the input test points were a list of 2d arrays, accompnaies points_to_test_2d_arr
     """
 
-    
-    ### Step 0: Convert the points to test to a 2d array with accompanying 2d indices array, each row is a point with two indices indicating the start_index and end_index+1 of that point (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
-    if isinstance(points_to_test_3d_arr_or_list_of_2d_arrays, list):
-        points_to_test_2d_arr, points_to_test_indices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(points_to_test_3d_arr_or_list_of_2d_arrays, main_arr_dtype = np.float64, indices_arr_dtype = np.int64)
+    nearest_z_helper_timing_report = _build_default_nearest_z_helper_timing_report()
+    prepared_relative_structures_timing_report = (
+        _build_default_prepared_relative_structures_timing_report()
+    )
 
-
-
-    num_relative_structures = len(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
-
-
-    ### Step 1: Remove consecutive duplicate points
-    if remove_consecutive_duplicate_points_in_polygons == True:
-        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = [None]*num_relative_structures
-        for relative_structure_index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
-            relative_structure_zslices_list_no_consecutive_duplicates = [None]*len(relative_structure_zslices_list)
-            for sp_rel_struct_zslice_index, zslice_arr in enumerate(relative_structure_zslices_list):
-                # Remove consecutive duplicate points
-                relative_structure_zslices_list_no_consecutive_duplicates[sp_rel_struct_zslice_index] = polygon_dilation_helpers_numpy.remove_consecutive_duplicate_points_numpy(zslice_arr)
-
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates[relative_structure_index] = relative_structure_zslices_list_no_consecutive_duplicates
+    if prepared_relative_structures_pack is None:
+        (
+            prepared_relative_structures_pack,
+            prepared_relative_structures_timing_report,
+        ) = prepare_relative_structures_for_containment(
+            list_of_relative_structures_containting_list_of_constant_zslices_arrays,
+            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                remove_consecutive_duplicate_points_in_polygons
+            ),
+            return_timing_report=True,
+        )
     else:
-        # Make no changes
-        list_of_relative_structures_containting_list_of_constant_zslices_arrays_no_consecutive_duplicates = copy.deepcopy(list_of_relative_structures_containting_list_of_constant_zslices_arrays)
+        _validate_prepared_relative_structures_pack(prepared_relative_structures_pack)
+        prepared_relative_structures_timing_report = (
+            ContainmentPreparedRelativeStructuresTimingReport(
+                reused_prepared_pack=True,
+                relative_structure_pack_elapsed_seconds=0.0,
+                geometry_normalization_elapsed_seconds=0.0,
+                z_value_extraction_elapsed_seconds=0.0,
+            )
+        )
 
-    
+    all_structures_list_of_2d_arr = list(
+        prepared_relative_structures_pack.all_structures_list_of_2d_arr
+    )
+    all_structures_slices_indices_list = list(
+        prepared_relative_structures_pack.all_structures_slices_indices_list
+    )
+    stacked_structures_stacked_slices_2d_arr_1 = (
+        prepared_relative_structures_pack.stacked_structures_stacked_slices_2d_arr_1
+    )
+    stacked_structures_stacked_slices_indices_2d_arr_2 = (
+        prepared_relative_structures_pack.stacked_structures_stacked_slices_indices_2d_arr_2
+    )
+    stacked_structures_stacked_slices_indices_2d_arr_3 = (
+        prepared_relative_structures_pack.stacked_structures_stacked_slices_indices_2d_arr_3
+    )
+    stacked_structures_stacked_slices_indices_indices_2d_arr_4 = (
+        prepared_relative_structures_pack.stacked_structures_stacked_slices_indices_indices_2d_arr_4
+    )
 
-    ### Step 2: Close all constant slice polygons in every structure
-    if constant_z_slice_polygons_handler_option == 'auto-close-if-open':
-        # Check whether each relative structure has closed polygons, and close them if not
-        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None]*num_relative_structures
-        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
-            relative_structure_zslices_list_closed_polygons = [None]*len(relative_structure_zslices_list)
-            for i, zslice_arr in enumerate(relative_structure_zslices_list):
-                # Check if the first and last points are the same
-                if not np.all(zslice_arr[0] == zslice_arr[-1]):
-                    # Append the first point to the end of the array
-                    relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
-                else:
-                    # Make no changes if detected to be closed
-                    relative_structure_zslices_list_closed_polygons[i] = zslice_arr
+    if isinstance(points_to_test_3d_arr_or_list_of_2d_arrays, list):
+        points_to_test_2d_arr, points_to_test_indices_arr = convert_list_of_2d_arrays_to_2d_array_and_indices_array(points_to_test_3d_arr_or_list_of_2d_arrays)
 
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
-
-    elif constant_z_slice_polygons_handler_option == 'close-all':
-        # Close every polygon
-        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = [None]*num_relative_structures
-        for index, relative_structure_zslices_list in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays):
-            relative_structure_zslices_list_closed_polygons = [None]*len(relative_structure_zslices_list)
-            for i, zslice_arr in enumerate(relative_structure_zslices_list):
-                # append the first point to the end of the array
-                relative_structure_zslices_list_closed_polygons[i] = np.append(zslice_arr, zslice_arr[0][np.newaxis, :], axis=0)
-
-            list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons[index] = relative_structure_zslices_list_closed_polygons
-    elif constant_z_slice_polygons_handler_option == None:
-        # Make no changes
-        list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons = list_of_relative_structures_containting_list_of_constant_zslices_arrays
-
-    
-
-    # Step 3: Convert every structure to a 2d array with accompanying indices array
-    all_structures_list_of_2d_arr = [None]*num_relative_structures
-    all_structures_slices_indices_list = [None]*num_relative_structures
-    for index, relative_structure_zslices_list_closed_polygons in enumerate(list_of_relative_structures_containting_list_of_constant_zslices_arrays_closed_polygons):
-        # This converts the structure from a list of constant z slice arrays to a 2d array with a partner indices array where each row is a zslice with two indices indicating the start_index and end_index+1 of that slice (note that the +1 is for easy python slicing, therefore end index +1 index itself (point) is NOT in the slice!)
-        relative_structure_closed_polygons_2d_arr, relative_structure_closed_polygons_indices_arr = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(relative_structure_zslices_list_closed_polygons, main_arr_dtype = np.float64, indices_arr_dtype = np.int64)
-        all_structures_list_of_2d_arr[index] = relative_structure_closed_polygons_2d_arr
-        all_structures_slices_indices_list[index] = relative_structure_closed_polygons_indices_arr
-
-    # Step 3.5: Convert all structures list of 2d arrays into one massive 2d array, with an accompanying indices array specifying the start and end indices of each structure
-    stacked_structures_stacked_slices_2d_arr_1, stacked_structures_stacked_slices_indices_2d_arr_2 = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(all_structures_list_of_2d_arr, main_arr_dtype = np.float64, indices_arr_dtype = np.int64)
-    stacked_structures_stacked_slices_indices_2d_arr_3, stacked_structures_stacked_slices_indices_indices_2d_arr_4 = polygon_dilation_helpers_numpy.convert_to_2d_array_and_indices_numpy(all_structures_slices_indices_list, num_columns = 2, main_arr_dtype = np.int64, indices_arr_dtype = np.int64)
-
-    # The above is insanely complicated, here is the explanation:
     """
     the relative structure index (m) and nearest z slice index (n) from nearest_zslice_index_and_values_3d_arr (every row of every slice is a test point) goes like this:
     note for brevity I refer to the above four arrays as 1, 2, 3, 4, and (s) and (e) refer to start and end indices 
@@ -2162,77 +2627,44 @@ def test_points_against_polygons_cupy_arr_version_prepper(list_of_relative_struc
 
 
     # Step 4: Get the z values of all slices of every relative structure
-    relative_structures_list_of_zvals_1d_arrays = polygon_dilation_helpers_numpy.extract_constant_z_values_arr_version(all_structures_list_of_2d_arr, all_structures_slices_indices_list)
+    relative_structures_list_of_zvals_1d_arrays = list(
+        prepared_relative_structures_pack.relative_structures_list_of_zvals_1d_arrays
+    )
 
 
     if isinstance(points_to_test_3d_arr_or_list_of_2d_arrays, list):
         # Step 5: Find the nearest z slices for every point (list of 2d arrays input)    
         nearest_zslice_index_and_values_2d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_2d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_2d_arr, points_to_test_indices_arr, test_struct_to_relative_struct_1d_mapping_array)
-        
-        return nearest_zslice_index_and_values_2d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, points_to_test_2d_arr, points_to_test_indices_arr
+
+        prepper_output_tuple = (nearest_zslice_index_and_values_2d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, points_to_test_2d_arr, points_to_test_indices_arr)
+        if not return_timing_report:
+            return prepper_output_tuple
+        return prepper_output_tuple, ContainmentPrepperTimingReport(
+            nearest_z_helper_timing_report=nearest_z_helper_timing_report,
+            prepared_relative_structures_timing_report=(
+                prepared_relative_structures_timing_report
+            ),
+        )
     else:
-        # Step 5: Find the nearest z slices for every point (3d array input)   
-        #nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
-        """
-        st = time.time()
-        nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver4(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
-        et= time.time()
-        print(f"ver4 took {et-st:.2f}")
-        """
-        #st = time.time()
-        nearest_zslice_index_and_values_3d_arr = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver5(relative_structures_list_of_zvals_1d_arrays, points_to_test_3d_arr_or_list_of_2d_arrays, test_struct_to_relative_struct_1d_mapping_array)
-        #et= time.time()
-        #print(f"ver5 took {et-st:.2f}")
-        """
-        # exact match (only works if no float rounding differences)
-        exact_equal = np.array_equal(nearest_zslice_index_and_values_3d_arr,
-                                    nearest_zslice_index_and_values_3d_arr_alt)
-
-        # tolerant match (recommended for float comparisons)
-        tolerant_equal = np.allclose(nearest_zslice_index_and_values_3d_arr,
-                                    nearest_zslice_index_and_values_3d_arr_alt,
-                                    rtol=1e-5, atol=1e-8, equal_nan=True)
-
-
-        st = time.time()
-        nearest_zslice_index_and_values_3d_arr_alt_alt, methods_used = polygon_dilation_helpers_numpy.nearest_zslice_vals_and_indices_all_structures_3d_point_arr_ver7(
+        # Step 5: Find the nearest z slices for every point (3d array input)
+        nearest_zslice_index_and_values_3d_arr, nearest_z_helper_timing_report = (
+            _run_nearest_z_helper_with_optional_validation(
                 relative_structures_list_of_zvals_1d_arrays,
                 points_to_test_3d_arr_or_list_of_2d_arrays,
                 test_struct_to_relative_struct_1d_mapping_array,
-                prefer_searchsorted_over=0.75,   # if estimated temp > this fraction of free VRAM -> use searchsorted
-                vram_safety=0.6,                 # when chunking, use only this fraction of free VRAM
-                dtype=np.float32,
-                use_method="auto"                # "auto" | "broadcast" | "searchsorted"
+                validate_against_ver5=validate_nearest_z_helper_against_ver5,
             )
-        
-        et= time.time()
-        print(f"ver7 took {et-st:.2f}")
+        )
 
-        # exact match (only works if no float rounding differences)
-        exact_equal = np.array_equal(nearest_zslice_index_and_values_3d_arr,
-                                    nearest_zslice_index_and_values_3d_arr_alt_alt)
-
-        # tolerant match (recommended for float comparisons)
-        tolerant_equal = np.allclose(nearest_zslice_index_and_values_3d_arr,
-                                    nearest_zslice_index_and_values_3d_arr_alt_alt,
-                                    rtol=1e-5, atol=1e-8, equal_nan=True)
-
-        print(f"Exact equal: {exact_equal}")
-        print(f"Tolerant equal: {tolerant_equal}")
-
-        print(f"Methods used in ver7: {methods_used}")
-
-        print('test')
-        """
-
-        return nearest_zslice_index_and_values_3d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, stacked_structures_stacked_slices_2d_arr_1, stacked_structures_stacked_slices_indices_2d_arr_2, stacked_structures_stacked_slices_indices_2d_arr_3, stacked_structures_stacked_slices_indices_indices_2d_arr_4
-    
-
-
-
-
-
-
+        prepper_output_tuple = (nearest_zslice_index_and_values_3d_arr, all_structures_list_of_2d_arr, all_structures_slices_indices_list, stacked_structures_stacked_slices_2d_arr_1, stacked_structures_stacked_slices_indices_2d_arr_2, stacked_structures_stacked_slices_indices_2d_arr_3, stacked_structures_stacked_slices_indices_indices_2d_arr_4)
+        if not return_timing_report:
+            return prepper_output_tuple
+        return prepper_output_tuple, ContainmentPrepperTimingReport(
+            nearest_z_helper_timing_report=nearest_z_helper_timing_report,
+            prepared_relative_structures_timing_report=(
+                prepared_relative_structures_timing_report
+            ),
+        )
 
 
 
@@ -2247,7 +2679,8 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                  log_sub_dirs_list = [],
                                  log_file_name="cuda_log.txt",
                                  include_edges_in_log = False,
-                                 kernel_type="one_to_one_pip_kernel_advanced"):
+                                 kernel_type="one_to_one_pip_kernel_advanced",
+                                 return_timing_report = False):
     """
     Important! This verion is to handle test structures with EQUAL number of points per test structure. 
 
@@ -2265,23 +2698,40 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
     Returns:
     - result_cp_arr: Array indicating whether each point is inside the corresponding polygon. Shape of the output array is (num_trials, num_points_per_trial) full of True/False values.
     """
+    execution_start_time = time.perf_counter()
     num_test_structures = nearest_zslice_index_and_values_3d_arr.shape[0]
     num_points_in_every_test_structure = nearest_zslice_index_and_values_3d_arr.shape[1]
     
     # Initialize an array to store the results
     result_cp_arr = cp.zeros((num_test_structures, num_points_in_every_test_structure), dtype=cp.bool_)
     
+    valid_point_compaction_start_time = time.perf_counter()
     # Flatten the input arrays for easier processing
     flat_points = points_to_test_3d_arr[:, :, :3].reshape(-1, 3)
     
     # Filter out invalid points using the flag in column 3 (1 = out of bounds, 0 = valid)
     valid_mask = nearest_zslice_index_and_values_3d_arr[:, :, 3].flatten() == 0
     
+    nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr.reshape(-1, 4)
+
     # Get the valid points
     valid_points = flat_points[valid_mask]
+    valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = (
+        nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4[valid_mask]
+    )
+    valid_point_compaction_elapsed_seconds = (
+        time.perf_counter() - valid_point_compaction_start_time
+    )
     
     # Create CuPy arrays for the points
+    valid_point_upload_start_time = time.perf_counter()
     valid_points_cp_arr = cp.array(valid_points)
+    valid_point_upload_elapsed_seconds = (
+        time.perf_counter() - valid_point_upload_start_time
+    )
+
+    kernel_input_prepare_elapsed_seconds = 0.0
+    kernel_execution_elapsed_seconds = 0.0
     
     # This method is slightly slower
     """
@@ -2312,6 +2762,7 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
 
     if kernel_type in ("one_to_one_pip_kernel_advanced_reparameterized_version","one_to_one_pip_kernel_advanced"):
         # Create CuPy arrays for the polygons and indices
+        kernel_input_prepare_start_time = time.perf_counter()
         poly_points = []
         poly_indices = []
         current_index = 0
@@ -2331,10 +2782,9 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
         #poly_points = [np.ascontiguousarray(arr) for arr in poly_points]
         poly_points = cp.array(np.vstack(poly_points), dtype=cp.float64)
         poly_indices = cp.array(poly_indices)
-    elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized":
-        # Mask the nearest zslice index and values array to get only the valid points
-        nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr.reshape(-1, 4)
-        valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4 = nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4[valid_mask]
+        kernel_input_prepare_elapsed_seconds = (
+            time.perf_counter() - kernel_input_prepare_start_time
+        )
 
     #poly_points_old = cp.array(np.vstack(poly_points_old))
     #poly_indices_old = cp.array(poly_indices_old)
@@ -2346,6 +2796,9 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
     
     # Test each point against the corresponding polygon
     if kernel_type in ("one_to_one_pip_kernel_advanced_reparameterized_version","one_to_one_pip_kernel_advanced"):
+        if return_timing_report:
+            _synchronize_cuda_device_for_timing()
+            kernel_execution_start_time = time.perf_counter()
         valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver1(valid_points_cp_arr, 
                                                                     poly_points,
                                                                     poly_indices, 
@@ -2354,8 +2807,13 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                                                     include_edges_in_log = include_edges_in_log, 
                                                                     kernel_type=kernel_type, 
                                                                     return_array_as="cupy")
+        if return_timing_report:
+            _synchronize_cuda_device_for_timing()
+            kernel_execution_elapsed_seconds = (
+                time.perf_counter() - kernel_execution_start_time
+            )
     elif kernel_type == "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized":
-        valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver2(valid_points_cp_arr, 
+        kernel_wrapper_output = one_to_one_point_in_polygon_cupy_arr_version_ver2(valid_points_cp_arr, 
                                                                     valid_nearest_zslice_index_and_values_3d_arr_reshaped_to_nx4, 
                                                                     stacked_structures_stacked_slices_2d_arr_1, 
                                                                     stacked_structures_stacked_slices_indices_2d_arr_2, 
@@ -2364,16 +2822,38 @@ def test_points_against_polygons_cupy_3d_arr_version(nearest_zslice_index_and_va
                                                                     log_sub_dirs_list = log_sub_dirs_list, 
                                                                     log_file_name=log_file_name, 
                                                                     include_edges_in_log = include_edges_in_log, 
-                                                                    return_array_as="cupy")
+                                                                    return_array_as="cupy",
+                                                                    return_timing_report=return_timing_report)
+        if return_timing_report:
+            valid_results, kernel_wrapper_timing_report = kernel_wrapper_output
+            kernel_input_prepare_elapsed_seconds = float(
+                kernel_wrapper_timing_report.kernel_input_prepare_elapsed_seconds
+            )
+            kernel_execution_elapsed_seconds = float(
+                kernel_wrapper_timing_report.kernel_execution_elapsed_seconds
+            )
+        else:
+            valid_results = kernel_wrapper_output
     
     # Map the valid results back to the original result array
+    result_writeback_start_time = time.perf_counter()
     result_cp_arr_flat = result_cp_arr.flatten()
     result_cp_arr_flat[valid_mask] = valid_results
     
     # Reshape the result array back to the original shape
     result_cp_arr = result_cp_arr_flat.reshape(num_test_structures, num_points_in_every_test_structure)
+    result_writeback_elapsed_seconds = time.perf_counter() - result_writeback_start_time
     
-    return result_cp_arr # result is 2d array with shape (num_test_structures, num_points_in_every_test_structure)
+    if not return_timing_report:
+        return result_cp_arr
+    return result_cp_arr, ContainmentExecutionTimingReport(
+        execution_elapsed_seconds=float(time.perf_counter() - execution_start_time),
+        valid_point_compaction_elapsed_seconds=float(valid_point_compaction_elapsed_seconds),
+        valid_point_upload_elapsed_seconds=float(valid_point_upload_elapsed_seconds),
+        kernel_input_prepare_elapsed_seconds=float(kernel_input_prepare_elapsed_seconds),
+        kernel_execution_elapsed_seconds=float(kernel_execution_elapsed_seconds),
+        result_writeback_elapsed_seconds=float(result_writeback_elapsed_seconds),
+    )
 
 
 
@@ -2445,7 +2925,7 @@ def test_points_against_polygons_cupy_2d_arr_version(nearest_zslice_index_and_va
     poly_indices = cp.array(poly_indices)
     
     # Test each point against the corresponding polygon
-    valid_results = one_to_one_point_in_polygon_cupy_arr_version(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log, kernel_type=kernel_type, return_array_as="cupy")
+    valid_results = one_to_one_point_in_polygon_cupy_arr_version_ver1(valid_points_cp_arr, poly_points, poly_indices, log_sub_dirs_list = log_sub_dirs_list, log_file_name=log_file_name, include_edges_in_log = include_edges_in_log, kernel_type=kernel_type, return_array_as="cupy")
     
     # Map the valid results back to the original result array
     result_cp_arr_flat = result_cp_arr.flatten()

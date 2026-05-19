@@ -1,35 +1,309 @@
 import centroid_finder
 import numpy as np
+import dataframe_dtype_policy
+
+
+def _find_relative_structure(pydicom_item,
+                             specific_structure
+                             ):
+
+    relative_structure_ref_num_from_bx_info = specific_structure["Relative structure ref #"]
+    relative_structure_struct_type_from_bx_info = specific_structure["Relative structure type"]
+
+    for relative_specific_structure_index, relative_specific_structure in enumerate(pydicom_item[relative_structure_struct_type_from_bx_info]):
+        if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
+            return relative_specific_structure_index, relative_specific_structure
+
+    raise ValueError(
+        "Could not find relative structure for simulated biopsy {} ({}, {}).".format(
+            specific_structure.get("ROI"),
+            relative_structure_struct_type_from_bx_info,
+            relative_structure_ref_num_from_bx_info,
+        )
+    )
+
+
+def _translate_biopsy_zslice_list_to_target_vector(threeDdata_zslice_list,
+                                                   target_vector
+                                                   ):
+
+    threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
+    simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
+    translation_vector_to_target = target_vector - simulated_bx_global_centroid_before_translation
+    threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
+    for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
+        temp_bx_zslice_arr = bx_zslice_arr.copy()
+        translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_target
+        threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
+
+    return threeDdata_zslice_list_temp
+
+
+def _build_relative_structure_transport_info(relative_specific_structure_index,
+                                             relative_specific_structure
+                                             ):
+    return {
+        "Relative structure ID": relative_specific_structure["ROI"],
+        "Relative structure type": relative_specific_structure.get("Struct type", relative_specific_structure.get("Relative structure type")),
+        "Relative structure ref #": relative_specific_structure["Ref #"],
+        "Relative structure index": relative_specific_structure_index,
+    }
+
+
+def _normalize_target_vector(target_vector):
+    return np.asarray(target_vector, dtype=float).reshape(3)
+
+
+def _resolve_transport_request(specific_structure,
+                               transport_family=None,
+                               transport_target_vector=None,
+                               transport_source=None,
+                               selection_metadata=None
+                               ):
+    transport_request_dict = specific_structure.get("Simulated biopsy transport request dict") or {}
+
+    resolved_transport_family = transport_family
+    if resolved_transport_family is None:
+        resolved_transport_family = transport_request_dict.get("Transport family")
+    if resolved_transport_family is None:
+        resolved_transport_family = specific_structure.get("Transport family", "identity")
+
+    resolved_transport_target_vector = transport_target_vector
+    if resolved_transport_target_vector is None:
+        resolved_transport_target_vector = transport_request_dict.get("Target vector")
+
+    resolved_transport_source = transport_source
+    if resolved_transport_source is None:
+        resolved_transport_source = transport_request_dict.get("Transport source")
+
+    resolved_selection_metadata = {}
+    request_selection_metadata = transport_request_dict.get("Selection metadata")
+    if isinstance(request_selection_metadata, dict):
+        resolved_selection_metadata.update(request_selection_metadata)
+    if isinstance(selection_metadata, dict):
+        resolved_selection_metadata.update(selection_metadata)
+
+    return (
+        resolved_transport_family,
+        resolved_transport_target_vector,
+        resolved_transport_source,
+        resolved_selection_metadata,
+    )
+
+
+def _resolve_optimizer_dataframe_numeric_columns(selection_dataframe):
+    numeric_column_names = [
+        column_name
+        for column_name in dataframe_dtype_policy.OPTIMIZER_V1_LOCATION_NUMERIC_COLUMNS
+        if column_name in selection_dataframe.columns
+    ]
+
+    if len(numeric_column_names) == 0:
+        return selection_dataframe.copy()
+
+    resolved_selection_dataframe = selection_dataframe.copy()
+    resolved_selection_dataframe[numeric_column_names] = dataframe_dtype_policy.resolve_numeric_columns(
+        selection_dataframe,
+        numeric_column_names,
+    )
+
+    return resolved_selection_dataframe
+
+
+def _resolve_optimal_target_selection(relative_specific_structure):
+    optimal_locations_dataframe = _resolve_optimizer_dataframe_numeric_columns(
+        relative_specific_structure["Biopsy optimization: Optimal biopsy location dataframe"]
+    )
+    all_tested_locations_dataframe = relative_specific_structure.get("Biopsy optimization: Optimal biopsy location (all tested lattice points) dataframe")
+    if all_tested_locations_dataframe is not None:
+        all_tested_locations_dataframe = _resolve_optimizer_dataframe_numeric_columns(
+            all_tested_locations_dataframe
+        )
+
+    retained_candidates_by_min_distance = optimal_locations_dataframe[
+        optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()
+    ]
+    optimal_row = retained_candidates_by_min_distance.iloc[0]
+
+    max_contained_candidate_count = None
+    min_distance_candidate_count = int(len(retained_candidates_by_min_distance))
+    all_tested_candidate_count = None
+    if all_tested_locations_dataframe is not None:
+        all_tested_candidate_count = int(len(all_tested_locations_dataframe))
+        if all_tested_candidate_count > 0:
+            max_contained_value = all_tested_locations_dataframe['Number of normal dist points contained'].max()
+            max_contained_mask = all_tested_locations_dataframe['Number of normal dist points contained'] == max_contained_value
+            max_contained_candidate_count = int(max_contained_mask.sum())
+            min_distance_value = all_tested_locations_dataframe.loc[max_contained_mask, 'Dist to DIL centroid'].min()
+            min_distance_candidate_count = int((max_contained_mask & (all_tested_locations_dataframe['Dist to DIL centroid'] == min_distance_value)).sum())
+
+    target_vector = np.array([
+        optimal_row['Test location (X)'],
+        optimal_row['Test location (Y)'],
+        optimal_row['Test location (Z)']
+    ])
+
+    selection_metadata = {
+        "Optimizer output candidate count": int(len(optimal_locations_dataframe)),
+        "All tested candidate count": all_tested_candidate_count,
+        "Max containment candidate count": max_contained_candidate_count,
+        "Min distance candidate count within max containment set": min_distance_candidate_count,
+        "Retained candidate rank": 1,
+        "Retained candidate Dist to DIL centroid": float(optimal_row['Dist to DIL centroid']),
+        "Retained candidate Number of normal dist points contained": int(optimal_row['Number of normal dist points contained']),
+        "Retained candidate Proportion of normal dist points contained": float(optimal_row['Proportion of normal dist points contained']),
+        "Retained candidate X": float(target_vector[0]),
+        "Retained candidate Y": float(target_vector[1]),
+        "Retained candidate Z": float(target_vector[2]),
+        "Selection tie-break rule": "max contained -> min Dist to DIL centroid -> first remaining optimizer row",
+    }
+
+    return target_vector, selection_metadata
+
+
+def _resolve_optimal_target_vector(relative_specific_structure):
+    target_vector, _ = _resolve_optimal_target_selection(relative_specific_structure)
+
+    return target_vector
+
+
+def transport_planned_biopsy_with_metadata(pydicom_item,
+                                           specific_structure,
+                                           threeDdata_zslice_list,
+                                           transport_family=None,
+                                           transport_target_vector=None,
+                                           transport_source=None,
+                                           selection_metadata=None
+                                           ):
+
+    (
+        resolved_transport_family,
+        resolved_transport_target_vector,
+        resolved_transport_source,
+        resolved_selection_metadata,
+    ) = _resolve_transport_request(
+        specific_structure,
+        transport_family=transport_family,
+        transport_target_vector=transport_target_vector,
+        transport_source=transport_source,
+        selection_metadata=selection_metadata,
+    )
+
+    if resolved_transport_target_vector is not None and resolved_transport_family == "identity":
+        resolved_transport_family = "explicit_target_vector"
+
+    transport_metadata = {
+        "Transport family": resolved_transport_family,
+        "Transport source": None,
+        "Relative structure ID": specific_structure.get("Relative structure name"),
+        "Relative structure type": specific_structure.get("Relative structure type"),
+        "Relative structure ref #": specific_structure.get("Relative structure ref #"),
+        "Relative structure index": None,
+        "Target X": None,
+        "Target Y": None,
+        "Target Z": None,
+    }
+
+    relative_specific_structure_index = None
+    relative_specific_structure = None
+    if specific_structure.get("Relative structure type") is not None and specific_structure.get("Relative structure ref #") is not None:
+        relative_specific_structure_index, relative_specific_structure = _find_relative_structure(
+            pydicom_item,
+            specific_structure,
+        )
+        transport_metadata.update(
+            _build_relative_structure_transport_info(
+                relative_specific_structure_index,
+                relative_specific_structure,
+            )
+        )
+
+    if resolved_transport_target_vector is not None:
+        target_vector = _normalize_target_vector(resolved_transport_target_vector)
+        transport_metadata.update(resolved_selection_metadata)
+        transport_metadata["Transport source"] = resolved_transport_source or "explicit target vector"
+        transport_metadata["Target X"] = float(target_vector[0])
+        transport_metadata["Target Y"] = float(target_vector[1])
+        transport_metadata["Target Z"] = float(target_vector[2])
+        return {
+            "Transported raw contour pts zslice list": _translate_biopsy_zslice_list_to_target_vector(
+                threeDdata_zslice_list,
+                target_vector,
+            ),
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    if resolved_transport_family == "identity":
+        transport_metadata["Transport source"] = "identity"
+        return {
+            "Transported raw contour pts zslice list": threeDdata_zslice_list,
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    if relative_specific_structure is None:
+        raise ValueError(
+            "Transport family {} requires a relative structure on {}.".format(
+                resolved_transport_family,
+                specific_structure.get("ROI"),
+            )
+        )
+
+    if resolved_transport_family == "centroid":
+        target_vector = _normalize_target_vector(relative_specific_structure["Structure global centroid"].copy())
+        transport_metadata["Transport source"] = resolved_transport_source or "relative structure centroid"
+        transport_metadata["Target X"] = float(target_vector[0])
+        transport_metadata["Target Y"] = float(target_vector[1])
+        transport_metadata["Target Z"] = float(target_vector[2])
+        return {
+            "Transported raw contour pts zslice list": _translate_biopsy_zslice_list_to_target_vector(
+                threeDdata_zslice_list,
+                target_vector,
+            ),
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    if resolved_transport_family == "optimal":
+        target_vector, resolved_optimal_selection_metadata = _resolve_optimal_target_selection(relative_specific_structure)
+        transport_metadata.update(resolved_optimal_selection_metadata)
+        transport_metadata.update(resolved_selection_metadata)
+        transport_metadata["Transport source"] = resolved_transport_source or "optimal biopsy location dataframe"
+        transport_metadata["Target X"] = float(target_vector[0])
+        transport_metadata["Target Y"] = float(target_vector[1])
+        transport_metadata["Target Z"] = float(target_vector[2])
+        return {
+            "Transported raw contour pts zslice list": _translate_biopsy_zslice_list_to_target_vector(
+                threeDdata_zslice_list,
+                target_vector,
+            ),
+            "Simulated biopsy transport dict": transport_metadata,
+        }
+
+    raise ValueError(
+        "Unsupported simulated biopsy transport family: {}".format(
+            resolved_transport_family,
+        )
+    )
+
+def transport_planned_biopsy(pydicom_item,
+                             specific_structure,
+                             threeDdata_zslice_list,
+                             transport_family
+                             ):
+    return transport_planned_biopsy_with_metadata(
+        pydicom_item,
+        specific_structure,
+        threeDdata_zslice_list,
+        transport_family,
+    )["Transported raw contour pts zslice list"]
 
 def biopsy_transporter_centroid(pydicom_item,
                                 specific_structure,
                                 threeDdata_zslice_list
                                 ):
-    
-    # first extract the appropriate relative structure to transform biopsies to
-    relative_structure_ref_num_from_bx_info = specific_structure["Relative structure ref #"]
-    relative_structure_struct_type_from_bx_info = specific_structure["Relative structure type"]
-    #for relative_struct_type in simulate_biopsies_relative_to_struct_type_list:
-    for relative_specific_structure_index, relative_specific_structure in enumerate(pydicom_item[relative_structure_struct_type_from_bx_info]):
-        if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
-            simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
-            #simulate_biopsies_relative_to_specific_structure_struct_type = relative_struct_type
-            break
-        else:
-            pass
-
-    relative_structure_for_sim_bx_global_centroid = pydicom_item[relative_structure_struct_type_from_bx_info][simulated_bx_relative_to_specific_structure_index]["Structure global centroid"].copy()
-    threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
-    simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
-    translation_vector_to_relative_structure_centroid = relative_structure_for_sim_bx_global_centroid - simulated_bx_global_centroid_before_translation
-    threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
-    for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
-        temp_bx_zslice_arr = bx_zslice_arr.copy()
-        translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
-        threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
-    threeDdata_zslice_list = threeDdata_zslice_list_temp
-
-    return threeDdata_zslice_list
+    return transport_planned_biopsy(pydicom_item,
+                                    specific_structure,
+                                    threeDdata_zslice_list,
+                                    transport_family="centroid")
 
 
 
@@ -37,36 +311,7 @@ def biopsy_transporter_optimal(pydicom_item,
                                 specific_structure,
                                 threeDdata_zslice_list
                                 ):
-    
-    # first extract the appropriate relative structure to transform biopsies to
-    relative_structure_ref_num_from_bx_info = specific_structure["Relative structure ref #"]
-    relative_structure_struct_type_from_bx_info = specific_structure["Relative structure type"]
-    for relative_specific_structure_index, relative_specific_structure in enumerate(pydicom_item[relative_structure_struct_type_from_bx_info]):
-        if relative_structure_ref_num_from_bx_info == relative_specific_structure["Ref #"]:
-            simulated_bx_relative_to_specific_structure_index = relative_specific_structure_index
-            break
-        else:
-            pass
-            
-    optimal_locations_dataframe = pydicom_item[relative_structure_struct_type_from_bx_info][simulated_bx_relative_to_specific_structure_index]["Biopsy optimization: Optimal biopsy location dataframe"]
-    # optimal_locations_dataframe should have only one row, however we do it this way just in case it doesnt't! ie if it has more
-    # than one value, we take the position that is closest to the dil centroid!
-
-    # Swapped these lines because getting rid of the vector columns in the data frames, they are redundany and take up a lot of memory!
-    #relative_structure_for_sim_optimal_position_vector = np.array(optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location vector'])
-    relative_structure_for_sim_optimal_position_vector = np.array([optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (X)'],
-                                                                   optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (Y)'],
-                                                                   optimal_locations_dataframe[optimal_locations_dataframe['Dist to DIL centroid'] == optimal_locations_dataframe['Dist to DIL centroid'].min()].at[0,'Test location (Z)']])
-    
-    
-    threeDdata_arr_temp = np.concatenate(threeDdata_zslice_list, axis=0)
-    simulated_bx_global_centroid_before_translation = centroid_finder.centeroidfinder_numpy_3D(threeDdata_arr_temp)
-    translation_vector_to_relative_structure_centroid = relative_structure_for_sim_optimal_position_vector - simulated_bx_global_centroid_before_translation
-    threeDdata_zslice_list_temp = threeDdata_zslice_list.copy()
-    for bx_zslice_arr_index, bx_zslice_arr in enumerate(threeDdata_zslice_list_temp):
-        temp_bx_zslice_arr = bx_zslice_arr.copy()
-        translated_bx_zslice_arr = temp_bx_zslice_arr + translation_vector_to_relative_structure_centroid
-        threeDdata_zslice_list_temp[bx_zslice_arr_index] = translated_bx_zslice_arr
-    threeDdata_zslice_list = threeDdata_zslice_list_temp
-
-    return threeDdata_zslice_list
+    return transport_planned_biopsy(pydicom_item,
+                                    specific_structure,
+                                    threeDdata_zslice_list,
+                                    transport_family="optimal")

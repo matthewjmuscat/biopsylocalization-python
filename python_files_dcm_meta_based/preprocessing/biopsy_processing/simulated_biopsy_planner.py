@@ -1,0 +1,266 @@
+import biopsy_creator
+from sampling import biopsy_point_sampler
+
+from preprocessing.biopsy_processing.biopsy_geometry_helper import build_reconstructed_biopsy_model_for_sampling_from_zslice_list
+from preprocessing.biopsy_processing.simulated_biopsy_preparation import get_prepared_simulated_biopsy_length_mm
+
+
+def _create_default_simulated_biopsy_planning_dict():
+    return {
+        "Planning complete": False,
+        "Planning frame": None,
+        "Nominal length mm": None,
+        "Planned biopsy radius mm": None,
+        "Planned centroid count": None,
+        "Planned centroid separation mm": None,
+        "Planned biopsy cylinder length mm": None,
+        "Planned raw contour pts zslice list": None,
+        "Planned reconstructed biopsy model dict": None,
+        "Planned structure global centroid": None,
+        "Planned centroid variation arr": None,
+        "Planned mean centroid variation": None,
+        "Planned maximum projected distance between original centroids": None,
+        "Planned sample lattice spacing mm": None,
+        "Planned sampled volume pts arr": None,
+        "Planned sample bounding box pts arr": None,
+        "Planned sampled point count": None,
+        "Planned sampling metadata": None,
+        "Planning source": None,
+    }
+
+
+def _get_simulated_biopsy_planning_dict(specific_structure):
+    if specific_structure.get("Simulated biopsy planning dict") is None:
+        specific_structure["Simulated biopsy planning dict"] = _create_default_simulated_biopsy_planning_dict()
+
+    return specific_structure["Simulated biopsy planning dict"]
+
+
+def build_simulated_biopsy_planning_state(specific_structure,
+                                          centroid_line_vec_sim_list,
+                                          centroid_first_pos_sim_list,
+                                          num_centroids_for_sim_bxs,
+                                          simulated_bx_rad,
+                                          plot_simulated_cores_immediately
+                                          ):
+    nominal_length_mm = get_prepared_simulated_biopsy_length_mm(specific_structure)
+    planned_centroid_separation_mm = nominal_length_mm / (num_centroids_for_sim_bxs - 1)
+
+    planned_raw_contour_pts_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(
+        centroid_line_vec_sim_list,
+        centroid_first_pos_sim_list,
+        num_centroids_for_sim_bxs,
+        planned_centroid_separation_mm,
+        simulated_bx_rad,
+        plot_simulated_cores_immediately,
+    )
+    planned_reconstructed_biopsy_model_dict = build_reconstructed_biopsy_model_for_sampling_from_zslice_list(
+        planned_raw_contour_pts_zslice_list,
+        simulated_bx_rad,
+    )
+
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    simulated_biopsy_planning_dict["Planning complete"] = True
+    simulated_biopsy_planning_dict["Planning frame"] = "Canonical local biopsy frame"
+    simulated_biopsy_planning_dict["Nominal length mm"] = float(nominal_length_mm)
+    simulated_biopsy_planning_dict["Planned biopsy radius mm"] = float(simulated_bx_rad)
+    simulated_biopsy_planning_dict["Planned centroid count"] = int(num_centroids_for_sim_bxs)
+    simulated_biopsy_planning_dict["Planned centroid separation mm"] = float(planned_centroid_separation_mm)
+    simulated_biopsy_planning_dict["Planned biopsy cylinder length mm"] = float(
+        planned_reconstructed_biopsy_model_dict["Reconstructed biopsy cylinder length (from contour data)"]
+    )
+    simulated_biopsy_planning_dict["Planned raw contour pts zslice list"] = [
+        bx_zslice_arr.copy() for bx_zslice_arr in planned_raw_contour_pts_zslice_list
+    ]
+    simulated_biopsy_planning_dict["Planned reconstructed biopsy model dict"] = planned_reconstructed_biopsy_model_dict
+    simulated_biopsy_planning_dict["Planned structure global centroid"] = planned_reconstructed_biopsy_model_dict[
+        "Structure global centroid"
+    ]
+    simulated_biopsy_planning_dict["Planned centroid variation arr"] = planned_reconstructed_biopsy_model_dict[
+        "Centroid variation arr"
+    ]
+    simulated_biopsy_planning_dict["Planned mean centroid variation"] = float(
+        planned_reconstructed_biopsy_model_dict["Mean centroid variation"]
+    )
+    simulated_biopsy_planning_dict["Planned maximum projected distance between original centroids"] = float(
+        planned_reconstructed_biopsy_model_dict["Maximum projected distance between original centroids"]
+    )
+    simulated_biopsy_planning_dict["Planning source"] = "Prepared simulated biopsy nominal length"
+
+    return simulated_biopsy_planning_dict
+
+
+def get_planned_simulated_biopsy_zslice_list(specific_structure):
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    planned_raw_contour_pts_zslice_list = simulated_biopsy_planning_dict.get("Planned raw contour pts zslice list")
+
+    if planned_raw_contour_pts_zslice_list is None:
+        raise ValueError(
+            "Simulated biopsy planning geometry is missing for {}".format(
+                specific_structure.get("ROI")
+            )
+        )
+
+    return [bx_zslice_arr.copy() for bx_zslice_arr in planned_raw_contour_pts_zslice_list]
+
+
+def get_planned_simulated_biopsy_model_dict(specific_structure):
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    planned_reconstructed_biopsy_model_dict = simulated_biopsy_planning_dict.get("Planned reconstructed biopsy model dict")
+
+    if planned_reconstructed_biopsy_model_dict is None:
+        raise ValueError(
+            "Simulated biopsy planning sampling model is missing for {}".format(
+                specific_structure.get("ROI")
+            )
+        )
+
+    return planned_reconstructed_biopsy_model_dict
+
+
+def build_simulated_biopsy_planning_sample_state(specific_structure,
+                                                 grid_separation_distance,
+                                                 patientUID="Planning frame",
+                                                 structure_type="Planned simulated biopsy",
+                                                 specific_structure_index=-1
+                                                 ):
+    planned_reconstructed_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
+    sampled_bx_pts_arr, bounding_box_pts_arr, num_sampled_bx_pts, sampling_metadata = biopsy_point_sampler.sample_biopsy_points_from_reconstructed_biopsy_model_dict(
+        grid_separation_distance,
+        planned_reconstructed_biopsy_model_dict,
+        patientUID,
+        structure_type,
+        specific_structure_index,
+    )
+
+    return _apply_simulated_biopsy_planning_sample_state(
+        specific_structure,
+        grid_separation_distance,
+        sampled_bx_pts_arr,
+        bounding_box_pts_arr,
+        num_sampled_bx_pts,
+        sampling_metadata,
+    )
+
+
+def _apply_simulated_biopsy_planning_sample_state(specific_structure,
+                                                  grid_separation_distance,
+                                                  sampled_bx_pts_arr,
+                                                  bounding_box_pts_arr,
+                                                  num_sampled_bx_pts,
+                                                  sampling_metadata
+                                                  ):
+
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    simulated_biopsy_planning_dict["Planned sample lattice spacing mm"] = float(grid_separation_distance)
+    simulated_biopsy_planning_dict["Planned sampled volume pts arr"] = sampled_bx_pts_arr
+    simulated_biopsy_planning_dict["Planned sample bounding box pts arr"] = bounding_box_pts_arr
+    simulated_biopsy_planning_dict["Planned sampled point count"] = int(num_sampled_bx_pts)
+    simulated_biopsy_planning_dict["Planned sampling metadata"] = sampling_metadata
+
+    return simulated_biopsy_planning_dict
+
+
+def get_planned_simulated_biopsy_sampled_points_arr(specific_structure):
+    simulated_biopsy_planning_dict = _get_simulated_biopsy_planning_dict(specific_structure)
+    planned_sampled_volume_pts_arr = simulated_biopsy_planning_dict.get("Planned sampled volume pts arr")
+
+    if planned_sampled_volume_pts_arr is None:
+        raise ValueError(
+            "Simulated biopsy planning sampled points are missing for {}".format(
+                specific_structure.get("ROI")
+            )
+        )
+
+    return planned_sampled_volume_pts_arr
+
+
+def simulated_biopsy_planner_processer(master_structure_reference_dict,
+                                       master_structure_info_dict,
+                                       bx_ref,
+                                       bx_sample_pts_lattice_spacing,
+                                       parallel_pool,
+                                       patients_progress,
+                                       structures_progress,
+                                       completed_progress,
+                                       live_display,
+                                       centroid_line_vec_sim_list,
+                                       centroid_first_pos_sim_list,
+                                       num_centroids_for_sim_bxs,
+                                       simulated_bx_rad,
+                                       plot_simulated_cores_immediately
+                                       ):
+    patientUID_default = "Initializing"
+    processing_patients_task_main_description = "[red]Planning patient sim-bx data [{}]...".format(patientUID_default)
+    processing_patients_task_completed_main_description = "[green]Planning patient sim-bx data"
+    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
+
+    for patientUID, pydicom_item in master_structure_reference_dict.items():
+        processing_patients_task_main_description = "[red]Planning patient sim-bx data [{}]...".format(patientUID)
+        patients_progress.update(processing_patients_task, description=processing_patients_task_main_description)
+
+        structureID_default = "Initializing"
+        num_sim_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num sim structs"]
+        processing_structures_task_main_description = "[cyan]Planning structures [{},{}]...".format(patientUID, structureID_default)
+        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_sim_bx_structs_patient_specific)
+        planning_sample_targets = []
+        planning_sample_args_list = []
+
+        for specific_structure in pydicom_item[bx_ref]:
+            structureID = specific_structure["ROI"]
+            simulated_bool = specific_structure["Simulated bool"]
+
+            if simulated_bool == False:
+                continue
+
+            processing_structures_task_main_description = "[cyan]Planning structures [{},{}]...".format(patientUID, structureID)
+            structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
+
+            build_simulated_biopsy_planning_state(
+                specific_structure,
+                centroid_line_vec_sim_list,
+                centroid_first_pos_sim_list,
+                num_centroids_for_sim_bxs,
+                simulated_bx_rad,
+                plot_simulated_cores_immediately,
+            )
+
+            planned_reconstructed_biopsy_model_dict = get_planned_simulated_biopsy_model_dict(specific_structure)
+            planning_sample_targets.append(specific_structure)
+            planning_sample_args_list.append((
+                bx_sample_pts_lattice_spacing,
+                planned_reconstructed_biopsy_model_dict["Reconstructed structure delaunay global"].delaunay_triangulation,
+                planned_reconstructed_biopsy_model_dict["Reconstructed structure pts arr"],
+                patientUID,
+                bx_ref,
+                specific_structure["Index number"],
+                planned_reconstructed_biopsy_model_dict["Centroid line to z axis rotation matrix"].T,
+            ))
+
+        if planning_sample_args_list:
+            parallel_results_sampled_bx_points = parallel_pool.starmap(
+                biopsy_point_sampler.sample_biopsy_points_from_reconstructed_global_delaunay_convex_structure,
+                planning_sample_args_list,
+            )
+
+            for specific_structure, parallel_result in zip(planning_sample_targets, parallel_results_sampled_bx_points):
+                sampled_bx_pts_arr, bounding_box_pts_arr, num_sampled_bx_pts, sampling_metadata = parallel_result
+                _apply_simulated_biopsy_planning_sample_state(
+                    specific_structure,
+                    bx_sample_pts_lattice_spacing,
+                    sampled_bx_pts_arr,
+                    bounding_box_pts_arr,
+                    num_sampled_bx_pts,
+                    sampling_metadata,
+                )
+                structures_progress.update(processing_structures_task, advance=1)
+
+        structures_progress.remove_task(processing_structures_task)
+        patients_progress.update(processing_patients_task, advance=1)
+        completed_progress.update(processing_patients_task_completed, advance=1)
+
+    patients_progress.update(processing_patients_task, visible=False)
+    completed_progress.update(processing_patients_task_completed, visible=True)
+
+    return live_display
