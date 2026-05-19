@@ -18,6 +18,7 @@ from .exporters import write_dataframe_artifact
 from .in_memory_stitching import build_in_memory_stitch_validation
 from .in_memory_stitching import summarize_in_memory_stitch_validation
 from .schema_registry import write_output_schema_coverage_report
+from .schema_registry import write_output_schema_data_dictionary
 
 
 PHASE3C_OUTPUT_SURFACE_SCHEMA_VERSION = "phase3c_patient_fragment_output_surface_v1"
@@ -34,6 +35,8 @@ class Phase3COutputSurfaceResult:
     schema_coverage_path: Path
     schema_coverage_summary_path: Path
     schema_unmatched_manifest_path: Path
+    schema_data_dictionary_csv_path: Path
+    schema_data_dictionary_markdown_path: Path
     artifact_count: int
     summary: dict[str, Any]
     stitch_validation_summary: dict[str, Any]
@@ -190,8 +193,13 @@ def write_phase3c_output_surface(master_structure_reference_dict: dict,
         stitch_validation_df,
         output_dir,
     )
+    schema_data_dictionary_csv_path, schema_data_dictionary_markdown_path = write_output_schema_data_dictionary(output_dir)
     summary = summarize_phase3c_artifact_manifest(manifest_df, stitch_validation_df, generated_utc)
     summary["schema_coverage"] = schema_coverage_summary
+    summary["schema_data_dictionary"] = {
+        "csv_path": schema_data_dictionary_csv_path.as_posix(),
+        "markdown_path": schema_data_dictionary_markdown_path.as_posix(),
+    }
     stitch_validation_summary = summarize_in_memory_stitch_validation(stitch_validation_df)
 
     with summary_path.open("w", encoding="utf-8") as file_obj:
@@ -210,6 +218,8 @@ def write_phase3c_output_surface(master_structure_reference_dict: dict,
         schema_coverage_path=schema_coverage_path,
         schema_coverage_summary_path=schema_coverage_summary_path,
         schema_unmatched_manifest_path=schema_unmatched_manifest_path,
+        schema_data_dictionary_csv_path=schema_data_dictionary_csv_path,
+        schema_data_dictionary_markdown_path=schema_data_dictionary_markdown_path,
         artifact_count=int(len(manifest_df)),
         summary=summary,
         stitch_validation_summary=stitch_validation_summary,

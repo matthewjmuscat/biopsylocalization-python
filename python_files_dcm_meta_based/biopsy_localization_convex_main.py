@@ -6428,6 +6428,8 @@ def main():
                             "schema_coverage_path": phase3c_result.schema_coverage_path,
                             "schema_coverage_summary_path": phase3c_result.schema_coverage_summary_path,
                             "schema_unmatched_manifest_path": phase3c_result.schema_unmatched_manifest_path,
+                            "schema_data_dictionary_csv_path": phase3c_result.schema_data_dictionary_csv_path,
+                            "schema_data_dictionary_markdown_path": phase3c_result.schema_data_dictionary_markdown_path,
                             **phase3c_result.summary,
                         },
                     )
