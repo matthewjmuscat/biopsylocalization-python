@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 from datetime import datetime, timezone
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -82,6 +83,9 @@ class RuntimeLogger:
         self._status_path = self._logs_dir.joinpath("run_status.json")
         self._run_log_file = self._run_log_path.open("a", encoding="utf-8", buffering=1)
         self._events_file = self._events_path.open("a", encoding="utf-8", buffering=1)
+        self._native_fault_log_file = None
+        self._native_fault_log_path = None
+        self._enable_native_fault_logging()
 
         self._write_status(force_fsync=True)
         self.log_event(
@@ -92,6 +96,9 @@ class RuntimeLogger:
             details={
                 "base_output_dir": str(self.base_output_dir),
                 "logs_dir": str(self._logs_dir),
+                "native_fault_log_path": None
+                if self._native_fault_log_path is None
+                else str(self._native_fault_log_path),
                 "argv": self.argv,
             },
             write_status=True,
@@ -126,6 +133,7 @@ class RuntimeLogger:
         new_run_log_path = final_logs_dir.joinpath("run.log")
         new_events_path = final_logs_dir.joinpath("events.jsonl")
         new_status_path = final_logs_dir.joinpath("run_status.json")
+        new_native_fault_log_path = final_logs_dir.joinpath("native_fault.log")
 
         if self._run_log_path.exists() and not new_run_log_path.exists():
             shutil.copyfile(self._run_log_path, new_run_log_path)
@@ -133,6 +141,10 @@ class RuntimeLogger:
             shutil.copyfile(self._events_path, new_events_path)
         if self._status_path.exists():
             shutil.copyfile(self._status_path, new_status_path)
+        if self._native_fault_log_path is not None and self._native_fault_log_path.exists():
+            if self._native_fault_log_file is not None:
+                self._native_fault_log_file.flush()
+            shutil.copyfile(self._native_fault_log_path, new_native_fault_log_path)
 
         old_run_log_file = self._run_log_file
         old_events_file = self._events_file
@@ -147,6 +159,7 @@ class RuntimeLogger:
         self._events_path = new_events_path
         self._status_path = new_status_path
         self._specific_output_dir = specific_output_dir
+        self._enable_native_fault_logging()
 
         self.log_event(
             level="INFO",
@@ -370,6 +383,7 @@ class RuntimeLogger:
     def close(self) -> None:
         if self._finalized:
             return
+        self._disable_native_fault_logging()
         self._flush_files(force_fsync=True)
         self._run_log_file.close()
         self._events_file.close()
@@ -510,10 +524,46 @@ class RuntimeLogger:
             "last_completed_checkpoint_utc": self._last_completed_checkpoint_utc,
             "output_dir": None if self._specific_output_dir is None else str(self._specific_output_dir),
             "logs_dir": str(self._logs_dir),
+            "native_fault_log_path": None
+            if self._native_fault_log_path is None
+            else str(self._native_fault_log_path),
             "argv": self.argv,
         }
         payload.update(self._collect_memory_snapshot())
         return payload
+
+    def _enable_native_fault_logging(self) -> None:
+        native_fault_log_path = self._logs_dir.joinpath("native_fault.log")
+        native_fault_log_file = native_fault_log_path.open("a", encoding="utf-8", buffering=1)
+        previous_native_fault_log_file = self._native_fault_log_file
+        try:
+            faulthandler.enable(file=native_fault_log_file, all_threads=True)
+        except Exception:
+            native_fault_log_file.close()
+            return
+
+        self._native_fault_log_file = native_fault_log_file
+        self._native_fault_log_path = native_fault_log_path
+        if previous_native_fault_log_file is not None:
+            try:
+                previous_native_fault_log_file.close()
+            except Exception:
+                pass
+
+    def _disable_native_fault_logging(self) -> None:
+        native_fault_log_file = self._native_fault_log_file
+        self._native_fault_log_file = None
+        self._native_fault_log_path = None
+        if native_fault_log_file is None:
+            return
+        try:
+            faulthandler.disable()
+        except Exception:
+            pass
+        try:
+            native_fault_log_file.close()
+        except Exception:
+            pass
 
     def _write_status(self, *, force_fsync: bool = False) -> None:
         status_payload = _json_safe(self._build_status_payload())

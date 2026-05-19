@@ -2,11 +2,13 @@
 
 ## Selected Docs
 
+- Repository documentation map: `DOCUMENTATION_INDEX.md`
+- Active per-patient runner migration roadmap: `PATIENT_RUNNER_UPGRADE_ROADMAP.md`
 - Input DICOM assessment and future export-contract notes: `INPUT_DICOM_DATA_ASSESSMENT.md`
 - Input-side run provenance artifact design: `INPUT_DATA_MANIFEST_DESIGN.md`
 - Crash-localization and runtime event logging design: `RUNTIME_LOGGING_DESIGN.md`
 
-Detailed tactical plans and local development notes should stay out of the public README surface. For future private planning, use the ignored `.private_notes/` folder instead of adding new working-plan files to the repo root by default.
+Detailed tactical plans and local development notes should stay out of the public README surface. Use `DOCUMENTATION_INDEX.md` for the tracked public map, and use the ignored `.private_notes/` folder for scratch planning that is not yet a durable codebase decision.
 
 This repository is licensed under a **Non-Commercial Research License**  
 (see the `LICENSE` file for full terms).

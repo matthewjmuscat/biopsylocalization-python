@@ -1,0 +1,118 @@
+# Documentation Index
+
+Last updated: 2026-05-19
+
+This is the public map for repository documentation. It separates durable project
+contracts from private scratch notes and generated audit artifacts.
+
+## Documentation Layers
+
+### README
+
+`README.md` should stay small: license, citation, and a link to this index. It
+should not become the planning surface for every refactor.
+
+### Public durable docs
+
+Use tracked Markdown for decisions that affect the codebase contract, validation
+strategy, or future developer behavior. These docs should be discoverable from
+this index.
+
+Current durable docs:
+
+- `PATIENT_RUNNER_UPGRADE_ROADMAP.md` - active migration roadmap toward a
+  validated per-patient runner.
+- `RUNTIME_LOGGING_DESIGN.md` - runtime logging, crash localization, and failure
+  evidence policy.
+- `INPUT_DICOM_DATA_ASSESSMENT.md` - current and future input-data assumptions.
+- `INPUT_DATA_MANIFEST_DESIGN.md` - provenance/manifest design for input
+  discovery.
+- `CONFIG_LAYER_REWRITE_PLAN.md` - future configuration-layer direction.
+- `GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary plan.
+- `PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary contract.
+
+### Module-local design docs
+
+Keep detailed docs beside the module they govern when they are most useful to
+someone reading that code.
+
+Current module-local docs:
+
+- `python_files_dcm_meta_based/output_artifacts/OUTPUT_SCHEMA_REGISTRY_GUIDE.md`
+- `python_files_dcm_meta_based/PATIENT_RUNNER_COHORT_DERIVED_QUANTITIES.md`
+- `python_files_dcm_meta_based/biopsy_optimizer/v2/OPTIMIZER_V2_DESIGN.md`
+- `python_files_dcm_meta_based/biopsy_optimizer/v2/OPTIMIZER_V2_PERFORMANCE.md`
+- `python_files_dcm_meta_based/guidance_maps/GUIDANCE_MAP_WORKFLOW.md`
+- `python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md`
+- `python_files_dcm_meta_based/ui/RENDER_BROKER_DESIGN.md`
+
+### Package extraction docs
+
+Docs for work that may move into a separate repository can stay in the relevant
+package/prototype folder until extraction.
+
+Current package extraction docs:
+
+- `custom_PIP/README.md`
+- `custom_PIP/STANDALONE_PACKAGE_DESIGN.md`
+
+### Generated and audit docs
+
+Generated outputs and dated audits should remain under their output/audit folder.
+They can be linked from durable docs when they are important evidence, but they
+should not become the main roadmap.
+
+Current generated/audit docs:
+
+- `validation_outputs/output_schema_audit/phase3d_dataframe_audit_2026_05_18/dataframe_status_audit_summary.md`
+
+### Private notes
+
+`.private_notes/` is ignored by git and is appropriate for rough research
+thinking, local audits, and incomplete planning. It should not be the only source
+for an implemented decision. When a decision becomes stable, move the durable
+part into a tracked doc and link it from this index.
+
+## Recommended Target Structure
+
+A cleaner future structure would be:
+
+```text
+README.md
+DOCUMENTATION_INDEX.md
+PATIENT_RUNNER_UPGRADE_ROADMAP.md
+RUNTIME_LOGGING_DESIGN.md
+docs/
+  architecture/
+    config-layer.md
+    gui-and-startup.md
+    pickle-export-boundaries.md
+  input/
+    dicom-data-assessment.md
+    input-data-manifest.md
+  output/
+    schema-registry.md
+    cohort-derived-quantities.md
+  optimizer-v2/
+    design.md
+    performance.md
+  package-extraction/
+    standalone-containment-package.md
+```
+
+The repository does not need this move immediately. The safer near-term cleanup
+is to keep current paths stable, use this index as the map, and only move docs
+when links can be updated in one small pass.
+
+## Cleanup Rules
+
+- Add new durable planning docs only when they define a lasting contract or
+  migration stage.
+- Prefer updating an existing roadmap/design doc over adding another root-level
+  note.
+- Keep private notes private when they are speculative, but graduate accepted
+  decisions into tracked docs.
+- Keep generated audit outputs dated and under `validation_outputs/`.
+- Link new module-specific docs from this index.
+- If a doc describes a removed or disabled pathway, state that explicitly near
+  the top.

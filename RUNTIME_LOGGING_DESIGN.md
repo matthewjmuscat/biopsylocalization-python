@@ -1,6 +1,6 @@
 # Runtime Logging Design
 
-Last updated: 2026-05-10
+Last updated: 2026-05-19
 
 ## Purpose
 
@@ -47,6 +47,7 @@ Recommended layout inside the run output directory:
     run.log
     events.jsonl
     run_status.json
+    native_fault.log
 ```
 
 ## File Roles
@@ -134,6 +135,17 @@ Suggested fields:
 - `gpu_free_mb`
 - `output_dir`
 - `argv`
+
+### 4. `native_fault.log`
+
+Low-level Python `faulthandler` output for fatal native failures such as
+segmentation faults, aborts, bus errors, floating-point exceptions, or illegal
+instructions.
+
+This file will not help for `SIGKILL`, many kernel OOM kills, power/session
+loss, or cases where the process is terminated before Python can run any signal
+handler. It is still worth keeping because it can turn some otherwise silent
+C/CUDA/native-extension crashes into a durable Python stack trace.
 
 ## Event Categories
 
@@ -263,6 +275,23 @@ If an exception is caught, emit:
 - a final `status = failed` update to `run_status.json`.
 
 If the process is killed hard and cannot write a final failure event, the stale `run_status.json` still identifies the last active phase.
+
+If `native_fault.log` is present and non-empty, inspect it before assuming an
+OOM kill. A native fault log means Python was alive long enough to receive a
+fatal signal and dump thread stacks.
+
+If `run_status.json` remains `running`, `events.jsonl` has no exception, and
+`native_fault.log` is empty, the likely causes narrow to hard termination outside
+normal Python exception handling, for example `SIGKILL`, external process kill,
+kernel OOM, terminal/session termination, or a native crash that bypassed Python
+fault handling.
+
+For repeated suspected OOM failures, an external watchdog is more useful than
+more in-process logging. The watchdog should be a sibling process that samples
+the target PID's RSS/VMS, system memory, GPU memory, and process liveness every
+few seconds, then writes its own `watchdog.jsonl`. Because it is outside the
+target process, it can often record that the target disappeared even when the
+target itself was killed before flushing a final event.
 
 ## Recommended Minimal First Implementation
 
