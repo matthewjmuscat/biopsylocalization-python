@@ -7,7 +7,7 @@ migrated behind a patient-local boundary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Sequence
@@ -44,16 +44,17 @@ class LegacyRuntimeKeys:
 
     all_ref_key: str
     bx_ref: str
+    by_patient_key: str
+    global_key: str
+    global_num_cases_key: str
 
     def __post_init__(self) -> None:
-        all_ref_key = str(self.all_ref_key).strip()
-        bx_ref = str(self.bx_ref).strip()
-        if all_ref_key == "":
-            raise ValueError("all_ref_key cannot be empty")
-        if bx_ref == "":
-            raise ValueError("bx_ref cannot be empty")
-        object.__setattr__(self, "all_ref_key", all_ref_key)
-        object.__setattr__(self, "bx_ref", bx_ref)
+        for legacy_key_field in fields(self):
+            field_name = legacy_key_field.name
+            field_value = str(getattr(self, field_name)).strip()
+            if field_value == "":
+                raise ValueError(f"{field_name} cannot be empty")
+            object.__setattr__(self, field_name, field_value)
 
 
 def _safe_path_name(value: str) -> str:

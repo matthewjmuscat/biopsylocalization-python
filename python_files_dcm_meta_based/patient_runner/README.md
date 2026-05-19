@@ -10,8 +10,8 @@ Initial scope:
   `PatientStageResult`, and `PatientRunResult`,
 - carve a one-patient view out of the legacy runtime dictionaries without deep
   copying heavy scientific state,
-- receive legacy dictionary key names through `LegacyRuntimeKeys` from the
-  caller's current pipeline config/bootstrap state,
+- receive legacy reference/info dictionary key names through `LegacyRuntimeKeys`
+  from the caller's current pipeline config/bootstrap state,
 - write currently available patient dataframe artifacts through the existing
   `output_artifacts` exporter surface,
 - provide a minimal stage runner with timing and error capture.

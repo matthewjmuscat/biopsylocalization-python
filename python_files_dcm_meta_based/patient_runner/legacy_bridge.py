@@ -75,7 +75,7 @@ def carve_patient_runtime_state(patient_case: PatientCase,
     patient_reference_view: dict[str, Any] = {
         patient_uid: master_structure_reference_dict[patient_uid],
     }
-    patient_info_view = _build_patient_info_view(master_structure_info_dict, patient_uid)
+    patient_info_view = _build_patient_info_view(master_structure_info_dict, patient_uid, legacy_keys)
     return LegacyPatientRuntimeState(
         patient_case=patient_case,
         master_structure_reference_dict=patient_reference_view,
@@ -86,20 +86,24 @@ def carve_patient_runtime_state(patient_case: PatientCase,
 
 
 def _build_patient_info_view(master_structure_info_dict: Mapping[str, Any],
-                             patient_uid: str) -> dict[str, Any]:
+                             patient_uid: str,
+                             legacy_keys: LegacyRuntimeKeys) -> dict[str, Any]:
     info_view = dict(master_structure_info_dict)
 
-    by_patient = master_structure_info_dict.get("By patient")
+    by_patient = master_structure_info_dict.get(legacy_keys.by_patient_key)
     if isinstance(by_patient, Mapping):
         if patient_uid not in by_patient:
-            raise KeyError(f"patient_uid not found in master_structure_info_dict['By patient']: {patient_uid}")
-        info_view["By patient"] = {patient_uid: by_patient[patient_uid]}
+            raise KeyError(
+                "patient_uid not found in master_structure_info_dict"
+                f"[{legacy_keys.by_patient_key!r}]: {patient_uid}"
+            )
+        info_view[legacy_keys.by_patient_key] = {patient_uid: by_patient[patient_uid]}
 
-    global_info = master_structure_info_dict.get("Global")
+    global_info = master_structure_info_dict.get(legacy_keys.global_key)
     if isinstance(global_info, Mapping):
         global_view = dict(global_info)
-        if "Num cases" in global_view:
-            global_view["Num cases"] = 1
-        info_view["Global"] = global_view
+        if legacy_keys.global_num_cases_key in global_view:
+            global_view[legacy_keys.global_num_cases_key] = 1
+        info_view[legacy_keys.global_key] = global_view
 
     return info_view
