@@ -156,17 +156,32 @@ These are simplification candidates. Prefer removing them from the core output
 surface or regenerating them in cohort assembly/downstream unless the user
 confirms they are base outputs.
 
-- `Cohort: DIL global tissue scores and DIL features.csv` - derived join; keep out of patient runtime. - so this i think can proabbly just be deleted since it is a derived join of two base tables
 - `Cohort: Global MR ADC statistics.csv` - summary product; may be optional unless MR analysis requires it.
 - `Cohort: Global by voxel MR ADC statistics.csv` - MR output candidate; no direct sibling reference found.
 - `Cohort: Guidance-map firing depth recommendations dataframe.csv` - likely useful for GUI/guidance workflow, not sister analysis.
 - `Cohort: Per sample point prostate double sextant classification.csv` - per-sample detail; voxel-level table is the referenced one.
-- `Cohort: Simulated biopsy planned vs realized centroid variation validation.csv` - migration/QA validation surface, not downstream analysis. - this is just a validation table, will never be used for analysis, should be gated and not output in a normal output folder but rather in a validation folder
 - `Cohort: tissue class global scores (structure).csv` - summary product; may be regenerated from lower-level artifacts.
-- `Cohort: tissue volume above threshold.csv` - summary product; no direct sibling reference found. - this should be calculated downstream i would think in an alsysis pipeline
 - `Cohort: All MC structure transformation values.csv` - no exact sister reference found in the first scan.
 - `Cohort: structure specific mc results.csv` - no exact sister reference found in the first scan, although it is a plausible base tissue-class artifact.
-- `Cohort: Bx DVH metrics.csv` - no exact direct sister reference found; generalized DVH metrics are referenced. - this i think should be deleted as it is the old deprecated version
+
+### Removed or Gated After User Review
+
+These first-pass decisions simplify the core output schema before the patient
+orchestrator is built.
+
+- `Cohort: DIL global tissue scores and DIL features.csv` - removed from the core output schema; it is a derived join of base tissue-score and radiomic tables and should be regenerated downstream if needed.
+- `Cohort: tissue volume above threshold.csv` - removed from the core output schema; threshold summaries should be calculated by an analysis pipeline from base tissue-class outputs.
+- `Cohort: Bx DVH metrics.csv` - removed from the core output schema; this is the old deprecated DVH surface and is superseded by `Cohort: Bx DVH metrics (generalized).csv` until a clean DVH service replaces both.
+- `Cohort: Simulated biopsy planned vs realized centroid variation validation.csv` - validation-only; it should be gated into validation output, not written as a normal cohort CSV.
+
+### Tissue-Class Grain Clarification
+
+`Cohort: structure specific mc results.csv` and
+`Cohort: tissue class global scores (structure).csv` are related but not the
+same table.
+
+- `Cohort: structure specific mc results.csv` is the granular long-form MC output at approximately patient + biopsy + MC trial + point/voxel + relative structure grain. This is closer to a base artifact.
+- `Cohort: tissue class global scores (structure).csv` is an aggregated biopsy-level/by-relative-structure summary computed from the granular structure-specific MC results. This is a derived summary and can be regenerated from lower-level artifacts.
 
 ### Removal and Quarantine Ledger
 
@@ -176,13 +191,14 @@ not survive.
 
 | Item | Current evidence | Direction |
 | --- | --- | --- |
-| Random forest tumor morphology analysis | Runs inside main when `num_patients > 1`; no reason to be core localization runtime. | Remove from main or move to a sister/downstream analysis workflow. |
-| FANOVA/Sobol pathway | Inputs default to zero, but imports, flags, runtime branch, and CSV export path remain in main. | Quarantine or remove from core runtime if confirmed deprecated. |
-| Deprecated CSV writer calls | `csv_writers.csv_writer_containment` and `csv_writers.csv_writer_dosimetry` are commented legacy paths. | Remove dead/commented writer blocks after confirming no active dependency. |
+| Random forest tumor morphology analysis | Runs inside main when `num_patients > 1`; no reason to be core localization runtime. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
+| FANOVA/Sobol pathway | Inputs default to zero, but imports, flags, runtime branch, and CSV export path remain in main. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
+| Deprecated CSV writer calls | `csv_writers.csv_writer_containment` and `csv_writers.csv_writer_dosimetry` are commented legacy paths. | Removed from main-facing runtime; source preserved under `python_files_dcm_meta_based/deprecated/`. |
 | Production plots | Already skipped in main. | Keep outside core runtime as a dedicated plotting workflow. |
-| Derived joined summaries | `Cohort: DIL global tissue scores and DIL features` is a convenience join. | Regenerate downstream from base artifacts if needed. |
+| Derived joined summaries | `Cohort: DIL global tissue scores and DIL features` is a convenience join. | Removed from core output schema; regenerate downstream from base artifacts if needed. |
 | Global sum-to-one MC summary | Directly referenced by tissue-class repos but derived from long-form sum-to-one rows. | Keep during migration, then rebuild in cohort assembly or sister repo. |
-| Legacy/simple DVH metrics | Generalized DVH metrics are referenced; old `Cohort: Bx DVH metrics.csv` was not found directly. | Confirm whether old DVH metric output can be removed or replaced by a clean DVH service. |
+| Tissue volume threshold summary | No direct sister-reference found; summary is downstream-calculable. | Removed from core output schema; calculate downstream if needed. |
+| Legacy/simple DVH metrics | Generalized DVH metrics are referenced; old `Cohort: Bx DVH metrics.csv` was not found directly. | Removed from core output schema; generalized DVH remains during migration. |
 
 ## Runtime State Migration
 

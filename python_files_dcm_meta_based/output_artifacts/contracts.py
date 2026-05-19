@@ -116,14 +116,11 @@ def _builder_or_source(table_name: str, output_section: str) -> str:
         "Cohort: sum-to-one mc results": "dataframe_builders.cohort_and_multi_biopsy_mc_sum_to_one_pt_wise_results_dataframe_builder(...)",
         "Cohort: global sum-to-one mc results": "dataframe_builders.cohort_mc_sum_to_one_global_scores_dataframe_builder(...)",
         "Cohort: tissue class global scores (structure)": "dataframe_builders.global_scores_by_specific_structure_dataframe_builder(...)",
-        "Cohort: tissue volume above threshold": "dataframe_builders.tissue_volume_threshold_dataframe_builder_NEW(...)",
-        "Cohort: DIL global tissue scores and DIL features": "dataframe_builders.bx_global_score_to_target_dil_3d_radiomic_features_dataframe_builder(...)",
         "Cohort: Tissue class - distances global results": "dataframe_builders.cohort_relative_structure_distances_dataframe_builder(...)",
         "Cohort: Tissue class - distances pt-wise results": "dataframe_builders.cohort_relative_structure_distances_dataframe_builder(...)",
         "Cohort: Tissue class - distances voxel-wise results": "dataframe_builders.cohort_relative_structure_distances_dataframe_builder(...)",
         "Cohort: Global dosimetry by voxel": "dataframe_builders.global_dosimetry_by_voxel_values_dataframe_builder_v3_generalized(...)",
         "Cohort: Global dosimetry (NEW)": "dataframe_builders.global_dosimetry_by_biopsy_dataframe_builder_NEW_multiindex_df(...)",
-        "Cohort: Bx DVH metrics": "dataframe_builders.dvh_metrics_dataframe_builder_sp_biopsy(...)",
         "Cohort: Bx DVH metrics (generalized)": "dataframe_builders.dvh_metrics_calculator_and_dataframe_builder_cohort(...)",
         "Cohort: Global MR ADC statistics": "dataframe_builders.global_mr_values_dataframe_builder(...)",
         "Cohort: Global by voxel MR ADC statistics": "dataframe_builders.global_mr_by_voxel_values_dataframe_builder_ALTERNATE(...)",
@@ -156,8 +153,6 @@ def _builder_or_source(table_name: str, output_section: str) -> str:
         return "dataframe_builders.all_dose_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(...)"
     if table_name == "Point-wise MR ADC output by MC trial number":
         return "dataframe_builders.all_mr_data_by_trial_and_pt_from_dataframe_builder_and_voxelizer_v4(...)"
-    if table_name == "Tissue volume above threshold":
-        return "dataframe_builders.tissue_volume_threshold_dataframe_builder_NEW(...)"
     if table_name in {"DVH metrics", "DVH metrics (Dx, Vx) statistics"}:
         return "dataframe_builders.dvh_metrics_dataframe_builder_sp_biopsy(...) or per-patient MC dataframe dict"
     if table_name in {"Dosimetry - Global dosimetry (NEW)", "Dosimetry - Global dosimetry by voxel statistics"}:
@@ -210,8 +205,6 @@ def _canonical_primary_key(table_name: str, output_section: str) -> str:
         return "Patient ID + Bx index + MC trial num + point index"
     if table_name == "Voxel-wise dose output by MC trial number":
         return "Patient ID + Bx index + MC trial num + Voxel index"
-    if "tissue volume above threshold" in table_name.lower():
-        return "Patient ID + Bx index + tissue/structure identity + threshold identity"
     if "Global tissue by structure statistics" in table_name:
         return "Patient ID + Bx index + Relative structure type + Relative structure index"
     if "Pt wise structure specific" in table_name:
@@ -226,7 +219,7 @@ def _canonical_primary_key(table_name: str, output_section: str) -> str:
         return "Patient ID + Bx index + MC trial num + point/voxel identity + structure identity"
     if "sum-to-one" in table_name:
         return "Patient ID + Bx index + MC trial num + point/voxel identity + tissue class"
-    if "tissue class global scores" in table_name or "DIL global tissue scores" in table_name:
+    if "tissue class global scores" in table_name:
         return "Patient ID + Bx index + Relative struct type + Relative structure index"
     if "distances global" in table_name:
         return "Patient ID + Bx index + Relative struct type + Relative structure index"
@@ -255,7 +248,6 @@ def _stitch_key(table_name: str, output_section: str) -> str:
             "Point-wise dose output by MC trial number",
             "Point-wise MR ADC output by MC trial number",
             "Voxel-wise dose output by MC trial number",
-            "Tissue volume above threshold",
         }:
             return "Patient ID + Bx index"
         return "Patient ID"
@@ -285,12 +277,9 @@ def _proposed_lifetime_class(table_name: str, output_section: str, current_outpu
         if table_name in {
             "Cohort: global sum-to-one mc results",
             "Cohort: tissue class global scores (structure)",
-            "Cohort: tissue volume above threshold",
-            "Cohort: DIL global tissue scores and DIL features",
             "Cohort: Tissue class - distances global results",
             "Cohort: Global dosimetry (NEW)",
             "Cohort: Global MR ADC statistics",
-            "Cohort: Bx DVH metrics",
             "Cohort: Bx DVH metrics (generalized)",
         }:
             return "final_stage_after_patient_fragments"
@@ -299,11 +288,6 @@ def _proposed_lifetime_class(table_name: str, output_section: str, current_outpu
 
 
 def _pruning_assessment(table_name: str) -> tuple[str, str]:
-    if table_name in {"Cohort: Bx DVH metrics", "DVH metrics"}:
-        return (
-            "deprecated_candidate",
-            "Legacy/non-generalized DVH metrics path appears superseded by generalized DVH metrics and can likely be recalculated downstream.",
-        )
     if table_name in {"Cohort: Bx DVH metrics (generalized)", "DVH metrics (Dx, Vx) statistics"}:
         return (
             "downstream_calculable_candidate",

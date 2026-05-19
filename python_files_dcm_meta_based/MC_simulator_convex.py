@@ -2053,7 +2053,6 @@ def simulator_parallel(parallel_pool,
                 mc_compiled_results_sum_to_one_for_fixed_bx_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(mc_compiled_results_sum_to_one_for_fixed_bx_dataframe, threshold=0.25)
 
                 master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["MC data: compiled sim sum-to-one results dataframe"] = mc_compiled_results_sum_to_one_for_fixed_bx_dataframe
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["Output data frames"]["Tissue volume above threshold"] = volume_of_tissue_above_threshold_dataframe 
 
                 biopsies_progress.update(sp_bx_calc_dil_tissue_volume_task, advance = 1)
             biopsies_progress.remove_task(sp_bx_calc_dil_tissue_volume_task)
@@ -2292,15 +2291,6 @@ def simulator_parallel(parallel_pool,
                 
                 #live_display.start()
                 all_thresholds_volume_of_tissue_above_threshold_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(all_thresholds_volume_of_tissue_above_threshold_dataframe, threshold=0.25)
-
-                master_structure_reference_dict[patientUID][bx_ref][specific_bx_structure_index]["Output data frames"]["Tissue volume above threshold"] = all_thresholds_volume_of_tissue_above_threshold_dataframe 
-
-
-
-
-
-
-
 
                 biopsies_progress.update(calc_mutual_probabilities_stat_each_bx_structure_containment_task, advance = 1)
             biopsies_progress.remove_task(calc_mutual_probabilities_stat_each_bx_structure_containment_task)
@@ -3071,41 +3061,6 @@ def simulator_parallel(parallel_pool,
 
                 ### 
                 ###
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Create DVH metric dataframe", total = None)
-                ###
-
-                bx_structure_info_dict = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_bx_structure)
-
-                dvh_metric_dataframe_per_biopsy = pandas.DataFrame()
-                for index, vol_dose_percent in enumerate(v_percent_DVH_to_calc_list):
-                    dvh_metric_dict_for_dataframe_temp = {"Patient ID": patientUID,
-                                                 "Bx ID": bx_structure_info_dict["Structure ID"],
-                                                 "Struct type": bx_structure_info_dict["Struct ref type"],
-                                                 "Dicom ref num": bx_structure_info_dict["Dicom ref num"],
-                                                 "Bx index": bx_structure_info_dict["Index number"],
-                                                 "DVH Metric": str(vol_dose_percent),
-                                                 "Nominal": dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Nominal"],
-                                                 "Mean": dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Mean"],
-                                                 "Standard deviation": dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["STD"],
-                                                }
-                    
-                    dvh_metric_dict_for_dataframe_temp.update(dvh_metric_vol_dose_percent_dict[str(vol_dose_percent)]["Quantiles"])
-                    dvh_metric_dataframe_temp = pandas.DataFrame(dvh_metric_dict_for_dataframe_temp, index = [index])
-                    del dvh_metric_dict_for_dataframe_temp                         
-
-                    dvh_metric_dataframe_per_biopsy = pandas.concat([dvh_metric_dataframe_per_biopsy,dvh_metric_dataframe_temp], ignore_index=True)
-                    del dvh_metric_dataframe_temp
-
-
-                ###
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                ###
-
-
-
-
-                ### 
-                ###
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Differential and cumulative dvh", total = None)
                 ###
 
@@ -3156,11 +3111,6 @@ def simulator_parallel(parallel_pool,
                 specific_bx_structure["MC data: Differential DVH dict"] = differential_dvh_dict
                 specific_bx_structure["MC data: Cumulative DVH dict"] = cumulative_dvh_dict 
                 specific_bx_structure["MC data: dose volume metrics dict"] = dvh_metric_vol_dose_percent_dict 
-                
-                
-                dvh_metric_dataframe_per_biopsy = dataframe_builders.convert_columns_to_categorical_and_downcast(dvh_metric_dataframe_per_biopsy, threshold=0.25)
-
-                specific_bx_structure["Output data frames"]["DVH metrics"] = dvh_metric_dataframe_per_biopsy
 
                 biopsies_progress.update(calculate_biopsy_DVH_quantities_by_biopsy_task, advance = 1)
             biopsies_progress.remove_task(calculate_biopsy_DVH_quantities_by_biopsy_task)    

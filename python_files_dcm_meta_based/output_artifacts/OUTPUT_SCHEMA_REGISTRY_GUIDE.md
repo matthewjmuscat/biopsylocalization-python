@@ -103,3 +103,17 @@ The first four simple-concat route targets have been wired through patient-level
 - `Cohort: Simulated biopsy planned vs realized centroid variation validation`.
 
 The May 19, 2026 full Phase 3C run confirmed all four stitched outputs match the legacy final tables, so their cohort registry specs are now marked `validated_phase3c`.
+
+## May 19, 2026 Simplification Pass
+
+After the sister-repository scan and user review, the current registry was
+reduced to 62 specs by removing outputs that should not remain core patient-runner
+surfaces:
+
+- `Cohort: DIL global tissue scores and DIL features` - derived join; regenerate downstream if needed.
+- `Cohort: tissue volume above threshold` and its biopsy fragment - downstream-calculable threshold summary.
+- `Cohort: Bx DVH metrics` and its legacy patient fragment - deprecated old DVH surface superseded by generalized DVH metrics during migration.
+
+`Cohort: Simulated biopsy planned vs realized centroid variation validation`
+remains registered and validated, but is marked validation-only and should live
+under validation outputs rather than normal cohort CSV export.

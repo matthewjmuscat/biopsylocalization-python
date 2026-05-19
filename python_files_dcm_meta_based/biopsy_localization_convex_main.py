@@ -74,14 +74,11 @@ from statsmodels.regression.quantile_regression import QuantRegResults
 import misc_tools
 import matplotlib.colors as mcolors
 import pickle
-import fanova
 import dataframe_builders
-import csv_writers
 import cuspatial
 import geopandas
 from itertools import combinations
 import biopsy_transporter
-import machina_learning
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import lattice_reconstruction_tools
@@ -756,17 +753,6 @@ def main():
     d_x_DVH_to_calc_list = [2,50,98] # These are D_x, x values should be given as percentages of the total volume (ie. between 0,100). the output is a dose value
     volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
 
-    #fanova
-    num_FANOVA_containment_simulations_input = 0 # must be a power of two for the scipy function to work, 2^10 is good
-    num_FANOVA_dose_simulations_input = 0
-    show_fanova_containment_demonstration_plots = False
-    plot_cupy_fanova_containment_distribution_results = False
-    plot_cupy_containment_distribution_fanova_results = False # nice because it shows all trials at once
-    fanova_plot_uniform_shifts_to_check_plotly = False
-    num_sobol_bootstraps = 100
-    sobol_indices_bootstrap_conf_interval = 0.95
-    show_NN_FANOVA_dose_demonstration_plots = False
-
     # patient sample cohort analyzer
     box_plot_points_option = 'outliers'
     notch_option = False
@@ -866,8 +852,6 @@ def main():
     write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
     export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
     skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
-    write_sobol_dose_data_to_file = True
-    write_sobol_containment_data_to_file = True
     write_preprocessing_data_to_file = True
     write_cohort_data_to_file = True
 
@@ -1145,10 +1129,6 @@ def main():
     )
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
-    if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
-        fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
-    else:
-        fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z'] # the order is important!
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = bool(num_MC_dose_simulations_input)
@@ -1157,17 +1137,11 @@ def main():
     perform_MC_sim = perform_mc_containment_sim or perform_mc_dose_sim or perform_mc_mr_sim
 
 
-    # initialize performed_fanova variable based on perform_dose and containment fanovas
-    perform_dose_fanova = bool(num_FANOVA_dose_simulations_input)
-    perform_containment_fanova = bool(num_FANOVA_containment_simulations_input)
-    perform_fanova = perform_containment_fanova or perform_dose_fanova
-
     # create a dict for cohort data and dataframes
     mr_global_multi_structure_output_dataframe_str = "Global MR ADC statistics"
     mr_global_by_voxel_multi_structure_output_dataframe_str = "Global by voxel MR ADC statistics"
 
-    master_cohort_patient_data_and_dataframes = {"Data": {"Cohort: Random forest tumor morphology results": None
-                                                          },
+    master_cohort_patient_data_and_dataframes = {"Data": {},
                                                  "Dataframes": {"Uncertainties dataframe (unedited)": None,
                                                                 "Uncertainties dataframe (final)": None,
                                                                 "Cohort: Nearest DILs to each biopsy": None,
@@ -1183,9 +1157,7 @@ def main():
                                                                 #"Cohort: mutual tissue class mc results": None,
                                                                 #"Cohort: tissue class global scores (tissue type)": None,
                                                                 "Cohort: tissue class global scores (structure)": None,
-                                                                "Cohort: tissue volume above threshold": None,
                                                                 #"Cohort: Entire point-wise binom est distribution": None,
-                                                                "Cohort: DIL global tissue scores and DIL features": None,
                                                                 "Cohort: Entire point-wise dose distribution": None,
                                                                 "Cohort: Tissue class - distances global results": None,
                                                                 "Cohort: Tissue class - distances pt-wise results": None,
@@ -1193,7 +1165,6 @@ def main():
                                                                 "Cohort: Per sample point prostate double sextant classification": None,
                                                                 "Cohort: Per voxel prostate double sextant classification": None,
                                                                 "Cohort: Simulated biopsy planned vs realized centroid variation validation": None,
-                                                                "Cohort: Bx DVH metrics": None,
                                                                 "Cohort: Bx DVH metrics (generalized)": None,
                                                                 "Cohort: Bx global info dataframe": None,
                                                                 "Cohort: "+ mr_global_multi_structure_output_dataframe_str: None,
@@ -1517,7 +1488,6 @@ def main():
                                                                                                 mr_global_multi_structure_output_dataframe_str,
                                                                                                 mr_global_by_voxel_multi_structure_output_dataframe_str,
                                                                                                 bx_sim_locations_dict,
-                                                                                                fanova_sobol_indices_names_by_index,
                                                                                                 rectum_contour_names,
                                                                                                 urethra_contour_names,
                                                                                                 interp_inter_slice_dist,
@@ -5170,7 +5140,7 @@ def main():
             )
 
           
-            if (perform_MC_sim == True or perform_fanova == True):
+            if perform_MC_sim == True:
                 max_simulations = master_structure_info_dict["Global"]["MC info"]["Max of num MC simulations"]
 
                 num_biopsies_global = master_structure_info_dict["Global"]["Num biopsies"]
@@ -5378,40 +5348,6 @@ def main():
 
                     master_structure_info_dict['Global']["MC info"]['MC sim performed'] = any(list_of_mc_sim_types)
                 
-                if perform_fanova == True:
-                    fanova.fanova_analysis(
-                        parallel_pool, 
-                        live_display,
-                        stopwatch, 
-                        layout_groups, 
-                        master_structure_reference_dict, 
-                        master_structure_info_dict,
-                        structs_referenced_list,
-                        bx_ref,
-                        dil_ref,
-                        oar_ref,
-                        dose_ref,
-                        biopsy_needle_compartment_length,
-                        simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
-                        num_FANOVA_containment_simulations_input,
-                        num_FANOVA_dose_simulations_input,
-                        fanova_plot_uniform_shifts_to_check_plotly,
-                        show_fanova_containment_demonstration_plots,
-                        plot_cupy_fanova_containment_distribution_results,
-                        num_sobol_bootstraps,
-                        sobol_indices_bootstrap_conf_interval,
-                        show_NN_FANOVA_dose_demonstration_plots,
-                        num_dose_calc_NN,
-                        dose_views_jsons_paths_list,
-                        perform_dose_fanova,
-                        perform_containment_fanova,
-                        structure_miss_probability_roi,
-                        cancer_tissue_label,
-                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                        cupy_array_upper_limit_NxN_size_input,
-                        plot_cupy_containment_distribution_fanova_results
-                        )
-
                 live_display.start(refresh=True)
                 #live_display.stop()
 
@@ -5423,9 +5359,9 @@ def main():
                 if plot_immediately_after_simulation == False:
                     sys.exit('> Programme exited.')
 
-            elif (perform_MC_sim == False and perform_fanova == False):
+            elif perform_MC_sim == False:
                 important_info.add_text_line(
-                    "Skipping MC and FANOVA simulation; continuing with current in-memory data only.",
+                    "Skipping MC simulation; continuing with current in-memory data only.",
                     live_display,
                 )
                 live_display.refresh()
@@ -5447,11 +5383,6 @@ def main():
             mc_dose_sim_complete_bool = master_structure_info_dict['Global']["MC info"]['MC dose sim performed']
             mc_mr_sim_complete = master_structure_info_dict['Global']["MC info"]['MC MR sim performed']
 
-            fanova_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA sim performed']
-            fanova_containment_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA containment sim performed']
-            fanova_dose_sim_complete_bool = master_structure_info_dict['Global']["FANOVA info"]['FANOVA dose sim performed']
-
-            num_patients = master_structure_info_dict["Global"]["Num cases"]
             interp_inter_slice_dist = master_structure_info_dict["Global"]["Preprocessing info"]["Interslice interp dist"]
             interp_intra_slice_dist = master_structure_info_dict["Global"]["Preprocessing info"]["Intraslice interp dist"]
 
@@ -5664,13 +5595,6 @@ def main():
                 )
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
-                # create dataframe for tissue volume above threshold
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 6", total = None)
-                cohort_tissue_volume_above_threshold_dataframe = dataframe_builders.tissue_volume_threshold_dataframe_builder_NEW(master_structure_reference_dict,
-                                                                                    bx_ref)
-                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: tissue volume above threshold"] = cohort_tissue_volume_above_threshold_dataframe
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                
                 # All binom est info for cohort (deprecated because mutual info superceeded by sum to one)
                 """
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 7", total = None) 
@@ -5679,14 +5603,6 @@ def main():
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Entire point-wise binom est distribution"] = cohort_all_binom_est_data_by_pt_and_voxel
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                 """
-
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 8", total = None) 
-                cohort_global_tissue_scores_with_target_dil_radiomic_features_df = dataframe_builders.bx_global_score_to_target_dil_3d_radiomic_features_dataframe_builder(structure_cohort_3d_radiomic_features_dataframe,
-                                                                         cohort_global_tissue_class_by_structure_dataframe,
-                                                                         master_structure_reference_dict,
-                                                                         bx_ref)
-                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: DIL global tissue scores and DIL features"] = cohort_global_tissue_scores_with_target_dil_radiomic_features_df
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 9", total = None) 
                 cohort_mc_distances_global_results_dataframe, cohort_mc_distances_pt_wise_results_dataframe, cohort_mc_distances_voxel_wise_results_dataframe = dataframe_builders.cohort_relative_structure_distances_dataframe_builder(master_structure_reference_dict,
@@ -5708,32 +5624,6 @@ def main():
                 live_display.refresh()
 
 
-                
-                ####### MACHINE LEARNING RANDOM FOREST ON TUMOR MORPHOLOGY AND TISSUE CLASS SCORE
-                #live_display.stop()
-                if num_patients > 1:
-                    csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Random forest training (MC, tissue)...', total=None)
-                    csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Random forest training (MC, tissue)', total=1, visible = False)
-                    
-                    tumor_morphology_rf_metrics_df, tumor_morphology_rf_regressor, tumor_morphology_rf_results, tumor_morphology_feature_columns = machina_learning.random_forest_global_tissue_class_score_predicted_by_tumor_morphology(cohort_global_tissue_scores_with_target_dil_radiomic_features_df)
-
-                    master_cohort_patient_data_and_dataframes["Data"]["Cohort: Random forest tumor morphology results"] = {"Metrics":tumor_morphology_rf_metrics_df, 
-                                                                                                                            "Regressor": tumor_morphology_rf_regressor,
-                                                                                                                            "Results": tumor_morphology_rf_results,
-                                                                                                                            "Feature columns": tumor_morphology_feature_columns}
-                
-                    indeterminate_progress_main.update(csv_dataframe_building_indeterminate, visible = False)
-                    completed_progress.update(csv_dataframe_building_indeterminate_completed, advance = 1,visible = True)
-                else:
-                    pass
-
-                
-                #print('test')
-                #live_display.start()
-
-                
-                
-                
                 
                 csv_dataframe_building_indeterminate = indeterminate_progress_main.add_task('[red]Generating dataframes (MC, dosimetry)...', total=None)
                 csv_dataframe_building_indeterminate_completed = completed_progress.add_task('[green]Generating dataframes (MC, dosimetry)', total=1, visible = False)
@@ -5881,22 +5771,6 @@ def main():
 
 
 
-                st = time.time()
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 6", total = None)
-                cohort_all_bx_dvh_metric_dataframe = dataframe_builders.dvh_metrics_dataframe_builder_sp_biopsy(master_structure_reference_dict,
-                                                                            bx_ref,
-                                                                            all_ref_key,
-                                                                            dose_ref)
-
-                master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: Bx DVH metrics"] = cohort_all_bx_dvh_metric_dataframe
-
-                et = time.time()
-                duration = et-st
-                print(f"Dose DF6: {duration}")
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-
-
-                
                 # DVH metrics new and improved!
                 ### WARNING I THINK THESE DVH METRIC CALCULATIONS ARE INCORRECT! LETS JUST NOT CALC THEM IN THIS ALGO AT ALL!
                 st = time.time()
@@ -6027,7 +5901,7 @@ def main():
             #live_display.stop()
             # create global csv output folder
             print("Creating CSV output directories...")
-            if any([write_preprocessing_data_to_file, write_containment_to_file_ans, write_dose_to_file_ans, write_sobol_containment_data_to_file, write_sobol_dose_data_to_file, write_cohort_data_to_file]):
+            if any([write_preprocessing_data_to_file, write_containment_to_file_ans, write_dose_to_file_ans, write_cohort_data_to_file]):
                 csv_output_folder_name = 'Output CSVs'
                 csv_output_dir = specific_output_dir.joinpath(csv_output_folder_name)
                 csv_output_dir.mkdir(parents=True, exist_ok=True)
@@ -6077,22 +5951,6 @@ def main():
                 global_mc_output_csv_dir.mkdir(parents=True, exist_ok=True)
                 patient_sp_output_csv_dir_dict["Global"] = global_mc_output_csv_dir
 
-            # create fanova csv output folder
-            if any([write_sobol_containment_data_to_file, write_sobol_dose_data_to_file]):  
-                fanova_output_folder_name = 'FANOVA simulation'
-                fanova_csv_output_dir = csv_output_dir.joinpath(fanova_output_folder_name)
-                fanova_csv_output_dir.mkdir(parents=True, exist_ok=True)
-
-                fanova_patient_sp_output_csv_dir_dict = {}
-                for patientUID in master_structure_reference_dict.keys():
-                    patient_sp_output_csv_dir = fanova_csv_output_dir.joinpath(patientUID)
-                    patient_sp_output_csv_dir.mkdir(parents=True, exist_ok=True)
-                    fanova_patient_sp_output_csv_dir_dict[patientUID] = patient_sp_output_csv_dir
-                global_fanova_output_csv_dir = fanova_csv_output_dir.joinpath('Global')
-                global_fanova_output_csv_dir.mkdir(parents=True, exist_ok=True)
-                fanova_patient_sp_output_csv_dir_dict["Global"] = global_fanova_output_csv_dir
-
-
             # create cohort csv folder
             if write_cohort_data_to_file == True:  
                 cohort_output_folder_name = 'Cohort'
@@ -6133,46 +5991,6 @@ def main():
 
 
 
-            # MC containment 
-            if write_containment_to_file_ans == True and mc_sim_complete_bool == True:
-                important_info.add_text_line("Writing containment CSVs to file.", live_display)
-                """
-                csv_writers.csv_writer_containment(live_display,
-                        layout_groups,
-                        master_structure_reference_dict,
-                        master_structure_info_dict,
-                        patient_sp_output_csv_dir_dict,
-                        bx_ref,
-                        cancer_tissue_label,
-                        structure_miss_probability_roi,
-                        miss_structure_complement_label
-                        )
-                """
-                live_display.start(refresh=True)
-                
-            else:
-                pass  
-
-
-            # MC dose
-            if write_dose_to_file_ans == True and mc_sim_complete_bool == True:
-                important_info.add_text_line("Writing dosimetry CSVs to file.", live_display)
-                """
-                csv_writers.csv_writer_dosimetry(live_display,
-                        layout_groups,
-                        master_structure_reference_dict,
-                        master_structure_info_dict,
-                        patient_sp_output_csv_dir_dict,
-                        bx_ref,
-                        display_dvh_as,
-                        v_percent_DVH_to_calc_list
-                        )
-                """
-                live_display.start(refresh=True)
-                
-            else:
-                pass
-            
             # Write the rest of the dataframes that we've stored
             """
             if mc_csv_output_dir.is_dir():
@@ -6251,69 +6069,6 @@ def main():
                     "Completed writing MC simulation stored dataframes to file.",
                 )
                 
-
-            # fanova containment
-            if write_sobol_containment_data_to_file == True and fanova_containment_sim_complete_bool == True:
-                important_info.add_text_line("Writing fanova containment CSVs to file.", live_display)
-
-                global_fanova_output_csv_dir = fanova_patient_sp_output_csv_dir_dict["Global"]
-
-                # DIL tissue Sobol dataframe
-                fanova_csv_dataframe_filename = 'sobol_dataframe_DIL_tissue_for_all_patients.csv'
-                sobol_dil_tissue_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-
-                dataframes_list = []
-                for patientUID,pydicom_item in master_structure_reference_dict.items():  
-                    for specific_bx_structure in pydicom_item[bx_ref]:
-                        sp_bx_sobol_containment_dataframe = specific_bx_structure["FANOVA: sobol containment (DIL tissue) dataframe"]
-                        dataframes_list.append(sp_bx_sobol_containment_dataframe)
-
-                grand_sobol_dataframe = pandas.concat(dataframes_list, ignore_index=True) 
-                grand_sobol_dataframe.to_csv(sobol_dil_tissue_dataframe_filepath_all_patients)
-                del grand_sobol_dataframe
-
-
-                # All tissues Sobol dataframe
-                fanova_csv_dataframe_filename = 'sobol_dataframe_by_tissue_for_all_patients.csv'
-                sobol_tissue_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-
-                dataframes_list = []
-                for patientUID,pydicom_item in master_structure_reference_dict.items():  
-                    for specific_bx_structure in pydicom_item[bx_ref]:
-                        sp_bx_sobol_containment_dataframe = specific_bx_structure["FANOVA: sobol containment dataframe"]
-                        dataframes_list.append(sp_bx_sobol_containment_dataframe)
-
-                grand_sobol_dataframe = pandas.concat(dataframes_list, ignore_index=True) 
-                grand_sobol_dataframe.to_csv(sobol_tissue_dataframe_filepath_all_patients)
-                del grand_sobol_dataframe
-
-
-
-            else:
-                pass
-            
-            # fanova dose
-            if write_sobol_dose_data_to_file ==  True and fanova_dose_sim_complete_bool == True:
-                important_info.add_text_line("Writing fanova dosimetry CSVs to file.", live_display)
-
-                global_fanova_output_csv_dir = fanova_patient_sp_output_csv_dir_dict["Global"]
-
-                # dose Sobol dataframe
-                fanova_csv_dataframe_filename = 'sobol_dataframe_dose_for_all_patients.csv'
-                sobol_dose_dataframe_filepath_all_patients = global_fanova_output_csv_dir.joinpath(fanova_csv_dataframe_filename)
-
-                dataframes_list = []
-                for patientUID,pydicom_item in master_structure_reference_dict.items():  
-                    for specific_bx_structure in pydicom_item[bx_ref]:
-                        sp_bx_sobol_dose_dataframe = specific_bx_structure["FANOVA: sobol dose dataframe"]
-                        dataframes_list.append(sp_bx_sobol_dose_dataframe)
-
-                grand_sobol_dataframe = pandas.concat(dataframes_list, ignore_index=True) 
-                grand_sobol_dataframe.to_csv(sobol_dose_dataframe_filepath_all_patients)
-                del grand_sobol_dataframe
-
-            else:
-                pass
 
             if validate_phase3b_in_memory_patient_stitching_bool == True:
                 phase3b_validation_output_dir = specific_output_dir.joinpath(
@@ -6414,7 +6169,13 @@ def main():
             if write_cohort_data_to_file == True:
                 important_info.add_text_line("Writing cohort CSVs to file.", live_display)
 
+                validation_only_cohort_dataframe_names = {
+                    "Cohort: Simulated biopsy planned vs realized centroid variation validation",
+                }
+
                 for dataframe_name, dataframe in master_cohort_patient_data_and_dataframes['Dataframes'].items():
+                    if dataframe_name in validation_only_cohort_dataframe_names:
+                        continue
                     if isinstance(dataframe, pandas.DataFrame):
 
                         dataframe_file_name = str(dataframe_name)+ '.csv'
@@ -6466,7 +6227,6 @@ def structure_referencer(data_removals_dict_bx,
                          mr_global_multi_structure_output_dataframe_str,
                          mr_global_by_voxel_multi_structure_output_dataframe_str,
                          bx_sim_locations_dict,
-                         fanova_sobol_indices_names_by_index,
                          rectum_list,
                          urethra_list,
                          interp_inter_slice_dist,
@@ -6735,17 +6495,12 @@ def structure_referencer(data_removals_dict_bx,
                          "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                          "MC data: voxelized dose results list": None, 
                          "MC data: voxelized dose results dict (dict of lists)": None, 
-                         "FANOVA: sobol indices (containment)": None,
-                         "FANOVA: sobol indices (dose)": None,
-                         'FANOVA: sobol indices (DIL tissue)': None,
                          "Output csv file paths dict": {}, 
                          "Output data frames": {"Dose output Z and radius": None,
                                                 "Dose output voxelized": None,
                                                 "Point-wise dose output by MC trial number": None,
                                                 "Voxel-wise dose output by MC trial number": None,
                                                 #"Mutual containment output by bx point": None,
-                                                "Tissue volume above threshold": None,
-                                                "DVH metrics": None,
                                                 "Differential DVH by MC trial": None,
                                                 "Cumulative DVH by MC trial": None},
                          "Output dicts for data frames": {},  
@@ -6877,9 +6632,6 @@ def structure_referencer(data_removals_dict_bx,
                                 "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
                                 "MC data: voxelized dose results list": None, 
                                 "MC data: voxelized dose results dict (dict of lists)": None, 
-                                "FANOVA: sobol indices (containment)": None,
-                                "FANOVA: sobol indices (dose)": None,
-                                'FANOVA: sobol indices (DIL tissue)': None,
                                 "Simulated biopsy transport request dict": None,
                                 "Output csv file paths dict": {}, 
                                 "Output data frames": {"Dose output Z and radius": None,
@@ -6887,8 +6639,6 @@ def structure_referencer(data_removals_dict_bx,
                                                        "Point-wise dose output by MC trial number": None,
                                                        "Voxel-wise dose output by MC trial number": None,
                                                        #"Mutual containment output by bx point": None,
-                                                       "Tissue volume above threshold": None,
-                                                       "DVH metrics": None,
                                                        "Differential DVH by MC trial": None},
                                 "Output dicts for data frames": {}, 
                                 "KDtree": None, 
@@ -6949,11 +6699,9 @@ def structure_referencer(data_removals_dict_bx,
                                                                                  #"Tissue class - Pt wise mutual tissue class results": None,
                                                                                  "Tissue class - Pt wise structure specific results": None,
                                                                                  #"Dosimetry - All points and trials": pandas.DataFrame(),
-                                                                                 "DVH metrics": None,
                                                                                  "DVH metrics (Dx, Vx) statistics": None,
                                                                                  "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
                                                                                  "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None},
-                        "Multi-structure Fanova output dataframes dict": {}                                             
                         }
             
             
@@ -7196,15 +6944,6 @@ def structure_referencer(data_removals_dict_bx,
                    "Optimizer v1 random seed": None,
                    }
     
-    fanova_info = {"Num fanova containment simulations": None, 
-                   "Num fanova dose simulations": None,
-                   "FANOVA: num variance vars": None,
-                   "FANOVA: sobol var names by index": fanova_sobol_indices_names_by_index,
-                   'FANOVA sim performed': False,
-                   'FANOVA containment sim performed': False,
-                   'FANOVA dose sim performed': False,  
-                    }
-
     # count number of biopsies of each type for the entire cohort
     list_of_bpsy_nums_by_bpsy_type_all_patients = [pt_sp_dict[st_ref_list[0]]["Biopsy type counts"] for pt_sp_dict in master_st_ds_info_dict.values()]
     global_num_biopsies_by_type = {key: sum(d[key] for d in list_of_bpsy_nums_by_bpsy_type_all_patients if key in d) for d in list_of_bpsy_nums_by_bpsy_type_all_patients for key in d}              
@@ -7222,7 +6961,6 @@ def structure_referencer(data_removals_dict_bx,
                                                "Preprocessing info": preprocessing_info,
                                                "MC info": mc_info, 
                                                "Random info": random_info,
-                                               "FANOVA info": fanova_info,
                                                'Patient specific guidance map figures directory dict': None,
                                                'Guidance map figures dir': None,
                                                "Specific output dir": None

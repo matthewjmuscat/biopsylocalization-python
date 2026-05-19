@@ -40,11 +40,6 @@ SHADOW_STITCH_PAIRS = (
         "Output CSVs/Preprocessing",
     ),
     ShadowStitchPair(
-        "Cohort: Bx DVH metrics",
-        "DVH metrics",
-        "Output CSVs/MC simulation",
-    ),
-    ShadowStitchPair(
         "Cohort: Bx DVH metrics (generalized)",
         "DVH metrics (Dx, Vx) statistics",
         "Output CSVs/MC simulation",
@@ -127,11 +122,6 @@ SHADOW_STITCH_PAIRS = (
     ShadowStitchPair(
         "Cohort: tissue class global scores (structure)",
         "Tissue class - Global tissue by structure statistics",
-        "Output CSVs/MC simulation",
-    ),
-    ShadowStitchPair(
-        "Cohort: tissue volume above threshold",
-        "Tissue volume above threshold",
         "Output CSVs/MC simulation",
     ),
 )
