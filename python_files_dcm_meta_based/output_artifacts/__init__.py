@@ -28,6 +28,12 @@ from .patient_artifacts import build_patient_artifact_manifest
 from .patient_artifacts import build_patient_stitch_plan
 from .patient_artifacts import summarize_patient_artifacts
 from .patient_artifacts import write_patient_artifact_outputs
+from .phase3c_surface import PHASE3C_OUTPUT_DIR_NAME
+from .phase3c_surface import PHASE3C_OUTPUT_SURFACE_SCHEMA_VERSION
+from .phase3c_surface import Phase3COutputSurfaceResult
+from .phase3c_surface import collect_phase3c_output_artifacts
+from .phase3c_surface import summarize_phase3c_artifact_manifest
+from .phase3c_surface import write_phase3c_output_surface
 from .stitch_validation import SHADOW_STITCH_VALIDATION_SCHEMA_VERSION
 from .stitch_validation import run_shadow_stitch_validation
 from .stitch_validation import summarize_shadow_stitch_validation
@@ -39,14 +45,18 @@ __all__ = [
     "PATIENT_STITCH_PLAN_SCHEMA_VERSION",
     "OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION",
     "PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION",
+    "PHASE3C_OUTPUT_DIR_NAME",
+    "PHASE3C_OUTPUT_SURFACE_SCHEMA_VERSION",
     "SHADOW_STITCH_VALIDATION_SCHEMA_VERSION",
     "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
     "DataframeArtifact",
+    "Phase3COutputSurfaceResult",
     "build_output_artifact_inventory",
     "build_in_memory_stitch_validation",
     "build_patient_artifact_manifest",
     "build_patient_stitch_plan",
     "build_output_table_contracts",
+    "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
     "iter_biopsy_mc_artifacts",
     "iter_cohort_artifacts",
@@ -57,6 +67,7 @@ __all__ = [
     "summarize_in_memory_stitch_validation",
     "summarize_output_artifact_inventory",
     "summarize_patient_artifacts",
+    "summarize_phase3c_artifact_manifest",
     "summarize_output_table_contracts",
     "summarize_shadow_stitch_validation",
     "write_dataframe_artifact",
@@ -65,5 +76,6 @@ __all__ = [
     "write_output_artifact_inventory",
     "write_patient_artifact_outputs",
     "write_output_table_contracts",
+    "write_phase3c_output_surface",
     "write_shadow_stitch_validation",
 ]

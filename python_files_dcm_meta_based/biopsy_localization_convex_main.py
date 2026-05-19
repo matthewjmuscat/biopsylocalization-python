@@ -145,8 +145,10 @@ from guidance_maps.config import GuidanceMapPlanningConfig
 from guidance_maps.planning import precompute_guidance_map_firing_depth_recommendations_for_run
 from input_data import write_input_manifest_files
 from output_artifacts import build_in_memory_stitch_validation
+from output_artifacts import PHASE3C_OUTPUT_DIR_NAME
 from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
+from output_artifacts import write_phase3c_output_surface
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -705,8 +707,10 @@ def main():
     candidate_plot_ranks_behavior = 'all'
     # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
     validate_firing_df_builder_behavior = False # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
-    validate_phase3b_in_memory_patient_stitching_bool = False
+    validate_phase3b_in_memory_patient_stitching_bool = True
     write_phase3b_in_memory_stitched_tables_bool = True
+    write_phase3c_patient_fragment_output_surface_bool = True
+    write_phase3c_stitched_final_artifacts_bool = True
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -6378,6 +6382,50 @@ def main():
                             "validation_path": validation_path,
                             "validation_summary_path": validation_summary_path,
                             **validation_summary,
+                        },
+                    )
+
+            if write_phase3c_patient_fragment_output_surface_bool == True:
+                phase3c_output_dir = specific_output_dir.joinpath(
+                    "validation",
+                    PHASE3C_OUTPUT_DIR_NAME,
+                )
+                if runtime_logger is not None:
+                    runtime_logger.phase_start(
+                        "phase3c.patient_fragment_output_surface",
+                        "Starting Phase 3C patient-fragment output surface generation.",
+                        details={"output_dir": phase3c_output_dir},
+                    )
+                phase3c_result = write_phase3c_output_surface(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_cohort_patient_data_and_dataframes=master_cohort_patient_data_and_dataframes,
+                    all_ref_key=all_ref_key,
+                    bx_ref=bx_ref,
+                    output_dir=phase3c_output_dir,
+                    write_stitched_tables=write_phase3c_stitched_final_artifacts_bool,
+                )
+                phase3c_stitch_summary = phase3c_result.stitch_validation_summary
+                important_info.add_text_line(
+                    "Phase 3C output surface: wrote {} artifacts | stitch validation: {} matches, {} mismatches, {} missing source fragments, {} missing final dataframes.".format(
+                        phase3c_result.artifact_count,
+                        phase3c_stitch_summary["matched_count"],
+                        phase3c_stitch_summary["mismatch_count"],
+                        phase3c_stitch_summary["missing_source_fragment_count"],
+                        phase3c_stitch_summary["missing_final_dataframe_count"],
+                    ),
+                    live_display,
+                )
+                if runtime_logger is not None:
+                    runtime_logger.phase_end(
+                        "phase3c.patient_fragment_output_surface",
+                        "Completed Phase 3C patient-fragment output surface generation.",
+                        details={
+                            "output_dir": phase3c_result.output_dir,
+                            "manifest_path": phase3c_result.manifest_path,
+                            "summary_path": phase3c_result.summary_path,
+                            "stitch_validation_path": phase3c_result.stitch_validation_path,
+                            "stitch_validation_summary_path": phase3c_result.stitch_validation_summary_path,
+                            **phase3c_result.summary,
                         },
                     )
 
