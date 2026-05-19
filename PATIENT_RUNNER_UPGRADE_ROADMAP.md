@@ -200,6 +200,63 @@ not survive.
 | Tissue volume threshold summary | No direct sister-reference found; summary is downstream-calculable. | Removed from core output schema; calculate downstream if needed. |
 | Legacy/simple DVH metrics | Generalized DVH metrics are referenced; old `Cohort: Bx DVH metrics.csv` was not found directly. | Removed from core output schema; generalized DVH remains during migration. |
 
+### Deferred MC Simulator Cleanup Audit
+
+`python_files_dcm_meta_based/MC_simulator_convex.py` still contains substantial
+research-era and debug-era code that should not be inherited blindly by the
+patient runner. This is important cleanup work, but it should be handled as a
+separate audit lane rather than as a blocker for the first patient-runner
+scaffold.
+
+Candidate cleanup areas:
+
+- old commented-out implementation blocks that are clearly deprecated,
+- block-quoted timing/debug experiments that should either be deleted or gated
+  with explicit disabled branches such as `if False`,
+- tissue-volume-threshold calculations that are downstream-calculable from base
+  tissue-class artifacts,
+- old/simple DVH metric calculations that are superseded by generalized DVH or
+  can be rebuilt by dosimetry analysis workflows,
+- differential/cumulative DVH runtime dictionaries and dose-volume metric caches
+  if no current registered artifact, validation route, or sister workflow depends
+  on them being produced inside the main MC simulator.
+
+Cleanup rule: do not remove scientific calculations from the MC simulator solely
+because they are not currently exported. First trace whether they feed registered
+base artifacts, validation outputs, planning/guidance state, sister repositories,
+or manuscript-era results. Each removal should identify the replacement location:
+patient artifact, cohort assembly, dosimetry/tissue-class sister workflow, or
+deleted with no replacement.
+
+Recommended audit artifact: a table with one row per candidate block/function
+covering current producer, current consumer, output artifact if any, sister-repo
+or paper usage, proposed action, and validation requirement.
+
+### Deferred Render Asset Cleanup
+
+The repository root contains old Open3D camera/render JSON files and old screen
+capture PNGs. These should not become part of the patient-runner contract.
+
+Current evidence:
+
+- the optimizer-v2 render/GUI path does not rely on the loose root-level
+  `ScreenCamera_*.json`, `DepthCamera_*.json`, or `RenderOption_*.json` files,
+- the legacy main/MC demonstration plotting path still names a small set of
+  Open3D screen-camera JSONs through `dose_views_jsons_paths_list` and
+  `containment_views_jsons_paths_list`,
+- top-level PNG captures are old local artifacts and have been moved into the
+  ignored `png/` holding folder.
+
+Direction:
+
+- do not make root-level camera/render JSONs part of any new patient-runner or
+  GUI contract,
+- audit the remaining legacy demo plotting paths before deleting the JSONs,
+- if the legacy demo paths are removed or converted to the new render module,
+  delete the loose camera/depth/render JSONs or move any still-useful presets
+  into a named module-local render preset folder,
+- keep generated screenshots, timing captures, and exploratory images out of git.
+
 ## Runtime State Migration
 
 The current `master_structure_reference_dict` and `master_structure_info_dict`
@@ -238,6 +295,110 @@ Good first object candidates:
 Dataclasses are a good fit for these internal runtime objects because they are
 standard-library, typed, readable, and light. They should not replace table
 schema registries or manifests at external boundaries.
+
+## Patient Runner Data and Code Standards
+
+The patient-runner module should be treated as a clean new boundary around the
+existing scientific code, not as a place to copy the monolith's informal state
+style. New code should be explicit, typed, auditable, and boring to read.
+
+### Data Type Choices
+
+Use standard-library Python 3.11 typing first. Do not add a new validation
+dependency until a real external-boundary problem requires it.
+
+Recommended types:
+
+- `@dataclass(frozen=True, slots=True)` for immutable value objects, configs,
+  manifests, identity records, and completed stage results.
+- Plain `@dataclass(slots=True)` for intentionally mutable runtime wrappers,
+  such as a patient-local compatibility bridge around legacy dictionaries.
+- `Enum` or `Literal` for closed stage/status names that are used in logs,
+  manifests, and run plans.
+- `TypedDict` for narrow legacy-dictionary views when the dictionary shape must
+  remain visible during migration.
+- `Protocol` for small interfaces such as artifact writers, stage runners, and
+  validators when multiple implementations are expected.
+- `pathlib.Path` for filesystem contracts; avoid passing raw path strings across
+  new module boundaries.
+- `Mapping`, `MutableMapping`, `Sequence`, and `Iterable` in function signatures
+  when callers should not depend on concrete container classes.
+- `numpy.ndarray` and `pandas.DataFrame` remain acceptable for scientific arrays
+  and tables, but their expected shape, columns, grain, and key fields must be
+  documented at the boundary that accepts or returns them.
+
+Potential later option: Pydantic can be evaluated for serialized manifests,
+sidecar files, or user-editable configuration if plain dataclasses plus
+`__post_init__` validation become too weak. It should not be introduced for hot
+numeric loops, dataframe schemas, or internal scratch state unless there is a
+clear benefit.
+
+### Contract Layers
+
+Keep these contract layers separate:
+
+- Runtime contracts describe Python objects passed between patient-runner stages.
+- Artifact contracts describe files, table grain, keys, schemas, and registry
+  metadata.
+- Validation contracts describe how patient outputs are compared to legacy
+  cohort outputs.
+- Legacy bridge contracts describe the minimum subset of
+  `master_structure_reference_dict` and `master_structure_info_dict` required by
+  an existing stage.
+
+The patient runner should not smuggle all-patient state through a patient-local
+API. If a stage needs cohort-level information, that dependency must be an
+explicit sidecar input, cohort-assembly step, or validation step.
+
+Initial object contracts:
+
+- `PatientCase`: immutable patient identity plus input references needed to run
+  one patient.
+- `PatientRunConfig`: immutable patient-run settings derived from the shared
+  pipeline config.
+- `PatientRuntimeState`: patient-local wrapper around the existing legacy state,
+  used only while stages are being migrated.
+- `PatientArtifactStore`: controlled write surface for registered patient
+  artifacts and manifests.
+- `PatientStageResult`: immutable status, timing, warnings, and artifact summary
+  for one stage.
+- `PatientRunResult`: immutable run-level summary that can be consumed by cohort
+  assembly and validation.
+
+### Code Style Rules
+
+New patient-runner code should follow these rules unless a local module has a
+stronger convention:
+
+- small modules with one responsibility each,
+- small functions with explicit inputs and return values,
+- no hidden mutation of global state,
+- no bare string stage names spread across modules; centralize constants or
+  enums,
+- no block-quoted dead code or large commented-out implementation alternatives,
+- timing through a shared timing/logging helper rather than ad hoc stopwatch
+  snippets,
+- debug or demonstration code behind explicit config flags, not implicit
+  comments,
+- exceptions should identify patient ID, stage, and artifact or structure when
+  available,
+- logs should include stage start/end, elapsed seconds, artifact counts, and
+  validation summaries,
+- artifact writers should be idempotent where practical and should write a
+  manifest that can be audited without loading Python pickles.
+
+Docstrings should explain contract, grain, and side effects. They should not
+restate obvious assignments. Comments should be reserved for non-obvious
+scientific assumptions, legacy compatibility constraints, or invariants that a
+future maintainer could accidentally break.
+
+### Migration Discipline
+
+The first patient-runner code should wrap existing scientific implementation
+rather than rewrite it. Refactors should be contract-preserving until assembled
+patient outputs match the legacy cohort oracle. Cleanup passes, especially in
+`MC_simulator_convex.py`, should be separate from patient-runner scaffolding
+unless the cleanup is required to expose a patient-local boundary.
 
 ### master_structure_info_dict
 
@@ -329,6 +490,26 @@ input-manifest bug.
 Build a runner entrypoint that can execute one patient case independently using
 existing modules with minimal scientific drift. It should write patient artifacts
 only.
+
+Immediate Phase C.0 scope:
+
+- create a small patient-runner module/package without rewriting scientific
+  algorithms,
+- define the minimal contracts for `PatientCase`, patient-local runtime state,
+  run config, and patient-run result,
+- add a bridge that can carve one patient out of the legacy dictionaries and run
+  existing stages against that patient-local state,
+- write registered patient artifacts through the existing artifact/registry
+  surface,
+- keep the legacy all-patient monolith as the validation oracle during this
+  phase,
+- defer broad MC simulator cleanup until the audit above identifies safe removal
+  boundaries.
+
+The first patient-runner implementation should be boring on purpose: no new
+science, no output schema churn, and no deep cleanup mixed into the runner
+scaffold. Its job is to prove that one patient can move through the existing
+pipeline boundary with explicit inputs, outputs, timing, and logs.
 
 ### Phase D: Cohort Assembly
 
