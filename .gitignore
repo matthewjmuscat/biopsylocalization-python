@@ -21,7 +21,7 @@ figures
 
 # Generated run-comparison artifacts
 validation_outputs/run_comparisons/*__vs__*
-
+validation_outputs/output_inventory
 
 
 

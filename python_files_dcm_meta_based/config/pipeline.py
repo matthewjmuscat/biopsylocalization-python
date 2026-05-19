@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from biopsy_optimizer.v2.config import OptimizerV2SearchConfig
+from guidance_maps.config import GuidanceMapPlanningConfig
 from preprocessing.structure_processing.non_biopsy_structure_processing import (
     NonBiopsyStructurePreprocessingConfig,
 )
@@ -204,6 +205,7 @@ class PreprocessingConfig:
 
 @dataclass(frozen=True)
 class GuidanceMapConfig:
+    planning_config: GuidanceMapPlanningConfig = field(default_factory=GuidanceMapPlanningConfig)
     render_config: GuidanceMapRenderConfig = field(default_factory=GuidanceMapRenderConfig)
 
 

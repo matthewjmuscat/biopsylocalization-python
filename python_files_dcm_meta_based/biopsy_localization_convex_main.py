@@ -95,7 +95,6 @@ import pstats
 import io
 from line_profiler import LineProfiler
 import mr_localizers
-import advanced_guidance_map_creator
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import apply_biopsy_centroid_variation_summary
@@ -142,6 +141,8 @@ from config import PreprocessingConfig
 from config import RandomSeedConfig
 from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
+from guidance_maps.config import GuidanceMapPlanningConfig
+from guidance_maps.planning import precompute_guidance_map_firing_depth_recommendations_for_run
 from input_data import write_input_manifest_files
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
@@ -1097,6 +1098,10 @@ def main():
             color_flattening_deg_mr=color_flattening_deg_MR,
         ),
         guidance_maps=GuidanceMapConfig(
+            planning_config=GuidanceMapPlanningConfig(
+                candidate_holes_k=number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation,
+                candidate_axis_line_length_mm=1000,
+            ),
             render_config=GuidanceMapRenderConfig(
                 enabled=render_guidance_maps_after_simulated_core_finalization,
                 plot_name=guidance_map_plot_name,
@@ -1135,6 +1140,7 @@ def main():
             optimizer_v1_random_seed=optimizer_v1_random_seed,
         ),
     )
+    guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
     if simulate_uniform_bx_shifts_due_to_bx_needle_compartment == True:
         fanova_sobol_indices_names_by_index = ['X', 'Y', 'Z', 'T'] # the order is important!
@@ -5526,50 +5532,23 @@ def main():
 
                 # guidance-map firing-depth recommendations dataframe (precomputed outside plotter)
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.5", total = None)
-                for patientUID, pydicom_item in master_structure_reference_dict.items():
-                    guidance_map_firing_depth_recommendations_df = advanced_guidance_map_creator.precompute_guidance_map_firing_depths_for_patient(
-                        patientUID=patientUID,
-                        pydicom_item=pydicom_item,
-                        dil_ref=dil_ref,
-                        all_ref_key=all_ref_key,
-                        oar_ref=oar_ref,
-                        rectum_ref=rectum_ref_key,
-                        biopsy_fire_travel_distances=biopsy_fire_travel_distances,
-                        biopsy_needle_compartment_length=biopsy_needle_compartment_length,
-                        interp_inter_slice_dist=interp_inter_slice_dist,
-                        interp_intra_slice_dist=interp_intra_slice_dist,
-                        radius_for_normals_estimation=radius_for_normals_estimation,
-                        max_nn_for_normals_estimation=max_nn_for_normals_estimation,
-                        biopsy_needle_tip_length=biopsy_needle_tip_length,
-                        candidate_holes_k=number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation,
-                        candidate_axis_line_length_mm=1000
-                    )
-
-                    if isinstance(guidance_map_firing_depth_recommendations_df, pandas.DataFrame) and not guidance_map_firing_depth_recommendations_df.empty:
-                        guidance_map_firing_depth_recommendations_df = dataframe_builders.convert_columns_to_categorical_and_downcast(
-                            guidance_map_firing_depth_recommendations_df,
-                            threshold=0.25,
-                            ignore_types=(np.floating,)
-                        )
-                    else:
-                        guidance_map_firing_depth_recommendations_df = pandas.DataFrame()
-
-                    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
-                        "Biopsy optimization - Guidance-map firing depth recommendations dataframe"
-                    ] = guidance_map_firing_depth_recommendations_df
-
-                indeterminate_progress_sub.update(indeterminate_task, visible = False)
-
-                # cohort guidance-map firing-depth recommendations dataframe
-                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 3.6", total = None)
-                cohort_guidance_map_firing_depth_recommendations_dataframe = dataframe_builders.cohort_guidance_map_firing_depth_recommendations_dataframe_builder(
-                    master_structure_reference_dict,
-                    all_ref_key,
-                    dil_ref
+                precompute_guidance_map_firing_depth_recommendations_for_run(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_cohort_patient_data_and_dataframes=master_cohort_patient_data_and_dataframes,
+                    dil_ref=dil_ref,
+                    all_ref_key=all_ref_key,
+                    oar_ref=oar_ref,
+                    rectum_ref=rectum_ref_key,
+                    biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+                    biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+                    interp_inter_slice_dist=interp_inter_slice_dist,
+                    interp_intra_slice_dist=interp_intra_slice_dist,
+                    radius_for_normals_estimation=radius_for_normals_estimation,
+                    max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+                    biopsy_needle_tip_length=biopsy_needle_tip_length,
+                    planning_config=guidance_map_planning_config,
+                    runtime_logger=runtime_logger,
                 )
-                master_cohort_patient_data_and_dataframes["Dataframes"][
-                    "Cohort: Guidance-map firing depth recommendations dataframe"
-                ] = cohort_guidance_map_firing_depth_recommendations_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
 
                 render_guidance_maps_for_run(
