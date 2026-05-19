@@ -12,7 +12,7 @@ from .contracts import PatientCase
 from .contracts import PatientRunResult
 from .contracts import PatientStageName
 from .contracts import PatientStageResult
-from .contracts import _normalize_patient_uids
+from .contracts import _validate_patient_uids
 from .legacy_bridge import carve_patient_runtime_state_by_uid
 from .runner import PatientStage
 from .runner import run_patient_case
@@ -20,13 +20,14 @@ from .runner import run_patient_case
 
 def resolve_patient_uids(master_structure_reference_dict: Mapping[str, Any],
                          patient_uids: Sequence[str] = ()) -> tuple[str, ...]:
-    """Resolve the ordered patient UID list for a batch run.
+    """Resolve the exact ordered patient UID list for a batch run.
 
     An empty requested list means all patient keys currently present in the
     legacy reference dictionary. Explicit requests are validated up front so a
-    batch does not silently skip misspelled or stale patient IDs.
+    batch does not silently skip misspelled or stale patient IDs. Patient IDs are
+    preserved exactly because they are lookup keys in the legacy dictionaries.
     """
-    requested_patient_uids = _normalize_patient_uids(patient_uids, "patient_uids")
+    requested_patient_uids = _validate_patient_uids(patient_uids, "patient_uids")
 
     if requested_patient_uids:
         missing_patient_uids = tuple(
@@ -41,7 +42,7 @@ def resolve_patient_uids(master_structure_reference_dict: Mapping[str, Any],
             )
         return requested_patient_uids
 
-    return _normalize_patient_uids(
+    return _validate_patient_uids(
         tuple(master_structure_reference_dict.keys()),
         "master_structure_reference_dict",
     )

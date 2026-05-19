@@ -71,13 +71,15 @@ def _stage_name_value(stage_name: PatientStageName | str) -> str:
     return str(stage_name)
 
 
-def _normalize_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tuple[str, ...]:
-    normalized_patient_uids = tuple(str(patient_uid).strip() for patient_uid in patient_uids)
-    if any(patient_uid == "" for patient_uid in normalized_patient_uids):
+def _validate_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tuple[str, ...]:
+    validated_patient_uids = tuple(patient_uids)
+    if any(not isinstance(patient_uid, str) for patient_uid in validated_patient_uids):
+        raise TypeError(f"{source_name} entries must be strings")
+    if any(patient_uid.strip() == "" for patient_uid in validated_patient_uids):
         raise ValueError(f"{source_name} cannot contain empty patient IDs")
-    if len(set(normalized_patient_uids)) != len(normalized_patient_uids):
+    if len(set(validated_patient_uids)) != len(validated_patient_uids):
         raise ValueError(f"{source_name} cannot contain duplicates")
-    return normalized_patient_uids
+    return validated_patient_uids
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,8 +98,10 @@ class PatientCase:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        patient_uid = str(self.patient_uid).strip()
-        if patient_uid == "":
+        if not isinstance(self.patient_uid, str):
+            raise TypeError("patient_uid must be a string")
+        patient_uid = self.patient_uid
+        if patient_uid.strip() == "":
             raise ValueError("patient_uid cannot be empty")
         object.__setattr__(self, "patient_uid", patient_uid)
         object.__setattr__(self, "patient_label", str(self.patient_label).strip())
@@ -166,16 +170,15 @@ class PatientBatchRunConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.patient_config, PatientRunConfig):
             raise TypeError("patient_config must be a PatientRunConfig instance")
-        patient_uids = _normalize_patient_uids(self.patient_uids, "patient_uids")
+        patient_uids = _validate_patient_uids(self.patient_uids, "patient_uids")
         max_workers = int(self.max_workers)
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
+        patient_label_uids = _validate_patient_uids(tuple(self.patient_labels.keys()), "patient_labels")
         patient_labels = {
-            str(patient_uid).strip(): str(patient_label).strip()
-            for patient_uid, patient_label in self.patient_labels.items()
+            patient_uid: str(self.patient_labels[patient_uid]).strip()
+            for patient_uid in patient_label_uids
         }
-        if any(patient_uid == "" for patient_uid in patient_labels):
-            raise ValueError("patient_labels cannot contain empty patient IDs")
 
         object.__setattr__(self, "patient_uids", patient_uids)
         object.__setattr__(self, "max_workers", max_workers)

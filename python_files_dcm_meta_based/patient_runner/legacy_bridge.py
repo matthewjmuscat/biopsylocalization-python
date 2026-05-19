@@ -7,6 +7,7 @@ from typing import Any, Mapping, MutableMapping
 from .contracts import LegacyPatientRuntimeState
 from .contracts import LegacyRuntimeKeys
 from .contracts import PatientCase
+from .contracts import _validate_patient_uids
 
 
 def build_patient_case_from_legacy(patient_uid: str,
@@ -17,7 +18,7 @@ def build_patient_case_from_legacy(patient_uid: str,
                                    input_manifest_id: str = "",
                                    metadata: Mapping[str, Any] | None = None) -> PatientCase:
     """Build a patient identity contract from the legacy patient registry."""
-    resolved_patient_uid = str(patient_uid).strip()
+    resolved_patient_uid = _validate_patient_uids((patient_uid,), "patient_uid")[0]
     if resolved_patient_uid not in master_structure_reference_dict:
         raise KeyError(f"patient_uid not found in master_structure_reference_dict: {resolved_patient_uid}")
     return PatientCase(

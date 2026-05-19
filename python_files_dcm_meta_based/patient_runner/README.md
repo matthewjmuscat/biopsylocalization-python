@@ -32,6 +32,28 @@ writes dataframe artifacts from shared in-memory legacy objects. Process-level
 isolation is deferred until migrated stages have serializable, patient-local
 inputs.
 
+Compatibility boundaries:
+
+- raw `master_structure_reference_dict` and `master_structure_info_dict` objects
+  may enter only through legacy bridge/batch-from-legacy functions,
+- patient stages should receive typed runner objects, not the all-patient
+  dictionaries directly,
+- patient IDs are preserved exactly for dictionary lookup; validation rejects
+  non-string, empty, or duplicate IDs, but does not strip or rewrite them,
+- filesystem-safe names are derived only for output paths and must not become
+  patient identity keys.
+
+Parallelism policy:
+
+- thread parallelism is acceptable only for the current artifact-writing stage,
+  which reads patient-local dictionary views and writes independent files,
+- scientific stages with Open3D, optimizer, MC, large arrays, or native memory
+  pressure should not be threaded through shared legacy dictionaries,
+- process-level patient workers can be added after patient inputs are
+  serializable and memory budgets are explicit,
+- `max_workers` should eventually be bounded by measured per-patient memory,
+  not just CPU count.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,

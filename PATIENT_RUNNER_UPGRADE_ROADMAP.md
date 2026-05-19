@@ -320,6 +320,20 @@ Dataclasses are a good fit for these internal runtime objects because they are
 standard-library, typed, readable, and light. They should not replace table
 schema registries or manifests at external boundaries.
 
+Current bridge boundary: raw `master_structure_reference_dict` and
+`master_structure_info_dict` are still accepted by the additive runner only at
+the legacy bridge and batch-from-legacy entrypoints. This is intentional for
+validation against the monolith, but it is not the desired long-term stage API.
+New stages should receive typed patient-runner objects. A near-term cleanup can
+introduce a `LegacyCohortRuntimeState` wrapper around the two master dictionaries
+to make the transitional boundary explicit before deeper stage migrations.
+
+Patient identity policy: patient IDs are lookup keys in the legacy dictionaries,
+so the runner must preserve them exactly. Validation may reject non-string,
+empty, or duplicate IDs, but it should not strip, case-fold, slugify, or coerce
+patient IDs before dictionary lookup. Filesystem-safe patient directory names are
+derived output-path values only and must not become runtime identity keys.
+
 ## Patient Runner Data and Code Standards
 
 The patient-runner module should be treated as a clean new boundary around the
@@ -541,6 +555,25 @@ the legacy bridge, run the existing patient stage sequence, optionally use
 thread parallelism for patient artifact writing, and return typed batch results.
 The batch config must wrap `PatientRunConfig` rather than duplicating legacy key
 names or output policy.
+
+Phase C.1 parallelism is deliberately conservative. Threads are acceptable for
+the current artifact-writing stage because each patient writes independent files
+from existing in-memory objects. They are not the target model for native-heavy
+or memory-heavy science stages. Once patient inputs are serializable and stage
+contracts no longer rely on shared all-patient dictionaries, add a process-worker
+entrypoint that can execute one patient per process and release native/GPU state
+when the process exits. Worker count should be limited by measured per-patient
+memory and output I/O pressure, not by CPU count alone.
+
+Expected next steps:
+
+1. tighten the transitional legacy-cohort boundary, optionally with a
+  `LegacyCohortRuntimeState` wrapper,
+2. add cohort assembly/stitch validation for artifacts produced by
+  `PatientBatchRunResult`,
+3. migrate one scientific stage behind a typed patient-local interface,
+4. add process-isolated patient execution only after the stage input contract is
+  serializable and memory requirements are measured.
 
 ### Phase D: Cohort Assembly
 
