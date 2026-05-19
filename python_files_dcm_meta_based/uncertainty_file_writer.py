@@ -10,6 +10,24 @@ import numpy as np
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import get_biopsy_maximum_projected_distance_value
 from preprocessing.biopsy_processing.biopsy_uncertainty_summary import get_biopsy_mean_centroid_variation_value
 
+
+REMOVED_COHORT_DERIVED_BIOPSY_VARIATION_MODES = ("Global mean",)
+
+
+def _raise_removed_cohort_derived_biopsy_variation_mode(mode):
+    raise ValueError(
+        "Biopsy variation uncertainty mode '{}' was removed because it depends on "
+        "an all-patient cohort mean. Use 'Per biopsy max', 'Per biopsy mean', or "
+        "'Default only'. Reintroduce cohort-derived values later as explicit "
+        "per-patient sidecar inputs.".format(mode)
+    )
+
+
+def _validate_biopsy_variation_uncertainty_setting(mode):
+    if mode in REMOVED_COHORT_DERIVED_BIOPSY_VARIATION_MODES:
+        _raise_removed_cohort_derived_biopsy_variation_mode(mode)
+
+
 def uncertainty_file_preper_global_sigma(uncertainties_file, master_structure_reference_dict, structs_referenced_list, num_general_structs, global_sigma):
     global_header = ['Total num structs']
     headerUID = ['Patient UID']
@@ -69,6 +87,8 @@ def uncertainty_file_preper_sigma_by_struct_type(uncertainties_file,
                                                  structs_referenced_dict,
                                                  biopsy_variation_uncertainty_setting,
                                                  master_structure_info_dict):
+    _validate_biopsy_variation_uncertainty_setting(biopsy_variation_uncertainty_setting)
+
     global_header = ['Total num structs']
     headerUID = ['Patient UID']
     headerSTRUCT = ['Structure type']
@@ -116,14 +136,7 @@ def uncertainty_file_preper_sigma_by_struct_type(uncertainties_file,
                         sigma_y = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Y"])**2 + maximum_projected_variation_sp_biopsy**2)
                         sigma_z = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Z"])**2 + maximum_projected_variation_sp_biopsy**2)
                         
-                    elif biopsy_variation_uncertainty_setting == "Global mean" and structure_type == structs_referenced_list[0]:
-                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
-                        sigma_x = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma X"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-                        sigma_y = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Y"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-                        sigma_z = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Z"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-
                     elif biopsy_variation_uncertainty_setting == "Default only" and structure_type == structs_referenced_list[0]:
-                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
                         sigma_x = float(structs_referenced_dict[structure_type]["Default sigma X"])
                         sigma_y = float(structs_referenced_dict[structure_type]["Default sigma Y"])
                         sigma_z = float(structs_referenced_dict[structure_type]["Default sigma Z"])
@@ -149,6 +162,8 @@ def uncertainty_file_preper_by_struct_type_dataframe(master_structure_reference_
                                                  biopsy_variation_uncertainty_setting,
                                                  non_biopsy_variation_uncertainty_setting,
                                                  master_structure_info_dict):
+    _validate_biopsy_variation_uncertainty_setting(biopsy_variation_uncertainty_setting)
+
 
     headerbx = 'Biopsy'
     headerLab = 'Lab'
@@ -173,14 +188,7 @@ def uncertainty_file_preper_by_struct_type_dataframe(master_structure_reference_
                     sigma_y = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Y"])**2 + maximum_projected_variation_sp_biopsy**2)
                     sigma_z = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Z"])**2 + maximum_projected_variation_sp_biopsy**2)
                     
-                elif biopsy_variation_uncertainty_setting == "Global mean" and structure_type == structs_referenced_list[0]:
-                    mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
-                    sigma_x = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma X"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-                    sigma_y = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Y"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-                    sigma_z = math.sqrt(float(structs_referenced_dict[structure_type]["Default sigma Z"])**2 + mean_variation_of_biopsy_centroids_cohort**2)
-
                 elif biopsy_variation_uncertainty_setting == "Default only" and structure_type == structs_referenced_list[0]:
-                    mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
                     sigma_x = float(structs_referenced_dict[structure_type]["Default sigma X"])
                     sigma_y = float(structs_referenced_dict[structure_type]["Default sigma Y"])
                     sigma_z = float(structs_referenced_dict[structure_type]["Default sigma Z"])
@@ -220,6 +228,8 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                                                  non_biopsy_variation_uncertainty_setting,
                                                  use_added_in_quad_errors_as,
                                                  master_structure_info_dict):
+    _validate_biopsy_variation_uncertainty_setting(biopsy_variation_uncertainty_setting)
+
 
     headerbx = 'Biopsy'
     headerLab = 'Lab'
@@ -267,14 +277,7 @@ def uncertainty_file_preper_by_struct_type_dataframe_NEW(master_structure_refere
                         errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [mean_projected_variation_sp_biopsy])
                         errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [mean_projected_variation_sp_biopsy])
                     
-                    elif biopsy_variation_uncertainty_setting == "Global mean":
-                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
-                        errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"] + [mean_variation_of_biopsy_centroids_cohort])
-                        errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"] + [mean_variation_of_biopsy_centroids_cohort])
-                        errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"] + [mean_variation_of_biopsy_centroids_cohort])
-
                     elif biopsy_variation_uncertainty_setting == "Default only":
-                        mean_variation_of_biopsy_centroids_cohort = master_structure_info_dict["Global"]["Mean biopsy centroid variation"]
                         errs_X_arr = np.array(structs_referenced_dict[structure_type]["Default sigma X"])
                         errs_Y_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Y"])
                         errs_Z_arr = np.array(structs_referenced_dict[structure_type]["Default sigma Z"])

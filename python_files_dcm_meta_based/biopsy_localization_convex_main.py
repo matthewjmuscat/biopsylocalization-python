@@ -97,11 +97,8 @@ from line_profiler import LineProfiler
 import mr_localizers
 from preprocessing.interpolation.interpolation import interpolation_information_obj
 from preprocessing.biopsy_processing.biopsy_processor import real_biopsy_processer
-from preprocessing.biopsy_processing.biopsy_uncertainty_summary import apply_biopsy_centroid_variation_summary
 from preprocessing.biopsy_processing.biopsy_centroid_variation_validation import validate_simulated_biopsy_planned_vs_realized_centroid_variation
 from preprocessing.biopsy_processing.biopsy_double_sextant import biopsy_double_sextant_processer
-from preprocessing.biopsy_processing.biopsy_uncertainty_summary import biopsy_centroid_variation_summary_processer
-from preprocessing.biopsy_processing.biopsy_uncertainty_summary import calculate_biopsy_centroid_variation_summary
 from preprocessing.biopsy_processing.realized_biopsy_targeting import realized_biopsy_targeting_processer
 from preprocessing.biopsy_processing.sampled_biopsy_processing import sampled_biopsy_processing_processer
 from preprocessing.biopsy_processing.simulated_biopsy_planner import simulated_biopsy_planner_processer
@@ -504,8 +501,7 @@ def main():
 
     
     use_added_in_quad_errors_as = 'two sigma' # can be 'sigma' or 'two sigma', 'two sigma' will provide tighter uncertainty clouds 
-    biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean", "Global mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
-    # "Global mean" = the mean variation will be used between all patients across all patients
+    biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
     # "Per biopsy max" = will automatically alter uncertainty file to include the max variation of the biopsy contours for each biopsy seperately in the sigma value for the biopsy uncertainty
     # "Per biopsy mean" = will automatically alter uncertainty file to include the mean variation of the biopsy contours for each biopsy seperately in the sigma value for the biopsy uncertainty
     # "Default only" = will only use the values provided by the biospy_default_list, presumably this would account only for registration uncertainty
@@ -741,10 +737,8 @@ def main():
                                                             "Identifier string": 'sim_target_dil_v2'}
                                                         }
     simulated_biopsy_fraction_numbers_to_create = 'all'   # [FIRST_PASS_CONFIG] use [2] for legacy F2-only behavior
-    simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' (ie. 19mm), 
-                                                    #'real normal' (samples from a normal distribution with mu=real_mean, std = real_std), 
-                                                    # 'real mean' (all sim biopsy lengths are equal to real_mean),
-                                                    # 'match real' (each sim biopsy length is equal to the real biopsy length for the same DIL the real biopsy was targetting, if there is more than one real biopsy targetting that dil it takes the mean of them for the simulated biopsy, and if no real biopsy targetted that dil it takes the mean of all biopsies)
+    simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' or 'match real'. Cohort-mean length modes were removed for patient-runner compatibility.
+                                                    # 'match real' uses a matched real biopsy length, then same-patient/same-DIL mean if available, then the full needle compartment length.
     color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)', target_dil_v2_sim_key: 'rgba(26, 71, 42, 1)'}
     biopsy_pcd_colors_dict = {'Real': np.array([0.5, 0.0, 0.5]), centroid_dil_sim_key: np.array([1.0, 0.55, 0.0]), optimal_dil_sim_key: np.array([0.0, 0.8, 0.6]), target_dil_v2_sim_key: np.array([0.1, 0.65, 0.2])} # real: purple, centroid: deep orange, optimal: light teal, target-v2: deep green
 
@@ -4695,17 +4689,6 @@ def main():
                             plot_simulated_cores_immediately,
                             )
 
-                early_biopsy_centroid_variation_summary_dict = calculate_biopsy_centroid_variation_summary(
-                            master_structure_reference_dict,
-                            bx_ref,
-                            simulated_preference="planned",
-                            )
-                apply_biopsy_centroid_variation_summary(
-                            master_structure_info_dict,
-                            early_biopsy_centroid_variation_summary_dict,
-                            legacy_mean_source="real",
-                            )
-
                 uncertainties_file, uncertainties_file_filled, read_uncertainties_dataframe, live_display = prepare_and_attach_uncertainty_data(
                             master_structure_reference_dict,
                             master_structure_info_dict,
@@ -4909,17 +4892,6 @@ def main():
                             indeterminate_progress_sub,
                             live_display,
                             )
-
-                _, live_display = biopsy_centroid_variation_summary_processer(
-                    master_structure_reference_dict,
-                    master_structure_info_dict,
-                    bx_ref,
-                    patients_progress,
-                    completed_progress,
-                    live_display,
-                    legacy_mean_source="real",
-                    simulated_preference="realized",
-                )
 
                 simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
                     master_structure_reference_dict,
@@ -7253,14 +7225,7 @@ def structure_referencer(data_removals_dict_bx,
                                                "FANOVA info": fanova_info,
                                                'Patient specific guidance map figures directory dict': None,
                                                'Guidance map figures dir': None,
-                                               "Specific output dir": None,
-                                               "Mean biopsy centroid variation": None,
-                                               "Mean real biopsy centroid variation": None,
-                                               "Mean simulated biopsy centroid variation": None,
-                                               "Mean all biopsy centroid variation": None,
-                                               "Num real biopsies with centroid variation": 0,
-                                               "Num simulated biopsies with centroid variation": 0,
-                                               "Num biopsies with centroid variation": 0
+                                               "Specific output dir": None
                                                }
     
     master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
