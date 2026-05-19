@@ -142,6 +142,7 @@ from config import PreprocessingConfig
 from config import RandomSeedConfig
 from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
+from input_data import write_input_manifest_files
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -1562,6 +1563,28 @@ def main():
                     "run_output_dir.ready",
                     "Captured memory snapshot after creating run output directories.",
                 )
+
+                input_manifest_result = write_input_manifest_files(
+                    output_dir=specific_output_dir,
+                    dicom_paths=dicom_paths_list,
+                    rtstruct_dcms_dict=RTst_dcms_dict,
+                    rtdose_dcms_dict=RTdose_dcms_dict,
+                    rtplan_dcms_dict=RTplan_dcms_dict,
+                    us_dcms_dict=US_dcms_dict,
+                    mr_t2_dcms_dict=MR_T2_dcms_dict,
+                    mr_adc_dcms_dict=MR_ADC_dcms_dict,
+                    fraction_prefixes=fraction_prefixes,
+                    runtime_logger=runtime_logger,
+                )
+                important_info.add_text_line(
+                    "Input manifest written to: " + str(input_manifest_result.manifest_dir),
+                    live_display,
+                )
+                if input_manifest_result.warning_count > 0:
+                    important_info.add_text_line(
+                        "Input manifest warnings: " + str(input_manifest_result.warning_count),
+                        live_display,
+                    )
 
                 #live_display.stop()
                 ### Check if there are more than one ADC MRs for each patient:
