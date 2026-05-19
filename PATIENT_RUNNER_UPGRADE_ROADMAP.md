@@ -234,28 +234,52 @@ or paper usage, proposed action, and validation requirement.
 
 ### Deferred Render Asset Cleanup
 
-The repository root contains old Open3D camera/render JSON files and old screen
+The repository contains old Open3D camera/render JSON files and old screen
 capture PNGs. These should not become part of the patient-runner contract.
 
-Current evidence:
+Current evidence from the 2026-05-19 render audit:
 
-- the optimizer-v2 render/GUI path does not rely on the loose root-level
-  `ScreenCamera_*.json`, `DepthCamera_*.json`, or `RenderOption_*.json` files,
-- the legacy main/MC demonstration plotting path still names a small set of
-  Open3D screen-camera JSONs through `dose_views_jsons_paths_list` and
-  `containment_views_jsons_paths_list`,
+- 118 loose root-level `ScreenCamera_*.json`, `DepthCamera_*.json`, and
+  `RenderOption_*.json` files were ignored local artifacts with no direct code
+  references; they were moved into the ignored `render_jsons/root/` holding
+  folder,
+- 2 loose camera/render JSONs under `python_files_dcm_meta_based/` were also
+  ignored local artifacts; they were moved into
+  `render_jsons/python_files_dcm_meta_based/`,
+- 7 named Open3D screen-camera JSONs remain under `open3d_views_jsons/` because
+  the legacy MC/MR demonstration plotting paths still reference them through
+  `dose_views_jsons_paths_list` and `containment_views_jsons_paths_list`,
+- the optimizer-v2 render/GUI path does not rely on the loose root-level camera
+  JSON pile,
+- the sister analysis repositories searched in the output audit do not reference
+  these camera/render JSON files or the old `plot_two_views_side_by_side` helper,
 - top-level PNG captures are old local artifacts and have been moved into the
   ignored `png/` holding folder.
 
-Direction:
+Recommendation:
 
-- do not make root-level camera/render JSONs part of any new patient-runner or
-  GUI contract,
-- audit the remaining legacy demo plotting paths before deleting the JSONs,
-- if the legacy demo paths are removed or converted to the new render module,
-  delete the loose camera/depth/render JSONs or move any still-useful presets
-  into a named module-local render preset folder,
-- keep generated screenshots, timing captures, and exploratory images out of git.
+- keep the 7 `open3d_views_jsons/` files only as temporary legacy demo presets,
+- do not make Open3D camera JSON files part of any new patient-runner, GUI, or
+  scientific-media contract,
+- replace the old manual still-frame workflow with a named render-job surface:
+  scene type, patient/structure selection, layer selection, camera preset, frame
+  schedule, output resolution, output directory, and export manifest,
+- use deterministic frame export as the stable contract: write PNG/SVG/PDF
+  frames plus a manifest, then optionally package frames into MP4 or GIF,
+- keep Open3D as the first interactive/debug backend because the repo already
+  has Open3D geometry objects,
+- use Plotly plus Kaleido for lightweight static publication-style exports where
+  it is sufficient,
+- consider PyVista/VTK for higher-quality offscreen scientific movies if Open3D
+  offscreen rendering or Plotly export becomes limiting,
+- consider imageio or direct `ffmpeg` packaging for turning deterministic frame
+  directories into video artifacts,
+- keep generated screenshots, timing captures, exploratory images, and loose
+  camera dumps out of git.
+
+Deletion gate: once the legacy MC/MR demonstration plotting paths are removed or
+rewired through the new render-job module, delete `open3d_views_jsons/` unless a
+specific preset is promoted into a named render preset contract.
 
 ## Runtime State Migration
 
