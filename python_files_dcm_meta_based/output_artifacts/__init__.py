@@ -40,9 +40,12 @@ from .schema_registry import OUTPUT_SCHEMA_REGISTRY_VERSION
 from .schema_registry import CanonicalKeySpec
 from .schema_registry import OutputSchemaRegistry
 from .schema_registry import OutputTableSpec
+from .schema_registry import build_output_schema_data_dictionary
 from .schema_registry import build_output_schema_coverage_report
+from .schema_registry import render_output_schema_data_dictionary_markdown
 from .schema_registry import summarize_output_schema_coverage
 from .schema_registry import write_output_schema_coverage_report
+from .schema_registry import write_output_schema_data_dictionary
 from .stitch_validation import SHADOW_STITCH_VALIDATION_SCHEMA_VERSION
 from .stitch_validation import run_shadow_stitch_validation
 from .stitch_validation import summarize_shadow_stitch_validation
@@ -71,6 +74,7 @@ __all__ = [
     "build_patient_artifact_manifest",
     "build_patient_stitch_plan",
     "build_output_table_contracts",
+    "build_output_schema_data_dictionary",
     "build_output_schema_coverage_report",
     "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
@@ -80,6 +84,7 @@ __all__ = [
     "iter_patient_preprocessing_artifacts",
     "normalize_legacy_table_name",
     "run_shadow_stitch_validation",
+    "render_output_schema_data_dictionary_markdown",
     "summarize_in_memory_stitch_validation",
     "summarize_output_artifact_inventory",
     "summarize_output_schema_coverage",
@@ -92,6 +97,7 @@ __all__ = [
     "write_in_memory_stitch_validation_outputs",
     "write_output_artifact_inventory",
     "write_output_schema_coverage_report",
+    "write_output_schema_data_dictionary",
     "write_patient_artifact_outputs",
     "write_output_table_contracts",
     "write_phase3c_output_surface",
