@@ -4,8 +4,11 @@ import argparse
 from pathlib import Path
 
 from output_artifacts import build_output_artifact_inventory
+from output_artifacts import build_output_table_contracts
 from output_artifacts import summarize_output_artifact_inventory
+from output_artifacts import summarize_output_table_contracts
 from output_artifacts import write_output_artifact_inventory
+from output_artifacts import write_output_table_contracts
 from validation import resolve_existing_output_dir
 
 
@@ -42,12 +45,22 @@ def main() -> None:
         include_other_files=args.include_other_files,
     )
     inventory_path, summary_path = write_output_artifact_inventory(inventory_df, output_dir)
+    contracts_df = build_output_table_contracts(inventory_df)
+    contracts_path, contracts_summary_path = write_output_table_contracts(contracts_df, output_dir)
     summary = summarize_output_artifact_inventory(inventory_df)
+    contracts_summary = summarize_output_table_contracts(contracts_df)
     print(f"[inventory] wrote {inventory_path}")
     print(f"[inventory] wrote {summary_path}")
+    print(f"[contracts] wrote {contracts_path}")
+    print(f"[contracts] wrote {contracts_summary_path}")
     print(
         "[inventory] artifacts={artifact_count} | tables={table_count} | classes={output_class_counts}".format(
             **summary,
+        )
+    )
+    print(
+        "[contracts] contracts={contract_count} | lifetime_classes={proposed_lifetime_class_counts} | prune_flags={pruning_assessment_counts}".format(
+            **contracts_summary,
         )
     )
 
