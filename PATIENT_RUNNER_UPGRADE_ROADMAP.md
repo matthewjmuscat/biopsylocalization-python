@@ -535,6 +535,13 @@ science, no output schema churn, and no deep cleanup mixed into the runner
 scaffold. Its job is to prove that one patient can move through the existing
 pipeline boundary with explicit inputs, outputs, timing, and logs.
 
+Phase C.1 adds a batch layer around the one-patient runner. It should resolve an
+ordered patient list from the legacy patient registry, carve each patient through
+the legacy bridge, run the existing patient stage sequence, optionally use
+thread parallelism for patient artifact writing, and return typed batch results.
+The batch config must wrap `PatientRunConfig` rather than duplicating legacy key
+names or output policy.
+
 ### Phase D: Cohort Assembly
 
 Build or formalize a lightweight assembly step that concatenates validated base

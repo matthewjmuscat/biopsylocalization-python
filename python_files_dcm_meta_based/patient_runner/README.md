@@ -16,6 +16,22 @@ Initial scope:
   `output_artifacts` exporter surface,
 - provide a minimal stage runner with timing and error capture.
 
+Current Phase C.1 scope:
+
+- resolve an ordered batch of patient IDs from the legacy patient registry,
+- run each patient through the existing `PatientStage` sequence,
+- preserve deterministic result ordering even when optional thread parallelism is
+  enabled,
+- report a typed `PatientBatchRunResult` containing per-patient timings,
+  statuses, and artifact paths.
+
+The batch layer uses `PatientBatchRunConfig`, which wraps `PatientRunConfig`
+rather than duplicating its legacy keys, output-root policy, or artifact-writing
+settings. Optional parallelism currently uses threads because Phase C.1 only
+writes dataframe artifacts from shared in-memory legacy objects. Process-level
+isolation is deferred until migrated stages have serializable, patient-local
+inputs.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
@@ -23,6 +39,6 @@ Near-term non-goals:
 - no broad cleanup inside `MC_simulator_convex.py`,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to wrap one existing patient-local stage behind this
-runner, then compare the generated patient artifacts against the legacy cohort
-oracle through the existing stitch-validation machinery.
+The next integration step is to assemble the generated patient artifacts and
+compare them against the legacy cohort oracle through the existing
+stitch-validation machinery.

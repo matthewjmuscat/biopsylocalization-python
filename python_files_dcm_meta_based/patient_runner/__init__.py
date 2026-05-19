@@ -8,8 +8,12 @@ new work a typed, patient-local surface.
 from .artifacts import PatientArtifactStore
 from .artifacts import collect_patient_dataframe_artifacts
 from .artifacts import write_patient_dataframe_artifacts
+from .batch import resolve_patient_uids
+from .batch import run_patient_batch_from_legacy
 from .contracts import LegacyPatientRuntimeState
 from .contracts import LegacyRuntimeKeys
+from .contracts import PatientBatchRunConfig
+from .contracts import PatientBatchRunResult
 from .contracts import PatientCase
 from .contracts import PatientRunConfig
 from .contracts import PatientRunResult
@@ -30,6 +34,8 @@ __all__ = [
     "LegacyPatientRuntimeState",
     "LegacyRuntimeKeys",
     "PatientArtifactStore",
+    "PatientBatchRunConfig",
+    "PatientBatchRunResult",
     "PatientCase",
     "PatientRunConfig",
     "PatientRunResult",
@@ -43,6 +49,8 @@ __all__ = [
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
     "default_patient_stages",
+    "resolve_patient_uids",
+    "run_patient_batch_from_legacy",
     "run_patient_case",
     "run_patient_stages",
     "write_patient_artifacts_stage",

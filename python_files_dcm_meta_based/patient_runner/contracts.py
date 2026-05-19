@@ -16,6 +16,7 @@ from typing import Any, Mapping, MutableMapping, Sequence
 class PatientStageName(str, Enum):
     """Closed names for initial patient-runner stages."""
 
+    LEGACY_BRIDGE = "legacy_bridge"
     PREPROCESSING = "preprocessing"
     OPTIMIZATION = "optimization"
     SIMULATED_BIOPSY_FINALIZATION = "simulated_biopsy_finalization"
@@ -68,6 +69,15 @@ def _stage_name_value(stage_name: PatientStageName | str) -> str:
     if isinstance(stage_name, PatientStageName):
         return stage_name.value
     return str(stage_name)
+
+
+def _normalize_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tuple[str, ...]:
+    normalized_patient_uids = tuple(str(patient_uid).strip() for patient_uid in patient_uids)
+    if any(patient_uid == "" for patient_uid in normalized_patient_uids):
+        raise ValueError(f"{source_name} cannot contain empty patient IDs")
+    if len(set(normalized_patient_uids)) != len(normalized_patient_uids):
+        raise ValueError(f"{source_name} cannot contain duplicates")
+    return normalized_patient_uids
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +145,56 @@ class PatientRunConfig:
     def patient_output_dir(self, patient_case: PatientCase) -> Path:
         """Return the run-local output directory for one patient."""
         return self.output_root.joinpath("patients", patient_case.safe_patient_uid)
+
+
+@dataclass(frozen=True, slots=True)
+class PatientBatchRunConfig:
+    """Configuration for a cohort-level batch of patient-local runs.
+
+    This wraps `PatientRunConfig` rather than repeating its fields. The batch
+    layer owns only batch selection and scheduling policy.
+    """
+
+    patient_config: PatientRunConfig
+    patient_uids: Sequence[str] = ()
+    max_workers: int = 1
+    patient_labels: Mapping[str, str] = field(default_factory=dict)
+    source_run_id: str = ""
+    input_manifest_id: str = ""
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.patient_config, PatientRunConfig):
+            raise TypeError("patient_config must be a PatientRunConfig instance")
+        patient_uids = _normalize_patient_uids(self.patient_uids, "patient_uids")
+        max_workers = int(self.max_workers)
+        if max_workers < 1:
+            raise ValueError("max_workers must be at least 1")
+        patient_labels = {
+            str(patient_uid).strip(): str(patient_label).strip()
+            for patient_uid, patient_label in self.patient_labels.items()
+        }
+        if any(patient_uid == "" for patient_uid in patient_labels):
+            raise ValueError("patient_labels cannot contain empty patient IDs")
+
+        object.__setattr__(self, "patient_uids", patient_uids)
+        object.__setattr__(self, "max_workers", max_workers)
+        object.__setattr__(self, "patient_labels", patient_labels)
+        object.__setattr__(self, "source_run_id", str(self.source_run_id).strip())
+        object.__setattr__(self, "input_manifest_id", str(self.input_manifest_id).strip())
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def output_root(self) -> Path:
+        return self.patient_config.output_root
+
+    @property
+    def legacy_keys(self) -> LegacyRuntimeKeys:
+        return self.patient_config.legacy_keys
+
+    @property
+    def run_id(self) -> str:
+        return self.patient_config.run_id
 
 
 @dataclass(slots=True)
@@ -313,5 +373,68 @@ class PatientRunResult:
             elapsed_seconds=elapsed_seconds,
             stage_results=resolved_stage_results,
             artifact_paths=tuple(artifact_paths),
+            metadata=dict(metadata or {}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PatientBatchRunResult:
+    """Run-level summary for a batch of patient-local cases."""
+
+    status: PatientStageStatus
+    output_root: Path
+    patient_results: tuple[PatientRunResult, ...] = ()
+    elapsed_seconds: float = 0.0
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", PatientStageStatus(self.status))
+        object.__setattr__(self, "output_root", Path(self.output_root))
+        object.__setattr__(self, "patient_results", tuple(self.patient_results))
+        object.__setattr__(self, "elapsed_seconds", float(self.elapsed_seconds))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status == PatientStageStatus.SUCCEEDED
+
+    @property
+    def patient_count(self) -> int:
+        return len(self.patient_results)
+
+    @property
+    def artifact_paths(self) -> tuple[Path, ...]:
+        artifact_paths: list[Path] = []
+        for patient_result in self.patient_results:
+            artifact_paths.extend(patient_result.artifact_paths)
+        return tuple(artifact_paths)
+
+    @property
+    def failed_patient_results(self) -> tuple[PatientRunResult, ...]:
+        return tuple(
+            patient_result
+            for patient_result in self.patient_results
+            if patient_result.status == PatientStageStatus.FAILED
+        )
+
+    @classmethod
+    def from_patient_results(cls,
+                             output_root: Path,
+                             patient_results: Sequence[PatientRunResult],
+                             *,
+                             elapsed_seconds: float = 0.0,
+                             metadata: Mapping[str, Any] | None = None) -> "PatientBatchRunResult":
+        resolved_patient_results = tuple(patient_results)
+        if not resolved_patient_results:
+            status = PatientStageStatus.SKIPPED
+        elif any(patient_result.status == PatientStageStatus.FAILED for patient_result in resolved_patient_results):
+            status = PatientStageStatus.FAILED
+        else:
+            status = PatientStageStatus.SUCCEEDED
+        return cls(
+            status=status,
+            output_root=output_root,
+            patient_results=resolved_patient_results,
+            elapsed_seconds=elapsed_seconds,
             metadata=dict(metadata or {}),
         )
