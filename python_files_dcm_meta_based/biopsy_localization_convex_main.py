@@ -6425,6 +6425,9 @@ def main():
                             "summary_path": phase3c_result.summary_path,
                             "stitch_validation_path": phase3c_result.stitch_validation_path,
                             "stitch_validation_summary_path": phase3c_result.stitch_validation_summary_path,
+                            "schema_coverage_path": phase3c_result.schema_coverage_path,
+                            "schema_coverage_summary_path": phase3c_result.schema_coverage_summary_path,
+                            "schema_unmatched_manifest_path": phase3c_result.schema_unmatched_manifest_path,
                             **phase3c_result.summary,
                         },
                     )
