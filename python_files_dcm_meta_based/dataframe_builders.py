@@ -1120,21 +1120,57 @@ def tissue_volume_threshold_dataframe_builder_NEW(master_structure_reference_dic
 
 
 
+def _patient_structure_features_dataframe_builder(pydicom_item,
+                                                  structs_referenced_list,
+                                                  bx_ref):
+    """Build the per-patient structure radiomics fragment used by the cohort table."""
+
+    patient_structure_features_dataframe = pandas.DataFrame()
+    for structs in structs_referenced_list:
+        if structs == bx_ref:
+            continue
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+            sp_structure_shape_features_dataframe = specific_structure["Structure features dataframe"]
+            patient_structure_features_dataframe = pandas.concat(
+                [patient_structure_features_dataframe, sp_structure_shape_features_dataframe]
+            ).reset_index(drop=True)
+
+    return patient_structure_features_dataframe
+
+
 def cohort_structure_features_dataframe_builder(master_structure_reference_dict,
                                                 structs_referenced_list,
-                                                bx_ref):
-    cohort_structure_features_dataframe = pandas.DataFrame()
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
-        for structs in structs_referenced_list:
-            if structs == bx_ref:
-                continue
-            else:
-                for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                    sp_structure_shape_features_dataframe = specific_structure["Structure features dataframe"]
+                                                bx_ref,
+                                                all_ref_key=None):
+    """Build cohort radiomics and optionally store matching patient fragments."""
 
-                    cohort_structure_features_dataframe = pandas.concat([cohort_structure_features_dataframe,sp_structure_shape_features_dataframe]).reset_index(drop = True)
+    cohort_structure_features_dataframe = pandas.DataFrame()
+    patient_structure_features_dataframes = {}
+    for patientUID,pydicom_item in master_structure_reference_dict.items():
+        sp_patient_structure_features_dataframe = _patient_structure_features_dataframe_builder(
+            pydicom_item,
+            structs_referenced_list,
+            bx_ref,
+        )
+        patient_structure_features_dataframes[patientUID] = sp_patient_structure_features_dataframe
+
+        cohort_structure_features_dataframe = pandas.concat(
+            [cohort_structure_features_dataframe, sp_patient_structure_features_dataframe]
+        ).reset_index(drop=True)
 
     cohort_structure_features_dataframe = convert_columns_to_categorical_and_downcast(cohort_structure_features_dataframe, threshold=0.25)
+    if all_ref_key is not None:
+        for patientUID,pydicom_item in master_structure_reference_dict.items():
+            if "Patient ID" in cohort_structure_features_dataframe.columns:
+                sp_patient_structure_features_dataframe = cohort_structure_features_dataframe[
+                    cohort_structure_features_dataframe["Patient ID"].astype(str).eq(str(patientUID))
+                ].reset_index(drop=True)
+            else:
+                sp_patient_structure_features_dataframe = convert_columns_to_categorical_and_downcast(
+                    patient_structure_features_dataframes[patientUID].copy(),
+                    threshold=0.25,
+                )
+            pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["3D radiomic features all OAR and DIL structures"] = sp_patient_structure_features_dataframe
 
     return cohort_structure_features_dataframe
 

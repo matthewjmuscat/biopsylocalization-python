@@ -1198,6 +1198,7 @@ def main():
                                                                 "Cohort: Tissue class - distances voxel-wise results": None,
                                                                 "Cohort: Per sample point prostate double sextant classification": None,
                                                                 "Cohort: Per voxel prostate double sextant classification": None,
+                                                                "Cohort: Simulated biopsy planned vs realized centroid variation validation": None,
                                                                 "Cohort: Bx DVH metrics": None,
                                                                 "Cohort: Bx DVH metrics (generalized)": None,
                                                                 "Cohort: Bx global info dataframe": None,
@@ -4923,6 +4924,7 @@ def main():
                 simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
                     master_structure_reference_dict,
                     bx_ref,
+                    all_ref_key,
                 )
                 master_cohort_patient_data_and_dataframes["Dataframes"][
                     "Cohort: Simulated biopsy planned vs realized centroid variation validation"
@@ -5588,7 +5590,8 @@ def main():
                 indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~DF 4", total = None)
                 structure_cohort_3d_radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(master_structure_reference_dict,
                                                 structs_referenced_list,
-                                                bx_ref)
+                                                bx_ref,
+                                                all_ref_key)
                 master_cohort_patient_data_and_dataframes["Dataframes"]["Cohort: 3D radiomic features all OAR and DIL structures"] = structure_cohort_3d_radiomic_features_dataframe
                 indeterminate_progress_sub.update(indeterminate_task, visible = False)
                       
@@ -6956,6 +6959,10 @@ def structure_referencer(data_removals_dict_bx,
                                                                                   TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY: None,
                                                                                   TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY: None,
                                                                                   "Biopsy optimization - Guidance-map firing depth recommendations dataframe": None,
+                                                                                  "3D radiomic features all OAR and DIL structures": None,
+                                                                                  "Per sample point prostate double sextant classification": None,
+                                                                                  "Per voxel prostate double sextant classification": None,
+                                                                                  "Simulated biopsy planned vs realized centroid variation validation": None,
                                                                                   "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
                                                                                   "MR - ADC - summary statistics by structure dataframe": None},    
                         "Multi-structure MC simulation output dataframes dict": {"All MC structure transformation values": None,

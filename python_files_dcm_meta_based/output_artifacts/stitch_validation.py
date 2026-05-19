@@ -25,6 +25,11 @@ class ShadowStitchPair:
 
 SHADOW_STITCH_PAIRS = (
     ShadowStitchPair(
+        "Cohort: 3D radiomic features all OAR and DIL structures",
+        "3D radiomic features all OAR and DIL structures",
+        "Output CSVs/Preprocessing",
+    ),
+    ShadowStitchPair(
         "Cohort: All MC structure transformation values",
         "All MC structure transformation values",
         "Output CSVs/MC simulation",
@@ -72,6 +77,21 @@ SHADOW_STITCH_PAIRS = (
     ShadowStitchPair(
         "Cohort: Nearest DILs to each biopsy",
         "Nearest DILs info dataframe",
+        "Output CSVs/Preprocessing",
+    ),
+    ShadowStitchPair(
+        "Cohort: Per sample point prostate double sextant classification",
+        "Per sample point prostate double sextant classification",
+        "Output CSVs/Preprocessing",
+    ),
+    ShadowStitchPair(
+        "Cohort: Per voxel prostate double sextant classification",
+        "Per voxel prostate double sextant classification",
+        "Output CSVs/Preprocessing",
+    ),
+    ShadowStitchPair(
+        "Cohort: Simulated biopsy planned vs realized centroid variation validation",
+        "Simulated biopsy planned vs realized centroid variation validation",
         "Output CSVs/Preprocessing",
     ),
     ShadowStitchPair(
