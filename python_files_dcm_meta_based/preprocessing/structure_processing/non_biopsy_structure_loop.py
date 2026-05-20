@@ -40,9 +40,8 @@ def restore_non_biopsy_modular_live_state(master_structure_reference_dict,
     ] = saved_state["patient_output_dataframes_dict"]
 
 
-def run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
+def run_non_biopsy_structure_primary(
         *,
-        validate_non_biopsy_structure_preprocessing_equivalence_bool,
         patient_uid,
         pydicom_item,
         master_structure_reference_dict,
@@ -59,7 +58,7 @@ def run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
         live_display,
         runtime_logger,
         sp_patient_selected_structure_info_dataframe=None):
-    live_display = preprocess_non_biopsy_structure(
+    return preprocess_non_biopsy_structure(
         patient_uid=patient_uid,
         pydicom_item=pydicom_item,
         master_structure_reference_dict=master_structure_reference_dict,
@@ -77,9 +76,43 @@ def run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
         sp_patient_selected_structure_info_dataframe=sp_patient_selected_structure_info_dataframe,
     )
 
-    if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
-        structures_progress.update(processing_structures_task, advance=1)
-        return live_display, None, None, True
+
+def prepare_non_biopsy_structure_legacy_validation(
+        *,
+        patient_uid,
+        pydicom_item,
+        master_structure_reference_dict,
+        struct_ref_type,
+        specific_structure_index,
+        structs_referenced_dict,
+        config,
+        parallel_pool,
+        layout_groups,
+        structures_progress,
+        processing_structures_task,
+        indeterminate_progress_sub,
+        important_info,
+        live_display,
+        runtime_logger,
+        sp_patient_selected_structure_info_dataframe=None):
+    live_display = run_non_biopsy_structure_primary(
+        patient_uid=patient_uid,
+        pydicom_item=pydicom_item,
+        master_structure_reference_dict=master_structure_reference_dict,
+        struct_ref_type=struct_ref_type,
+        specific_structure_index=specific_structure_index,
+        structs_referenced_dict=structs_referenced_dict,
+        config=config,
+        parallel_pool=parallel_pool,
+        layout_groups=layout_groups,
+        structures_progress=structures_progress,
+        processing_structures_task=processing_structures_task,
+        indeterminate_progress_sub=indeterminate_progress_sub,
+        important_info=important_info,
+        live_display=live_display,
+        runtime_logger=runtime_logger,
+        sp_patient_selected_structure_info_dataframe=sp_patient_selected_structure_info_dataframe,
+    )
 
     modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
         master_structure_reference_dict=master_structure_reference_dict,
@@ -95,7 +128,115 @@ def run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
         specific_structure_index=specific_structure_index,
         all_ref_key=config.all_ref_key,
     )
-    return live_display, modular_validation_snapshot, modular_live_state, False
+    return live_display, modular_validation_snapshot, modular_live_state
+
+
+def process_non_biopsy_structure_family(
+        *,
+        master_structure_reference_dict,
+        master_structure_info_dict,
+        struct_ref_type,
+        patient_task_label,
+        structs_referenced_dict,
+        config,
+        parallel_pool,
+        layout_groups,
+        patients_progress,
+        structures_progress,
+        completed_progress,
+        indeterminate_progress_sub,
+        important_info,
+        live_display,
+        runtime_logger,
+        structure_task_template="[cyan]Processing structures [{},{}]...",
+        use_master_info_structure_count=False,
+        pass_selected_structure_dataframe=False):
+    patient_uid_default = "Initializing"
+    processing_patients_task_main_description = "[red]{} [{}]...".format(
+        patient_task_label,
+        patient_uid_default,
+    )
+    processing_patients_task_completed_main_description = "[green]{}".format(patient_task_label)
+    processing_patients_task = patients_progress.add_task(
+        processing_patients_task_main_description,
+        total=master_structure_info_dict["Global"]["Num cases"],
+    )
+    processing_patients_task_completed = completed_progress.add_task(
+        processing_patients_task_completed_main_description,
+        total=master_structure_info_dict["Global"]["Num cases"],
+        visible=False,
+    )
+
+    for patient_uid, pydicom_item in master_structure_reference_dict.items():
+        processing_patients_task_main_description = "[red]{} [{}]...".format(
+            patient_task_label,
+            patient_uid,
+        )
+        patients_progress.update(
+            processing_patients_task,
+            description=processing_patients_task_main_description,
+        )
+
+        structure_id_default = "Initializing"
+        if use_master_info_structure_count:
+            structure_count = master_structure_info_dict["By patient"][patient_uid][struct_ref_type]["Num structs"]
+        else:
+            structure_count = len(pydicom_item[struct_ref_type])
+
+        processing_structures_task_main_description = structure_task_template.format(
+            patient_uid,
+            structure_id_default,
+        )
+        processing_structures_task = structures_progress.add_task(
+            processing_structures_task_main_description,
+            total=structure_count,
+        )
+
+        sp_patient_selected_structure_info_dataframe = None
+        if pass_selected_structure_dataframe:
+            sp_patient_selected_structure_info_dataframe = pydicom_item[config.all_ref_key][
+                "Multi-structure pre-processing output dataframes dict"
+            ]["Selected structures"]
+
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[struct_ref_type]):
+            structure_id = specific_structure["ROI"]
+            processing_structures_task_main_description = structure_task_template.format(
+                patient_uid,
+                structure_id,
+            )
+            structures_progress.update(
+                processing_structures_task,
+                description=processing_structures_task_main_description,
+            )
+            live_display = run_non_biopsy_structure_primary(
+                patient_uid=patient_uid,
+                pydicom_item=pydicom_item,
+                master_structure_reference_dict=master_structure_reference_dict,
+                struct_ref_type=struct_ref_type,
+                specific_structure_index=specific_structure_index,
+                structs_referenced_dict=structs_referenced_dict,
+                config=config,
+                parallel_pool=parallel_pool,
+                layout_groups=layout_groups,
+                structures_progress=structures_progress,
+                processing_structures_task=processing_structures_task,
+                indeterminate_progress_sub=indeterminate_progress_sub,
+                important_info=important_info,
+                live_display=live_display,
+                runtime_logger=runtime_logger,
+                sp_patient_selected_structure_info_dataframe=(
+                    sp_patient_selected_structure_info_dataframe
+                ),
+            )
+            structures_progress.update(processing_structures_task, advance=1)
+
+        structures_progress.remove_task(processing_structures_task)
+        patients_progress.update(processing_patients_task, advance=1)
+        completed_progress.update(processing_patients_task_completed, advance=1)
+    patients_progress.update(processing_patients_task, visible=False)
+    completed_progress.update(processing_patients_task_completed, visible=True)
+
+    return live_display
 
 
 def finalize_non_biopsy_structure_legacy_validation(

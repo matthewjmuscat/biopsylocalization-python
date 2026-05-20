@@ -113,7 +113,8 @@ from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocess
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
-from preprocessing.structure_processing.non_biopsy_structure_loop import run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation
+from preprocessing.structure_processing.non_biopsy_structure_loop import prepare_non_biopsy_structure_legacy_validation
+from preprocessing.structure_processing.non_biopsy_structure_loop import run_non_biopsy_structure_primary
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
@@ -2064,8 +2065,28 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
-                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                        if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
+                            live_display = run_non_biopsy_structure_primary(
+                                patient_uid=patientUID,
+                                pydicom_item=pydicom_item,
+                                master_structure_reference_dict=master_structure_reference_dict,
+                                struct_ref_type=structs,
+                                specific_structure_index=specific_structure_index,
+                                structs_referenced_dict=structs_referenced_dict,
+                                config=non_bx_structure_preprocessing_config,
+                                parallel_pool=parallel_pool,
+                                layout_groups=layout_groups,
+                                structures_progress=structures_progress,
+                                processing_structures_task=processing_structures_task,
+                                indeterminate_progress_sub=indeterminate_progress_sub,
+                                important_info=important_info,
+                                live_display=live_display,
+                                runtime_logger=runtime_logger,
+                            )
+                            structures_progress.update(processing_structures_task, advance=1)
+                            continue
+
+                        live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
                             patient_uid=patientUID,
                             pydicom_item=pydicom_item,
                             master_structure_reference_dict=master_structure_reference_dict,
@@ -2082,8 +2103,6 @@ def main():
                             live_display=live_display,
                             runtime_logger=runtime_logger,
                         )
-                        if modular_primary_completed_bool == True:
-                            continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -2605,8 +2624,28 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
-                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                        if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
+                            live_display = run_non_biopsy_structure_primary(
+                                patient_uid=patientUID,
+                                pydicom_item=pydicom_item,
+                                master_structure_reference_dict=master_structure_reference_dict,
+                                struct_ref_type=structs,
+                                specific_structure_index=specific_structure_index,
+                                structs_referenced_dict=structs_referenced_dict,
+                                config=non_bx_structure_preprocessing_config,
+                                parallel_pool=parallel_pool,
+                                layout_groups=layout_groups,
+                                structures_progress=structures_progress,
+                                processing_structures_task=processing_structures_task,
+                                indeterminate_progress_sub=indeterminate_progress_sub,
+                                important_info=important_info,
+                                live_display=live_display,
+                                runtime_logger=runtime_logger,
+                            )
+                            structures_progress.update(processing_structures_task, advance=1)
+                            continue
+
+                        live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
                             patient_uid=patientUID,
                             pydicom_item=pydicom_item,
                             master_structure_reference_dict=master_structure_reference_dict,
@@ -2623,8 +2662,6 @@ def main():
                             live_display=live_display,
                             runtime_logger=runtime_logger,
                         )
-                        if modular_primary_completed_bool == True:
-                            continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -3110,8 +3147,28 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
-                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                        if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
+                            live_display = run_non_biopsy_structure_primary(
+                                patient_uid=patientUID,
+                                pydicom_item=pydicom_item,
+                                master_structure_reference_dict=master_structure_reference_dict,
+                                struct_ref_type=structs,
+                                specific_structure_index=specific_structure_index,
+                                structs_referenced_dict=structs_referenced_dict,
+                                config=non_bx_structure_preprocessing_config,
+                                parallel_pool=parallel_pool,
+                                layout_groups=layout_groups,
+                                structures_progress=structures_progress,
+                                processing_structures_task=processing_structures_task,
+                                indeterminate_progress_sub=indeterminate_progress_sub,
+                                important_info=important_info,
+                                live_display=live_display,
+                                runtime_logger=runtime_logger,
+                            )
+                            structures_progress.update(processing_structures_task, advance=1)
+                            continue
+
+                        live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
                             patient_uid=patientUID,
                             pydicom_item=pydicom_item,
                             master_structure_reference_dict=master_structure_reference_dict,
@@ -3128,8 +3185,6 @@ def main():
                             live_display=live_display,
                             runtime_logger=runtime_logger,
                         )
-                        if modular_primary_completed_bool == True:
-                            continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -3641,8 +3696,31 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
-                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                        if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
+                            live_display = run_non_biopsy_structure_primary(
+                                patient_uid=patientUID,
+                                pydicom_item=pydicom_item,
+                                master_structure_reference_dict=master_structure_reference_dict,
+                                struct_ref_type=structs,
+                                specific_structure_index=specific_structure_index,
+                                structs_referenced_dict=structs_referenced_dict,
+                                config=non_bx_structure_preprocessing_config,
+                                parallel_pool=parallel_pool,
+                                layout_groups=layout_groups,
+                                structures_progress=structures_progress,
+                                processing_structures_task=processing_structures_task,
+                                indeterminate_progress_sub=indeterminate_progress_sub,
+                                important_info=important_info,
+                                live_display=live_display,
+                                runtime_logger=runtime_logger,
+                                sp_patient_selected_structure_info_dataframe=(
+                                    sp_patient_selected_structure_info_dataframe
+                                ),
+                            )
+                            structures_progress.update(processing_structures_task, advance=1)
+                            continue
+
+                        live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
                             patient_uid=patientUID,
                             pydicom_item=pydicom_item,
                             master_structure_reference_dict=master_structure_reference_dict,
@@ -3662,8 +3740,6 @@ def main():
                                 sp_patient_selected_structure_info_dataframe
                             ),
                         )
-                        if modular_primary_completed_bool == True:
-                            continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
                         #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
