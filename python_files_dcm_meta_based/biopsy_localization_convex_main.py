@@ -112,12 +112,9 @@ from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runt
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
-from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
-from preprocessing.structure_processing.non_biopsy_structure_processing import preprocess_non_biopsy_structure
+from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
+from preprocessing.structure_processing.non_biopsy_structure_loop import run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
-from preprocessing.structure_processing.validation import append_non_biopsy_structure_validation_result
-from preprocessing.structure_processing.validation import capture_non_biopsy_structure_processing_snapshot
-from preprocessing.structure_processing.validation import compare_non_biopsy_structure_processing_snapshots
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_adaptive_block_search_config
@@ -184,40 +181,6 @@ def build_transform_generation_rng(master_structure_info_dict):
         return cp.random.RandomState()
 
     return cp.random.RandomState(transform_generation_random_seed)
-
-
-def capture_non_biopsy_modular_live_state(master_structure_reference_dict,
-                                          patient_uid,
-                                          struct_ref_type,
-                                          specific_structure_index,
-                                          all_ref_key):
-    return {
-        "structure": copy.deepcopy(
-            master_structure_reference_dict[patient_uid][struct_ref_type][specific_structure_index]
-        ),
-        "patient_output_dataframes_dict": copy.deepcopy(
-            master_structure_reference_dict[patient_uid][all_ref_key][
-                "Multi-structure pre-processing output dataframes dict"
-            ]
-        ),
-    }
-
-
-def restore_non_biopsy_modular_live_state(master_structure_reference_dict,
-                                          patient_uid,
-                                          struct_ref_type,
-                                          specific_structure_index,
-                                          all_ref_key,
-                                          saved_state):
-    if saved_state is None:
-        return
-
-    master_structure_reference_dict[patient_uid][struct_ref_type][specific_structure_index] = (
-        saved_state["structure"]
-    )
-    master_structure_reference_dict[patient_uid][all_ref_key][
-        "Multi-structure pre-processing output dataframes dict"
-    ] = saved_state["patient_output_dataframes_dict"]
 
 
 def apply_optimizer_v1_random_seed(master_structure_info_dict):
@@ -2101,57 +2064,25 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
+                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
+                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            processing_structures_task=processing_structures_task,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        if modular_primary_completed_bool == True:
                             continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -2604,54 +2535,19 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
+                        live_display = finalize_non_biopsy_structure_legacy_validation(
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            patient_uid=patientUID,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            all_ref_key=all_ref_key,
+                            structure_id=structureID,
+                            modular_validation_snapshot=modular_validation_snapshot,
+                            modular_live_state=modular_live_state,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
 
                         structures_progress.update(processing_structures_task, advance=1)
 
@@ -2709,57 +2605,25 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
+                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
+                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            processing_structures_task=processing_structures_task,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        if modular_primary_completed_bool == True:
                             continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -3186,54 +3050,19 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
+                        live_display = finalize_non_biopsy_structure_legacy_validation(
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            patient_uid=patientUID,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            all_ref_key=all_ref_key,
+                            structure_id=structureID,
+                            modular_validation_snapshot=modular_validation_snapshot,
+                            modular_live_state=modular_live_state,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
 
 
                         structures_progress.update(processing_structures_task, advance=1)
@@ -3281,57 +3110,25 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
+                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
+                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            processing_structures_task=processing_structures_task,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
+                        if modular_primary_completed_bool == True:
                             continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -3759,54 +3556,19 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
+                        live_display = finalize_non_biopsy_structure_legacy_validation(
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            patient_uid=patientUID,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            all_ref_key=all_ref_key,
+                            structure_id=structureID,
+                            modular_validation_snapshot=modular_validation_snapshot,
+                            modular_live_state=modular_live_state,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
                         
 
 
@@ -3879,63 +3641,28 @@ def main():
                         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                         structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                                sp_patient_selected_structure_info_dataframe=(
-                                    sp_patient_selected_structure_info_dataframe
-                                ),
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                                sp_patient_selected_structure_info_dataframe=(
-                                    sp_patient_selected_structure_info_dataframe
-                                ),
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
+                        live_display, modular_validation_snapshot, modular_live_state, modular_primary_completed_bool = run_non_biopsy_structure_modular_primary_or_prepare_legacy_validation(
+                            validate_non_biopsy_structure_preprocessing_equivalence_bool=validate_non_biopsy_structure_preprocessing_equivalence_bool,
+                            patient_uid=patientUID,
+                            pydicom_item=pydicom_item,
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            structs_referenced_dict=structs_referenced_dict,
+                            config=non_bx_structure_preprocessing_config,
+                            parallel_pool=parallel_pool,
+                            layout_groups=layout_groups,
+                            structures_progress=structures_progress,
+                            processing_structures_task=processing_structures_task,
+                            indeterminate_progress_sub=indeterminate_progress_sub,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                            sp_patient_selected_structure_info_dataframe=(
+                                sp_patient_selected_structure_info_dataframe
+                            ),
+                        )
+                        if modular_primary_completed_bool == True:
                             continue
 
                         # The below print lines were just for my own understanding of how to access the data structure
@@ -4408,54 +4135,19 @@ def main():
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                         master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
+                        live_display = finalize_non_biopsy_structure_legacy_validation(
+                            master_structure_reference_dict=master_structure_reference_dict,
+                            patient_uid=patientUID,
+                            struct_ref_type=structs,
+                            specific_structure_index=specific_structure_index,
+                            all_ref_key=all_ref_key,
+                            structure_id=structureID,
+                            modular_validation_snapshot=modular_validation_snapshot,
+                            modular_live_state=modular_live_state,
+                            important_info=important_info,
+                            live_display=live_display,
+                            runtime_logger=runtime_logger,
+                        )
 
 
 
