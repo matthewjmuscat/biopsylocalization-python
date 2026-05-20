@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from io import StringIO
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
+from output_artifacts import OutputSchemaRegistry
 from output_artifacts import normalize_legacy_table_name
 from output_artifacts import write_dataframe_artifact
 from output_artifacts.stitch_validation import SHADOW_STITCH_PAIRS
@@ -160,19 +162,29 @@ def _classify_patient_batch_artifact(path: Path) -> dict[str, Any]:
 
 def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) -> pd.DataFrame:
     """Build a lightweight inventory from the artifacts written by a batch run."""
+    registry = OutputSchemaRegistry()
     rows: list[dict[str, Any]] = []
-    for artifact_path in batch_result.artifact_paths:
+    for artifact_order, artifact_path in enumerate(batch_result.artifact_paths):
         path = Path(artifact_path)
         classification = _classify_patient_batch_artifact(path)
+        spec = None
+        if _artifact_kind(path) == "table":
+            spec = registry.match_spec(
+                str(classification["legacy_dataframe_name"]),
+                str(classification["output_section"]),
+                path.suffix.lower(),
+            )
         rows.append(
             {
                 "schema_version": PATIENT_BATCH_COHORT_ASSEMBLY_SCHEMA_VERSION,
                 "generated_utc": _utc_now_iso(),
                 "batch_output_root": batch_result.output_root.as_posix(),
+                "artifact_order": artifact_order,
                 "artifact_path": path.as_posix(),
                 "file_name": path.name,
                 "file_extension": path.suffix.lower(),
                 "file_size_bytes": int(path.stat().st_size) if path.exists() else 0,
+                "has_multiindex_columns": bool(spec.has_multiindex_columns) if spec is not None else False,
                 **classification,
             }
         )
@@ -183,6 +195,7 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
                 "schema_version",
                 "generated_utc",
                 "batch_output_root",
+                "artifact_order",
                 "artifact_path",
                 "relative_path",
                 "file_name",
@@ -193,10 +206,11 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
                 "patient_uid",
                 "legacy_dataframe_name",
                 "normalized_table_name",
+                "has_multiindex_columns",
             ]
         )
 
-    inventory_df = pd.DataFrame(rows).sort_values("artifact_path").reset_index(drop=True)
+    inventory_df = pd.DataFrame(rows).reset_index(drop=True)
     table_mask = inventory_df["artifact_kind"].eq("table")
     inventory_df.loc[table_mask, "normalized_table_name"] = inventory_df.loc[table_mask].apply(
         normalize_legacy_table_name,
@@ -209,10 +223,23 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
     return inventory_df
 
 
-def _read_table(path: Path) -> pd.DataFrame:
+def _normalize_multiindex_columns(columns: pd.MultiIndex) -> pd.MultiIndex:
+    normalized_columns = []
+    for column in columns:
+        normalized_columns.append(
+            tuple("" if str(part).startswith("Unnamed:") else part for part in column)
+        )
+    return pd.MultiIndex.from_tuples(normalized_columns)
+
+
+def _read_table(path: Path, *, has_multiindex_columns: bool = False) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         return pd.read_parquet(path)
     if path.suffix.lower() == ".csv":
+        if has_multiindex_columns:
+            dataframe = pd.read_csv(path, header=[0, 1], dtype=str, keep_default_na=False, low_memory=False)
+            dataframe.columns = _normalize_multiindex_columns(dataframe.columns)
+            return dataframe
         return pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
     raise ValueError(f"Unsupported table extension for patient batch assembly: {path}")
 
@@ -235,7 +262,7 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             & inventory_df["file_extension"].eq(pair.file_extension)
             & inventory_df["patient_uid"].ne("")
             & inventory_df["patient_uid"].ne(COHORT_ARTIFACT_PATIENT_UID)
-        ].sort_values("artifact_path")
+        ].sort_values("artifact_order")
         if config.patient_uids:
             source_rows = source_rows[source_rows["patient_uid"].isin(config.patient_uids)]
 
@@ -260,7 +287,13 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             rows.append(row)
             continue
 
-        source_dataframes = [_read_table(Path(path)) for path in source_rows["artifact_path"]]
+        source_dataframes = [
+            _read_table(
+                Path(source_row["artifact_path"]),
+                has_multiindex_columns=bool(source_row["has_multiindex_columns"]),
+            )
+            for source_row in source_rows.to_dict("records")
+        ]
         assembled_df = pd.concat(source_dataframes, ignore_index=True)
         assembled_tables[pair.final_table_name] = assembled_df
         row["assembled_rows"] = int(len(assembled_df))
@@ -304,7 +337,7 @@ def _ordered_hashes(dataframe: pd.DataFrame) -> pd.Series:
     )
 
 
-def _compare_dataframes(assembled_df: pd.DataFrame, final_df: pd.DataFrame) -> dict[str, Any]:
+def _compare_dataframe_pair(assembled_df: pd.DataFrame, final_df: pd.DataFrame) -> dict[str, Any]:
     same_column_set = set(assembled_df.columns) == set(final_df.columns)
     same_column_order = assembled_df.columns.equals(final_df.columns)
     same_shape = tuple(assembled_df.shape) == tuple(final_df.shape)
@@ -326,6 +359,40 @@ def _compare_dataframes(assembled_df: pd.DataFrame, final_df: pd.DataFrame) -> d
         "assembled_columns": int(len(assembled_df.columns)),
         "final_columns": int(len(final_df.columns)),
     }
+
+
+def _csv_artifact_roundtrip_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
+    buffer = StringIO()
+    dataframe.to_csv(buffer, index=False)
+    buffer.seek(0)
+    if isinstance(dataframe.columns, pd.MultiIndex):
+        roundtripped_df = pd.read_csv(buffer, header=[0, 1], dtype=str, keep_default_na=False, low_memory=False)
+        roundtripped_df.columns = _normalize_multiindex_columns(roundtripped_df.columns)
+        return roundtripped_df
+    return pd.read_csv(buffer, dtype=str, keep_default_na=False, low_memory=False)
+
+
+def _prefixed_keys(values: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    return {f"{prefix}{key}": value for key, value in values.items()}
+
+
+def _compare_dataframes(assembled_df: pd.DataFrame, final_df: pd.DataFrame) -> dict[str, Any]:
+    raw_comparison = _compare_dataframe_pair(assembled_df, final_df)
+    final_artifact_df = _csv_artifact_roundtrip_dataframe(final_df)
+    artifact_comparison = _compare_dataframe_pair(assembled_df, final_artifact_df)
+    return {
+        **raw_comparison,
+        "artifact_roundtrip_applied": True,
+        **_prefixed_keys(artifact_comparison, "artifact_"),
+    }
+
+
+def _validation_match(row: Mapping[str, Any], prefix: str = "") -> bool:
+    return bool(
+        row[f"{prefix}shape_match"]
+        and row[f"{prefix}column_set_match"]
+        and row[f"{prefix}row_hash_match_ignore_order"]
+    )
 
 
 def validate_patient_batch_cohort_assembly(assembly_result: PatientBatchCohortAssemblyResult,
@@ -357,10 +424,21 @@ def validate_patient_batch_cohort_assembly(assembly_result: PatientBatchCohortAs
             continue
 
         row.update(_compare_dataframes(assembled_df, final_df))
-        if row["shape_match"] and row["column_set_match"] and row["row_hash_match_ignore_order"]:
+        if _validation_match(row):
             row["validation_status"] = "match"
+            if row["row_hash_match_in_order"]:
+                row["validation_notes"] = "Assembled table matches the raw final dataframe in construction order."
+            else:
+                row["validation_notes"] = "Assembled table matches the raw final dataframe ignoring row order."
+        elif _validation_match(row, "artifact_"):
+            row["validation_status"] = "match"
+            if row["artifact_row_hash_match_in_order"]:
+                row["validation_notes"] = "Assembled table matches the CSV artifact-equivalent final dataframe in construction order."
+            else:
+                row["validation_notes"] = "Assembled table matches the CSV artifact-equivalent final dataframe ignoring row order."
         else:
             row["validation_status"] = "mismatch"
+            row["validation_notes"] = "Assembled table differs from the raw and CSV artifact-equivalent final dataframes."
         rows.append(row)
 
     return pd.DataFrame(rows)

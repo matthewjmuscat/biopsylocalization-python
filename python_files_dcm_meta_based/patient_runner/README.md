@@ -79,6 +79,13 @@ produce durable per-patient artifacts first. Cohort assembly can then be run
 later by a CLI, validation workflow, or future GUI for a selected patient set and
 selected tables without rerunning the patient pipeline.
 
+Assembly preserves the `PatientBatchRunResult.artifact_paths` construction order,
+which follows legacy patient/artifact construction order. It does not sort rows
+by filesystem path. CSV readback is schema-aware for known MultiIndex-column
+tables so validation does not treat secondary header rows as data rows. Validation
+keeps raw dataframe comparison fields and also checks the CSV artifact-equivalent
+final dataframe, which is the comparison used for persisted-output status.
+
 Typed patient-local interface direction:
 
 - the current bridge still builds a one-patient legacy-shaped view for old code
