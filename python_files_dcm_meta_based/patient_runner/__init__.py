@@ -9,9 +9,12 @@ from .artifacts import PatientArtifactStore
 from .artifacts import collect_patient_dataframe_artifacts
 from .artifacts import write_patient_dataframe_artifacts
 from .batch import resolve_patient_uids
+from .batch import run_patient_batch
 from .batch import run_patient_batch_from_legacy
+from .contracts import LegacyCohortRuntimeState
 from .contracts import LegacyPatientRuntimeState
 from .contracts import LegacyRuntimeKeys
+from .contracts import PatientBatchExecutionBackend
 from .contracts import PatientBatchRunConfig
 from .contracts import PatientBatchRunResult
 from .contracts import PatientCase
@@ -20,6 +23,8 @@ from .contracts import PatientRunResult
 from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .contracts import PatientStageStatus
+from .contracts import resolve_legacy_patient_uids
+from .contracts import validate_patient_uids
 from .legacy_bridge import build_patient_case_from_legacy
 from .legacy_bridge import carve_patient_runtime_state
 from .legacy_bridge import carve_patient_runtime_state_by_uid
@@ -31,9 +36,11 @@ from .runner import run_patient_stages
 from .stages import write_patient_artifacts_stage
 
 __all__ = [
+    "LegacyCohortRuntimeState",
     "LegacyPatientRuntimeState",
     "LegacyRuntimeKeys",
     "PatientArtifactStore",
+    "PatientBatchExecutionBackend",
     "PatientBatchRunConfig",
     "PatientBatchRunResult",
     "PatientCase",
@@ -49,10 +56,13 @@ __all__ = [
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
     "default_patient_stages",
+    "resolve_legacy_patient_uids",
     "resolve_patient_uids",
+    "run_patient_batch",
     "run_patient_batch_from_legacy",
     "run_patient_case",
     "run_patient_stages",
+    "validate_patient_uids",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
 ]

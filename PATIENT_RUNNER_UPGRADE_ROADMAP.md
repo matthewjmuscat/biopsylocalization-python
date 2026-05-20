@@ -324,9 +324,9 @@ Current bridge boundary: raw `master_structure_reference_dict` and
 `master_structure_info_dict` are still accepted by the additive runner only at
 the legacy bridge and batch-from-legacy entrypoints. This is intentional for
 validation against the monolith, but it is not the desired long-term stage API.
-New stages should receive typed patient-runner objects. A near-term cleanup can
-introduce a `LegacyCohortRuntimeState` wrapper around the two master dictionaries
-to make the transitional boundary explicit before deeper stage migrations.
+New stages should receive typed patient-runner objects. Phase C.1 introduces
+`LegacyCohortRuntimeState` as the named transitional boundary around the two
+master dictionaries before deeper stage migrations.
 
 Patient identity policy: patient IDs are lookup keys in the legacy dictionaries,
 so the runner must preserve them exactly. Validation may reject non-string,
@@ -616,10 +616,11 @@ pipeline boundary with explicit inputs, outputs, timing, and logs.
 
 Phase C.1 adds a batch layer around the one-patient runner. It should resolve an
 ordered patient list from the legacy patient registry, carve each patient through
-the legacy bridge, run the existing patient stage sequence, optionally use
-thread parallelism for patient artifact writing, and return typed batch results.
-The batch config must wrap `PatientRunConfig` rather than duplicating legacy key
-names or output policy.
+the legacy bridge, run the existing patient stage sequence, optionally use the
+explicit thread backend for patient artifact writing, and return typed batch
+results. The batch config must wrap `PatientRunConfig` rather than duplicating
+legacy key names or output policy. Sequential execution is the reference backend
+and default.
 
 Phase C.1 parallelism is deliberately conservative. Threads are acceptable for
 the current artifact-writing stage because each patient writes independent files
@@ -632,12 +633,10 @@ memory and output I/O pressure, not by CPU count alone.
 
 Expected next steps:
 
-1. tighten the transitional legacy-cohort boundary, optionally with a
-  `LegacyCohortRuntimeState` wrapper,
-2. add cohort assembly/stitch validation for artifacts produced by
+1. add cohort assembly/stitch validation for artifacts produced by
   `PatientBatchRunResult`,
-3. migrate one scientific stage behind a typed patient-local interface,
-4. add process-isolated patient execution only after the stage input contract is
+2. migrate one scientific stage behind a typed patient-local interface,
+3. add process-isolated patient execution only after the stage input contract is
   serializable and memory requirements are measured.
 
 ### Phase D: Cohort Assembly

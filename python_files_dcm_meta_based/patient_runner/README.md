@@ -18,24 +18,27 @@ Initial scope:
 
 Current Phase C.1 scope:
 
+- wrap the raw legacy all-patient dictionaries in `LegacyCohortRuntimeState`
+  before batch execution,
 - resolve an ordered batch of patient IDs from the legacy patient registry,
 - run each patient through the existing `PatientStage` sequence,
-- preserve deterministic result ordering even when optional thread parallelism is
+- preserve deterministic result ordering when the thread backend is explicitly
   enabled,
 - report a typed `PatientBatchRunResult` containing per-patient timings,
   statuses, and artifact paths.
 
 The batch layer uses `PatientBatchRunConfig`, which wraps `PatientRunConfig`
 rather than duplicating its legacy keys, output-root policy, or artifact-writing
-settings. Optional parallelism currently uses threads because Phase C.1 only
-writes dataframe artifacts from shared in-memory legacy objects. Process-level
-isolation is deferred until migrated stages have serializable, patient-local
-inputs.
+settings. Sequential execution is the default. The thread backend is currently
+appropriate only for the artifact-writing stage because Phase C.1 reads shared
+in-memory legacy objects. Process-level isolation is deferred until migrated
+stages have serializable, patient-local inputs.
 
 Compatibility boundaries:
 
 - raw `master_structure_reference_dict` and `master_structure_info_dict` objects
-  may enter only through legacy bridge/batch-from-legacy functions,
+  may enter only through legacy bridge/batch-from-legacy functions, where they
+  are wrapped in `LegacyCohortRuntimeState`,
 - patient stages should receive typed runner objects, not the all-patient
   dictionaries directly,
 - patient IDs are preserved exactly for dictionary lookup; validation rejects
@@ -45,6 +48,7 @@ Compatibility boundaries:
 
 Parallelism policy:
 
+- `PatientBatchExecutionBackend.SEQUENTIAL` is the reference backend and default,
 - thread parallelism is acceptable only for the current artifact-writing stage,
   which reads patient-local dictionary views and writes independent files,
 - scientific stages with Open3D, optimizer, MC, large arrays, or native memory
