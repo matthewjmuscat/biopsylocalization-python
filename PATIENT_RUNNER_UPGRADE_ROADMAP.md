@@ -493,6 +493,71 @@ biopsy-variation or length priors. That utility should reuse the same contour an
 biopsy measurement modules as the main algorithm and should stamp outputs with
 code version, config identity, DICOM identity, and measurement method.
 
+## Parallelism Opportunities and Recommendations
+
+Per-patient execution creates a real opportunity for faster full-cohort runs,
+but the safe unit of parallelism depends on the stage contract.
+
+The long-term target is not "run the whole patient pipeline in many threads."
+The safer target is bounded patient-level process workers: each worker receives
+one patient case plus explicit serialized inputs, writes that patient's artifacts
+to an independent output directory, records timing/memory status, and exits so
+native/GPU memory can be released by the operating system.
+
+### Good Opportunities
+
+- Artifact writing can use light thread parallelism when each patient writes
+  independent files and no shared scientific state is mutated.
+- Full patient jobs may eventually run in parallel as separate processes once
+  inputs are patient-local and serializable.
+- A small bounded worker count such as 2 or 4 patients at a time is plausible if
+  measured peak memory leaves enough headroom.
+- Phase-level process isolation can improve crash recovery even before full
+  patient-level parallelism: discovery, legacy validation, patient execution,
+  cohort assembly, and validation can run as separate process steps.
+- Per-patient process workers can make failures easier to resume because a
+  failed patient can be retried without keeping the whole cohort in memory.
+
+### Recommendations Before Full Patient Parallelism
+
+- Keep a correct sequential patient runner as the reference path.
+- Measure peak resident memory, runtime, artifact count, and output size for one
+  representative patient before increasing `max_workers`.
+- Benchmark worker counts in a ladder such as 1, 2, then 4, stopping when memory
+  headroom, I/O pressure, or native stability becomes questionable.
+- Prefer process workers over threads for optimizer, Open3D, MC simulation,
+  large-array, or native-heavy stages.
+- Make each worker write to a patient-specific directory and a patient-specific
+  manifest; cohort assembly should concatenate artifacts after patient workers
+  finish.
+- Keep cohort-level aggregation, validation, plotting, and model fitting outside
+  patient workers.
+- Treat worker count as a config value derived from measured memory budget, not
+  from CPU count alone.
+
+### Non-Recommendations
+
+- Do not run native-heavy scientific stages for multiple patients in threads
+  while sharing `master_structure_reference_dict` or global mutable state.
+- Do not parallelize the full runner before the sequential patient runner is
+  validated against the legacy cohort oracle.
+- Do not let multiple workers write the same cohort-level output file.
+- Do not assume that a serial full-cohort run implies unlimited patient-level
+  parallelism; each worker may duplicate imports, arrays, DICOM state, geometry,
+  optimizer state, and output buffers.
+- Do not choose `max_workers=os.cpu_count()` for memory-heavy stages without a
+  measured memory budget and failure recovery plan.
+
+### Practical Direction
+
+If the existing all-patient run can complete with many patients and more than
+100 total real/simulated biopsies, bounded patient-level process execution is a
+reasonable optimization target. The expected safe path is to make each process
+hold only a small patient-local working set, write durable patient artifacts,
+then exit. That may allow 2 or 4 concurrent patients while keeping total memory
+below the current all-patient peak, but it must be proven with instrumentation
+rather than assumed.
+
 ## Phase Plan
 
 ### Phase A: Validation Closure

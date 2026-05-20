@@ -54,6 +54,10 @@ Parallelism policy:
 - `max_workers` should eventually be bounded by measured per-patient memory,
   not just CPU count.
 
+The detailed recommendations and non-recommendations for patient-level
+parallelism live in `PATIENT_RUNNER_UPGRADE_ROADMAP.md` under "Parallelism
+Opportunities and Recommendations".
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
