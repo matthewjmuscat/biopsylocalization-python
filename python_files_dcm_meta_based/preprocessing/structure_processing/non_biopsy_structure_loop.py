@@ -239,6 +239,131 @@ def process_non_biopsy_structure_family(
     return live_display
 
 
+def process_non_biopsy_structure_families(
+        *,
+        family_configs,
+        master_structure_reference_dict,
+        master_structure_info_dict,
+        structs_referenced_dict,
+        config,
+        parallel_pool,
+        layout_groups,
+        patients_progress,
+        structures_progress,
+        completed_progress,
+        indeterminate_progress_sub,
+        important_info,
+        live_display,
+        runtime_logger):
+    for family_config in family_configs:
+        live_display = process_non_biopsy_structure_family(
+            master_structure_reference_dict=master_structure_reference_dict,
+            master_structure_info_dict=master_structure_info_dict,
+            struct_ref_type=family_config["struct_ref_type"],
+            patient_task_label=family_config["patient_task_label"],
+            structs_referenced_dict=structs_referenced_dict,
+            config=config,
+            parallel_pool=parallel_pool,
+            layout_groups=layout_groups,
+            patients_progress=patients_progress,
+            structures_progress=structures_progress,
+            completed_progress=completed_progress,
+            indeterminate_progress_sub=indeterminate_progress_sub,
+            important_info=important_info,
+            live_display=live_display,
+            runtime_logger=runtime_logger,
+            structure_task_template=family_config.get(
+                "structure_task_template",
+                "[cyan]Processing structures [{},{}]...",
+            ),
+            use_master_info_structure_count=family_config.get(
+                "use_master_info_structure_count",
+                False,
+            ),
+            pass_selected_structure_dataframe=family_config.get(
+                "pass_selected_structure_dataframe",
+                False,
+            ),
+        )
+    return live_display
+
+
+def build_standard_non_biopsy_structure_family_configs(
+        *,
+        oar_ref,
+        rectum_ref_key,
+        urethra_ref_key,
+        dil_ref):
+    return [
+        {
+            "struct_ref_type": oar_ref,
+            "patient_task_label": "Processing patient prostates",
+            "structure_task_template": "[cyan]Processing structures [{},{}]...",
+        },
+        {
+            "struct_ref_type": rectum_ref_key,
+            "patient_task_label": "Processing patient rectums",
+            "structure_task_template": "[cyan]Processing [{},{}]...",
+            "use_master_info_structure_count": True,
+        },
+        {
+            "struct_ref_type": urethra_ref_key,
+            "patient_task_label": "Processing patient urethras",
+            "structure_task_template": "[cyan]Processing [{},{}]...",
+            "use_master_info_structure_count": True,
+        },
+        {
+            "struct_ref_type": dil_ref,
+            "patient_task_label": "Processing patient DILs",
+            "structure_task_template": "[cyan]Processing structures [{},{}]...",
+            "pass_selected_structure_dataframe": True,
+        },
+    ]
+
+
+def process_standard_non_biopsy_structure_families(
+        *,
+        oar_ref,
+        rectum_ref_key,
+        urethra_ref_key,
+        dil_ref,
+        master_structure_reference_dict,
+        master_structure_info_dict,
+        structs_referenced_dict,
+        config,
+        parallel_pool,
+        layout_groups,
+        patients_progress,
+        structures_progress,
+        completed_progress,
+        indeterminate_progress_sub,
+        important_info,
+        live_display,
+        runtime_logger):
+    family_configs = build_standard_non_biopsy_structure_family_configs(
+        oar_ref=oar_ref,
+        rectum_ref_key=rectum_ref_key,
+        urethra_ref_key=urethra_ref_key,
+        dil_ref=dil_ref,
+    )
+    return process_non_biopsy_structure_families(
+        family_configs=family_configs,
+        master_structure_reference_dict=master_structure_reference_dict,
+        master_structure_info_dict=master_structure_info_dict,
+        structs_referenced_dict=structs_referenced_dict,
+        config=config,
+        parallel_pool=parallel_pool,
+        layout_groups=layout_groups,
+        patients_progress=patients_progress,
+        structures_progress=structures_progress,
+        completed_progress=completed_progress,
+        indeterminate_progress_sub=indeterminate_progress_sub,
+        important_info=important_info,
+        live_display=live_display,
+        runtime_logger=runtime_logger,
+    )
+
+
 def finalize_non_biopsy_structure_legacy_validation(
         *,
         master_structure_reference_dict,
