@@ -11,6 +11,13 @@ from .artifacts import write_patient_dataframe_artifacts
 from .batch import resolve_patient_uids
 from .batch import run_patient_batch
 from .batch import run_patient_batch_from_legacy
+from .cohort_assembly import PatientBatchCohortAssemblyResult
+from .cohort_assembly import assemble_patient_batch_cohort_tables
+from .cohort_assembly import build_patient_batch_artifact_inventory
+from .cohort_assembly import summarize_patient_batch_cohort_assembly
+from .cohort_assembly import summarize_patient_batch_cohort_validation
+from .cohort_assembly import validate_patient_batch_cohort_assembly
+from .cohort_assembly import write_patient_batch_cohort_assembly_outputs
 from .contracts import LegacyCohortRuntimeState
 from .contracts import LegacyPatientRuntimeState
 from .contracts import LegacyRuntimeKeys
@@ -40,6 +47,7 @@ __all__ = [
     "LegacyPatientRuntimeState",
     "LegacyRuntimeKeys",
     "PatientArtifactStore",
+    "PatientBatchCohortAssemblyResult",
     "PatientBatchExecutionBackend",
     "PatientBatchRunConfig",
     "PatientBatchRunResult",
@@ -51,7 +59,9 @@ __all__ = [
     "PatientStageResult",
     "PatientStageRunner",
     "PatientStageStatus",
+    "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
+    "build_patient_batch_artifact_inventory",
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
@@ -62,7 +72,11 @@ __all__ = [
     "run_patient_batch_from_legacy",
     "run_patient_case",
     "run_patient_stages",
+    "summarize_patient_batch_cohort_assembly",
+    "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",
+    "validate_patient_batch_cohort_assembly",
+    "write_patient_batch_cohort_assembly_outputs",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
 ]

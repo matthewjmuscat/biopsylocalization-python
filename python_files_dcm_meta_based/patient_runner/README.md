@@ -62,6 +62,16 @@ The detailed recommendations and non-recommendations for patient-level
 parallelism live in `PATIENT_RUNNER_UPGRADE_ROADMAP.md` under "Parallelism
 Opportunities and Recommendations".
 
+Current Phase D scope:
+
+- build an inventory from `PatientBatchRunResult.artifact_paths`,
+- assemble cohort-style tables from written patient artifacts using the existing
+  stitch-pair definitions,
+- optionally compare assembled tables to legacy final cohort dataframes supplied
+  by the validation caller,
+- write assembly inventories, summaries, validation tables, and assembled shadow
+  tables under a validation output directory.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
@@ -69,6 +79,6 @@ Near-term non-goals:
 - no broad cleanup inside `MC_simulator_convex.py`,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to assemble the generated patient artifacts and
-compare them against the legacy cohort oracle through the existing
-stitch-validation machinery.
+The next integration step is to migrate one scientific stage behind a typed
+patient-local interface, then add process-isolated patient workers once that
+stage's inputs are serializable and memory requirements are measured.

@@ -504,6 +504,13 @@ one patient case plus explicit serialized inputs, writes that patient's artifact
 to an independent output directory, records timing/memory status, and exits so
 native/GPU memory can be released by the operating system.
 
+This process-worker model also improves robustness. If patients A, B, and C are
+running as separate worker processes and C exits unexpectedly, the parent runner
+can detect the missing/failed C result, preserve successful A and B artifacts,
+retry only C up to a configured attempt limit, and record the failure if retries
+do not recover. This does not eliminate native crashes, but it prevents one
+silent patient failure from invalidating the entire batch without evidence.
+
 ### Good Opportunities
 
 - Artifact writing can use light thread parallelism when each patient writes
@@ -643,6 +650,18 @@ Expected next steps:
 
 Build or formalize a lightweight assembly step that concatenates validated base
 patient artifacts and compares them to the legacy cohort outputs.
+
+Initial Phase D scope:
+
+- inventory the artifact files written by `PatientBatchRunResult`,
+- assemble cohort-style tables from patient fragments using the existing
+  stitch-pair definitions,
+- optionally compare assembled tables to legacy final cohort dataframes supplied
+  by the validation caller,
+- write validation-side outputs outside the production patient artifact tree.
+
+This phase validates the patient artifact surface. It does not yet migrate a
+scientific stage, replace the legacy dictionaries, or add process workers.
 
 ### Phase E: Contract/Object Cleanup
 
