@@ -37,6 +37,12 @@ from .contracts import validate_patient_uids
 from .legacy_bridge import build_patient_case_from_legacy
 from .legacy_bridge import carve_patient_runtime_state
 from .legacy_bridge import carve_patient_runtime_state_by_uid
+from .manifests import PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION
+from .manifests import PATIENT_RUN_MANIFEST_SCHEMA_VERSION
+from .manifests import patient_batch_run_result_manifest
+from .manifests import patient_run_result_manifest
+from .manifests import write_patient_batch_run_manifest
+from .manifests import write_patient_run_manifest
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
@@ -56,6 +62,8 @@ __all__ = [
     "PatientBatchRunResult",
     "PatientCase",
     "PatientRunConfig",
+    "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
+    "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "PatientRunResult",
     "PatientStage",
     "PatientStageName",
@@ -69,6 +77,8 @@ __all__ = [
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
     "default_patient_stages",
+    "patient_batch_run_result_manifest",
+    "patient_run_result_manifest",
     "resolve_legacy_patient_uids",
     "resolve_patient_uids",
     "run_patient_batch",
@@ -80,7 +90,9 @@ __all__ = [
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",
     "validate_patient_batch_cohort_assembly",
+    "write_patient_batch_run_manifest",
     "write_patient_batch_cohort_assembly_outputs",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
+    "write_patient_run_manifest",
 ]

@@ -165,6 +165,7 @@ class PatientRunConfig:
     csv_index: bool = False
     parquet_index: bool = False
     parquet_compression: str = "snappy"
+    write_patient_run_manifest: bool = True
     stop_on_stage_error: bool = True
     raise_on_stage_error: bool = False
 
@@ -174,6 +175,7 @@ class PatientRunConfig:
             raise TypeError("legacy_keys must be a LegacyRuntimeKeys instance")
         object.__setattr__(self, "run_id", str(self.run_id).strip())
         object.__setattr__(self, "parquet_compression", str(self.parquet_compression).strip() or "snappy")
+        object.__setattr__(self, "write_patient_run_manifest", bool(self.write_patient_run_manifest))
 
     @property
     def all_ref_key(self) -> str:
@@ -201,6 +203,7 @@ class PatientBatchRunConfig:
     patient_uids: Sequence[str] = ()
     max_workers: int = 1
     execution_backend: PatientBatchExecutionBackend = PatientBatchExecutionBackend.SEQUENTIAL
+    write_batch_run_manifest: bool = True
     patient_labels: Mapping[str, str] = field(default_factory=dict)
     source_run_id: str = ""
     input_manifest_id: str = ""
@@ -223,6 +226,7 @@ class PatientBatchRunConfig:
         object.__setattr__(self, "patient_uids", patient_uids)
         object.__setattr__(self, "max_workers", max_workers)
         object.__setattr__(self, "execution_backend", execution_backend)
+        object.__setattr__(self, "write_batch_run_manifest", bool(self.write_batch_run_manifest))
         object.__setattr__(self, "patient_labels", patient_labels)
         object.__setattr__(self, "source_run_id", str(self.source_run_id).strip())
         object.__setattr__(self, "input_manifest_id", str(self.input_manifest_id).strip())

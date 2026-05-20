@@ -16,6 +16,8 @@ from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .contracts import resolve_legacy_patient_uids
 from .legacy_bridge import carve_patient_runtime_state_by_uid
+from .manifests import write_patient_batch_run_manifest
+from .manifests import write_patient_run_manifest
 from .runner import PatientStage
 from .runner import run_patient_case
 
@@ -63,12 +65,15 @@ def run_patient_batch(legacy_cohort_state: LegacyCohortRuntimeState,
     else:
         raise ValueError(f"Unsupported patient batch backend: {batch_config.execution_backend}")
 
-    return PatientBatchRunResult.from_patient_results(
+    batch_result = PatientBatchRunResult.from_patient_results(
         batch_config.output_root,
         patient_results,
         elapsed_seconds=perf_counter() - start_time,
         metadata=_batch_result_metadata(batch_config, len(patient_uids)),
     )
+    if batch_config.write_batch_run_manifest:
+        write_patient_batch_run_manifest(batch_result)
+    return batch_result
 
 
 def run_patient_batch_from_legacy(master_structure_reference_dict: MutableMapping[str, Any],
@@ -156,13 +161,16 @@ def _run_one_patient_from_legacy(patient_uid: str,
     except Exception as exc:
         if batch_config.patient_config.raise_on_stage_error:
             raise
-        return _patient_setup_failure_result(
+        patient_result = _patient_setup_failure_result(
             patient_uid,
             patient_label,
             batch_config,
             exc,
             perf_counter() - patient_start_time,
         )
+        if batch_config.patient_config.write_patient_run_manifest:
+            write_patient_run_manifest(patient_result)
+        return patient_result
 
 
 def _patient_setup_failure_result(patient_uid: str,

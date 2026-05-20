@@ -396,6 +396,13 @@ is temporary: it localizes legacy shape assumptions so the stage internals can b
 moved from raw dictionary access to typed accessors/dataclasses without changing
 the runner API.
 
+Important distinction: the first adapter does not require rewriting the
+scientific module. The adapter can still call the existing function with the
+one-patient legacy-shaped dictionary it expects. Refactoring the scientific
+module comes later, once the wrapper and validation prove that the stage is
+correctly isolated. This lets the runner become cleaner before the old scientific
+functions are fully rewritten.
+
 Best attack for phasing out the dictionaries:
 
 1. identify one patient stage and list the exact legacy keys/arrays/tables it
@@ -711,6 +718,19 @@ Required instrumentation for migrated patient stages:
 - config/run IDs and input manifest IDs,
 - future process-worker attempt number, PID, exit code, timeout/retry reason,
   and memory measurements where available.
+
+Current manifest/log surface:
+
+- `patient_run_manifest.json` is written beside each patient's output artifacts
+  from `PatientRunResult`,
+- `patient_batch_run_manifest.json` is written under the batch output root from
+  `PatientBatchRunResult`,
+- manifest writing is enabled by default but controlled by
+  `PatientRunConfig.write_patient_run_manifest` and
+  `PatientBatchRunConfig.write_batch_run_manifest`,
+- these manifests are the first durable logging surface; richer event logs and
+  memory/process fields should build on them rather than create a separate
+  hidden status format.
 
 ### Phase F: Contract/Object Cleanup
 

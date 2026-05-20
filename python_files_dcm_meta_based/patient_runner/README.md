@@ -99,6 +99,17 @@ Logging and instrumentation direction:
 - stage and patient logs should be written beside patient artifacts so a failed
   patient can be retried or inspected without rerunning the cohort.
 
+Current manifest surface:
+
+- each `run_patient_case` call writes `patient_run_manifest.json` beside that
+  patient's artifacts when `PatientRunConfig.write_patient_run_manifest` is true,
+- each `run_patient_batch` call writes `patient_batch_run_manifest.json` under
+  the batch output root when `PatientBatchRunConfig.write_batch_run_manifest` is
+  true,
+- manifests are generated from `PatientRunResult` and `PatientBatchRunResult`,
+  so stage timing/status/artifact metadata is recorded through the same typed
+  result contracts consumed by validation and assembly.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
@@ -106,5 +117,5 @@ Near-term non-goals:
 - no broad cleanup inside `MC_simulator_convex.py`,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to add the patient run manifest/log surface, then
-migrate one scientific stage behind a typed patient-local interface.
+The next integration step is to migrate one scientific stage behind a typed
+patient-local interface.
