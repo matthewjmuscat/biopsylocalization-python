@@ -234,28 +234,52 @@ or paper usage, proposed action, and validation requirement.
 
 ### Deferred Render Asset Cleanup
 
-The repository root contains old Open3D camera/render JSON files and old screen
+The repository contains old Open3D camera/render JSON files and old screen
 capture PNGs. These should not become part of the patient-runner contract.
 
-Current evidence:
+Current evidence from the 2026-05-19 render audit:
 
-- the optimizer-v2 render/GUI path does not rely on the loose root-level
-  `ScreenCamera_*.json`, `DepthCamera_*.json`, or `RenderOption_*.json` files,
-- the legacy main/MC demonstration plotting path still names a small set of
-  Open3D screen-camera JSONs through `dose_views_jsons_paths_list` and
-  `containment_views_jsons_paths_list`,
+- 118 loose root-level `ScreenCamera_*.json`, `DepthCamera_*.json`, and
+  `RenderOption_*.json` files were ignored local artifacts with no direct code
+  references; they were moved into the ignored `render_jsons/root/` holding
+  folder,
+- 2 loose camera/render JSONs under `python_files_dcm_meta_based/` were also
+  ignored local artifacts; they were moved into
+  `render_jsons/python_files_dcm_meta_based/`,
+- 7 named Open3D screen-camera JSONs remain under `open3d_views_jsons/` because
+  the legacy MC/MR demonstration plotting paths still reference them through
+  `dose_views_jsons_paths_list` and `containment_views_jsons_paths_list`,
+- the optimizer-v2 render/GUI path does not rely on the loose root-level camera
+  JSON pile,
+- the sister analysis repositories searched in the output audit do not reference
+  these camera/render JSON files or the old `plot_two_views_side_by_side` helper,
 - top-level PNG captures are old local artifacts and have been moved into the
   ignored `png/` holding folder.
 
-Direction:
+Recommendation:
 
-- do not make root-level camera/render JSONs part of any new patient-runner or
-  GUI contract,
-- audit the remaining legacy demo plotting paths before deleting the JSONs,
-- if the legacy demo paths are removed or converted to the new render module,
-  delete the loose camera/depth/render JSONs or move any still-useful presets
-  into a named module-local render preset folder,
-- keep generated screenshots, timing captures, and exploratory images out of git.
+- keep the 7 `open3d_views_jsons/` files only as temporary legacy demo presets,
+- do not make Open3D camera JSON files part of any new patient-runner, GUI, or
+  scientific-media contract,
+- replace the old manual still-frame workflow with a named render-job surface:
+  scene type, patient/structure selection, layer selection, camera preset, frame
+  schedule, output resolution, output directory, and export manifest,
+- use deterministic frame export as the stable contract: write PNG/SVG/PDF
+  frames plus a manifest, then optionally package frames into MP4 or GIF,
+- keep Open3D as the first interactive/debug backend because the repo already
+  has Open3D geometry objects,
+- use Plotly plus Kaleido for lightweight static publication-style exports where
+  it is sufficient,
+- consider PyVista/VTK for higher-quality offscreen scientific movies if Open3D
+  offscreen rendering or Plotly export becomes limiting,
+- consider imageio or direct `ffmpeg` packaging for turning deterministic frame
+  directories into video artifacts,
+- keep generated screenshots, timing captures, exploratory images, and loose
+  camera dumps out of git.
+
+Deletion gate: once the legacy MC/MR demonstration plotting paths are removed or
+rewired through the new render-job module, delete `open3d_views_jsons/` unless a
+specific preset is promoted into a named render preset contract.
 
 ## Runtime State Migration
 
@@ -295,6 +319,20 @@ Good first object candidates:
 Dataclasses are a good fit for these internal runtime objects because they are
 standard-library, typed, readable, and light. They should not replace table
 schema registries or manifests at external boundaries.
+
+Current bridge boundary: raw `master_structure_reference_dict` and
+`master_structure_info_dict` are still accepted by the additive runner only at
+the legacy bridge and batch-from-legacy entrypoints. This is intentional for
+validation against the monolith, but it is not the desired long-term stage API.
+New stages should receive typed patient-runner objects. A near-term cleanup can
+introduce a `LegacyCohortRuntimeState` wrapper around the two master dictionaries
+to make the transitional boundary explicit before deeper stage migrations.
+
+Patient identity policy: patient IDs are lookup keys in the legacy dictionaries,
+so the runner must preserve them exactly. Validation may reject non-string,
+empty, or duplicate IDs, but it should not strip, case-fold, slugify, or coerce
+patient IDs before dictionary lookup. Filesystem-safe patient directory names are
+derived output-path values only and must not become runtime identity keys.
 
 ## Patient Runner Data and Code Standards
 
@@ -455,6 +493,71 @@ biopsy-variation or length priors. That utility should reuse the same contour an
 biopsy measurement modules as the main algorithm and should stamp outputs with
 code version, config identity, DICOM identity, and measurement method.
 
+## Parallelism Opportunities and Recommendations
+
+Per-patient execution creates a real opportunity for faster full-cohort runs,
+but the safe unit of parallelism depends on the stage contract.
+
+The long-term target is not "run the whole patient pipeline in many threads."
+The safer target is bounded patient-level process workers: each worker receives
+one patient case plus explicit serialized inputs, writes that patient's artifacts
+to an independent output directory, records timing/memory status, and exits so
+native/GPU memory can be released by the operating system.
+
+### Good Opportunities
+
+- Artifact writing can use light thread parallelism when each patient writes
+  independent files and no shared scientific state is mutated.
+- Full patient jobs may eventually run in parallel as separate processes once
+  inputs are patient-local and serializable.
+- A small bounded worker count such as 2 or 4 patients at a time is plausible if
+  measured peak memory leaves enough headroom.
+- Phase-level process isolation can improve crash recovery even before full
+  patient-level parallelism: discovery, legacy validation, patient execution,
+  cohort assembly, and validation can run as separate process steps.
+- Per-patient process workers can make failures easier to resume because a
+  failed patient can be retried without keeping the whole cohort in memory.
+
+### Recommendations Before Full Patient Parallelism
+
+- Keep a correct sequential patient runner as the reference path.
+- Measure peak resident memory, runtime, artifact count, and output size for one
+  representative patient before increasing `max_workers`.
+- Benchmark worker counts in a ladder such as 1, 2, then 4, stopping when memory
+  headroom, I/O pressure, or native stability becomes questionable.
+- Prefer process workers over threads for optimizer, Open3D, MC simulation,
+  large-array, or native-heavy stages.
+- Make each worker write to a patient-specific directory and a patient-specific
+  manifest; cohort assembly should concatenate artifacts after patient workers
+  finish.
+- Keep cohort-level aggregation, validation, plotting, and model fitting outside
+  patient workers.
+- Treat worker count as a config value derived from measured memory budget, not
+  from CPU count alone.
+
+### Non-Recommendations
+
+- Do not run native-heavy scientific stages for multiple patients in threads
+  while sharing `master_structure_reference_dict` or global mutable state.
+- Do not parallelize the full runner before the sequential patient runner is
+  validated against the legacy cohort oracle.
+- Do not let multiple workers write the same cohort-level output file.
+- Do not assume that a serial full-cohort run implies unlimited patient-level
+  parallelism; each worker may duplicate imports, arrays, DICOM state, geometry,
+  optimizer state, and output buffers.
+- Do not choose `max_workers=os.cpu_count()` for memory-heavy stages without a
+  measured memory budget and failure recovery plan.
+
+### Practical Direction
+
+If the existing all-patient run can complete with many patients and more than
+100 total real/simulated biopsies, bounded patient-level process execution is a
+reasonable optimization target. The expected safe path is to make each process
+hold only a small patient-local working set, write durable patient artifacts,
+then exit. That may allow 2 or 4 concurrent patients while keeping total memory
+below the current all-patient peak, but it must be proven with instrumentation
+rather than assumed.
+
 ## Phase Plan
 
 ### Phase A: Validation Closure
@@ -510,6 +613,32 @@ The first patient-runner implementation should be boring on purpose: no new
 science, no output schema churn, and no deep cleanup mixed into the runner
 scaffold. Its job is to prove that one patient can move through the existing
 pipeline boundary with explicit inputs, outputs, timing, and logs.
+
+Phase C.1 adds a batch layer around the one-patient runner. It should resolve an
+ordered patient list from the legacy patient registry, carve each patient through
+the legacy bridge, run the existing patient stage sequence, optionally use
+thread parallelism for patient artifact writing, and return typed batch results.
+The batch config must wrap `PatientRunConfig` rather than duplicating legacy key
+names or output policy.
+
+Phase C.1 parallelism is deliberately conservative. Threads are acceptable for
+the current artifact-writing stage because each patient writes independent files
+from existing in-memory objects. They are not the target model for native-heavy
+or memory-heavy science stages. Once patient inputs are serializable and stage
+contracts no longer rely on shared all-patient dictionaries, add a process-worker
+entrypoint that can execute one patient per process and release native/GPU state
+when the process exits. Worker count should be limited by measured per-patient
+memory and output I/O pressure, not by CPU count alone.
+
+Expected next steps:
+
+1. tighten the transitional legacy-cohort boundary, optionally with a
+  `LegacyCohortRuntimeState` wrapper,
+2. add cohort assembly/stitch validation for artifacts produced by
+  `PatientBatchRunResult`,
+3. migrate one scientific stage behind a typed patient-local interface,
+4. add process-isolated patient execution only after the stage input contract is
+  serializable and memory requirements are measured.
 
 ### Phase D: Cohort Assembly
 
