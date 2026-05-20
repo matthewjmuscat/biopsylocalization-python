@@ -17,11 +17,33 @@ from output_artifacts.stitch_validation import SHADOW_STITCH_PAIRS
 from output_artifacts.stitch_validation import ShadowStitchPair
 
 from .contracts import PatientBatchRunResult
+from .contracts import validate_patient_uids
 
 
 PATIENT_BATCH_COHORT_ASSEMBLY_SCHEMA_VERSION = "patient_batch_cohort_assembly_v1"
 PATIENT_BATCH_COHORT_VALIDATION_SCHEMA_VERSION = "patient_batch_cohort_validation_v1"
 COHORT_ARTIFACT_PATIENT_UID = "Global"
+
+
+@dataclass(frozen=True, slots=True)
+class PatientBatchCohortAssemblyConfig:
+    """Selection and output policy for optional post-run cohort assembly."""
+
+    patient_uids: Sequence[str] = ()
+    final_table_names: Sequence[str] = ()
+    source_table_names: Sequence[str] = ()
+    output_dir: Path | None = None
+    write_outputs: bool = False
+    write_assembled_tables: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "patient_uids", validate_patient_uids(self.patient_uids, "patient_uids"))
+        object.__setattr__(self, "final_table_names", _validate_name_filter(self.final_table_names, "final_table_names"))
+        object.__setattr__(self, "source_table_names", _validate_name_filter(self.source_table_names, "source_table_names"))
+        if self.output_dir is not None:
+            object.__setattr__(self, "output_dir", Path(self.output_dir))
+        object.__setattr__(self, "write_outputs", bool(self.write_outputs))
+        object.__setattr__(self, "write_assembled_tables", bool(self.write_assembled_tables))
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +76,35 @@ def _safe_path_name(value: str) -> str:
     for old, new in ((" ", "_"), (":", "_"), (",", "_")):
         safe = safe.replace(old, new)
     return safe or "unknown"
+
+
+def _validate_name_filter(values: Sequence[str], source_name: str) -> tuple[str, ...]:
+    resolved_values = tuple(values)
+    if any(not isinstance(value, str) for value in resolved_values):
+        raise TypeError(f"{source_name} entries must be strings")
+    if any(value.strip() == "" for value in resolved_values):
+        raise ValueError(f"{source_name} cannot contain empty values")
+    if len(set(resolved_values)) != len(resolved_values):
+        raise ValueError(f"{source_name} cannot contain duplicates")
+    return resolved_values
+
+
+def _assembly_config_or_default(config: PatientBatchCohortAssemblyConfig | None) -> PatientBatchCohortAssemblyConfig:
+    return PatientBatchCohortAssemblyConfig() if config is None else config
+
+
+def _selected_stitch_pairs(stitch_pairs: Sequence[ShadowStitchPair],
+                           config: PatientBatchCohortAssemblyConfig) -> tuple[ShadowStitchPair, ...]:
+    selected_pairs: list[ShadowStitchPair] = []
+    final_table_names = set(config.final_table_names)
+    source_table_names = set(config.source_table_names)
+    for pair in stitch_pairs:
+        if final_table_names and pair.final_table_name not in final_table_names:
+            continue
+        if source_table_names and pair.source_table_name not in source_table_names:
+            continue
+        selected_pairs.append(pair)
+    return tuple(selected_pairs)
 
 
 def _artifact_kind(path: Path) -> str:
@@ -167,13 +218,16 @@ def _read_table(path: Path) -> pd.DataFrame:
 
 
 def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
-                                         stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS) -> PatientBatchCohortAssemblyResult:
-    """Assemble cohort-style tables from patient artifacts written by a batch."""
+                                         stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS,
+                                         *,
+                                         assembly_config: PatientBatchCohortAssemblyConfig | None = None) -> PatientBatchCohortAssemblyResult:
+    """Assemble selected cohort-style tables from patient artifacts."""
+    config = _assembly_config_or_default(assembly_config)
     inventory_df = build_patient_batch_artifact_inventory(batch_result)
     rows: list[dict[str, Any]] = []
     assembled_tables: dict[str, pd.DataFrame] = {}
 
-    for pair in stitch_pairs:
+    for pair in _selected_stitch_pairs(stitch_pairs, config):
         source_rows = inventory_df[
             inventory_df["artifact_kind"].eq("table")
             & inventory_df["output_section"].eq(pair.source_output_section)
@@ -182,6 +236,8 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             & inventory_df["patient_uid"].ne("")
             & inventory_df["patient_uid"].ne(COHORT_ARTIFACT_PATIENT_UID)
         ].sort_values("artifact_path")
+        if config.patient_uids:
+            source_rows = source_rows[source_rows["patient_uid"].isin(config.patient_uids)]
 
         row: dict[str, Any] = {
             "schema_version": PATIENT_BATCH_COHORT_ASSEMBLY_SCHEMA_VERSION,
@@ -308,6 +364,33 @@ def validate_patient_batch_cohort_assembly(assembly_result: PatientBatchCohortAs
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def run_patient_batch_cohort_assembly(batch_result: PatientBatchRunResult,
+                                      assembly_config: PatientBatchCohortAssemblyConfig | None = None,
+                                      *,
+                                      final_cohort_dataframes: Mapping[str, pd.DataFrame] | None = None,
+                                      stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS) -> tuple[PatientBatchCohortAssemblyResult, pd.DataFrame | None, tuple[Path, ...]]:
+    """Run optional post-run assembly, validation, and writing as one utility call."""
+    config = _assembly_config_or_default(assembly_config)
+    assembly_result = assemble_patient_batch_cohort_tables(
+        batch_result,
+        stitch_pairs,
+        assembly_config=config,
+    )
+    validation_df = None
+    if final_cohort_dataframes is not None:
+        validation_df = validate_patient_batch_cohort_assembly(assembly_result, final_cohort_dataframes)
+
+    written_paths: tuple[Path, ...] = ()
+    if config.write_outputs:
+        written_paths = write_patient_batch_cohort_assembly_outputs(
+            assembly_result,
+            output_dir=config.output_dir,
+            validation_df=validation_df,
+            write_assembled_tables=config.write_assembled_tables,
+        )
+    return assembly_result, validation_df, written_paths
 
 
 def summarize_patient_batch_cohort_assembly(assembly_result: PatientBatchCohortAssemblyResult) -> dict[str, Any]:

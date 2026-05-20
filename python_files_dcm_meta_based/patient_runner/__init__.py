@@ -12,8 +12,10 @@ from .batch import resolve_patient_uids
 from .batch import run_patient_batch
 from .batch import run_patient_batch_from_legacy
 from .cohort_assembly import PatientBatchCohortAssemblyResult
+from .cohort_assembly import PatientBatchCohortAssemblyConfig
 from .cohort_assembly import assemble_patient_batch_cohort_tables
 from .cohort_assembly import build_patient_batch_artifact_inventory
+from .cohort_assembly import run_patient_batch_cohort_assembly
 from .cohort_assembly import summarize_patient_batch_cohort_assembly
 from .cohort_assembly import summarize_patient_batch_cohort_validation
 from .cohort_assembly import validate_patient_batch_cohort_assembly
@@ -47,6 +49,7 @@ __all__ = [
     "LegacyPatientRuntimeState",
     "LegacyRuntimeKeys",
     "PatientArtifactStore",
+    "PatientBatchCohortAssemblyConfig",
     "PatientBatchCohortAssemblyResult",
     "PatientBatchExecutionBackend",
     "PatientBatchRunConfig",
@@ -69,6 +72,7 @@ __all__ = [
     "resolve_legacy_patient_uids",
     "resolve_patient_uids",
     "run_patient_batch",
+    "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
     "run_patient_stages",

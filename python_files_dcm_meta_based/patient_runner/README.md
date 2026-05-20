@@ -65,12 +65,39 @@ Opportunities and Recommendations".
 Current Phase D scope:
 
 - build an inventory from `PatientBatchRunResult.artifact_paths`,
-- assemble cohort-style tables from written patient artifacts using the existing
-  stitch-pair definitions,
+- optionally assemble selected cohort-style tables from written patient
+  artifacts using the existing stitch-pair definitions,
+- allow callers to select patients, source tables, final cohort table names, and
+  the assembly output directory,
 - optionally compare assembled tables to legacy final cohort dataframes supplied
   by the validation caller,
 - write assembly inventories, summaries, validation tables, and assembled shadow
-  tables under a validation output directory.
+  tables only when the assembly config requests output writing.
+
+Assembly is intentionally a separate post-run utility. Patient execution should
+produce durable per-patient artifacts first. Cohort assembly can then be run
+later by a CLI, validation workflow, or future GUI for a selected patient set and
+selected tables without rerunning the patient pipeline.
+
+Typed patient-local interface direction:
+
+- the current bridge still builds a one-patient legacy-shaped view for old code
+  that expects legacy dictionaries,
+- new stage wrappers should expose typed patient inputs and outputs to the
+  runner, then translate to legacy dict shape only at the old function boundary,
+- each migrated stage should move repeated dictionary access behind typed
+  accessors or small dataclasses,
+- once a stage no longer reads raw legacy paths internally, the legacy adapter
+  can be replaced without changing the runner contract.
+
+Logging and instrumentation direction:
+
+- every patient run should record start/end timestamps, elapsed seconds, status,
+  warnings, artifact counts, and output paths,
+- future process workers should also record attempt number, worker PID, exit
+  code, timeout status, retry reason, and measured memory where available,
+- stage and patient logs should be written beside patient artifacts so a failed
+  patient can be retried or inspected without rerunning the cohort.
 
 Near-term non-goals:
 
@@ -79,6 +106,5 @@ Near-term non-goals:
 - no broad cleanup inside `MC_simulator_convex.py`,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to migrate one scientific stage behind a typed
-patient-local interface, then add process-isolated patient workers once that
-stage's inputs are serializable and memory requirements are measured.
+The next integration step is to add the patient run manifest/log surface, then
+migrate one scientific stage behind a typed patient-local interface.

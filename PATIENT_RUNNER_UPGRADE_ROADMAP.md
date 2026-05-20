@@ -388,6 +388,26 @@ The patient runner should not smuggle all-patient state through a patient-local
 API. If a stage needs cohort-level information, that dependency must be an
 explicit sidecar input, cohort-assembly step, or validation step.
 
+"Behind a typed patient-local interface" means the runner calls a small typed
+stage boundary rather than passing raw all-patient dictionaries into scientific
+code directly. During migration, that boundary may still adapt typed inputs into
+the one-patient legacy-shaped dictionary expected by old functions. The adapter
+is temporary: it localizes legacy shape assumptions so the stage internals can be
+moved from raw dictionary access to typed accessors/dataclasses without changing
+the runner API.
+
+Best attack for phasing out the dictionaries:
+
+1. identify one patient stage and list the exact legacy keys/arrays/tables it
+  reads and writes,
+2. define a small typed input/output contract for that stage,
+3. build a legacy adapter that fills the contract from the current one-patient
+  legacy-shaped view,
+4. keep validation comparing adapter-backed outputs to the legacy oracle,
+5. move repeated internal dictionary access into typed accessors,
+6. eventually replace the adapter's backing store without changing the stage
+  contract.
+
 Initial object contracts:
 
 - `PatientCase`: immutable patient identity plus input references needed to run
@@ -654,22 +674,51 @@ patient artifacts and compares them to the legacy cohort outputs.
 Initial Phase D scope:
 
 - inventory the artifact files written by `PatientBatchRunResult`,
-- assemble cohort-style tables from patient fragments using the existing
-  stitch-pair definitions,
+- optionally assemble selected cohort-style tables from patient fragments using
+  the existing stitch-pair definitions,
+- allow assembly callers to select patients, source table names, final cohort
+  table names, and output directories,
 - optionally compare assembled tables to legacy final cohort dataframes supplied
   by the validation caller,
-- write validation-side outputs outside the production patient artifact tree.
+- write validation-side outputs outside the production patient artifact tree
+  only when requested.
 
 This phase validates the patient artifact surface. It does not yet migrate a
 scientific stage, replace the legacy dictionaries, or add process workers.
 
-### Phase E: Contract/Object Cleanup
+The assembly layer should remain usable as a standalone utility. A future CLI or
+GUI can inspect patient artifact inventories, show table/schema versions and
+compatibility status, let the user select patients and tables, choose a cohort
+output directory, then assemble only the requested outputs. This keeps patient
+execution durable and incremental: adding a patient artifact later should not
+require rerunning the full patient pipeline just to rebuild a cohort table.
+
+### Phase E: Scientific Stage Migration and Instrumentation
+
+Move scientific stages behind typed patient-local interfaces one stage at a
+time. Phase E eventually covers every scientific module required for per-patient
+execution, but it should not be one giant rewrite. Each stage migration needs a
+typed contract, a legacy adapter, validation against the monolith, and patient
+run logging.
+
+Required instrumentation for migrated patient stages:
+
+- patient and stage start/end timestamps,
+- elapsed seconds,
+- status and exception summaries,
+- warning counts/messages,
+- artifact counts and output paths,
+- config/run IDs and input manifest IDs,
+- future process-worker attempt number, PID, exit code, timeout/retry reason,
+  and memory measurements where available.
+
+### Phase F: Contract/Object Cleanup
 
 Gradually replace direct dictionary access with typed runtime wrappers and
 explicit manifests. This should happen after the runner is useful enough to
 support full-cohort execution and paper work.
 
-### Phase F: Optional Preflight/Sidecar Utilities
+### Phase G: Optional Preflight/Sidecar Utilities
 
 Later, implement lightweight utilities for optional per-patient sidecar inputs.
 These should share the exact same scientific modules as the main runner and do
