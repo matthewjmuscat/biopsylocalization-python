@@ -110,6 +110,26 @@ Current manifest surface:
   so stage timing/status/artifact metadata is recorded through the same typed
   result contracts consumed by validation and assembly.
 
+Main-facing validation gate:
+
+- `biopsy_localization_convex_main.py` keeps the legacy path as the oracle and
+  calls the patient-runner validation hook only through an explicit mode,
+- `PatientRunnerMainValidationMode.SHADOW_OUTPUT` runs after the legacy in-memory
+  outputs exist; it writes patient-runner artifacts from that completed state,
+  assembles cohort tables, and compares them with the legacy final dataframes,
+- this first gate validates the artifact/export/assembly layer, not independent
+  scientific recomputation.
+
+Scientific modularization rule:
+
+- when moving remaining main-facing scientific blocks into modules, first move
+  the existing code into thin wrappers that preserve inputs, ordering, side
+  effects, and output keys,
+- do not introduce new scientific data types, algorithms, formulas, or helper
+  abstractions in the same pass,
+- scientific behavior changes require a separate deliberate change with focused
+  validation and review.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
@@ -117,5 +137,6 @@ Near-term non-goals:
 - no broad cleanup inside `MC_simulator_convex.py`,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to migrate one scientific stage behind a typed
-patient-local interface.
+The next integration step is to finish main-facing preprocessing modularization
+as exact wrapper extraction, then wire the pre-MC patient stage tranche behind
+the validation gate.

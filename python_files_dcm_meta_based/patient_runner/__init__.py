@@ -43,6 +43,15 @@ from .manifests import patient_batch_run_result_manifest
 from .manifests import patient_run_result_manifest
 from .manifests import write_patient_batch_run_manifest
 from .manifests import write_patient_run_manifest
+from .main_validation import DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME
+from .main_validation import PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION
+from .main_validation import PatientRunnerMainValidationConfig
+from .main_validation import PatientRunnerMainValidationMode
+from .main_validation import PatientRunnerMainValidationResult
+from .main_validation import PatientRunnerMainValidationSkippedResult
+from .main_validation import run_patient_runner_main_validation
+from .main_validation import summarize_patient_runner_main_validation
+from .main_validation import write_patient_runner_main_validation_summary
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
@@ -63,8 +72,14 @@ __all__ = [
     "PatientCase",
     "PatientRunConfig",
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
+    "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
+    "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
     "PatientRunResult",
+    "PatientRunnerMainValidationConfig",
+    "PatientRunnerMainValidationMode",
+    "PatientRunnerMainValidationResult",
+    "PatientRunnerMainValidationSkippedResult",
     "PatientStage",
     "PatientStageName",
     "PatientStageResult",
@@ -85,7 +100,9 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_runner_main_validation",
     "run_patient_stages",
+    "summarize_patient_runner_main_validation",
     "summarize_patient_batch_cohort_assembly",
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",
@@ -94,5 +111,6 @@ __all__ = [
     "write_patient_batch_cohort_assembly_outputs",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
+    "write_patient_runner_main_validation_summary",
     "write_patient_run_manifest",
 ]

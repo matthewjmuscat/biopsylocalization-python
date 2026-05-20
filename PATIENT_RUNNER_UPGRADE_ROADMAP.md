@@ -732,6 +732,38 @@ Current manifest/log surface:
   memory/process fields should build on them rather than create a separate
   hidden status format.
 
+Main-facing validation gate:
+
+- legacy main remains the oracle path and must stay callable,
+- patient-runner execution is introduced through an explicit gate, not by
+  replacing the legacy path in-place,
+- `shadow_output` mode runs after legacy outputs are present, writes patient
+  artifacts from the completed legacy state, assembles cohort outputs, and
+  compares them with the legacy final dataframes,
+- this mode validates the patient artifact/export/assembly layer before any
+  independently recomputed scientific patient stages are promoted,
+- later dual-science validation modes may run both the legacy path and migrated
+  patient stages in one invocation, but that promotion is intentional and gated.
+
+Scientific modularization rule:
+
+- first-pass modularization means moving existing main-facing scientific code
+  into main-facing wrappers with the same inputs, ordering, side effects, and
+  legacy dictionary keys,
+- do not change scientific algorithms, formulas, object semantics, or data shape
+  in the same pass as orchestration extraction,
+- any later scientific cleanup must be small, deliberate, immediately tested,
+  and understood as a scientific behavior change rather than runner plumbing.
+
+Validation cadence:
+
+- avoid a full validation run after every tiny helper extraction,
+- validate in tranches: initial shadow-output gate, then pre-MC patient stages
+  after preprocessing/optimizer/simulated-biopsy/sampling/guidance wrappers are
+  wired, then MC as its own heavier tranche,
+- final-output validation is intentionally indirect; it checks durable output
+  contracts and uses manifests/stage artifacts to localize mismatches.
+
 ### Phase F: Contract/Object Cleanup
 
 Gradually replace direct dictionary access with typed runtime wrappers and
