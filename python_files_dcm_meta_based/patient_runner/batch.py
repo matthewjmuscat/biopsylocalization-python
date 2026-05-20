@@ -6,14 +6,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from typing import Any, Mapping, MutableMapping, Sequence
 
+from .contracts import LegacyCohortRuntimeState
 from .contracts import PatientBatchRunConfig
+from .contracts import PatientBatchExecutionBackend
 from .contracts import PatientBatchRunResult
 from .contracts import PatientCase
 from .contracts import PatientRunResult
 from .contracts import PatientStageName
 from .contracts import PatientStageResult
-from .contracts import _validate_patient_uids
+from .contracts import resolve_legacy_patient_uids
 from .legacy_bridge import carve_patient_runtime_state_by_uid
+from .manifests import write_patient_batch_run_manifest
+from .manifests import write_patient_run_manifest
 from .runner import PatientStage
 from .runner import run_patient_case
 
@@ -27,65 +31,68 @@ def resolve_patient_uids(master_structure_reference_dict: Mapping[str, Any],
     batch does not silently skip misspelled or stale patient IDs. Patient IDs are
     preserved exactly because they are lookup keys in the legacy dictionaries.
     """
-    requested_patient_uids = _validate_patient_uids(patient_uids, "patient_uids")
+    return resolve_legacy_patient_uids(master_structure_reference_dict, patient_uids)
 
-    if requested_patient_uids:
-        missing_patient_uids = tuple(
-            patient_uid
-            for patient_uid in requested_patient_uids
-            if patient_uid not in master_structure_reference_dict
-        )
-        if missing_patient_uids:
-            raise KeyError(
-                "patient_uids not found in master_structure_reference_dict: "
-                f"{missing_patient_uids}"
+
+def run_patient_batch(legacy_cohort_state: LegacyCohortRuntimeState,
+                      batch_config: PatientBatchRunConfig,
+                      stages: Sequence[PatientStage] | None = None) -> PatientBatchRunResult:
+    """Run patient-local cases from an explicit legacy cohort boundary."""
+    if not isinstance(legacy_cohort_state, LegacyCohortRuntimeState):
+        raise TypeError("legacy_cohort_state must be a LegacyCohortRuntimeState instance")
+    if legacy_cohort_state.legacy_keys != batch_config.legacy_keys:
+        raise ValueError("legacy_cohort_state.legacy_keys must match batch_config.legacy_keys")
+
+    patient_uids = legacy_cohort_state.resolve_patient_uids(batch_config.patient_uids)
+    start_time = perf_counter()
+    if batch_config.execution_backend == PatientBatchExecutionBackend.SEQUENTIAL or len(patient_uids) <= 1:
+        patient_results = tuple(
+            _run_one_patient_from_legacy(
+                patient_uid,
+                legacy_cohort_state,
+                batch_config,
+                stages,
             )
-        return requested_patient_uids
+            for patient_uid in patient_uids
+        )
+    elif batch_config.execution_backend == PatientBatchExecutionBackend.THREAD:
+        patient_results = _run_patient_batch_threaded(
+            patient_uids,
+            legacy_cohort_state,
+            batch_config,
+            stages,
+        )
+    else:
+        raise ValueError(f"Unsupported patient batch backend: {batch_config.execution_backend}")
 
-    return _validate_patient_uids(
-        tuple(master_structure_reference_dict.keys()),
-        "master_structure_reference_dict",
+    batch_result = PatientBatchRunResult.from_patient_results(
+        batch_config.output_root,
+        patient_results,
+        elapsed_seconds=perf_counter() - start_time,
+        metadata=_batch_result_metadata(batch_config, len(patient_uids)),
     )
+    if batch_config.write_batch_run_manifest:
+        write_patient_batch_run_manifest(batch_result)
+    return batch_result
 
 
 def run_patient_batch_from_legacy(master_structure_reference_dict: MutableMapping[str, Any],
                                   master_structure_info_dict: MutableMapping[str, Any],
                                   batch_config: PatientBatchRunConfig,
                                   stages: Sequence[PatientStage] | None = None) -> PatientBatchRunResult:
-    """Run a batch of patient-local cases carved from legacy dictionaries.
+    """Run a batch of patient-local cases from raw legacy dictionaries.
 
-    Parallel execution uses threads because the current migrated stage is
-    dataframe artifact writing against shared in-memory legacy objects. Process
-    isolation belongs to a later phase once stage inputs are serializable.
+    This compatibility entrypoint immediately wraps the raw dictionaries in a
+    `LegacyCohortRuntimeState` so the rest of the runner works against a named
+    transitional boundary.
     """
-    patient_uids = resolve_patient_uids(master_structure_reference_dict, batch_config.patient_uids)
-    start_time = perf_counter()
-    if batch_config.max_workers == 1 or len(patient_uids) <= 1:
-        patient_results = tuple(
-            _run_one_patient_from_legacy(
-                patient_uid,
-                master_structure_reference_dict,
-                master_structure_info_dict,
-                batch_config,
-                stages,
-            )
-            for patient_uid in patient_uids
-        )
-    else:
-        patient_results = _run_patient_batch_from_legacy_parallel(
-            patient_uids,
-            master_structure_reference_dict,
-            master_structure_info_dict,
-            batch_config,
-            stages,
-        )
-
-    return PatientBatchRunResult.from_patient_results(
-        batch_config.output_root,
-        patient_results,
-        elapsed_seconds=perf_counter() - start_time,
-        metadata=_batch_result_metadata(batch_config, len(patient_uids)),
+    legacy_cohort_state = LegacyCohortRuntimeState(
+        master_structure_reference_dict=master_structure_reference_dict,
+        master_structure_info_dict=master_structure_info_dict,
+        legacy_keys=batch_config.legacy_keys,
+        metadata=batch_config.metadata,
     )
+    return run_patient_batch(legacy_cohort_state, batch_config, stages=stages)
 
 
 def _batch_result_metadata(batch_config: PatientBatchRunConfig, patient_count: int) -> dict[str, Any]:
@@ -95,6 +102,7 @@ def _batch_result_metadata(batch_config: PatientBatchRunConfig, patient_count: i
             "run_id": batch_config.run_id,
             "patient_count": patient_count,
             "max_workers": batch_config.max_workers,
+            "execution_backend": batch_config.execution_backend.value,
         }
     )
     if batch_config.source_run_id:
@@ -104,11 +112,10 @@ def _batch_result_metadata(batch_config: PatientBatchRunConfig, patient_count: i
     return metadata
 
 
-def _run_patient_batch_from_legacy_parallel(patient_uids: Sequence[str],
-                                            master_structure_reference_dict: MutableMapping[str, Any],
-                                            master_structure_info_dict: MutableMapping[str, Any],
-                                            batch_config: PatientBatchRunConfig,
-                                            stages: Sequence[PatientStage] | None) -> tuple[PatientRunResult, ...]:
+def _run_patient_batch_threaded(patient_uids: Sequence[str],
+                                legacy_cohort_state: LegacyCohortRuntimeState,
+                                batch_config: PatientBatchRunConfig,
+                                stages: Sequence[PatientStage] | None) -> tuple[PatientRunResult, ...]:
     worker_count = min(batch_config.max_workers, len(patient_uids))
     ordered_results: list[PatientRunResult | None] = [None] * len(patient_uids)
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -116,8 +123,7 @@ def _run_patient_batch_from_legacy_parallel(patient_uids: Sequence[str],
             executor.submit(
                 _run_one_patient_from_legacy,
                 patient_uid,
-                master_structure_reference_dict,
-                master_structure_info_dict,
+                legacy_cohort_state,
                 batch_config,
                 stages,
             ): index
@@ -135,8 +141,7 @@ def _run_patient_batch_from_legacy_parallel(patient_uids: Sequence[str],
 
 
 def _run_one_patient_from_legacy(patient_uid: str,
-                                 master_structure_reference_dict: MutableMapping[str, Any],
-                                 master_structure_info_dict: MutableMapping[str, Any],
+                                 legacy_cohort_state: LegacyCohortRuntimeState,
                                  batch_config: PatientBatchRunConfig,
                                  stages: Sequence[PatientStage] | None) -> PatientRunResult:
     patient_start_time = perf_counter()
@@ -144,9 +149,9 @@ def _run_one_patient_from_legacy(patient_uid: str,
     try:
         runtime_state = carve_patient_runtime_state_by_uid(
             patient_uid,
-            master_structure_reference_dict,
-            master_structure_info_dict,
-            legacy_keys=batch_config.legacy_keys,
+            legacy_cohort_state.master_structure_reference_dict,
+            legacy_cohort_state.master_structure_info_dict,
+            legacy_keys=legacy_cohort_state.legacy_keys,
             patient_label=patient_label,
             source_run_id=batch_config.source_run_id,
             input_manifest_id=batch_config.input_manifest_id,
@@ -156,13 +161,16 @@ def _run_one_patient_from_legacy(patient_uid: str,
     except Exception as exc:
         if batch_config.patient_config.raise_on_stage_error:
             raise
-        return _patient_setup_failure_result(
+        patient_result = _patient_setup_failure_result(
             patient_uid,
             patient_label,
             batch_config,
             exc,
             perf_counter() - patient_start_time,
         )
+        if batch_config.patient_config.write_patient_run_manifest:
+            write_patient_run_manifest(patient_result)
+        return patient_result
 
 
 def _patient_setup_failure_result(patient_uid: str,

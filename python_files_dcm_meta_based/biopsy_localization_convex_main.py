@@ -143,6 +143,12 @@ from output_artifacts import PHASE3C_OUTPUT_DIR_NAME
 from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
 from output_artifacts import write_phase3c_output_surface
+from patient_runner import DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME
+from patient_runner import LegacyRuntimeKeys
+from patient_runner import PatientRunnerMainValidationConfig
+from patient_runner import PatientRunnerMainValidationMode
+from patient_runner import run_patient_runner_main_validation
+from patient_runner import summarize_patient_runner_main_validation
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -276,6 +282,9 @@ def main():
     ### Non-user changeable keys 
     all_ref_key = "All ref"
     bx_ref = "Bx ref"
+    by_patient_key = "By patient"
+    global_key = "Global"
+    global_num_cases_key = "Num cases"
     oar_ref = "OAR ref"
     dil_ref = "DIL ref"
     rectum_ref_key = "Rectum ref"
@@ -704,6 +713,12 @@ def main():
     write_phase3b_in_memory_stitched_tables_bool = True
     write_phase3c_patient_fragment_output_surface_bool = True
     write_phase3c_stitched_final_artifacts_bool = True
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.SHADOW_OUTPUT.value
+    patient_runner_validation_patient_uids = ()
+    patient_runner_validation_final_table_names = ()
+    patient_runner_validation_source_table_names = ()
+    patient_runner_validation_write_outputs_bool = True
+    patient_runner_validation_write_assembled_tables_bool = True
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -6162,6 +6177,65 @@ def main():
                             "schema_data_dictionary_markdown_path": phase3c_result.schema_data_dictionary_markdown_path,
                             **phase3c_result.summary,
                         },
+                    )
+
+            if PatientRunnerMainValidationMode(patient_runner_validation_mode) != PatientRunnerMainValidationMode.DISABLED:
+                patient_runner_validation_output_dir = specific_output_dir.joinpath(
+                    "validation",
+                    DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME,
+                )
+                if runtime_logger is not None:
+                    runtime_logger.phase_start(
+                        "patient_runner.shadow_output_validation",
+                        "Starting patient-runner shadow output validation.",
+                        details={
+                            "mode": patient_runner_validation_mode,
+                            "output_dir": patient_runner_validation_output_dir,
+                        },
+                    )
+                patient_runner_validation_result = run_patient_runner_main_validation(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    master_cohort_patient_data_and_dataframes=master_cohort_patient_data_and_dataframes,
+                    legacy_keys=LegacyRuntimeKeys(
+                        all_ref_key=all_ref_key,
+                        bx_ref=bx_ref,
+                        by_patient_key=by_patient_key,
+                        global_key=global_key,
+                        global_num_cases_key=global_num_cases_key,
+                    ),
+                    output_root=specific_output_dir,
+                    config=PatientRunnerMainValidationConfig(
+                        mode=patient_runner_validation_mode,
+                        patient_uids=patient_runner_validation_patient_uids,
+                        final_table_names=patient_runner_validation_final_table_names,
+                        source_table_names=patient_runner_validation_source_table_names,
+                        output_dir=patient_runner_validation_output_dir,
+                        write_outputs=patient_runner_validation_write_outputs_bool,
+                        write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
+                    ),
+                )
+                patient_runner_validation_summary = summarize_patient_runner_main_validation(
+                    patient_runner_validation_result,
+                )
+                patient_runner_cohort_validation_summary = patient_runner_validation_summary.get(
+                    "validation_summary",
+                    {},
+                ) or {}
+                important_info.add_text_line(
+                    "Patient-runner shadow output validation: {} matches, {} mismatches, {} missing assembled tables, {} missing final dataframes.".format(
+                        patient_runner_cohort_validation_summary.get("matched_count", 0),
+                        patient_runner_cohort_validation_summary.get("mismatch_count", 0),
+                        patient_runner_cohort_validation_summary.get("missing_assembled_table_count", 0),
+                        patient_runner_cohort_validation_summary.get("missing_final_dataframe_count", 0),
+                    ),
+                    live_display,
+                )
+                if runtime_logger is not None:
+                    runtime_logger.phase_end(
+                        "patient_runner.shadow_output_validation",
+                        "Completed patient-runner shadow output validation.",
+                        details=patient_runner_validation_summary,
                     )
 
 

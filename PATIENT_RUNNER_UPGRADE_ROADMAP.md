@@ -324,9 +324,9 @@ Current bridge boundary: raw `master_structure_reference_dict` and
 `master_structure_info_dict` are still accepted by the additive runner only at
 the legacy bridge and batch-from-legacy entrypoints. This is intentional for
 validation against the monolith, but it is not the desired long-term stage API.
-New stages should receive typed patient-runner objects. A near-term cleanup can
-introduce a `LegacyCohortRuntimeState` wrapper around the two master dictionaries
-to make the transitional boundary explicit before deeper stage migrations.
+New stages should receive typed patient-runner objects. Phase C.1 introduces
+`LegacyCohortRuntimeState` as the named transitional boundary around the two
+master dictionaries before deeper stage migrations.
 
 Patient identity policy: patient IDs are lookup keys in the legacy dictionaries,
 so the runner must preserve them exactly. Validation may reject non-string,
@@ -387,6 +387,33 @@ Keep these contract layers separate:
 The patient runner should not smuggle all-patient state through a patient-local
 API. If a stage needs cohort-level information, that dependency must be an
 explicit sidecar input, cohort-assembly step, or validation step.
+
+"Behind a typed patient-local interface" means the runner calls a small typed
+stage boundary rather than passing raw all-patient dictionaries into scientific
+code directly. During migration, that boundary may still adapt typed inputs into
+the one-patient legacy-shaped dictionary expected by old functions. The adapter
+is temporary: it localizes legacy shape assumptions so the stage internals can be
+moved from raw dictionary access to typed accessors/dataclasses without changing
+the runner API.
+
+Important distinction: the first adapter does not require rewriting the
+scientific module. The adapter can still call the existing function with the
+one-patient legacy-shaped dictionary it expects. Refactoring the scientific
+module comes later, once the wrapper and validation prove that the stage is
+correctly isolated. This lets the runner become cleaner before the old scientific
+functions are fully rewritten.
+
+Best attack for phasing out the dictionaries:
+
+1. identify one patient stage and list the exact legacy keys/arrays/tables it
+  reads and writes,
+2. define a small typed input/output contract for that stage,
+3. build a legacy adapter that fills the contract from the current one-patient
+  legacy-shaped view,
+4. keep validation comparing adapter-backed outputs to the legacy oracle,
+5. move repeated internal dictionary access into typed accessors,
+6. eventually replace the adapter's backing store without changing the stage
+  contract.
 
 Initial object contracts:
 
@@ -504,6 +531,13 @@ one patient case plus explicit serialized inputs, writes that patient's artifact
 to an independent output directory, records timing/memory status, and exits so
 native/GPU memory can be released by the operating system.
 
+This process-worker model also improves robustness. If patients A, B, and C are
+running as separate worker processes and C exits unexpectedly, the parent runner
+can detect the missing/failed C result, preserve successful A and B artifacts,
+retry only C up to a configured attempt limit, and record the failure if retries
+do not recover. This does not eliminate native crashes, but it prevents one
+silent patient failure from invalidating the entire batch without evidence.
+
 ### Good Opportunities
 
 - Artifact writing can use light thread parallelism when each patient writes
@@ -616,10 +650,11 @@ pipeline boundary with explicit inputs, outputs, timing, and logs.
 
 Phase C.1 adds a batch layer around the one-patient runner. It should resolve an
 ordered patient list from the legacy patient registry, carve each patient through
-the legacy bridge, run the existing patient stage sequence, optionally use
-thread parallelism for patient artifact writing, and return typed batch results.
-The batch config must wrap `PatientRunConfig` rather than duplicating legacy key
-names or output policy.
+the legacy bridge, run the existing patient stage sequence, optionally use the
+explicit thread backend for patient artifact writing, and return typed batch
+results. The batch config must wrap `PatientRunConfig` rather than duplicating
+legacy key names or output policy. Sequential execution is the reference backend
+and default.
 
 Phase C.1 parallelism is deliberately conservative. Threads are acceptable for
 the current artifact-writing stage because each patient writes independent files
@@ -632,12 +667,10 @@ memory and output I/O pressure, not by CPU count alone.
 
 Expected next steps:
 
-1. tighten the transitional legacy-cohort boundary, optionally with a
-  `LegacyCohortRuntimeState` wrapper,
-2. add cohort assembly/stitch validation for artifacts produced by
+1. add cohort assembly/stitch validation for artifacts produced by
   `PatientBatchRunResult`,
-3. migrate one scientific stage behind a typed patient-local interface,
-4. add process-isolated patient execution only after the stage input contract is
+2. migrate one scientific stage behind a typed patient-local interface,
+3. add process-isolated patient execution only after the stage input contract is
   serializable and memory requirements are measured.
 
 ### Phase D: Cohort Assembly
@@ -645,13 +678,99 @@ Expected next steps:
 Build or formalize a lightweight assembly step that concatenates validated base
 patient artifacts and compares them to the legacy cohort outputs.
 
-### Phase E: Contract/Object Cleanup
+Initial Phase D scope:
+
+- inventory the artifact files written by `PatientBatchRunResult`,
+- optionally assemble selected cohort-style tables from patient fragments using
+  the existing stitch-pair definitions,
+- allow assembly callers to select patients, source table names, final cohort
+  table names, and output directories,
+- optionally compare assembled tables to legacy final cohort dataframes supplied
+  by the validation caller,
+- write validation-side outputs outside the production patient artifact tree
+  only when requested.
+
+This phase validates the patient artifact surface. It does not yet migrate a
+scientific stage, replace the legacy dictionaries, or add process workers.
+
+The assembly layer should remain usable as a standalone utility. A future CLI or
+GUI can inspect patient artifact inventories, show table/schema versions and
+compatibility status, let the user select patients and tables, choose a cohort
+output directory, then assemble only the requested outputs. This keeps patient
+execution durable and incremental: adding a patient artifact later should not
+require rerunning the full patient pipeline just to rebuild a cohort table.
+
+### Phase E: Scientific Stage Migration and Instrumentation
+
+Move scientific stages behind typed patient-local interfaces one stage at a
+time. Phase E eventually covers every scientific module required for per-patient
+execution, but it should not be one giant rewrite. Each stage migration needs a
+typed contract, a legacy adapter, validation against the monolith, and patient
+run logging.
+
+Required instrumentation for migrated patient stages:
+
+- patient and stage start/end timestamps,
+- elapsed seconds,
+- status and exception summaries,
+- warning counts/messages,
+- artifact counts and output paths,
+- config/run IDs and input manifest IDs,
+- future process-worker attempt number, PID, exit code, timeout/retry reason,
+  and memory measurements where available.
+
+Current manifest/log surface:
+
+- `patient_run_manifest.json` is written beside each patient's output artifacts
+  from `PatientRunResult`,
+- `patient_batch_run_manifest.json` is written under the batch output root from
+  `PatientBatchRunResult`,
+- manifest writing is enabled by default but controlled by
+  `PatientRunConfig.write_patient_run_manifest` and
+  `PatientBatchRunConfig.write_batch_run_manifest`,
+- these manifests are the first durable logging surface; richer event logs and
+  memory/process fields should build on them rather than create a separate
+  hidden status format.
+
+Main-facing validation gate:
+
+- legacy main remains the oracle path and must stay callable,
+- patient-runner execution is introduced through an explicit gate, not by
+  replacing the legacy path in-place,
+- `shadow_output` mode runs after legacy outputs are present, writes patient
+  artifacts from the completed legacy state, assembles cohort outputs, and
+  compares them with the legacy final dataframes,
+- this mode validates the patient artifact/export/assembly layer before any
+  independently recomputed scientific patient stages are promoted,
+- later dual-science validation modes may run both the legacy path and migrated
+  patient stages in one invocation, but that promotion is intentional and gated.
+
+Scientific modularization rule:
+
+- first-pass modularization means moving existing main-facing scientific code
+  into main-facing wrappers with the same inputs, ordering, side effects, and
+  legacy dictionary keys,
+- do not change scientific algorithms, formulas, object semantics, or data shape
+  in the same pass as orchestration extraction,
+- any later scientific cleanup must be small, deliberate, immediately tested,
+  and understood as a scientific behavior change rather than runner plumbing.
+
+Validation cadence:
+
+- avoid a full validation run after every tiny helper extraction,
+- validate in tranches: initial shadow-output gate, then pre-MC patient stages
+  after preprocessing/optimizer/simulated-biopsy/sampling/guidance wrappers are
+  wired, then MC as its own heavier tranche,
+- final-output validation is intentionally indirect; it checks durable output
+  contracts and uses manifests/stage artifacts to localize mismatches.
+
+### Phase F: Contract/Object Cleanup
 
 Gradually replace direct dictionary access with typed runtime wrappers and
 explicit manifests. This should happen after the runner is useful enough to
 support full-cohort execution and paper work.
 
-### Phase F: Optional Preflight/Sidecar Utilities
+### Phase G: Optional Preflight/Sidecar Utilities
 
 Later, implement lightweight utilities for optional per-patient sidecar inputs.
 These should share the exact same scientific modules as the main runner and do

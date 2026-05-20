@@ -11,6 +11,7 @@ from .contracts import PatientRunConfig
 from .contracts import PatientRunResult
 from .contracts import PatientStageName
 from .contracts import PatientStageResult
+from .manifests import write_patient_run_manifest
 from .stages import write_patient_artifacts_stage
 
 
@@ -48,13 +49,16 @@ def run_patient_case(runtime_state: LegacyPatientRuntimeState,
         config,
         stages=default_patient_stages() if stages is None else stages,
     )
-    return PatientRunResult.from_stage_results(
+    patient_result = PatientRunResult.from_stage_results(
         runtime_state.patient_case,
         config.patient_output_dir(runtime_state.patient_case),
         stage_results,
         elapsed_seconds=perf_counter() - start_time,
         metadata={"run_id": config.run_id},
     )
+    if config.write_patient_run_manifest:
+        write_patient_run_manifest(patient_result)
+    return patient_result
 
 
 def run_patient_stages(runtime_state: LegacyPatientRuntimeState,

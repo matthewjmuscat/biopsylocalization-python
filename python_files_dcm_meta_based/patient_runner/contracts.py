@@ -34,6 +34,13 @@ class PatientStageStatus(str, Enum):
     FAILED = "failed"
 
 
+class PatientBatchExecutionBackend(str, Enum):
+    """Execution backends currently supported by the patient batch runner."""
+
+    SEQUENTIAL = "sequential"
+    THREAD = "thread"
+
+
 @dataclass(frozen=True, slots=True)
 class LegacyRuntimeKeys:
     """Legacy dictionary key names supplied by the current pipeline config.
@@ -71,7 +78,8 @@ def _stage_name_value(stage_name: PatientStageName | str) -> str:
     return str(stage_name)
 
 
-def _validate_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tuple[str, ...]:
+def validate_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tuple[str, ...]:
+    """Validate patient IDs without changing their dictionary identity values."""
     validated_patient_uids = tuple(patient_uids)
     if any(not isinstance(patient_uid, str) for patient_uid in validated_patient_uids):
         raise TypeError(f"{source_name} entries must be strings")
@@ -80,6 +88,35 @@ def _validate_patient_uids(patient_uids: Sequence[Any], source_name: str) -> tup
     if len(set(validated_patient_uids)) != len(validated_patient_uids):
         raise ValueError(f"{source_name} cannot contain duplicates")
     return validated_patient_uids
+
+
+def resolve_legacy_patient_uids(master_structure_reference_dict: Mapping[str, Any],
+                                patient_uids: Sequence[str] = ()) -> tuple[str, ...]:
+    """Resolve exact patient IDs from a legacy patient registry.
+
+    An empty requested list means every patient key in registry order. Requested
+    IDs are validated and checked for exact membership; they are not stripped,
+    case-folded, slugified, or otherwise rewritten.
+    """
+    requested_patient_uids = validate_patient_uids(patient_uids, "patient_uids")
+
+    if requested_patient_uids:
+        missing_patient_uids = tuple(
+            patient_uid
+            for patient_uid in requested_patient_uids
+            if patient_uid not in master_structure_reference_dict
+        )
+        if missing_patient_uids:
+            raise KeyError(
+                "patient_uids not found in master_structure_reference_dict: "
+                f"{missing_patient_uids}"
+            )
+        return requested_patient_uids
+
+    return validate_patient_uids(
+        tuple(master_structure_reference_dict.keys()),
+        "master_structure_reference_dict",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +165,7 @@ class PatientRunConfig:
     csv_index: bool = False
     parquet_index: bool = False
     parquet_compression: str = "snappy"
+    write_patient_run_manifest: bool = True
     stop_on_stage_error: bool = True
     raise_on_stage_error: bool = False
 
@@ -137,6 +175,7 @@ class PatientRunConfig:
             raise TypeError("legacy_keys must be a LegacyRuntimeKeys instance")
         object.__setattr__(self, "run_id", str(self.run_id).strip())
         object.__setattr__(self, "parquet_compression", str(self.parquet_compression).strip() or "snappy")
+        object.__setattr__(self, "write_patient_run_manifest", bool(self.write_patient_run_manifest))
 
     @property
     def all_ref_key(self) -> str:
@@ -156,12 +195,15 @@ class PatientBatchRunConfig:
     """Configuration for a cohort-level batch of patient-local runs.
 
     This wraps `PatientRunConfig` rather than repeating its fields. The batch
-    layer owns only batch selection and scheduling policy.
+    layer owns only batch selection and scheduling policy. Sequential execution
+    is the default reference path; thread execution must be requested explicitly.
     """
 
     patient_config: PatientRunConfig
     patient_uids: Sequence[str] = ()
     max_workers: int = 1
+    execution_backend: PatientBatchExecutionBackend = PatientBatchExecutionBackend.SEQUENTIAL
+    write_batch_run_manifest: bool = True
     patient_labels: Mapping[str, str] = field(default_factory=dict)
     source_run_id: str = ""
     input_manifest_id: str = ""
@@ -170,11 +212,12 @@ class PatientBatchRunConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.patient_config, PatientRunConfig):
             raise TypeError("patient_config must be a PatientRunConfig instance")
-        patient_uids = _validate_patient_uids(self.patient_uids, "patient_uids")
+        patient_uids = validate_patient_uids(self.patient_uids, "patient_uids")
         max_workers = int(self.max_workers)
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
-        patient_label_uids = _validate_patient_uids(tuple(self.patient_labels.keys()), "patient_labels")
+        execution_backend = PatientBatchExecutionBackend(self.execution_backend)
+        patient_label_uids = validate_patient_uids(tuple(self.patient_labels.keys()), "patient_labels")
         patient_labels = {
             patient_uid: str(self.patient_labels[patient_uid]).strip()
             for patient_uid in patient_label_uids
@@ -182,6 +225,8 @@ class PatientBatchRunConfig:
 
         object.__setattr__(self, "patient_uids", patient_uids)
         object.__setattr__(self, "max_workers", max_workers)
+        object.__setattr__(self, "execution_backend", execution_backend)
+        object.__setattr__(self, "write_batch_run_manifest", bool(self.write_batch_run_manifest))
         object.__setattr__(self, "patient_labels", patient_labels)
         object.__setattr__(self, "source_run_id", str(self.source_run_id).strip())
         object.__setattr__(self, "input_manifest_id", str(self.input_manifest_id).strip())
@@ -198,6 +243,37 @@ class PatientBatchRunConfig:
     @property
     def run_id(self) -> str:
         return self.patient_config.run_id
+
+
+@dataclass(slots=True)
+class LegacyCohortRuntimeState:
+    """Typed boundary around the legacy all-patient runtime dictionaries.
+
+    This is a transitional wrapper. It names the compatibility boundary while
+    stages are migrated away from raw all-patient dictionaries.
+    """
+
+    master_structure_reference_dict: MutableMapping[str, Any]
+    master_structure_info_dict: MutableMapping[str, Any]
+    legacy_keys: LegacyRuntimeKeys
+    metadata: MutableMapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.legacy_keys, LegacyRuntimeKeys):
+            raise TypeError("legacy_keys must be a LegacyRuntimeKeys instance")
+        resolve_legacy_patient_uids(self.master_structure_reference_dict)
+        self.metadata = dict(self.metadata)
+
+    @property
+    def patient_uids(self) -> tuple[str, ...]:
+        return resolve_legacy_patient_uids(self.master_structure_reference_dict)
+
+    @property
+    def patient_count(self) -> int:
+        return len(self.patient_uids)
+
+    def resolve_patient_uids(self, patient_uids: Sequence[str] = ()) -> tuple[str, ...]:
+        return resolve_legacy_patient_uids(self.master_structure_reference_dict, patient_uids)
 
 
 @dataclass(slots=True)
