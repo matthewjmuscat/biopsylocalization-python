@@ -114,9 +114,9 @@ from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
 from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
-from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
-from preprocessing.structure_processing.non_biopsy_structure_loop import prepare_non_biopsy_structure_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import finalize_standard_non_biopsy_structure_stage_legacy_validation
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import prepare_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
@@ -1747,9 +1747,29 @@ def main():
                     )
                 else:
                     ### LEGACY NON-BIOPSY VALIDATION SIDECAR
-                    ### This branch runs the modular stage, restores the pre-modular state,
-                    ### executes the legacy inline body, compares outputs, then restores the
-                    ### modular state. Keep this opt-in while retiring the legacy body.
+                    ### This branch validates the modular main-facing stage wrapper against
+                    ### the full legacy inline OAR/rectum/urethra/DIL stage, then restores
+                    ### the modular state for downstream processing.
+                    live_display, non_biopsy_structure_stage_validation_context = prepare_standard_non_biopsy_structure_stage_legacy_validation(
+                        oar_ref=oar_ref,
+                        rectum_ref_key=rectum_ref_key,
+                        urethra_ref_key=urethra_ref_key,
+                        dil_ref=dil_ref,
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_dict=structs_referenced_dict,
+                        config=non_bx_structure_preprocessing_config,
+                        parallel_pool=parallel_pool,
+                        layout_groups=layout_groups,
+                        patients_progress=patients_progress,
+                        structures_progress=structures_progress,
+                        completed_progress=completed_progress,
+                        indeterminate_progress_sub=indeterminate_progress_sub,
+                        important_info=important_info,
+                        live_display=live_display,
+                        runtime_logger=runtime_logger,
+                    )
+
                     ### PREPROCESSING OARs
 
 
@@ -1780,24 +1800,6 @@ def main():
                             structure_reference_number = specific_structure["Ref #"]
                             processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                            live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                processing_structures_task=processing_structures_task,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
 
                             # The below print lines were just for my own understanding of how to access the data structure
                             #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -2249,20 +2251,6 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                            live_display = finalize_non_biopsy_structure_legacy_validation(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                structure_id=structureID,
-                                modular_validation_snapshot=modular_validation_snapshot,
-                                modular_live_state=modular_live_state,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-
                             structures_progress.update(processing_structures_task, advance=1)
 
                         structures_progress.remove_task(processing_structures_task)
@@ -2318,24 +2306,6 @@ def main():
                             structure_reference_number = specific_structure["Ref #"]
                             processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                            live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                processing_structures_task=processing_structures_task,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
 
                             # The below print lines were just for my own understanding of how to access the data structure
                             #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -2761,21 +2731,6 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                            live_display = finalize_non_biopsy_structure_legacy_validation(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                structure_id=structureID,
-                                modular_validation_snapshot=modular_validation_snapshot,
-                                modular_live_state=modular_live_state,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-
-
                             structures_progress.update(processing_structures_task, advance=1)
 
                         structures_progress.remove_task(processing_structures_task)
@@ -2820,24 +2775,6 @@ def main():
                             structure_reference_number = specific_structure["Ref #"]
                             processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                            live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                processing_structures_task=processing_structures_task,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
 
                             # The below print lines were just for my own understanding of how to access the data structure
                             #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -3264,22 +3201,6 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                            live_display = finalize_non_biopsy_structure_legacy_validation(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                structure_id=structureID,
-                                modular_validation_snapshot=modular_validation_snapshot,
-                                modular_live_state=modular_live_state,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-
-
-
                             structures_progress.update(processing_structures_task, advance=1)
 
                         structures_progress.remove_task(processing_structures_task)
@@ -3348,27 +3269,6 @@ def main():
                             structure_reference_number = specific_structure["Ref #"]
                             processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
                             structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                            live_display, modular_validation_snapshot, modular_live_state = prepare_non_biopsy_structure_legacy_validation(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                processing_structures_task=processing_structures_task,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                                sp_patient_selected_structure_info_dataframe=(
-                                    sp_patient_selected_structure_info_dataframe
-                                ),
-                            )
 
                             # The below print lines were just for my own understanding of how to access the data structure
                             #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
@@ -3840,22 +3740,6 @@ def main():
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
                             master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-                            live_display = finalize_non_biopsy_structure_legacy_validation(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                structure_id=structureID,
-                                modular_validation_snapshot=modular_validation_snapshot,
-                                modular_live_state=modular_live_state,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-
-
-
                             structures_progress.update(processing_structures_task, advance=1)
 
                         structures_progress.remove_task(processing_structures_task)
@@ -3866,6 +3750,15 @@ def main():
 
 
                     ### END DIL STRUCTURE PROCESSING
+
+                    live_display = finalize_standard_non_biopsy_structure_stage_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        all_ref_key=all_ref_key,
+                        validation_context=non_biopsy_structure_stage_validation_context,
+                        important_info=important_info,
+                        live_display=live_display,
+                        runtime_logger=runtime_logger,
+                    )
 
                 
 

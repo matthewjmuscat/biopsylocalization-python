@@ -807,12 +807,15 @@ Current Phase E preprocessing status:
   through family configuration/context rather than a separate DIL module,
 - `Structure preprocessing validation` is registered as a validation-only
   patient preprocessing artifact for focused modular-vs-legacy validation runs,
-- the opt-in validation shadow path still carries large legacy family loops in
-  `main`,
-- the next safest main-facing preprocessing pass is to move that validation
-  shadow OAR/rectum/urethra/DIL family orchestration behind a named wrapper,
-  preserving the current modular-vs-legacy comparison before any deeper
-  datatype replacement,
+- the opt-in validation shadow path still carries the large legacy family loops
+  in `main`, but validation now wraps the whole OAR/rectum/urethra/DIL stage
+  from outside through
+  `preprocessing/structure_processing/non_biopsy_structure_stage_validation.py`,
+- the legacy inline family loops no longer call the modular single-structure
+  processor from inside each structure loop,
+- the next safest cleanup pass is to move `UID_generator(...)`,
+  `structure_referencer(...)`, and the remaining bottom-of-main helper classes
+  into neutral modules, then update imports wherever those helpers are used,
 - after that, unique-structure selection is the next nearby preprocessing block
   worth extracting into a similarly thin wrapper.
 
