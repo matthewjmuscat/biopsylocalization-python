@@ -9,7 +9,7 @@ scratch reasoning, but stable decisions should graduate here.
 
 ## Documentation Policy
 
-Use `DOCUMENTATION_INDEX.md` as the public map for durable documentation.
+Use `../DOCUMENTATION_INDEX.md` as the public map for durable documentation.
 
 Use public Markdown docs for decisions that affect the codebase contract:
 
@@ -32,8 +32,8 @@ important decisions into this file.
 Recommended long-term shape:
 
 - `README.md`: license, citation, and a short pointer to the documentation map,
-- `DOCUMENTATION_INDEX.md`: current doc inventory and ownership map,
-- `PATIENT_RUNNER_UPGRADE_ROADMAP.md`: active migration plan and sequencing,
+- `docs/DOCUMENTATION_INDEX.md`: current doc inventory and ownership map,
+- `docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md`: active migration plan and sequencing,
 - module-local docs beside the code they govern,
 - dated generated audits under `validation_outputs/`,
 - ignored `.private_notes/` only for scratch work.

@@ -59,8 +59,8 @@ Parallelism policy:
   not just CPU count.
 
 The detailed recommendations and non-recommendations for patient-level
-parallelism live in `PATIENT_RUNNER_UPGRADE_ROADMAP.md` under "Parallelism
-Opportunities and Recommendations".
+parallelism live in `../../docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` under
+"Parallelism Opportunities and Recommendations".
 
 Current Phase D scope:
 

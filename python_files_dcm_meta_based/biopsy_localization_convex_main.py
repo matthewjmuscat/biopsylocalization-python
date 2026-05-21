@@ -575,7 +575,7 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = True # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
     optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
@@ -676,7 +676,7 @@ def main():
     #   - "all": render all available ranks for each DIL
     candidate_plot_ranks_behavior = 'all'
     # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
-    validate_firing_df_builder_behavior = False # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
+    validate_firing_df_builder_behavior = True # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
     validate_phase3b_in_memory_patient_stitching_bool = True
     write_phase3b_in_memory_stitched_tables_bool = True
     write_phase3c_patient_fragment_output_surface_bool = True
@@ -816,7 +816,7 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = False # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = True # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
 
     ###
 
