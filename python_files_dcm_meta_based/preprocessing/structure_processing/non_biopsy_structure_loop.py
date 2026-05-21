@@ -379,6 +379,47 @@ def process_standard_non_biopsy_structure_families(
     )
 
 
+def process_standard_non_biopsy_structure_preprocessing_stage(
+        *,
+        oar_ref,
+        rectum_ref_key,
+        urethra_ref_key,
+        dil_ref,
+        master_structure_reference_dict,
+        master_structure_info_dict,
+        structs_referenced_dict,
+        config,
+        parallel_pool,
+        layout_groups,
+        patients_progress,
+        structures_progress,
+        completed_progress,
+        indeterminate_progress_sub,
+        important_info,
+        live_display,
+        runtime_logger):
+    """Main-facing stage wrapper for the validated modular non-biopsy path."""
+    return process_standard_non_biopsy_structure_families(
+        oar_ref=oar_ref,
+        rectum_ref_key=rectum_ref_key,
+        urethra_ref_key=urethra_ref_key,
+        dil_ref=dil_ref,
+        master_structure_reference_dict=master_structure_reference_dict,
+        master_structure_info_dict=master_structure_info_dict,
+        structs_referenced_dict=structs_referenced_dict,
+        config=config,
+        parallel_pool=parallel_pool,
+        layout_groups=layout_groups,
+        patients_progress=patients_progress,
+        structures_progress=structures_progress,
+        completed_progress=completed_progress,
+        indeterminate_progress_sub=indeterminate_progress_sub,
+        important_info=important_info,
+        live_display=live_display,
+        runtime_logger=runtime_logger,
+    )
+
+
 def finalize_non_biopsy_structure_legacy_validation(
         *,
         master_structure_reference_dict,

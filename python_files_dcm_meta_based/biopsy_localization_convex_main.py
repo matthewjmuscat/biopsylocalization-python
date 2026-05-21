@@ -116,7 +116,7 @@ from preprocessing.render_debug_surface import render_processed_dataset_debug_pr
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_loop import prepare_non_biopsy_structure_legacy_validation
-from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_families
+from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
@@ -815,7 +815,7 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    validate_non_biopsy_structure_preprocessing_equivalence_bool = False # False uses the modular helper as the primary path. True runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = False # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
 
     ###
 
@@ -1725,8 +1725,8 @@ def main():
                     mr_adc_ref=mr_adc_ref,
                 )
 
-                if validate_non_biopsy_structure_preprocessing_equivalence_bool != True:
-                    live_display = process_standard_non_biopsy_structure_families(
+                if run_non_biopsy_structure_legacy_sidecar_validation_bool != True:
+                    live_display = process_standard_non_biopsy_structure_preprocessing_stage(
                         oar_ref=oar_ref,
                         rectum_ref_key=rectum_ref_key,
                         urethra_ref_key=urethra_ref_key,
@@ -1746,6 +1746,10 @@ def main():
                         runtime_logger=runtime_logger,
                     )
                 else:
+                    ### LEGACY NON-BIOPSY VALIDATION SIDECAR
+                    ### This branch runs the modular stage, restores the pre-modular state,
+                    ### executes the legacy inline body, compares outputs, then restores the
+                    ### modular state. Keep this opt-in while retiring the legacy body.
                     ### PREPROCESSING OARs
 
 

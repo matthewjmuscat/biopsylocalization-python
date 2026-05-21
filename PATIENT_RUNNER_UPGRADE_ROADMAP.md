@@ -802,9 +802,9 @@ Current Phase E preprocessing status:
   `preprocessing/structure_processing/raw_contour_pulling.py`, with the same
   RTSTRUCT read path and legacy contour/centroid writeback keys,
 - the OAR/rectum/urethra/DIL preprocessing path uses
-  `process_standard_non_biopsy_structure_families(...)`; DIL-specific behavior
-  is controlled through family configuration/context rather than a separate DIL
-  module,
+  `process_standard_non_biopsy_structure_preprocessing_stage(...)`, which
+  dispatches to the shared family loop; DIL-specific behavior is controlled
+  through family configuration/context rather than a separate DIL module,
 - `Structure preprocessing validation` is registered as a validation-only
   patient preprocessing artifact for focused modular-vs-legacy validation runs,
 - the opt-in validation shadow path still carries large legacy family loops in

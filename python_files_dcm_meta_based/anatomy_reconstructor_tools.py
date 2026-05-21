@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import scipy
 import open3d as o3d
-import biopsy_localization_convex_main as main
 import time
 
 def inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, max_interpolation_dist):
