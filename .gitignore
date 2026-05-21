@@ -21,9 +21,8 @@ render_jsons/
 # Local tactical planning and private development notes
 .private_notes/
 
-# Generated run-comparison artifacts
-validation_outputs/run_comparisons/
-validation_outputs/output_inventory
+# Generated validation and audit artifacts
+validation_outputs/
 
-
+test_code.ipynb
 

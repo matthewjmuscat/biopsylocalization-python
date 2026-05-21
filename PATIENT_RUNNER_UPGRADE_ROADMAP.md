@@ -800,9 +800,15 @@ Current Phase E preprocessing status:
 - patient raw-contour pulling lives behind
   `preprocessing/structure_processing/raw_contour_pulling.py`, with the same
   RTSTRUCT read path and legacy contour/centroid writeback keys,
-- the next safest main-facing preprocessing pass is to extract unique-structure
-  selection into a similarly thin wrapper before any deeper datatype
-  replacement.
+- the non-validation OAR/rectum/urethra/DIL preprocessing path already uses
+  `process_standard_non_biopsy_structure_families(...)`, but the validation
+  shadow path still carries large legacy family loops in `main`,
+- the next safest main-facing preprocessing pass is to move that validation
+  shadow OAR/rectum/urethra/DIL family orchestration behind a named wrapper,
+  preserving the current modular-vs-legacy comparison before any deeper
+  datatype replacement,
+- after that, unique-structure selection is the next nearby preprocessing block
+  worth extracting into a similarly thin wrapper.
 
 Validation cadence:
 

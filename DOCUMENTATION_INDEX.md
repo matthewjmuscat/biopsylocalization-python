@@ -60,13 +60,10 @@ Current package extraction docs:
 
 ### Generated and audit docs
 
-Generated outputs and dated audits should remain under their output/audit folder.
-They can be linked from durable docs when they are important evidence, but they
-should not become the main roadmap.
-
-Current generated/audit docs:
-
-- `validation_outputs/output_schema_audit/phase3d_dataframe_audit_2026_05_18/dataframe_status_audit_summary.md`
+Generated outputs and dated audits should remain under their output/audit folder
+and outside Git tracking. Durable conclusions from those audits should be
+promoted into roadmap or design docs instead of linking tracked docs to generated
+files.
 
 ### Private notes
 
@@ -114,7 +111,9 @@ when links can be updated in one small pass.
   note.
 - Keep private notes private when they are speculative, but graduate accepted
   decisions into tracked docs.
-- Keep generated audit outputs dated and under `validation_outputs/`.
+- Keep generated audit outputs dated and under `validation_outputs/`; this
+  directory is git-ignored, so promote durable conclusions into tracked docs
+  instead of committing generated audit files.
 - Link new module-specific docs from this index.
 - If a doc describes a removed or disabled pathway, state that explicitly near
   the top.
