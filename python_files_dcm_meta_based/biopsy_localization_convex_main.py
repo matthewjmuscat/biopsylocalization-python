@@ -4,7 +4,6 @@ import pathlib # imported for navigating file system
 import glob
 import plotting_funcs
 import matplotlib.pyplot as plt
-import centroid_finder
 import pca
 import scipy
 import scipy.spatial # for kdtree creation and NN search
@@ -109,10 +108,12 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
-from preprocessing.grid_processing import LegacyDoseGridProcessingConfig
-from preprocessing.grid_processing import LegacyMRADCGridProcessingConfig
-from preprocessing.grid_processing import build_legacy_dose_and_mr_adc_grids_for_cohort
+from preprocessing.dose_grid_processing import LegacyDoseGridProcessingConfig
+from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohort
+from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
+from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
+from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_loop import prepare_non_biopsy_structure_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_families
@@ -1578,10 +1579,10 @@ def main():
                 
                 
                 
-                grid_processing_result = build_legacy_dose_and_mr_adc_grids_for_cohort(
+                dose_grid_processing_result = build_legacy_dose_grids_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
-                    dose_config=LegacyDoseGridProcessingConfig(
+                    config=LegacyDoseGridProcessingConfig(
                         dose_ref=dose_ref,
                         plan_ref=plan_ref,
                         lower_bound_dose_value=lower_bound_dose_value,
@@ -1589,7 +1590,16 @@ def main():
                         show_3d_dose_renderings=show_3d_dose_renderings,
                         show_3d_dose_renderings_thresholded=show_3d_dose_renderings_thresholded,
                     ),
-                    mr_adc_config=LegacyMRADCGridProcessingConfig(
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    stopwatch=stopwatch,
+                )
+                lower_bound_dose_value = dose_grid_processing_result.lower_bound_dose_value
+
+                mr_adc_grid_processing_result = build_legacy_mr_adc_grids_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    config=LegacyMRADCGridProcessingConfig(
                         mr_adc_ref=mr_adc_ref,
                         color_flattening_deg_mr=color_flattening_deg_MR,
                         lower_bound_mr_adc_value=lower_bound_mr_adc_value,
@@ -1601,102 +1611,23 @@ def main():
                     completed_progress=completed_progress,
                     stopwatch=stopwatch,
                 )
-                lower_bound_dose_value = grid_processing_result.lower_bound_dose_value
-                no_cohort_mr_adc_flag = grid_processing_result.no_cohort_mr_adc_flag
+                no_cohort_mr_adc_flag = mr_adc_grid_processing_result.no_cohort_mr_adc_flag
 
 
-                """
-                # create info for simulated biopsies
-                if num_simulated_bxs_to_create >= 1:
-                    centroid_line_vec_list = [0,0,1]
-                    centroid_first_pos_list = [0,0,0]
-                    num_centroids_for_sim_bxs = 10
-                    centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                    simulated_bx_rad = simulated_biopsy_planning_radius_mm
-                    plot_simulated_cores_immediately = False
-                """
 
 
-                #live_display.stop()
-                patientUID_default = "Initializing"
-                pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
-                pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
-                pulling_patients_task = patients_progress.add_task(pulling_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                pulling_patients_task_completed = completed_progress.add_task(pulling_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False) 
-                        
-                
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID)
-                    patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
 
-                    structureID_default = "Initializing"
-                    num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID_default)
-                    pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
-                    for structs in structs_referenced_list_generalized:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            structureID = specific_structure["ROI"]
-                            structure_reference_number = specific_structure["Ref #"]
-                            if structs == bx_ref:
-                                simulated_bool = specific_structure["Simulated bool"]
-                            else:
-                                simulated_bool = None
-                            pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID)
-                            structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
-
-                            # create points for simulated biopsies to create
-                            if simulated_bool == True:
-                                structures_progress.update(pulling_structures_task, advance=1)
-                                continue # dont do anything if its a simulated biopsy!
-                                # USED TO CREATE THE SIMULATED BIOPSIES HERE, BUT i CANT BECAUSE I WANT THEIR LENGTHS TO DEPEND ON THE MEAN LENGTH OF THE REAL BIOPSIES!
-                                #threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_list,centroid_first_pos_list,num_centroids_for_sim_bxs,centroid_sep_dist,simulated_bx_rad,plot_simulated_cores_immediately)
-                            # otherwise just read the data from dicoms
-                            else:
-                                threeDdata_zslice_list = []
-                                with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item:
-                                    for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
-                                        if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
-                                            structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
-                                            break
-                                        else:
-                                            pass
-                                for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                                    contour_slice_points = slice_object.ContourData
-                                    threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                                    threeDdata_zslice_list.append(threeDdata_zslice)
-
-
-                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                            if isinstance(total_structure_points, int):
-                                pass
-                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
-                                total_structure_points = int(total_structure_points)
-                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False:
-                                raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                            else:
-                                raise Exception("Something went wrong when calculating total number of points in structure!")
-
-                            # for non-biopsy only
-                            if structs != bx_ref:
-                            ## THIS WAS INDENTED UNDER THE IF STATEMENT BEFORE
-                                structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                                # find zslice-wise centroids
-                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                                    structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                                    structure_centroids_array[index] = structure_zslice_centroid
-                                structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure global centroid"] = structure_global_centroid
-                            ## THIS WAS INDENTED UNDER THE IF STATEMENT BEFORE
-
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
-
-                            structures_progress.update(pulling_structures_task, advance=1)
-                    structures_progress.remove_task(pulling_structures_task)
-                    patients_progress.update(pulling_patients_task, advance=1)
-                    completed_progress.update(pulling_patients_task_completed, advance=1)
-                patients_progress.update(pulling_patients_task, visible=False)
-                completed_progress.update(pulling_patients_task_completed,  visible=True)
+                pull_raw_structure_contours_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    rtstruct_dicom_paths_by_patient_uid=RTst_dcms_dict,
+                    structs_referenced_list_generalized=structs_referenced_list_generalized,
+                    bx_ref=bx_ref,
+                    all_ref_key=all_ref_key,
+                    patients_progress=patients_progress,
+                    structures_progress=structures_progress,
+                    completed_progress=completed_progress,
+                )
 
 
 

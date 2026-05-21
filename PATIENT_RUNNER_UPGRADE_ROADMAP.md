@@ -70,10 +70,17 @@ This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
 introduced behind the same runner-facing contract after validation is green.
 
-The first preprocessing example of this direction is
-`python_files_dcm_meta_based/preprocessing/grid_processing.py`, which keeps the
-legacy dose/MR grid side effects but moves the patient-scoped runtime-object
-builders out of `biopsy_localization_convex_main.py`.
+Current preprocessing examples of this direction include
+`python_files_dcm_meta_based/preprocessing/dose_grid_processing.py`,
+`python_files_dcm_meta_based/preprocessing/mr_adc_grid_processing.py`, and
+`python_files_dcm_meta_based/preprocessing/structure_processing/raw_contour_pulling.py`.
+Each keeps legacy side effects during validation while moving patient-scoped
+runtime work out of `biopsy_localization_convex_main.py`.
+
+Future GUI-facing orchestration should preserve this separation. A GUI or CLI
+should be able to offer actions such as map dose, map MR, run targeting, run QA,
+or execute a full predefined pipeline by selecting independent stage surfaces
+based on available input data, user choice, or both.
 
 ## Base Table Policy
 
@@ -784,11 +791,17 @@ Current Phase E preprocessing status:
 
 - non-biopsy structure preprocessing has an extracted modular validation surface,
 - prostate-only MR ADC post-processing is already behind a preprocessing helper,
-- dose-grid and ADC-MR grid runtime-object construction now live behind
-  `preprocessing/grid_processing.py`, with the same legacy dictionary writeback
-  keys and the same dose/MR helper calls,
-- the next safest main-facing preprocessing pass is to extract patient structure
-  raw-contour pulling into a similarly thin wrapper before any deeper datatype
+- dose-grid runtime-object construction lives behind
+  `preprocessing/dose_grid_processing.py`, with the same legacy dictionary
+  writeback keys and dose helper calls,
+- ADC-MR grid runtime-object construction lives behind
+  `preprocessing/mr_adc_grid_processing.py`, with the same legacy dictionary
+  writeback keys and MR helper calls,
+- patient raw-contour pulling lives behind
+  `preprocessing/structure_processing/raw_contour_pulling.py`, with the same
+  RTSTRUCT read path and legacy contour/centroid writeback keys,
+- the next safest main-facing preprocessing pass is to extract unique-structure
+  selection into a similarly thin wrapper before any deeper datatype
   replacement.
 
 Validation cadence:

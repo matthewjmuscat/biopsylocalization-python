@@ -97,6 +97,9 @@ Typed patient-local interface direction:
 - behavior-preserving preprocessing wrappers should accept explicit legacy key
   names and patient-local state so future typed adapters can replace the backing
   dictionary without changing the runner-facing stage contract,
+- wrappers should remain domain-selectable where the future GUI may expose
+  separate actions, such as dose mapping, MR mapping, targeting, QA, or full-run
+  execution,
 - once a stage no longer reads raw legacy paths internally, the legacy adapter
   can be replaced without changing the runner contract.
 

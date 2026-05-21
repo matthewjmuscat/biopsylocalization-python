@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-"""Legacy dose and MR ADC grid preprocessing adapters.
+"""Legacy dose-grid preprocessing adapters.
 
 The dose-grid builder preserves the legacy mapped array layout: slice, row,
 column, physical X/Y/Z, dose, gradient X/Y/Z, gradient norm, and normalized
-gradient X/Y/Z. The wrappers here only move main-facing orchestration; they do
-not change the dose or MR ADC calculations.
+feature X/Y/Z. The wrappers here only move main-facing orchestration; they do
+not change the dose calculation.
 """
 
 from dataclasses import dataclass
@@ -14,7 +14,6 @@ from typing import Any
 import numpy as np
 
 import dose_lattice_helper_funcs
-import lattice_reconstruction_tools
 import plotting_funcs
 
 
@@ -29,26 +28,8 @@ class LegacyDoseGridProcessingConfig:
 
 
 @dataclass(frozen=True)
-class LegacyMRADCGridProcessingConfig:
-    mr_adc_ref: str
-    color_flattening_deg_mr: Any
-    lower_bound_mr_adc_value: Any
-    upper_bound_mr_adc_value: Any
-    show_3d_mr_adc_renderings: bool
-    show_3d_mr_adc_renderings_thresholded: bool
-
-
-@dataclass(frozen=True)
-class LegacyGridProcessingResult:
+class LegacyDoseGridProcessingResult:
     lower_bound_dose_value: Any
-    no_cohort_mr_adc_flag: bool
-
-
-def _cohort_has_mr_adc(master_structure_reference_dict, mr_adc_ref):
-    for patientUID, pydicom_item in master_structure_reference_dict.items():
-        if mr_adc_ref in pydicom_item:
-            return True
-    return False
 
 
 def build_dose_grid_runtime_objects_for_patient(
@@ -150,89 +131,16 @@ def build_dose_grid_runtime_objects_for_patient(
     return lower_bound_dose_value
 
 
-def build_mr_adc_grid_runtime_objects_for_patient(
-    patientUID,
-    pydicom_item,
+def build_legacy_dose_grids_for_cohort(
+    master_structure_reference_dict,
+    master_structure_info_dict,
     config,
     patients_progress,
     completed_progress,
-    render_progress_task,
-    render_completed_task,
     stopwatch,
 ):
-    """Build and store the legacy MR ADC grid point-cloud runtime objects.
-
-    This wrapper intentionally preserves the current ADC lattice reconstruction
-    call, including `filter_out_negatives=True`. It does not change RWV scaling,
-    zero handling, series selection, or threshold policy.
-    """
-    mr_adc_subdict = pydicom_item[config.mr_adc_ref]
-
-    filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = True)
-    # Don't store this, it is too large, just call the above function if you want to retrieve the MR information lattice
-    #mr_adc_subdict["MR ADC phys space Nx4 arr (filtered, non-negative)"] = filtered_non_negative_adc_mr_phys_space_arr
-
-    mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(filtered_non_negative_adc_mr_phys_space_arr,
-                                                                    config.color_flattening_deg_mr,
-                                                                    paint_mr_color = True)
-
-    thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(filtered_non_negative_adc_mr_phys_space_arr,
-                                                                                                config.color_flattening_deg_mr,
-                                                                                                paint_mr_color = True,
-                                                                                                lower_bound = config.lower_bound_mr_adc_value,
-                                                                                                upper_bound = config.upper_bound_mr_adc_value,
-                                                                                                z_val_range_list = None)
-
-    del filtered_non_negative_adc_mr_phys_space_arr
-
-    if config.show_3d_mr_adc_renderings == True:
-        patients_progress.stop_task(render_progress_task)
-        completed_progress.stop_task(render_completed_task)
-        stopwatch.stop()
-        print(f"MR ADC render: {patientUID}")
-        plotting_funcs.plot_geometries(mr_adc_point_cloud)
-        stopwatch.start()
-        patients_progress.start_task(render_progress_task)
-        completed_progress.start_task(render_completed_task)
-
-    # plot dose point cloud thresholded cubic lattice (color only)
-    if config.show_3d_mr_adc_renderings_thresholded == True:
-        patients_progress.stop_task(render_progress_task)
-        completed_progress.stop_task(render_completed_task)
-        stopwatch.stop()
-        print(f"MR ADC render (tresholded): {patientUID}")
-        plotting_funcs.plot_geometries(thresholded_mr_adc_point_cloud)
-        stopwatch.start()
-        patients_progress.start_task(render_progress_task)
-        completed_progress.start_task(render_completed_task)
-
-    # Store computed objects
-    mr_adc_subdict["MR ADC grid point cloud"] = mr_adc_point_cloud
-    mr_adc_subdict["MR ADC grid point cloud thresholded"] = thresholded_mr_adc_point_cloud
-
-
-def build_legacy_dose_and_mr_adc_grids_for_cohort(
-    master_structure_reference_dict,
-    master_structure_info_dict,
-    dose_config,
-    mr_adc_config,
-    patients_progress,
-    completed_progress,
-    stopwatch,
-):
-    """Run the legacy main-facing dose and MR ADC grid preprocessing blocks.
-
-    This function is the current translation boundary between the legacy cohort
-    dictionaries and patient-scoped grid builders. Future runner stages should
-    call the patient-level builders through typed adapters instead of reading the
-    whole `master_structure_reference_dict` directly.
-    """
-    no_cohort_mr_adc_flag = not _cohort_has_mr_adc(
-        master_structure_reference_dict,
-        mr_adc_config.mr_adc_ref,
-    )
-
-    lower_bound_dose_value = dose_config.lower_bound_dose_value
+    """Run the legacy main-facing dose-grid preprocessing block."""
+    lower_bound_dose_value = config.lower_bound_dose_value
 
     patientUID_default = "Initializing"
     processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
@@ -246,22 +154,22 @@ def build_legacy_dose_and_mr_adc_grids_for_cohort(
         processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
         patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
 
-        if dose_config.dose_ref not in pydicom_item:
+        if config.dose_ref not in pydicom_item:
             patients_progress.update(processing_patients_dose_task, advance=1)
             completed_progress.update(processing_patients_dose_task_completed, advance=1)
             continue
 
-        dose_config_for_patient = LegacyDoseGridProcessingConfig(
-            dose_ref=dose_config.dose_ref,
-            plan_ref=dose_config.plan_ref,
+        config_for_patient = LegacyDoseGridProcessingConfig(
+            dose_ref=config.dose_ref,
+            plan_ref=config.plan_ref,
             lower_bound_dose_value=lower_bound_dose_value,
-            lower_bound_dose_gradient_value=dose_config.lower_bound_dose_gradient_value,
-            show_3d_dose_renderings=dose_config.show_3d_dose_renderings,
-            show_3d_dose_renderings_thresholded=dose_config.show_3d_dose_renderings_thresholded,
+            lower_bound_dose_gradient_value=config.lower_bound_dose_gradient_value,
+            show_3d_dose_renderings=config.show_3d_dose_renderings,
+            show_3d_dose_renderings_thresholded=config.show_3d_dose_renderings_thresholded,
         )
         lower_bound_dose_value = build_dose_grid_runtime_objects_for_patient(
             pydicom_item,
-            dose_config_for_patient,
+            config_for_patient,
             patients_progress,
             completed_progress,
             processing_patients_dose_task,
@@ -277,40 +185,6 @@ def build_legacy_dose_and_mr_adc_grids_for_cohort(
     patients_progress.update(processing_patients_dose_task, visible=False)
     completed_progress.update(processing_patients_dose_task_completed, visible=True)
 
-    patientUID_default = "Initializing"
-    processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID_default)
-    processing_patients_adc_mr_task_completed_main_description = "[green]Building ADC MR grids"
-
-    processing_patients_adc_mr_task = patients_progress.add_task(processing_patients_adc_mr_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-    processing_patients_adc_mr_task_completed = completed_progress.add_task(processing_patients_adc_mr_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-    for patientUID,pydicom_item in master_structure_reference_dict.items():
-        processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID)
-        patients_progress.update(processing_patients_adc_mr_task, description=processing_patients_adc_mr_task_main_description)
-
-        if mr_adc_config.mr_adc_ref not in pydicom_item:
-            patients_progress.update(processing_patients_adc_mr_task, advance=1)
-            completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-            continue
-
-        build_mr_adc_grid_runtime_objects_for_patient(
-            patientUID,
-            pydicom_item,
-            mr_adc_config,
-            patients_progress,
-            completed_progress,
-            processing_patients_dose_task,
-            processing_patients_dose_task_completed,
-            stopwatch,
-        )
-
-        patients_progress.update(processing_patients_adc_mr_task, advance=1)
-        completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-
-    patients_progress.update(processing_patients_adc_mr_task, visible=False)
-    completed_progress.update(processing_patients_adc_mr_task_completed, visible=True)
-
-    return LegacyGridProcessingResult(
+    return LegacyDoseGridProcessingResult(
         lower_bound_dose_value=lower_bound_dose_value,
-        no_cohort_mr_adc_flag=no_cohort_mr_adc_flag,
     )

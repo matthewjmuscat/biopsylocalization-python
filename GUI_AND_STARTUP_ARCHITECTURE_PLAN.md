@@ -99,3 +99,23 @@ while allowing a separate application layer to own product-specific workflow,
 deployment, visualization polish, and user interaction. Any business, licensing,
 or patent strategy belongs in private notes and counsel review; the public code
 direction is simply to keep the scientific core UI-neutral and adapter-driven.
+
+## Selectable Stage Direction
+
+The GUI-facing architecture should support both a single full workflow and
+separate task-focused tools. Near-term module extraction should therefore avoid
+blending distinct scientific domains into one wrapper when those domains could
+be useful as independent product actions.
+
+Examples of future selectable actions:
+
+- map dose,
+- map MR,
+- perform targeting,
+- perform QA or validation,
+- run the full patient/cohort pipeline.
+
+The selection can be driven by available input data, explicit user choice, or a
+combination of both. A GUI mother application can still compose these smaller
+stage surfaces into guided workflows, but the domain modules themselves should
+remain independently callable.
