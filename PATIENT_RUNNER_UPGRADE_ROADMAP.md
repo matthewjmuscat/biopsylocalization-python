@@ -813,11 +813,16 @@ Current Phase E preprocessing status:
   `preprocessing/structure_processing/non_biopsy_structure_stage_validation.py`,
 - the legacy inline family loops no longer call the modular single-structure
   processor from inside each structure loop,
-- the next safest cleanup pass is to move `UID_generator(...)`,
-  `structure_referencer(...)`, and the remaining bottom-of-main helper classes
-  into neutral modules, then update imports wherever those helpers are used,
-- after that, unique-structure selection is the next nearby preprocessing block
-  worth extracting into a similarly thin wrapper.
+- bottom-of-main helper extraction is complete: DICOM identity lives in
+  `preprocessing/dicom_identity.py`, cohort structure shell/reference building
+  lives in `preprocessing/structure_referencer.py`, uncertainty data objects
+  live with uncertainty attachment, and old geometry holder classes have been
+  moved out of `main`,
+- the next repository-maintenance pass should organize root planning markdowns
+  into a tracked docs area and archive completed private planning notes under a
+  private completed folder,
+- unique-structure selection is the next nearby preprocessing block worth
+  extracting into a similarly thin wrapper.
 
 Validation cadence:
 
