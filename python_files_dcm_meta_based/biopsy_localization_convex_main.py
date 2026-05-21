@@ -81,10 +81,8 @@ from itertools import combinations
 import biopsy_transporter
 import matplotlib.pyplot as plt
 from collections import defaultdict
-import lattice_reconstruction_tools
 import MC_prepper_funcs 
 import MC_simulator_MR
-import dose_lattice_helper_funcs
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 import polygon_dilation_helpers_numpy
 import cProfile
@@ -111,6 +109,9 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
+from preprocessing.grid_processing import LegacyDoseGridProcessingConfig
+from preprocessing.grid_processing import LegacyMRADCGridProcessingConfig
+from preprocessing.grid_processing import build_legacy_dose_and_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_processing.non_biopsy_structure_loop import finalize_non_biopsy_structure_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_loop import prepare_non_biopsy_structure_legacy_validation
@@ -1577,272 +1578,31 @@ def main():
                 
                 
                 
-                # check if there are any mr adcs to be analysed   
-                # This is a flag that can skip certain things that will cause errors if run because there are no mr adc images to analyse
-                no_cohort_mr_adc_flag = True
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    if mr_adc_ref in pydicom_item:
-                        no_cohort_mr_adc_flag = False
-                        break
-                    else:
-                        continue
-
-
-
-
-                #live_display.stop()
-                #print('test')
-                #live_display.start()
-
-
-
-                # Now, we dont want to add the contour points to the structure list above,
-                # because the contour data is already stored in a data tree, which will allow
-                # for faster processing when accessed and iterated. update: I lied..... I ended up
-                # doing exactly this. I will implement a data tree for the purpose of a search
-                # algorithm when I do a nearest neighbour search
-                
-
-                # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
-                # update: fig_dict ended up being deprecated, put data directly into master_dict instead
-                # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
-                
-                # build a data dictionary to store the data we extract and build about the patient
-                # update: data_dict never ended up being used, put data directly into master_dict
-                # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
-
-                # instantiate the variables used for the loading bar
-                #num_patients = master_structure_info_dict["Global"]["Num cases"]
-                #num_general_structs = master_structure_info_dict["Global"]["Num structures"]
-
-
-                #important_info.add_text_line("important info will appear here1", live_display)
-                #rich_layout["main-right"].update(important_info_Text)
-            
-                
-
-                
-
-
-                patientUID_default = "Initializing"
-                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
-                processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
-
-                processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-                # Main loop for processing patients
-                for patientUID, pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
-
-                    if dose_ref not in pydicom_item:
-                        patients_progress.update(processing_patients_dose_task, advance=1)
-                        completed_progress.update(processing_patients_dose_task_completed, advance=1)
-                        continue
-
-                    dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
-                    conversion_matrix = np.array([
-                        [dose_ref_dict["Image orientation patient"][0] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][3] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][0]],
-                        [dose_ref_dict["Image orientation patient"][1] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][4] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][1]],
-                        [dose_ref_dict["Image orientation patient"][2] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][5] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][2]],
-                        [0, 0, 0, 1]
-                    ])
-
-                    phys_space_dose_map_3d_arr = dose_lattice_helper_funcs.build_dose_grid(
-                        dose_pixel_slices=dose_ref_dict["Dose pixel arr"],
-                        scaling_factor=dose_ref_dict["Dose grid scaling"],
-                        conversion_matrix=conversion_matrix,
-                        grid_frame_offset_vec_list=dose_ref_dict["Grid frame offset vector"]
-                    )
-
-
-                    
-
-
-                    ### DOSE GRADIENT
-
-
-                    # Scale the dose values before computing gradients
-                    scaled_dose_data = dose_ref_dict["Dose pixel arr"] * dose_ref_dict["Dose grid scaling"]
-
-                    gradient_vector_lattice, gradient_norm_lattice, normalized_gradient_vector_lattice = dose_lattice_helper_funcs.calculate_gradient_lattices(scaled_dose_data, dose_ref_dict["Pixel spacing"], dose_ref_dict["Grid frame offset vector"])
-                    
-                    
-                    phys_space_dose_map_and_gradient_map_3d_arr = dose_lattice_helper_funcs.map_gradient_to_physical_space(
-                        phys_space_dose_map_3d_arr=phys_space_dose_map_3d_arr,
-                        gradient_vector_lattice=gradient_vector_lattice,
-                        gradient_norm_lattice=gradient_norm_lattice,
-                        normalized_gradient_vector_lattice = normalized_gradient_vector_lattice
-                    )
-                    """
-                    Returns:
-                        phys_space_dose_map_and_gradient_map_3d_arr (numpy.ndarray): Updated slice-wise array with gradients and normalized gradients added.
-                            Shape: (num_slices, num_voxels_per_slice, 14).
-                            Columns:
-                                [0]  - Slice index
-                                [1]  - Row index (j)
-                                [2]  - Column index (i)
-                                [3]  - X-coordinate (physical space)
-                                [4]  - Y-coordinate (physical space)
-                                [5]  - Z-coordinate (physical space)
-                                [6]  - Dose value
-                                [7]  - Gradient in X (Gx)
-                                [8]  - Gradient in Y (Gy)
-                                [9]  - Gradient in Z (Gz)
-                                [10] - Gradient norm (|G|)
-                                [11] - Normalized Gradient in X (NGx)
-                                [12] - Normalized Gradient in Y (NGy)
-                                [13] - Normalized Gradient in Z (NGz)
-                    """
-
-                    
-                    dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=None,
-                                                                                                                        truncate_below_gradient_norm=None
-                                                                                                                    )
-                    if show_3d_dose_renderings == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        plotting_funcs.plot_geometries(dose_point_cloud, dose_gradient_arrows_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-                    if lower_bound_dose_value == None:
-                        try:
-                            lower_bound_dose_value = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
-                        except Exception as e:
-                            lower_bound_dose_value = 0
-
-                    thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=lower_bound_dose_value,
-                                                                                                                        truncate_below_gradient_norm=lower_bound_dose_gradient_value
-                                                                                                                    )
-
-                    # plot dose point cloud thresholded cubic lattice (color only)
-                    if show_3d_dose_renderings_thresholded == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        plotting_funcs.plot_geometries(thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-                    
-
-                    dose_ref_dict["Dose and gradient phys space and pixel 3d arr"] = phys_space_dose_map_and_gradient_map_3d_arr
-                    #dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
-                    dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
-                    dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
-
-                    # Update progress
-                    patients_progress.update(processing_patients_dose_task, advance=1)
-                    completed_progress.update(processing_patients_dose_task_completed, advance=1)
-
-                # Finalize progress display
-                patients_progress.update(processing_patients_dose_task, visible=False)
-                completed_progress.update(processing_patients_dose_task_completed, visible=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-                #live_display.stop()
-                patientUID_default = "Initializing"
-                processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID_default)
-                processing_patients_adc_mr_task_completed_main_description = "[green]Building ADC MR grids"
-
-                processing_patients_adc_mr_task = patients_progress.add_task(processing_patients_adc_mr_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_adc_mr_task_completed = completed_progress.add_task(processing_patients_adc_mr_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_adc_mr_task, description=processing_patients_adc_mr_task_main_description)
-
-                    if mr_adc_ref not in pydicom_item:
-                        patients_progress.update(processing_patients_adc_mr_task, advance=1)
-                        completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-                        continue
-                    
-                    mr_adc_subdict = master_structure_reference_dict[patientUID][mr_adc_ref]
-
-                        
-                    filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = True)
-                    # Don't store this, it is too large, just call the above function if you want to retrieve the MR information lattice
-                    #mr_adc_subdict["MR ADC phys space Nx4 arr (filtered, non-negative)"] = filtered_non_negative_adc_mr_phys_space_arr
-
-
-                    mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                    color_flattening_deg_MR, 
-                                                                                    paint_mr_color = True)
-
-
-                    thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                                                color_flattening_deg_MR, 
-                                                                                                                paint_mr_color = True, 
-                                                                                                                lower_bound = lower_bound_mr_adc_value, 
-                                                                                                                upper_bound = upper_bound_mr_adc_value, 
-                                                                                                                z_val_range_list = None)
-
-                    del filtered_non_negative_adc_mr_phys_space_arr
-
-
-                    if show_3d_mr_adc_renderings == True:     
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        print(f"MR ADC render: {patientUID}")
-                        plotting_funcs.plot_geometries(mr_adc_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-                    
-                    
-                    # plot dose point cloud thresholded cubic lattice (color only)
-                    if show_3d_mr_adc_renderings_thresholded == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        print(f"MR ADC render (tresholded): {patientUID}")
-                        plotting_funcs.plot_geometries(thresholded_mr_adc_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-
-                    # Store computed objects
-                    mr_adc_subdict["MR ADC grid point cloud"] = mr_adc_point_cloud
-                    mr_adc_subdict["MR ADC grid point cloud thresholded"] = thresholded_mr_adc_point_cloud
-
-
-                    patients_progress.update(processing_patients_adc_mr_task, advance=1)
-                    completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-                
-                patients_progress.update(processing_patients_adc_mr_task, visible=False)
-                completed_progress.update(processing_patients_adc_mr_task_completed, visible=True)
+                grid_processing_result = build_legacy_dose_and_mr_adc_grids_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    dose_config=LegacyDoseGridProcessingConfig(
+                        dose_ref=dose_ref,
+                        plan_ref=plan_ref,
+                        lower_bound_dose_value=lower_bound_dose_value,
+                        lower_bound_dose_gradient_value=lower_bound_dose_gradient_value,
+                        show_3d_dose_renderings=show_3d_dose_renderings,
+                        show_3d_dose_renderings_thresholded=show_3d_dose_renderings_thresholded,
+                    ),
+                    mr_adc_config=LegacyMRADCGridProcessingConfig(
+                        mr_adc_ref=mr_adc_ref,
+                        color_flattening_deg_mr=color_flattening_deg_MR,
+                        lower_bound_mr_adc_value=lower_bound_mr_adc_value,
+                        upper_bound_mr_adc_value=upper_bound_mr_adc_value,
+                        show_3d_mr_adc_renderings=show_3d_mr_adc_renderings,
+                        show_3d_mr_adc_renderings_thresholded=show_3d_mr_adc_renderings_thresholded,
+                    ),
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    stopwatch=stopwatch,
+                )
+                lower_bound_dose_value = grid_processing_result.lower_bound_dose_value
+                no_cohort_mr_adc_flag = grid_processing_result.no_cohort_mr_adc_flag
 
 
                 """

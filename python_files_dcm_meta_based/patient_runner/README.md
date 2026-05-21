@@ -94,6 +94,9 @@ Typed patient-local interface direction:
   runner, then translate to legacy dict shape only at the old function boundary,
 - each migrated stage should move repeated dictionary access behind typed
   accessors or small dataclasses,
+- behavior-preserving preprocessing wrappers should accept explicit legacy key
+  names and patient-local state so future typed adapters can replace the backing
+  dictionary without changing the runner-facing stage contract,
 - once a stage no longer reads raw legacy paths internally, the legacy adapter
   can be replaced without changing the runner contract.
 

@@ -1,6 +1,6 @@
 # Patient Runner Upgrade Roadmap
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 This document is the durable, public planning surface for the migration from the
 legacy all-patient monolith toward a validated per-patient runner. It should hold
@@ -49,6 +49,31 @@ architecture. New work should move toward:
 - durable table registry/data dictionary entries,
 - downstream analysis joins outside the main algorithm,
 - no hidden all-patient runtime dependencies inside the patient runner.
+
+## Legacy Datatype Boundary Direction
+
+The runner should not become permanently coupled to `master_structure_reference_dict`,
+`master_structure_info_dict`, or other legacy mutable dictionaries. These objects
+remain the validation backing store for now, but new code should isolate them at
+adapter boundaries.
+
+Near-term rule:
+
+- first extract main-facing scientific blocks into behavior-preserving wrappers,
+- make wrapper entrypoints patient-scoped where practical,
+- pass legacy dictionary key names and threshold/config values explicitly,
+- write the same legacy keys during the validation period,
+- keep typed runner contracts and artifact manifests independent of the legacy
+  dictionary shape.
+
+This makes each stage replaceable in two steps: first the old code is moved
+behind a named boundary with identical behavior, then a typed data model can be
+introduced behind the same runner-facing contract after validation is green.
+
+The first preprocessing example of this direction is
+`python_files_dcm_meta_based/preprocessing/grid_processing.py`, which keeps the
+legacy dose/MR grid side effects but moves the patient-scoped runtime-object
+builders out of `biopsy_localization_convex_main.py`.
 
 ## Base Table Policy
 
@@ -754,6 +779,17 @@ Scientific modularization rule:
   in the same pass as orchestration extraction,
 - any later scientific cleanup must be small, deliberate, immediately tested,
   and understood as a scientific behavior change rather than runner plumbing.
+
+Current Phase E preprocessing status:
+
+- non-biopsy structure preprocessing has an extracted modular validation surface,
+- prostate-only MR ADC post-processing is already behind a preprocessing helper,
+- dose-grid and ADC-MR grid runtime-object construction now live behind
+  `preprocessing/grid_processing.py`, with the same legacy dictionary writeback
+  keys and the same dose/MR helper calls,
+- the next safest main-facing preprocessing pass is to extract patient structure
+  raw-contour pulling into a similarly thin wrapper before any deeper datatype
+  replacement.
 
 Validation cadence:
 
