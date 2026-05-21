@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-05-19
+Last updated: 2026-05-21
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -20,16 +20,20 @@ this index.
 
 Current durable docs:
 
-- `PATIENT_RUNNER_UPGRADE_ROADMAP.md` - active migration roadmap toward a
-  validated per-patient runner.
-- `RUNTIME_LOGGING_DESIGN.md` - runtime logging, crash localization, and failure
-  evidence policy.
-- `INPUT_DICOM_DATA_ASSESSMENT.md` - current and future input-data assumptions.
-- `INPUT_DATA_MANIFEST_DESIGN.md` - provenance/manifest design for input
+- `roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` - active migration roadmap toward
+  a validated per-patient runner.
+- `runtime/RUNTIME_LOGGING_DESIGN.md` - runtime logging, crash localization, and
+  failure evidence policy.
+- `input/INPUT_DICOM_DATA_ASSESSMENT.md` - current and future input-data
+  assumptions.
+- `input/INPUT_DATA_MANIFEST_DESIGN.md` - provenance/manifest design for input
   discovery.
-- `CONFIG_LAYER_REWRITE_PLAN.md` - future configuration-layer direction.
-- `GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary plan.
-- `PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary contract.
+- `architecture/CONFIG_LAYER_REWRITE_PLAN.md` - future configuration-layer
+  direction.
+- `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
+  plan.
+- `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
+  contract.
 
 ### Module-local design docs
 
@@ -60,13 +64,10 @@ Current package extraction docs:
 
 ### Generated and audit docs
 
-Generated outputs and dated audits should remain under their output/audit folder.
-They can be linked from durable docs when they are important evidence, but they
-should not become the main roadmap.
-
-Current generated/audit docs:
-
-- `validation_outputs/output_schema_audit/phase3d_dataframe_audit_2026_05_18/dataframe_status_audit_summary.md`
+Generated outputs and dated audits should remain under their output/audit folder
+and outside Git tracking. Durable conclusions from those audits should be
+promoted into roadmap or design docs instead of linking tracked docs to generated
+files.
 
 ### Private notes
 
@@ -75,36 +76,30 @@ thinking, local audits, and incomplete planning. It should not be the only sourc
 for an implemented decision. When a decision becomes stable, move the durable
 part into a tracked doc and link it from this index.
 
-## Recommended Target Structure
+## Current Target Structure
 
-A cleaner future structure would be:
+The root README and license remain at repository root. Durable planning and
+architecture docs live under `docs/`:
 
 ```text
 README.md
-DOCUMENTATION_INDEX.md
-PATIENT_RUNNER_UPGRADE_ROADMAP.md
-RUNTIME_LOGGING_DESIGN.md
 docs/
+  DOCUMENTATION_INDEX.md
   architecture/
-    config-layer.md
-    gui-and-startup.md
-    pickle-export-boundaries.md
+    CONFIG_LAYER_REWRITE_PLAN.md
+    GUI_AND_STARTUP_ARCHITECTURE_PLAN.md
+  boundaries/
+    PICKLE_EXPORT_BOUNDARIES.md
   input/
-    dicom-data-assessment.md
-    input-data-manifest.md
-  output/
-    schema-registry.md
-    cohort-derived-quantities.md
-  optimizer-v2/
-    design.md
-    performance.md
-  package-extraction/
-    standalone-containment-package.md
+    INPUT_DICOM_DATA_ASSESSMENT.md
+    INPUT_DATA_MANIFEST_DESIGN.md
+  roadmap/
+    PATIENT_RUNNER_UPGRADE_ROADMAP.md
+  runtime/
+    RUNTIME_LOGGING_DESIGN.md
 ```
 
-The repository does not need this move immediately. The safer near-term cleanup
-is to keep current paths stable, use this index as the map, and only move docs
-when links can be updated in one small pass.
+Module-specific docs should remain beside the modules they govern.
 
 ## Cleanup Rules
 
@@ -114,7 +109,9 @@ when links can be updated in one small pass.
   note.
 - Keep private notes private when they are speculative, but graduate accepted
   decisions into tracked docs.
-- Keep generated audit outputs dated and under `validation_outputs/`.
+- Keep generated audit outputs dated and under `validation_outputs/`; this
+  directory is git-ignored, so promote durable conclusions into tracked docs
+  instead of committing generated audit files.
 - Link new module-specific docs from this index.
 - If a doc describes a removed or disabled pathway, state that explicitly near
   the top.

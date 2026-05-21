@@ -4,7 +4,6 @@ import pathlib # imported for navigating file system
 import glob
 import plotting_funcs
 import matplotlib.pyplot as plt
-import centroid_finder
 import pca
 import scipy
 import scipy.spatial # for kdtree creation and NN search
@@ -81,10 +80,8 @@ from itertools import combinations
 import biopsy_transporter
 import matplotlib.pyplot as plt
 from collections import defaultdict
-import lattice_reconstruction_tools
 import MC_prepper_funcs 
 import MC_simulator_MR
-import dose_lattice_helper_funcs
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 import polygon_dilation_helpers_numpy
 import cProfile
@@ -107,22 +104,27 @@ from preprocessing.transform_bank import OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY
 from preprocessing.transform_bank import STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY
 from preprocessing.transform_bank import resolve_required_generated_transform_samples
 from preprocessing.uncertainty_attachment import prepare_and_attach_uncertainty_data
+from preprocessing.uncertainty_attachment import uncertainty_data
+from preprocessing.dicom_identity import UID_generator
+from preprocessing.structure_referencer import structure_referencer
 from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundle
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
+from preprocessing.dose_grid_processing import LegacyDoseGridProcessingConfig
+from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohort
+from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
+from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
-from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
-from preprocessing.structure_processing.non_biopsy_structure_processing import preprocess_non_biopsy_structure
-from preprocessing.structure_processing.validation import append_non_biopsy_structure_validation_result
-from preprocessing.structure_processing.validation import capture_non_biopsy_structure_processing_snapshot
-from preprocessing.structure_processing.validation import compare_non_biopsy_structure_processing_snapshots
+from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
+from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import finalize_standard_non_biopsy_structure_stage_legacy_validation
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import prepare_standard_non_biopsy_structure_stage_legacy_validation
+from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
 from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_adaptive_block_search_config
 from biopsy_optimizer.v2.live_integration import (
-    TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
-    TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
     annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
     annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
@@ -183,40 +185,6 @@ def build_transform_generation_rng(master_structure_info_dict):
         return cp.random.RandomState()
 
     return cp.random.RandomState(transform_generation_random_seed)
-
-
-def capture_non_biopsy_modular_live_state(master_structure_reference_dict,
-                                          patient_uid,
-                                          struct_ref_type,
-                                          specific_structure_index,
-                                          all_ref_key):
-    return {
-        "structure": copy.deepcopy(
-            master_structure_reference_dict[patient_uid][struct_ref_type][specific_structure_index]
-        ),
-        "patient_output_dataframes_dict": copy.deepcopy(
-            master_structure_reference_dict[patient_uid][all_ref_key][
-                "Multi-structure pre-processing output dataframes dict"
-            ]
-        ),
-    }
-
-
-def restore_non_biopsy_modular_live_state(master_structure_reference_dict,
-                                          patient_uid,
-                                          struct_ref_type,
-                                          specific_structure_index,
-                                          all_ref_key,
-                                          saved_state):
-    if saved_state is None:
-        return
-
-    master_structure_reference_dict[patient_uid][struct_ref_type][specific_structure_index] = (
-        saved_state["structure"]
-    )
-    master_structure_reference_dict[patient_uid][all_ref_key][
-        "Multi-structure pre-processing output dataframes dict"
-    ] = saved_state["patient_output_dataframes_dict"]
 
 
 def apply_optimizer_v1_random_seed(master_structure_info_dict):
@@ -607,7 +575,7 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = True # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
     optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
@@ -708,7 +676,7 @@ def main():
     #   - "all": render all available ranks for each DIL
     candidate_plot_ranks_behavior = 'all'
     # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
-    validate_firing_df_builder_behavior = False # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
+    validate_firing_df_builder_behavior = True # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
     validate_phase3b_in_memory_patient_stitching_bool = True
     write_phase3b_in_memory_stitched_tables_bool = True
     write_phase3c_patient_fragment_output_surface_bool = True
@@ -848,7 +816,7 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    validate_non_biopsy_structure_preprocessing_equivalence_bool = False # Runs the modular helper on the live structure, shadows it with the legacy inline path for validation, then restores the modular outputs. Intended for focused validation only.
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = True # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
 
     ###
 
@@ -1612,366 +1580,55 @@ def main():
                 
                 
                 
-                # check if there are any mr adcs to be analysed   
-                # This is a flag that can skip certain things that will cause errors if run because there are no mr adc images to analyse
-                no_cohort_mr_adc_flag = True
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    if mr_adc_ref in pydicom_item:
-                        no_cohort_mr_adc_flag = False
-                        break
-                    else:
-                        continue
-
-
-
-
-                #live_display.stop()
-                #print('test')
-                #live_display.start()
-
-
-
-                # Now, we dont want to add the contour points to the structure list above,
-                # because the contour data is already stored in a data tree, which will allow
-                # for faster processing when accessed and iterated. update: I lied..... I ended up
-                # doing exactly this. I will implement a data tree for the purpose of a search
-                # algorithm when I do a nearest neighbour search
-                
-
-                # this dictionary determines which organs of which patient are to be plotted, in theory this could be user input
-                # update: fig_dict ended up being deprecated, put data directly into master_dict instead
-                # fig_dict = {UID: {specific_structure["ROI"]: True for structs in structs_referenced_list for specific_structure in pydicom_item[structs]} for UID, pydicom_item in master_structure_reference_dict.items()}
-                
-                # build a data dictionary to store the data we extract and build about the patient
-                # update: data_dict never ended up being used, put data directly into master_dict
-                # data_dict = {UID: None for UID, pydicom_item in master_structure_reference_dict.items()}
-
-                # instantiate the variables used for the loading bar
-                #num_patients = master_structure_info_dict["Global"]["Num cases"]
-                #num_general_structs = master_structure_info_dict["Global"]["Num structures"]
-
-
-                #important_info.add_text_line("important info will appear here1", live_display)
-                #rich_layout["main-right"].update(important_info_Text)
-            
-                
-
-                
-
-
-                patientUID_default = "Initializing"
-                processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID_default)
-                processing_patients_dose_task_completed_main_description = "[green]Building dose grids"
-
-                processing_patients_dose_task = patients_progress.add_task(processing_patients_dose_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_dose_task_completed = completed_progress.add_task(processing_patients_dose_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-                # Main loop for processing patients
-                for patientUID, pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_dose_task_main_description = "[red]Building dose grids [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_dose_task, description=processing_patients_dose_task_main_description)
-
-                    if dose_ref not in pydicom_item:
-                        patients_progress.update(processing_patients_dose_task, advance=1)
-                        completed_progress.update(processing_patients_dose_task_completed, advance=1)
-                        continue
-
-                    dose_ref_dict = master_structure_reference_dict[patientUID][dose_ref]
-                    conversion_matrix = np.array([
-                        [dose_ref_dict["Image orientation patient"][0] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][3] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][0]],
-                        [dose_ref_dict["Image orientation patient"][1] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][4] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][1]],
-                        [dose_ref_dict["Image orientation patient"][2] * dose_ref_dict["Pixel spacing"][1], 
-                        dose_ref_dict["Image orientation patient"][5] * dose_ref_dict["Pixel spacing"][0], 
-                        0, dose_ref_dict["Image position patient"][2]],
-                        [0, 0, 0, 1]
-                    ])
-
-                    phys_space_dose_map_3d_arr = dose_lattice_helper_funcs.build_dose_grid(
-                        dose_pixel_slices=dose_ref_dict["Dose pixel arr"],
-                        scaling_factor=dose_ref_dict["Dose grid scaling"],
-                        conversion_matrix=conversion_matrix,
-                        grid_frame_offset_vec_list=dose_ref_dict["Grid frame offset vector"]
-                    )
-
-
-                    
-
-
-                    ### DOSE GRADIENT
-
-
-                    # Scale the dose values before computing gradients
-                    scaled_dose_data = dose_ref_dict["Dose pixel arr"] * dose_ref_dict["Dose grid scaling"]
-
-                    gradient_vector_lattice, gradient_norm_lattice, normalized_gradient_vector_lattice = dose_lattice_helper_funcs.calculate_gradient_lattices(scaled_dose_data, dose_ref_dict["Pixel spacing"], dose_ref_dict["Grid frame offset vector"])
-                    
-                    
-                    phys_space_dose_map_and_gradient_map_3d_arr = dose_lattice_helper_funcs.map_gradient_to_physical_space(
-                        phys_space_dose_map_3d_arr=phys_space_dose_map_3d_arr,
-                        gradient_vector_lattice=gradient_vector_lattice,
-                        gradient_norm_lattice=gradient_norm_lattice,
-                        normalized_gradient_vector_lattice = normalized_gradient_vector_lattice
-                    )
-                    """
-                    Returns:
-                        phys_space_dose_map_and_gradient_map_3d_arr (numpy.ndarray): Updated slice-wise array with gradients and normalized gradients added.
-                            Shape: (num_slices, num_voxels_per_slice, 14).
-                            Columns:
-                                [0]  - Slice index
-                                [1]  - Row index (j)
-                                [2]  - Column index (i)
-                                [3]  - X-coordinate (physical space)
-                                [4]  - Y-coordinate (physical space)
-                                [5]  - Z-coordinate (physical space)
-                                [6]  - Dose value
-                                [7]  - Gradient in X (Gx)
-                                [8]  - Gradient in Y (Gy)
-                                [9]  - Gradient in Z (Gz)
-                                [10] - Gradient norm (|G|)
-                                [11] - Normalized Gradient in X (NGx)
-                                [12] - Normalized Gradient in Y (NGy)
-                                [13] - Normalized Gradient in Z (NGz)
-                    """
-
-                    
-                    dose_point_cloud, dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=None,
-                                                                                                                        truncate_below_gradient_norm=None
-                                                                                                                    )
-                    if show_3d_dose_renderings == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        plotting_funcs.plot_geometries(dose_point_cloud, dose_gradient_arrows_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-                    if lower_bound_dose_value == None:
-                        try:
-                            lower_bound_dose_value = pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
-                        except Exception as e:
-                            lower_bound_dose_value = 0
-
-                    thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud = plotting_funcs.create_dose_point_cloud_with_gradients(phys_space_dose_map_and_gradient_map_3d_arr,
-                                                                                                                        paint_dose_color=True,
-                                                                                                                        arrow_scale=1.0,
-                                                                                                                        truncate_below_dose=lower_bound_dose_value,
-                                                                                                                        truncate_below_gradient_norm=lower_bound_dose_gradient_value
-                                                                                                                    )
-
-                    # plot dose point cloud thresholded cubic lattice (color only)
-                    if show_3d_dose_renderings_thresholded == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        plotting_funcs.plot_geometries(thresholded_dose_point_cloud, thresholded_dose_gradient_arrows_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-                    
-
-                    dose_ref_dict["Dose and gradient phys space and pixel 3d arr"] = phys_space_dose_map_and_gradient_map_3d_arr
-                    #dose_ref_dict["Dose phys space and pixel 3d arr"] = phys_space_dose_map_3d_arr
-                    dose_ref_dict["Dose grid point cloud"] = dose_point_cloud
-                    dose_ref_dict["Dose grid point cloud thresholded"] = thresholded_dose_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud"] = dose_gradient_arrows_point_cloud
-                    dose_ref_dict["Dose grid gradient point cloud thresholded"] = thresholded_dose_gradient_arrows_point_cloud
-
-                    # Update progress
-                    patients_progress.update(processing_patients_dose_task, advance=1)
-                    completed_progress.update(processing_patients_dose_task_completed, advance=1)
-
-                # Finalize progress display
-                patients_progress.update(processing_patients_dose_task, visible=False)
-                completed_progress.update(processing_patients_dose_task_completed, visible=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-                #live_display.stop()
-                patientUID_default = "Initializing"
-                processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID_default)
-                processing_patients_adc_mr_task_completed_main_description = "[green]Building ADC MR grids"
-
-                processing_patients_adc_mr_task = patients_progress.add_task(processing_patients_adc_mr_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_adc_mr_task_completed = completed_progress.add_task(processing_patients_adc_mr_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible=False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_adc_mr_task_main_description = "[red]Building ADC MR grids [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_adc_mr_task, description=processing_patients_adc_mr_task_main_description)
-
-                    if mr_adc_ref not in pydicom_item:
-                        patients_progress.update(processing_patients_adc_mr_task, advance=1)
-                        completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-                        continue
-                    
-                    mr_adc_subdict = master_structure_reference_dict[patientUID][mr_adc_ref]
-
-                        
-                    filtered_non_negative_adc_mr_phys_space_arr = lattice_reconstruction_tools.reconstruct_mr_lattice_with_coordinates_from_dict_v2(mr_adc_subdict, filter_out_negatives = True)
-                    # Don't store this, it is too large, just call the above function if you want to retrieve the MR information lattice
-                    #mr_adc_subdict["MR ADC phys space Nx4 arr (filtered, non-negative)"] = filtered_non_negative_adc_mr_phys_space_arr
-
-
-                    mr_adc_point_cloud = plotting_funcs.create_MR_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                    color_flattening_deg_MR, 
-                                                                                    paint_mr_color = True)
-
-
-                    thresholded_mr_adc_point_cloud = plotting_funcs.create_thresholded_MR_ADC_point_cloud(filtered_non_negative_adc_mr_phys_space_arr, 
-                                                                                                                color_flattening_deg_MR, 
-                                                                                                                paint_mr_color = True, 
-                                                                                                                lower_bound = lower_bound_mr_adc_value, 
-                                                                                                                upper_bound = upper_bound_mr_adc_value, 
-                                                                                                                z_val_range_list = None)
-
-                    del filtered_non_negative_adc_mr_phys_space_arr
-
-
-                    if show_3d_mr_adc_renderings == True:     
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        print(f"MR ADC render: {patientUID}")
-                        plotting_funcs.plot_geometries(mr_adc_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-                    
-                    
-                    # plot dose point cloud thresholded cubic lattice (color only)
-                    if show_3d_mr_adc_renderings_thresholded == True:
-                        patients_progress.stop_task(processing_patients_dose_task)
-                        completed_progress.stop_task(processing_patients_dose_task_completed)
-                        stopwatch.stop()
-                        print(f"MR ADC render (tresholded): {patientUID}")
-                        plotting_funcs.plot_geometries(thresholded_mr_adc_point_cloud)
-                        stopwatch.start()
-                        patients_progress.start_task(processing_patients_dose_task)
-                        completed_progress.start_task(processing_patients_dose_task_completed)
-
-
-                    # Store computed objects
-                    mr_adc_subdict["MR ADC grid point cloud"] = mr_adc_point_cloud
-                    mr_adc_subdict["MR ADC grid point cloud thresholded"] = thresholded_mr_adc_point_cloud
-
-
-                    patients_progress.update(processing_patients_adc_mr_task, advance=1)
-                    completed_progress.update(processing_patients_adc_mr_task_completed, advance=1)
-                
-                patients_progress.update(processing_patients_adc_mr_task, visible=False)
-                completed_progress.update(processing_patients_adc_mr_task_completed, visible=True)
-
-
-                """
-                # create info for simulated biopsies
-                if num_simulated_bxs_to_create >= 1:
-                    centroid_line_vec_list = [0,0,1]
-                    centroid_first_pos_list = [0,0,0]
-                    num_centroids_for_sim_bxs = 10
-                    centroid_sep_dist = biopsy_needle_compartment_length/(num_centroids_for_sim_bxs-1) # the minus 1 ensures that the legnth of the biopsy is actually correct!
-                    simulated_bx_rad = simulated_biopsy_planning_radius_mm
-                    plot_simulated_cores_immediately = False
-                """
-
-
-                #live_display.stop()
-                patientUID_default = "Initializing"
-                pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
-                pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
-                pulling_patients_task = patients_progress.add_task(pulling_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                pulling_patients_task_completed = completed_progress.add_task(pulling_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False) 
-                        
-                
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID)
-                    patients_progress.update(pulling_patients_task, description = pulling_patients_task_main_description)
-
-                    structureID_default = "Initializing"
-                    num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID_default)
-                    pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
-                    for structs in structs_referenced_list_generalized:
-                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                            structureID = specific_structure["ROI"]
-                            structure_reference_number = specific_structure["Ref #"]
-                            if structs == bx_ref:
-                                simulated_bool = specific_structure["Simulated bool"]
-                            else:
-                                simulated_bool = None
-                            pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID)
-                            structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
-
-                            # create points for simulated biopsies to create
-                            if simulated_bool == True:
-                                structures_progress.update(pulling_structures_task, advance=1)
-                                continue # dont do anything if its a simulated biopsy!
-                                # USED TO CREATE THE SIMULATED BIOPSIES HERE, BUT i CANT BECAUSE I WANT THEIR LENGTHS TO DEPEND ON THE MEAN LENGTH OF THE REAL BIOPSIES!
-                                #threeDdata_zslice_list = biopsy_creator.biopsy_points_creater_by_transport_for_sim_bxs(centroid_line_vec_list,centroid_first_pos_list,num_centroids_for_sim_bxs,centroid_sep_dist,simulated_bx_rad,plot_simulated_cores_immediately)
-                            # otherwise just read the data from dicoms
-                            else:
-                                threeDdata_zslice_list = []
-                                with pydicom.dcmread(RTst_dcms_dict[patientUID], defer_size = '2 MB') as py_dicom_item:
-                                    for roi_contour_seq_item in py_dicom_item.ROIContourSequence:
-                                        if int(roi_contour_seq_item["ReferencedROINumber"].value) == int(specific_structure["Ref #"]):
-                                            structure_contour_points_raw_sequence = roi_contour_seq_item.ContourSequence[0:]
-                                            break
-                                        else:
-                                            pass
-                                for index, slice_object in enumerate(structure_contour_points_raw_sequence):
-                                    contour_slice_points = slice_object.ContourData
-                                    threeDdata_zslice = np.fromiter([contour_slice_points[i:i + 3] for i in range(0, len(contour_slice_points), 3)], dtype=np.dtype((np.float64, (3,))))
-                                    threeDdata_zslice_list.append(threeDdata_zslice)
-
-
-                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                            if isinstance(total_structure_points, int):
-                                pass
-                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer():
-                                total_structure_points = int(total_structure_points)
-                            elif isinstance(total_structure_points, float) & total_structure_points.is_integer() == False:
-                                raise Exception("Seems the cumulative number of spatial components of contour points is not a whole number!")
-                            else:
-                                raise Exception("Something went wrong when calculating total number of points in structure!")
-
-                            # for non-biopsy only
-                            if structs != bx_ref:
-                            ## THIS WAS INDENTED UNDER THE IF STATEMENT BEFORE
-                                structure_centroids_array = np.empty([len(threeDdata_zslice_list),3])
-                                # find zslice-wise centroids
-                                for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                                    structure_zslice_centroid = np.mean(threeDdata_zslice,axis=0)
-                                    structure_centroids_array[index] = structure_zslice_centroid
-                                structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure centroid pts"] = structure_centroids_array
-                                master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure global centroid"] = structure_global_centroid
-                            ## THIS WAS INDENTED UNDER THE IF STATEMENT BEFORE
-
-                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
-
-                            structures_progress.update(pulling_structures_task, advance=1)
-                    structures_progress.remove_task(pulling_structures_task)
-                    patients_progress.update(pulling_patients_task, advance=1)
-                    completed_progress.update(pulling_patients_task_completed, advance=1)
-                patients_progress.update(pulling_patients_task, visible=False)
-                completed_progress.update(pulling_patients_task_completed,  visible=True)
+                dose_grid_processing_result = build_legacy_dose_grids_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    config=LegacyDoseGridProcessingConfig(
+                        dose_ref=dose_ref,
+                        plan_ref=plan_ref,
+                        lower_bound_dose_value=lower_bound_dose_value,
+                        lower_bound_dose_gradient_value=lower_bound_dose_gradient_value,
+                        show_3d_dose_renderings=show_3d_dose_renderings,
+                        show_3d_dose_renderings_thresholded=show_3d_dose_renderings_thresholded,
+                    ),
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    stopwatch=stopwatch,
+                )
+                lower_bound_dose_value = dose_grid_processing_result.lower_bound_dose_value
+
+                mr_adc_grid_processing_result = build_legacy_mr_adc_grids_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    config=LegacyMRADCGridProcessingConfig(
+                        mr_adc_ref=mr_adc_ref,
+                        color_flattening_deg_mr=color_flattening_deg_MR,
+                        lower_bound_mr_adc_value=lower_bound_mr_adc_value,
+                        upper_bound_mr_adc_value=upper_bound_mr_adc_value,
+                        show_3d_mr_adc_renderings=show_3d_mr_adc_renderings,
+                        show_3d_mr_adc_renderings_thresholded=show_3d_mr_adc_renderings_thresholded,
+                    ),
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    stopwatch=stopwatch,
+                )
+                no_cohort_mr_adc_flag = mr_adc_grid_processing_result.no_cohort_mr_adc_flag
+
+
+
+
+
+                pull_raw_structure_contours_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    rtstruct_dicom_paths_by_patient_uid=RTst_dcms_dict,
+                    structs_referenced_list_generalized=structs_referenced_list_generalized,
+                    bx_ref=bx_ref,
+                    all_ref_key=all_ref_key,
+                    patients_progress=patients_progress,
+                    structures_progress=structures_progress,
+                    completed_progress=completed_progress,
+                )
 
 
 
@@ -2069,333 +1726,1812 @@ def main():
                     mr_adc_ref=mr_adc_ref,
                 )
 
-                ### PREPROCESSING OARs
+                if run_non_biopsy_structure_legacy_sidecar_validation_bool != True:
+                    live_display = process_standard_non_biopsy_structure_preprocessing_stage(
+                        oar_ref=oar_ref,
+                        rectum_ref_key=rectum_ref_key,
+                        urethra_ref_key=urethra_ref_key,
+                        dil_ref=dil_ref,
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_dict=structs_referenced_dict,
+                        config=non_bx_structure_preprocessing_config,
+                        parallel_pool=parallel_pool,
+                        layout_groups=layout_groups,
+                        patients_progress=patients_progress,
+                        structures_progress=structures_progress,
+                        completed_progress=completed_progress,
+                        indeterminate_progress_sub=indeterminate_progress_sub,
+                        important_info=important_info,
+                        live_display=live_display,
+                        runtime_logger=runtime_logger,
+                    )
+                else:
+                    ### LEGACY NON-BIOPSY VALIDATION SIDECAR
+                    ### This branch validates the modular main-facing stage wrapper against
+                    ### the full legacy inline OAR/rectum/urethra/DIL stage, then restores
+                    ### the modular state for downstream processing.
+                    live_display, non_biopsy_structure_stage_validation_context = prepare_standard_non_biopsy_structure_stage_legacy_validation(
+                        oar_ref=oar_ref,
+                        rectum_ref_key=rectum_ref_key,
+                        urethra_ref_key=urethra_ref_key,
+                        dil_ref=dil_ref,
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_dict=structs_referenced_dict,
+                        config=non_bx_structure_preprocessing_config,
+                        parallel_pool=parallel_pool,
+                        layout_groups=layout_groups,
+                        patients_progress=patients_progress,
+                        structures_progress=structures_progress,
+                        completed_progress=completed_progress,
+                        indeterminate_progress_sub=indeterminate_progress_sub,
+                        important_info=important_info,
+                        live_display=live_display,
+                        runtime_logger=runtime_logger,
+                    )
+
+                    ### PREPROCESSING OARs
 
 
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Processing patient prostates"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+                    patientUID_default = "Initializing"
+                    processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID_default)
+                    processing_patients_task_completed_main_description = "[green]Processing patient prostates"
+                    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Processing patient prostates [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
 
-                    structureID_default = "Initializing"
-                    #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+                        structureID_default = "Initializing"
+                        #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
+                        num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
+                        num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
 
-                    num_prostates = len(pydicom_item[oar_ref])
-
-
-                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_prostates)
-
-                    structs = oar_ref
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
-                            continue
-
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
-
-                        ### BUILD RAW DATA
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Build raw data", total = None)
-                        ###
-
-                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])
-
-                        # build raw threeDdata for non biopsies
-                        lower_bound_index = 0
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points
+                        num_prostates = len(pydicom_item[oar_ref])
 
 
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END BUILD RAW DATA
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_prostates)
 
+                        structs = oar_ref
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
 
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
 
-
-
-                        ### INTERPOLATE STRUCTURE
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Interpolate structure", total = None)
-                        ###
-                        
-                        # conduct INTER-slice interpolation
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        
-                        # SLOWER TO ANALYZE PARALLEL
-                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        # FASTER TO ANALYZE SERIALLY
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
-
-                        # fill in the end caps
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        
-                        # old
-                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                        # new
-                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-
-                        # generate point cloud of raw threeDdata
-                        pcd_color = structs_referenced_dict[structs]['PCD color']
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        
-                        # generate delaunay triangulations (Deprecated, no longer need to use delaunay)
-                        """
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        #delaunay_global_convex_structure_obj.generate_lineset()
-                        """
-
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
-                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
-                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
-                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
-
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END INTERPOLATE STRUCTURE
-                        
-                        ### COMPUTE MR STATISTICS
-                        
-                        if mr_adc_ref in pydicom_item:
+                            ### BUILD RAW DATA
                             ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Build raw data", total = None)
                             ###
-                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
-                                mr_adc_ref,
-                                filter_out_negatives = True)
-                            # Prepare data
+
+                            threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            threeDdata_array = np.empty([total_structure_points,3])
+
+                            # build raw threeDdata for non biopsies
+                            lower_bound_index = 0
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END BUILD RAW DATA
+
+
+
+
+
+                            ### INTERPOLATE STRUCTURE
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Interpolate structure", total = None)
+                            ###
+
+                            # conduct INTER-slice interpolation
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+
+                            # SLOWER TO ANALYZE PARALLEL
+                            #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            # FASTER TO ANALYZE SERIALLY
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                            # fill in the end caps
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+
+                            # old
+                            #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                            # new
+                            interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                            interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+
+                            # generate point cloud of raw threeDdata
+                            pcd_color = structs_referenced_dict[structs]['PCD color']
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
+
+                            # generate delaunay triangulations (Deprecated, no longer need to use delaunay)
+                            """
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            #delaunay_global_convex_structure_obj.generate_lineset()
+                            """
+
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
+                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
+                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
+                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                            # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
+
+
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                            # plot two point clouds side by side ?
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END INTERPOLATE STRUCTURE
+
+                            ### COMPUTE MR STATISTICS
+
+                            if mr_adc_ref in pydicom_item:
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                                ###
+                                adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                    mr_adc_ref,
+                                    filter_out_negatives = True)
+                                # Prepare data
+                                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                                #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                                zslices_list = interslice_interpolation_information.interpolated_pts_list
+                                mr_adc_value_column_name_str = "MR ADC value"
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                    zslices_list,
+                                                                    structure_info,
+                                                                    constant_z_slice_polygons_handler_option,
+                                                                    remove_consecutive_duplicate_points_in_polygons,
+                                                                    custom_cuda_kernel_type,
+                                                                    associated_value_str = mr_adc_value_column_name_str)
+                                if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                    plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                        "Test pt X",
+                                                        "Test pt Y",
+                                                        "Test pt Z",
+                                                        "Pt clr R",
+                                                        "Pt clr G",
+                                                        "Pt clr B",
+                                                        additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                                ###
+                                # Create a summary statistics dataframe of the column
+                                mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                                                                                                        mr_adc_value_column_name_str,
+                                                                                                                                        filter_column="Pt contained bool",
+                                                                                                                                        filter_value=True)
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                                ###
+                                # Keep track and store onky the points that are contained within the prostate (stored at end of loop)
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true = containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True]
+
+                                # Store it in the master dict
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true
+
+                                del containment_info_for_all_lattice_points_grand_pandas_dataframe
+
+                                # if the following dataframe already exists, then merge the above with it by appending rows
+                                if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+                                    mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]
+                                    mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                        mr_adc_value_summary_statistics_specific_structure],
+                                                                                                        ignore_index = True)
+                                    # Store the dataframe
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+
+                                # if the following dataframe does not exist, then store the above dataframe
+                                elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                    # Store the dataframe if it does not exist
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                            ###### END COMPUTE MR STATISTICS
+
+                            ### CALCULATE THE STRUCTURES VOLUME
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                            ###
+
                             structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
                             zslices_list = interslice_interpolation_information.interpolated_pts_list
-                            mr_adc_value_column_name_str = "MR ADC value"
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
-                                                                zslices_list,
-                                                                structure_info,
-                                                                constant_z_slice_polygons_handler_option, 
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                custom_cuda_kernel_type,
-                                                                associated_value_str = mr_adc_value_column_name_str)
-                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
-                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                    "Test pt X", 
-                                                    "Test pt Y", 
-                                                    "Test pt Z",
-                                                    "Pt clr R",
-                                                    "Pt clr G",
-                                                    "Pt clr B",
-                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+                            structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                                interpolated_zvals_list,
+                                zslices_list,
+                                structure_info,
+                                patientUID,
+                                voxel_size_for_structure_volume_calc_non_bx,
+                                factor_for_voxel_size,
+                                cupy_array_upper_limit_NxN_size_input,
+                                layout_groups,
+                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                structures_progress,
+                                live_display,
+                                generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                                constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                include_edges_in_log_files = include_edges_in_log_files,
+                                custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                                plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                                plot_binary_mask_bool = plot_binary_mask_bool,
+                                other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END STRUCTURE VOLUME CALCULATION
+
+                            ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                            ###
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                            non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+                            structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                            interpolated_zvals_list,
+                                                                                                                            zslices_list,
+                                                                                                                            non_bx_structure_global_centroid,
+                                                                                                                            structure_info,
+                                                                                                                            patientUID,
+                                                                                                                            voxel_size_for_structure_dimension_calc,
+                                                                                                                            factor_for_voxel_size,
+                                                                                                                            cupy_array_upper_limit_NxN_size_input,
+                                                                                                                            layout_groups,
+                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                            structures_progress,
+                                                                                                                            live_display,
+                                                                                                                            generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                            include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                            )
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+
+
+                            """
+                            ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                            ###
+
+
+                            structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                        radius_for_normals_estimation,
+                                                                                                                        max_nn_for_normals_estimation,
+                                                                                                                        radius_for_curvature_estimation,
+                                                                                                                        display_curvature_bool)
+
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            """
+
+
+
+
+
+                            ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
+
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh", total = None)
+                            live_display.refresh()
+                            ###
+                            #live_display.stop()
+                            #st = time.time()
+
+
+                            fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist,
+                                interp_intra_slice_dist,
+                                threeDdata_array_fully_interpolated_with_end_caps,
+                                radius_for_normals_estimation,
+                                max_nn_for_normals_estimation
+                                )
+
+                            if water_tight_bool == False:
+                                important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
+
+                            #et = time.time()
+                            #regular_time = et - st
+
+                            #st = time.time()
+                            # The non blocking version was created to try to allow the live_display to continue running and not be frozen during this
+                            # execution, but the triangle mesh methods of o3d are blocking. Unfortunately, this work-around attempt didnt work. No point in working on this more for now.
+                            """
+                            fully_interp_with_end_caps_structure_triangle_mesh, _, live_display = misc_tools.compute_structure_triangle_mesh_non_blocking(interp_inter_slice_dist,
+                                interp_intra_slice_dist,
+                                threeDdata_array_fully_interpolated_with_end_caps,
+                                radius_for_normals_estimation,
+                                max_nn_for_normals_estimation,
+                                live_display = live_display
+                                )
+                            """
+                            #et = time.time()
+
+                            #non_blocking_time = et - st
+
+
+                            if display_structure_surface_mesh_bool == True:
+                                o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
+
+
+                            #live_display.stop()
+                            #print('\n Execution time (regular):', regular_time, 'seconds')
+                            #print('\n Execution time (non-blocking):', non_blocking_time, 'seconds')
+
+
                             ###
                             indeterminate_progress_sub.update(indeterminate_task, visible = False)
                             ###
                             ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating surface area", total = None)
                             ###
-                            # Create a summary statistics dataframe of the column 
-                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                                                                                                    mr_adc_value_column_name_str,
-                                                                                                                                    filter_column="Pt contained bool", 
-                                                                                                                                    filter_value=True)
-                            
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
-                            ###
-                            # Keep track and store onky the points that are contained within the prostate (stored at end of loop)
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true = containment_info_for_all_lattice_points_grand_pandas_dataframe[containment_info_for_all_lattice_points_grand_pandas_dataframe["Pt contained bool"] == True]                                                                                                        
-                            
-                            # Store it in the master dict 
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_true
-                            
-                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
-                            
-                            # if the following dataframe already exists, then merge the above with it by appending rows
-                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                    mr_adc_value_summary_statistics_specific_structure],
-                                                                                                    ignore_index = True)
-                                # Store the dataframe
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                            
-                            # if the following dataframe does not exist, then store the above dataframe
-                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                                # Store the dataframe if it does not exist
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                            structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                            """
+                            end_caps_points = np.array(interpolation_information.endcaps_points)
+                            area_voxel_size = interp_dist_caps**2
+                            end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
+
+                            structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                            """
+
+
                             ###
                             indeterminate_progress_sub.update(indeterminate_task, visible = False)
                             ###
-                        ###### END COMPUTE MR STATISTICS
-                        
-                        ### CALCULATE THE STRUCTURES VOLUME
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                        ###
-                                
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                            interpolated_zvals_list,
-                            zslices_list,
-                            structure_info,
-                            patientUID,
-                            voxel_size_for_structure_volume_calc_non_bx,
-                            factor_for_voxel_size,
-                            cupy_array_upper_limit_NxN_size_input,
-                            layout_groups,
-                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                            structures_progress,
-                            live_display,
-                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
-                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                            include_edges_in_log_files = include_edges_in_log_files,
-                            custom_cuda_kernel_type = custom_cuda_kernel_type,
-                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
-                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
-                            plot_binary_mask_bool = plot_binary_mask_bool,
-                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                            )
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END STRUCTURE VOLUME CALCULATION
-                        
-                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                        ###
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
-                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+
+
+                            ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                            surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                            sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            maximum_3D_diameter = maximum_distance
+                            si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
+
+
+                            # Note that the eigenvectors are vstacked
+                            pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                            # This is the same method as pyradiomics
+                            equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                                "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                                "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                            if show_equivalent_ellipsoid_from_pca_bool == True:
+                                axis_diameters = list(equivalent_ellipse_dimensions.values())
+                                misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                            elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                            flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+
+
+                            # Create dataframe of the 3d shape features
+                            shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                            "Structure ID": [structureID],
+                                                            "Structure index": [specific_structure_index],
+                                                            "Structure type": [structs],
+                                                            "Structure refnum": [structure_reference_number],
+                                                            "Volume": [structure_volume],
+                                                            "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                            "Surface area to volume ratio": [surface_volume_ratio],
+                                                            "Sphericity": [sphericity],
+                                                            "Compactness 1": [compactness_1],
+                                                            "Compactness 2": [compactness_2],
+                                                            "Spherical disproportion": [spherical_disproportion],
+                                                            "Maximum 3D diameter": [maximum_3D_diameter],
+                                                            "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                            "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                            "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                            "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
+                                                            "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
+                                                            "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
+                                                            "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                            "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                            "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                            "Elongation": [elongation],
+                                                            "Flatness": [flatness],
+                                                            "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                            "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                            "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                            "S/I arclength": [si_arclength]
+                                                            }
+
+                            shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+                            shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
+
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
+
+                            structures_progress.update(processing_structures_task, advance=1)
+
+                        structures_progress.remove_task(processing_structures_task)
+                        patients_progress.update(processing_patients_task, advance=1)
+                        completed_progress.update(processing_patients_task_completed, advance=1)
+                    patients_progress.update(processing_patients_task, visible=False)
+                    completed_progress.update(processing_patients_task_completed,  visible=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    ### PREPROCESSING RECTUMS
+
+
+                    #live_display.stop()
+
+                    patientUID_default = "Initializing"
+                    processing_patients_task_main_description = "[red]Processing patient rectums [{}]...".format(patientUID_default)
+                    processing_patients_task_completed_main_description = "[green]Processing patient rectums"
+                    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Processing patient rectums [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+
+                        structureID_default = "Initializing"
+                        num_rectums = master_structure_info_dict["By patient"][patientUID][rectum_ref_key]["Num structs"]
+
+
+
+
+                        processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_rectums)
+
+                        structs = rectum_ref_key
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                            threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            threeDdata_array = np.empty([total_structure_points,3])
+
+                            # build raw threeDdata for non biopsies
+                            lower_bound_index = 0
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points
+
+
+                            # conduct INTER-slice interpolation
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+
+                            # SLOWER TO ANALYZE PARALLEL
+                            #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            # FASTER TO ANALYZE SERIALLY
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                            # fill in the end caps
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+
+                            # old
+                            #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                            # new
+                            interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                            interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+
+                            # generate point cloud of raw threeDdata
+                            pcd_color = structs_referenced_dict[structs]['PCD color']
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
+
+                            # generate delaunay triangulations (DEPRECATED)
+                            """
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            #delaunay_global_convex_structure_obj.generate_lineset()
+                            """
+
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
+                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
+                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
+                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                            # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
+
+
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                            # plot two point clouds side by side ?
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+
+
+
+                            ### COMPUTE MR STATISTICS
+
+                            if mr_adc_ref in pydicom_item:
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                                ###
+
+                                adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                    mr_adc_ref,
+                                    filter_out_negatives = True)
+
+                                # Prepare data
+                                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                                #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                                zslices_list = interslice_interpolation_information.interpolated_pts_list
+                                mr_adc_value_column_name_str = "MR ADC value"
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                    zslices_list,
+                                                                    structure_info,
+                                                                    constant_z_slice_polygons_handler_option,
+                                                                    remove_consecutive_duplicate_points_in_polygons,
+                                                                    custom_cuda_kernel_type,
+                                                                    associated_value_str = mr_adc_value_column_name_str)
+
+
+                                if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                    plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                        "Test pt X",
+                                                        "Test pt Y",
+                                                        "Test pt Z",
+                                                        "Pt clr R",
+                                                        "Pt clr G",
+                                                        "Pt clr B",
+                                                        additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                                ###
+
+                                # Create a summary statistics dataframe of the column
+                                mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                                                                                                        mr_adc_value_column_name_str,
+                                                                                                                                        filter_column="Pt contained bool",
+                                                                                                                                        filter_value=True)
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                                ###
+                                # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                                # Retrieve
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+                                # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                    index_col= "Test pt index",
+                                                    flag_col= "Pt contained bool",
+                                                    keep_unmatched = True
+                                                )
+
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+
+                                del containment_info_for_all_lattice_points_grand_pandas_dataframe
+
+                                # if the following dataframe already exists, then merge the above with it by appending rows
+                                if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+
+                                    mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]
+                                    mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                        mr_adc_value_summary_statistics_specific_structure],
+                                                                                                        ignore_index = True)
+                                    # Store the dataframe
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+
+                                # if the following dataframe does not exist, then store the above dataframe
+                                elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                    # Store the dataframe if it does not exist
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                            ###### END COMPUTE MR STATISTICS
+
+
+
+
+
+                            ### CALCULATE THE STRUCTURES VOLUME
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                            ###
+
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+                            structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                                interpolated_zvals_list,
+                                zslices_list,
+                                structure_info,
+                                patientUID,
+                                voxel_size_for_structure_volume_calc_non_bx,
+                                factor_for_voxel_size,
+                                cupy_array_upper_limit_NxN_size_input,
+                                layout_groups,
+                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                structures_progress,
+                                live_display,
+                                generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                                constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                include_edges_in_log_files = include_edges_in_log_files,
+                                custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                                plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                                plot_binary_mask_bool = plot_binary_mask_bool,
+                                other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END STRUCTURE VOLUME CALCULATION
+
+
+
+                            ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                            ###
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                            non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+
+                            structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                            interpolated_zvals_list,
+                                                                                                                            zslices_list,
+                                                                                                                            non_bx_structure_global_centroid,
+                                                                                                                            structure_info,
+                                                                                                                            patientUID,
+                                                                                                                            voxel_size_for_structure_dimension_calc,
+                                                                                                                            factor_for_voxel_size,
+                                                                                                                            cupy_array_upper_limit_NxN_size_input,
+                                                                                                                            layout_groups,
+                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                            structures_progress,
+                                                                                                                            live_display,
+                                                                                                                            generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                            include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                            )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            """
+                            ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                            ###
+
+
+                            structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                        radius_for_normals_estimation,
+                                                                                                                        max_nn_for_normals_estimation,
+                                                                                                                        radius_for_curvature_estimation,
+                                                                                                                        display_curvature_bool)
+
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            """
+
+
+
+
+
+                            ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
+
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
+                            live_display.refresh()
+                            ###
+                            #live_display.stop()
+
+                            fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist,
+                                interp_intra_slice_dist,
+                                threeDdata_array_fully_interpolated_with_end_caps,
+                                radius_for_normals_estimation,
+                                max_nn_for_normals_estimation
+                                )
+
+                            if water_tight_bool == False:
+                                important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
+
+                            if display_structure_surface_mesh_bool == True:
+                                o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
+
+                            structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                            """
+                            end_caps_points = np.array(interpolation_information.endcaps_points)
+                            area_voxel_size = interp_dist_caps**2
+                            end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
+
+                            structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                            """
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                            surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                            sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            maximum_3D_diameter = maximum_distance
+                            si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
+
+                            # Note that the eigenvectors are vstacked
+                            pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                            # This is the same method as pyradiomics
+                            equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                                "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                                "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                            if show_equivalent_ellipsoid_from_pca_bool == True:
+                                axis_diameters = list(equivalent_ellipse_dimensions.values())
+                                misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                            elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                            flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+
+
+                            # Create dataframe of the 3d shape features
+                            shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                            "Structure ID": [structureID],
+                                                            "Structure index": [specific_structure_index],
+                                                            "Structure type": [structs],
+                                                            "Structure refnum": [structure_reference_number],
+                                                            "Volume": [structure_volume],
+                                                            "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                            "Surface area to volume ratio": [surface_volume_ratio],
+                                                            "Sphericity": [sphericity],
+                                                            "Compactness 1": [compactness_1],
+                                                            "Compactness 2": [compactness_2],
+                                                            "Spherical disproportion": [spherical_disproportion],
+                                                            "Maximum 3D diameter": [maximum_3D_diameter],
+                                                            "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                            "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                            "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                            "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
+                                                            "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
+                                                            "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
+                                                            "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                            "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                            "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                            "Elongation": [elongation],
+                                                            "Flatness": [flatness],
+                                                            "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                            "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                            "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                            "S/I arclength": [si_arclength]
+                                                            }
+
+
+
+
+
+                            shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+                            shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
+
+
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
+
+                            structures_progress.update(processing_structures_task, advance=1)
+
+                        structures_progress.remove_task(processing_structures_task)
+                        patients_progress.update(processing_patients_task, advance=1)
+                        completed_progress.update(processing_patients_task_completed, advance=1)
+                    patients_progress.update(processing_patients_task, visible=False)
+                    completed_progress.update(processing_patients_task_completed,  visible=True)
+
+
+
+
+
+
+
+                    ### PREPROCESSING URETHRAS
+
+
+                    #live_display.stop()
+
+                    patientUID_default = "Initializing"
+                    processing_patients_task_main_description = "[red]Processing patient urethras [{}]...".format(patientUID_default)
+                    processing_patients_task_completed_main_description = "[green]Processing patient urethras"
+                    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Processing patient urethras [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+
+                        structureID_default = "Initializing"
+                        num_urethras = master_structure_info_dict["By patient"][patientUID][urethra_ref_key]["Num structs"]
+
+
+
+
+                        processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_urethras)
+
+                        structs = urethra_ref_key
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                            threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            threeDdata_array = np.empty([total_structure_points,3])
+
+                            # build raw threeDdata for non biopsies
+                            lower_bound_index = 0
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points
+
+
+                            # conduct INTER-slice interpolation
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+
+                            # SLOWER TO ANALYZE PARALLEL
+                            #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            # FASTER TO ANALYZE SERIALLY
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                            # fill in the end caps
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+
+                            # old
+                            #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                            # new
+                            interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                            interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+
+                            # generate point cloud of raw threeDdata
+                            pcd_color = structs_referenced_dict[structs]['PCD color']
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
+
+                            # generate delaunay triangulations
+                            """
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            #delaunay_global_convex_structure_obj.generate_lineset()
+                            """
+
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
+                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
+                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
+                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                            # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
+
+
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                            # plot two point clouds side by side ?
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+
+
+
+
+
+                            ### COMPUTE MR STATISTICS
+
+                            if mr_adc_ref in pydicom_item:
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                                ###
+
+                                adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                    mr_adc_ref,
+                                    filter_out_negatives = True)
+
+                                # Prepare data
+                                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                                #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                                zslices_list = interslice_interpolation_information.interpolated_pts_list
+                                mr_adc_value_column_name_str = "MR ADC value"
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                    zslices_list,
+                                                                    structure_info,
+                                                                    constant_z_slice_polygons_handler_option,
+                                                                    remove_consecutive_duplicate_points_in_polygons,
+                                                                    custom_cuda_kernel_type,
+                                                                    associated_value_str = mr_adc_value_column_name_str)
+
+
+                                if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                    plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                        "Test pt X",
+                                                        "Test pt Y",
+                                                        "Test pt Z",
+                                                        "Pt clr R",
+                                                        "Pt clr G",
+                                                        "Pt clr B",
+                                                        additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                                ###
+
+                                # Create a summary statistics dataframe of the column
+                                mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                                                                                                        mr_adc_value_column_name_str,
+                                                                                                                                        filter_column="Pt contained bool",
+                                                                                                                                        filter_value=True)
+
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                                ###
+                                # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                                # Retrieve
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+                                # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                    index_col= "Test pt index",
+                                                    flag_col= "Pt contained bool",
+                                                    keep_unmatched = True
+                                                )
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+                                del containment_info_for_all_lattice_points_grand_pandas_dataframe
+
+                                # if the following dataframe already exists, then merge the above with it by appending rows
+                                if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+
+                                    mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]
+                                    mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                        mr_adc_value_summary_statistics_specific_structure],
+                                                                                                        ignore_index = True)
+                                    # Store the dataframe
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+
+                                # if the following dataframe does not exist, then store the above dataframe
+                                elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                    # Store the dataframe if it does not exist
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                            ###### END COMPUTE MR STATISTICS
+
+
+
+
+
+                            ### CALCULATE THE STRUCTURES VOLUME
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                            ###
+
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+                            structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                                interpolated_zvals_list,
+                                zslices_list,
+                                structure_info,
+                                patientUID,
+                                voxel_size_for_structure_volume_calc_non_bx,
+                                factor_for_voxel_size,
+                                cupy_array_upper_limit_NxN_size_input,
+                                layout_groups,
+                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                structures_progress,
+                                live_display,
+                                generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                                constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                include_edges_in_log_files = include_edges_in_log_files,
+                                custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                                plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                                plot_binary_mask_bool = plot_binary_mask_bool,
+                                other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END STRUCTURE VOLUME CALCULATION
+
+
+
+                            ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                            ###
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                            non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+
+                            structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
+                                                                                                                            interpolated_zvals_list,
+                                                                                                                            zslices_list,
+                                                                                                                            non_bx_structure_global_centroid,
+                                                                                                                            structure_info,
+                                                                                                                            patientUID,
+                                                                                                                            voxel_size_for_structure_dimension_calc,
+                                                                                                                            factor_for_voxel_size,
+                                                                                                                            cupy_array_upper_limit_NxN_size_input,
+                                                                                                                            layout_groups,
+                                                                                                                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                                                                            structures_progress,
+                                                                                                                            live_display,
+                                                                                                                            generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
+                                                                                                                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                                                                                                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                                                                                                            include_edges_in_log_files = include_edges_in_log_files,
+                                                                                                                            custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
+                                                                                                                            demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
+                                                                                                                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                                                                                                            )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            """
+                            ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                            ###
+
+
+                            structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                        radius_for_normals_estimation,
+                                                                                                                        max_nn_for_normals_estimation,
+                                                                                                                        radius_for_curvature_estimation,
+                                                                                                                        display_curvature_bool)
+
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            """
+
+
+
+
+
+                            ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
+
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
+                            live_display.refresh()
+                            ###
+                            #live_display.stop()
+
+                            fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist,
+                                interp_intra_slice_dist,
+                                threeDdata_array_fully_interpolated_with_end_caps,
+                                radius_for_normals_estimation,
+                                max_nn_for_normals_estimation
+                                )
+
+                            if water_tight_bool == False:
+                                important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
+
+                            if display_structure_surface_mesh_bool == True:
+                                o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
+
+                            structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                            """
+                            end_caps_points = np.array(interpolation_information.endcaps_points)
+                            area_voxel_size = interp_dist_caps**2
+                            end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
+
+                            structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                            """
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                            surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                            sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            maximum_3D_diameter = maximum_distance
+                            si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
+
+                            # Note that the eigenvectors are vstacked
+                            pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                            # This is the same method as pyradiomics
+                            equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                                "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                                "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                            if show_equivalent_ellipsoid_from_pca_bool == True:
+                                axis_diameters = list(equivalent_ellipse_dimensions.values())
+                                misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                            elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                            flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+
+
+                            # Create dataframe of the 3d shape features
+                            shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                            "Structure ID": [structureID],
+                                                            "Structure index": [specific_structure_index],
+                                                            "Structure type": [structs],
+                                                            "Structure refnum": [structure_reference_number],
+                                                            "Volume": [structure_volume],
+                                                            "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                            "Surface area to volume ratio": [surface_volume_ratio],
+                                                            "Sphericity": [sphericity],
+                                                            "Compactness 1": [compactness_1],
+                                                            "Compactness 2": [compactness_2],
+                                                            "Spherical disproportion": [spherical_disproportion],
+                                                            "Maximum 3D diameter": [maximum_3D_diameter],
+                                                            "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                            "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                            "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                            "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
+                                                            "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
+                                                            "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
+                                                            "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                            "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                            "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                            "Elongation": [elongation],
+                                                            "Flatness": [flatness],
+                                                            "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                            "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                            "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                            "S/I arclength": [si_arclength]
+                                                            }
+
+
+
+
+
+                            shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+                            shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
+
+
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
+
+                            structures_progress.update(processing_structures_task, advance=1)
+
+                        structures_progress.remove_task(processing_structures_task)
+                        patients_progress.update(processing_patients_task, advance=1)
+                        completed_progress.update(processing_patients_task_completed, advance=1)
+                    patients_progress.update(processing_patients_task, visible=False)
+                    completed_progress.update(processing_patients_task_completed,  visible=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    ##### PREPROCESSING DILs
+                    #live_display.stop()
+
+                    patientUID_default = "Initializing"
+                    processing_patients_task_main_description = "[red]Processing patient DILs [{}]...".format(patientUID_default)
+                    processing_patients_task_completed_main_description = "[green]Processing patient DILs"
+                    processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
+                    processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+
+                    for patientUID,pydicom_item in master_structure_reference_dict.items():
+                        processing_patients_task_main_description = "[red]Processing patient DILs [{}]...".format(patientUID)
+                        patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+
+                        structureID_default = "Initializing"
+                        #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
+                        num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
+                        num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
+
+                        num_dils = len(pydicom_item[dil_ref])
+
+
+                        ### SELECT PROSTATE, OR DEFAULT TO ORIGIN FOR PROSTATE COM IF NONE FOUND
+                        #selected_prostate_info, message_string, prostate_found_bool, num_prostates_found = misc_tools.specific_structure_selector(pydicom_item,
+                        #                                                                                                                        oar_ref,
+                        #                                                                                                                        prostate_contour_name)
+
+                        sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]
+
+
+
+                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
+                        processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_dils)
+
+
+                        structs = dil_ref
+                        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                            structureID = specific_structure["ROI"]
+                            structure_reference_number = specific_structure["Ref #"]
+                            processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+                            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+                            # The below print lines were just for my own understanding of how to access the data structure
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
+                            #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
+
+                            threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
+
+                            total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
+                            threeDdata_array = np.empty([total_structure_points,3])
+
+                            # build raw threeDdata for non biopsies
+                            lower_bound_index = 0
+                            for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
+                                current_zslice_num_points = np.size(threeDdata_zslice,0)
+                                threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
+                                lower_bound_index = lower_bound_index + current_zslice_num_points
+
+
+                            # conduct INTER-slice interpolation
+                            interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
+
+                            # conduct INTRA-slice interpolation
+                            # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
+                            threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
+                            # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
+
+                            num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
+
+                            # SLOWER TO ANALYZE PARALLEL
+                            #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            # FASTER TO ANALYZE SERIALLY
+                            interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
+                            interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
+
+
+                            #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
+                            #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
+
+                            # fill in the end caps
+                            first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
+                            last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
+
+                            # old
+                            #interpolation_information.create_fill(first_zslice, interp_dist_caps)
+                            #interpolation_information.create_fill(last_zslice, interp_dist_caps)
+
+                            # new
+                            interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+                            interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
+
+                            # generate point cloud of raw threeDdata
+                            pcd_color = structs_referenced_dict[structs]['PCD color']
+
+                            threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
+
+                            # generate delaunay triangulations
+                            """
+                            deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
+
+                            zslice1 = threeDdata_array[0,2]
+                            zslice2 = threeDdata_array[-1,2]
+                            delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
+                            #delaunay_global_convex_structure_obj.generate_lineset()
+                            """
+
+                            threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
+                            threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
+                            threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
+                            interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
+                            inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
+                            inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
+                            interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
+                            # plot raw points ?
+                            #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
+
+                            # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
+                            # plot points with order labels of interpolated intraslice ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
+
+                            # plot points with order labels of raw data ?
+                            #if test_ind > 1:
+                            #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
+                            #test_ind = test_ind + 1
+
+
+                            # plot fully interpolated points of z data ?
+                            #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
+                            #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
+
+
+                            # plot two point clouds side by side ?
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
+                            #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
+
+
+
+
+
+                            ### COMPUTE MR STATISTICS
+
+                            if mr_adc_ref in pydicom_item:
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
+                                ###
+
+                                adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
+                                    mr_adc_ref,
+                                    filter_out_negatives = True)
+
+                                # Prepare data
+                                structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+                                #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
+                                zslices_list = interslice_interpolation_information.interpolated_pts_list
+                                mr_adc_value_column_name_str = "MR ADC value"
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
+                                                                    zslices_list,
+                                                                    structure_info,
+                                                                    constant_z_slice_polygons_handler_option,
+                                                                    remove_consecutive_duplicate_points_in_polygons,
+                                                                    custom_cuda_kernel_type,
+                                                                    associated_value_str = mr_adc_value_column_name_str)
+
+
+                                if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
+                                    plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                        "Test pt X",
+                                                        "Test pt Y",
+                                                        "Test pt Z",
+                                                        "Pt clr R",
+                                                        "Pt clr G",
+                                                        "Pt clr B",
+                                                        additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
+                                ###
+
+                                # Create a summary statistics dataframe of the column
+                                mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                                                                                                        mr_adc_value_column_name_str,
+                                                                                                                                        filter_column="Pt contained bool",
+                                                                                                                                        filter_value=True)
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                                ###
+                                indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
+                                ###
+                                # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
+                                # Retrieve
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
+                                # remove the points from the prostate true dataframe that are contained true in the rectum data frame
+                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
+                                                    containment_info_for_all_lattice_points_grand_pandas_dataframe,
+                                                    index_col= "Test pt index",
+                                                    flag_col= "Pt contained bool",
+                                                    keep_unmatched = True
+                                                )
+                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
+
+
+                                del containment_info_for_all_lattice_points_grand_pandas_dataframe
+
+                                # if the following dataframe already exists, then merge the above with it by appending rows
+                                if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
+
+                                    mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]
+                                    mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
+                                                                                                        mr_adc_value_summary_statistics_specific_structure],
+                                                                                                        ignore_index = True)
+                                    # Store the dataframe
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
+
+                                # if the following dataframe does not exist, then store the above dataframe
+                                elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
+                                    # Store the dataframe if it does not exist
+                                    master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
+
+                                ###
+                                indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                                ###
+
+                            ###### END COMPUTE MR STATISTICS
+
+
+
+
+
+
+
+
+
+
+
+
+
+                            ### CALCULATE THE STRUCTURES VOLUME
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
+                            ###
+
+
+                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+
+                            structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
+                                interpolated_zvals_list,
+                                zslices_list,
+                                structure_info,
+                                patientUID,
+                                voxel_size_for_structure_volume_calc_non_bx,
+                                factor_for_voxel_size,
+                                cupy_array_upper_limit_NxN_size_input,
+                                layout_groups,
+                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                structures_progress,
+                                live_display,
+                                generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
+                                constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
+                                remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
+                                include_edges_in_log_files = include_edges_in_log_files,
+                                custom_cuda_kernel_type = custom_cuda_kernel_type,
+                                demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
+                                plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
+                                plot_binary_mask_bool = plot_binary_mask_bool,
+                                other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
+                                )
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            ###### END STRUCTURE VOLUME CALCULATION
+
+
+
+                            ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
+                            ###
+
+                            interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
+                            interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
+                            zslices_list = interslice_interpolation_information.interpolated_pts_list
+                            non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
+                            non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
+
+                            structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
                                                                                                                         interpolated_zvals_list,
                                                                                                                         zslices_list,
                                                                                                                         non_bx_structure_global_centroid,
@@ -2417,2057 +3553,213 @@ def main():
                                                                                                                         demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
                                                                                                                         other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
                                                                                                                         )
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            """
+                            ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
+
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
+                            ###
+
+
+                            structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
+                                                                                                                        radius_for_normals_estimation,
+                                                                                                                        max_nn_for_normals_estimation,
+                                                                                                                        radius_for_curvature_estimation,
+                                                                                                                        display_curvature_bool)
+
+
+
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+                            """
 
 
 
 
-                        """
-                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
 
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
-                        ###
-                        
-
-                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
-                                                                                                                    radius_for_normals_estimation,
-                                                                                                                    max_nn_for_normals_estimation,
-                                                                                                                    radius_for_curvature_estimation,
-                                                                                                                    display_curvature_bool)
+                            ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
 
 
+                            ###
+                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
+                            live_display.refresh()
+                            ###
+                            #live_display.stop()
 
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        """
-
-
-
-
-
-                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
-
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh", total = None)
-                        live_display.refresh()
-                        ###
-                        #live_display.stop()
-                        #st = time.time()
-
-
-                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                            interp_intra_slice_dist,
-                            threeDdata_array_fully_interpolated_with_end_caps,
-                            radius_for_normals_estimation,
-                            max_nn_for_normals_estimation
-                            )
-
-                        if water_tight_bool == False:
-                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
-                        
-                        #et = time.time()
-                        #regular_time = et - st
-                        
-                        #st = time.time()
-                        # The non blocking version was created to try to allow the live_display to continue running and not be frozen during this
-                        # execution, but the triangle mesh methods of o3d are blocking. Unfortunately, this work-around attempt didnt work. No point in working on this more for now.
-                        """
-                        fully_interp_with_end_caps_structure_triangle_mesh, _, live_display = misc_tools.compute_structure_triangle_mesh_non_blocking(interp_inter_slice_dist, 
-                            interp_intra_slice_dist,
-                            threeDdata_array_fully_interpolated_with_end_caps,
-                            radius_for_normals_estimation,
-                            max_nn_for_normals_estimation,
-                            live_display = live_display
-                            )
-                        """
-                        #et = time.time()
-
-                        #non_blocking_time = et - st
-
-                        
-                        if display_structure_surface_mesh_bool == True:
-                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
-
-
-                        #live_display.stop()
-                        #print('\n Execution time (regular):', regular_time, 'seconds')
-                        #print('\n Execution time (non-blocking):', non_blocking_time, 'seconds')
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating surface area", total = None)
-                        ###
-
-                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
-                        """
-                        end_caps_points = np.array(interpolation_information.endcaps_points)
-                        area_voxel_size = interp_dist_caps**2
-                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
-
-                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
-                        """
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        ### COMPUTE OTHER 3D SHAPE FEATURES
-
-                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
-                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        maximum_3D_diameter = maximum_distance
-                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
- 
-
-                        # Note that the eigenvectors are vstacked
-                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
-
-                        # This is the same method as pyradiomics
-                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
-                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
-                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
-
-                        if show_equivalent_ellipsoid_from_pca_bool == True:
-                            axis_diameters = list(equivalent_ellipse_dimensions.values())
-                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
-
-
-                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
-                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
-
-                        
-
-                        # Create dataframe of the 3d shape features
-                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
-                                                        "Structure ID": [structureID],
-                                                        "Structure index": [specific_structure_index],
-                                                        "Structure type": [structs],
-                                                        "Structure refnum": [structure_reference_number],
-                                                        "Volume": [structure_volume],
-                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
-                                                        "Surface area to volume ratio": [surface_volume_ratio],
-                                                        "Sphericity": [sphericity],
-                                                        "Compactness 1": [compactness_1],
-                                                        "Compactness 2": [compactness_2],
-                                                        "Spherical disproportion": [spherical_disproportion],
-                                                        "Maximum 3D diameter": [maximum_3D_diameter],
-                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
-                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
-                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
-                                                        "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
-                                                        "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
-                                                        "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
-                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
-                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
-                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
-                                                        "Elongation": [elongation],
-                                                        "Flatness": [flatness],
-                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
-                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
-                                                        "S/I arclength": [si_arclength]
-                                                        }
-
-                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
-                        shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
-
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
-
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
+                            fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist,
+                                interp_intra_slice_dist,
+                                threeDdata_array_fully_interpolated_with_end_caps,
+                                radius_for_normals_estimation,
+                                max_nn_for_normals_estimation
                                 )
 
-                        structures_progress.update(processing_structures_task, advance=1)
+                            if water_tight_bool == False:
+                                important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
 
-                    structures_progress.remove_task(processing_structures_task)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)    
+                            if display_structure_surface_mesh_bool == True:
+                                o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
 
+                            structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
+                            """
+                            end_caps_points = np.array(interpolation_information.endcaps_points)
+                            area_voxel_size = interp_dist_caps**2
+                            end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
 
-
-
-
-
-
-
-
+                            structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
+                            """
 
 
+                            ###
+                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
+                            ###
+
+
+                            ### COMPUTE OTHER 3D SHAPE FEATURES
+
+                            surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
+                            sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
+                            maximum_3D_diameter = maximum_distance
+                            si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
+
+                            # Note that the eigenvectors are vstacked
+                            pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
+
+                            # This is the same method as pyradiomics
+                            equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
+                                                                "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
+                                                                "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
+
+                            if show_equivalent_ellipsoid_from_pca_bool == True:
+                                axis_diameters = list(equivalent_ellipse_dimensions.values())
+                                misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
+
+
+                            elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
+                            flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
+
+
+                            selected_prostate_df = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref]
+                            selected_prostate_info = selected_prostate_df.to_dict('records')[0]
+
+                            prostate_found_bool = selected_prostate_info["Struct found bool"]
+
+
+                            live_display.refresh()
+                            if prostate_found_bool == True:
+                                prostate_structure_index = selected_prostate_info["Index number"]
+                                prostate_structure = pydicom_item[oar_ref][prostate_structure_index]
+                                prostate_structure_global_centroid = prostate_structure["Structure global centroid"].copy().reshape((3))
+                                prostate_dimension_at_centroid_dict = prostate_structure["Structure dimension at centroid dict"]
+                                prostate_z_dimension_length_at_centroid = prostate_dimension_at_centroid_dict["Z dimension length at centroid"]
+
+                                # note that distance_to_mid_gland_threshold should be a positive quantity for the position classifier function below!
+                                distance_to_mid_gland_threshold = abs(prostate_z_dimension_length_at_centroid/6)
+
+                                # determine dil location within prostate
+                                # Calculate DIL location in prostate reference frame
+                                specific_structure_global_centroid = specific_structure["Structure global centroid"][0]
+                                specific_structure_global_centroid_in_prostate_frame = specific_structure_global_centroid - prostate_structure_global_centroid
+
+                                # despite the function name, it can be used on any structure, not just biopsies
+                                dil_prostate_position_dict = misc_tools.bx_position_classifier_in_prostate_frame_sextant(specific_structure_global_centroid_in_prostate_frame,
+                                            distance_to_mid_gland_threshold)
+                            else:
+                                dil_prostate_position_dict = {"LR": None,"AP": None,"SI": None}
+
+                            # Create dataframe of the 3d shape features
+                            shape_features_3d_dictionary = {"Patient ID": [patientUID],
+                                                            "Structure ID": [structureID],
+                                                            "Structure index": [specific_structure_index],
+                                                            "Structure type": [structs],
+                                                            "Structure refnum": [structure_reference_number],
+                                                            "Volume": [structure_volume],
+                                                            "Surface area": [structure_fully_interp_with_end_caps_surface_area],
+                                                            "Surface area to volume ratio": [surface_volume_ratio],
+                                                            "Sphericity": [sphericity],
+                                                            "Compactness 1": [compactness_1],
+                                                            "Compactness 2": [compactness_2],
+                                                            "Spherical disproportion": [spherical_disproportion],
+                                                            "Maximum 3D diameter": [maximum_3D_diameter],
+                                                            "PCA major": [pca_lengths_of_structure_dict["Major"]],
+                                                            "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
+                                                            "PCA least": [pca_lengths_of_structure_dict["Least"]],
+                                                            "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
+                                                            "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
+                                                            "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
+                                                            "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
+                                                            "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
+                                                            "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
+                                                            "Elongation": [elongation],
+                                                            "Flatness": [flatness],
+                                                            "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
+                                                            "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
+                                                            "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
+                                                            "S/I arclength": [si_arclength],
+                                                            "DIL centroid (X, prostate frame)": specific_structure_global_centroid_in_prostate_frame[0],
+                                                            "DIL centroid (Y, prostate frame)": specific_structure_global_centroid_in_prostate_frame[1],
+                                                            "DIL centroid (Z, prostate frame)": specific_structure_global_centroid_in_prostate_frame[2],
+                                                            "DIL centroid distance (prostate frame)": np.linalg.norm(specific_structure_global_centroid_in_prostate_frame),
+                                                            "DIL prostate sextant (LR)": dil_prostate_position_dict["LR"],
+                                                            "DIL prostate sextant (AP)": dil_prostate_position_dict["AP"],
+                                                            "DIL prostate sextant (SI)": dil_prostate_position_dict["SI"]
+                                                            }
 
 
 
 
 
+                            shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
+                            shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
 
 
-                ### PREPROCESSING RECTUMS
+                            # store all calculated quantities
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
+                            #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
+                            master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
 
-
-                #live_display.stop()
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Processing patient rectums [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Processing patient rectums"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Processing patient rectums [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"          
-                    num_rectums = master_structure_info_dict["By patient"][patientUID][rectum_ref_key]["Num structs"]
-
-
-
-                    
-                    processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_rectums)
-
-                    structs = rectum_ref_key
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
                             structures_progress.update(processing_structures_task, advance=1)
-                            continue
 
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
-
-                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-                        
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])                                                       
-
-                        # build raw threeDdata for non biopsies
-                        lower_bound_index = 0  
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
-                        
-                        
-                        # conduct INTER-slice interpolation
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        
-                        # SLOWER TO ANALYZE PARALLEL
-                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        # FASTER TO ANALYZE SERIALLY
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
-
-                        # fill in the end caps
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-
-                        # old
-                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                        # new
-                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-
-                        # generate point cloud of raw threeDdata
-                        pcd_color = structs_referenced_dict[structs]['PCD color']
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        
-                        # generate delaunay triangulations (DEPRECATED)
-                        """
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        #delaunay_global_convex_structure_obj.generate_lineset()
-                        """
-
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
-                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
-                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
-                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
-
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
-
-
-                        ### COMPUTE MR STATISTICS
-                        
-                        if mr_adc_ref in pydicom_item:
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
-                            ###
-
-                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
-                                mr_adc_ref,
-                                filter_out_negatives = True)
-
-                            # Prepare data
-                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
-                            zslices_list = interslice_interpolation_information.interpolated_pts_list
-                            mr_adc_value_column_name_str = "MR ADC value"
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
-                                                                zslices_list,
-                                                                structure_info,
-                                                                constant_z_slice_polygons_handler_option, 
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                custom_cuda_kernel_type,
-                                                                associated_value_str = mr_adc_value_column_name_str)
-
-
-                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
-                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                    "Test pt X", 
-                                                    "Test pt Y", 
-                                                    "Test pt Z",
-                                                    "Pt clr R",
-                                                    "Pt clr G",
-                                                    "Pt clr B",
-                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
-                            ###
-
-                            # Create a summary statistics dataframe of the column 
-                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                                                                                                    mr_adc_value_column_name_str,
-                                                                                                                                    filter_column="Pt contained bool", 
-                                                                                                                                    filter_value=True)
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
-                            ###
-                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
-                            # Retrieve
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                                      
-                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
-                                                index_col= "Test pt index",
-                                                flag_col= "Pt contained bool",
-                                                keep_unmatched = True
-                                            )
-                            
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
-
-                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
-                            
-                            # if the following dataframe already exists, then merge the above with it by appending rows
-                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                            
-                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                    mr_adc_value_summary_statistics_specific_structure],
-                                                                                                    ignore_index = True)
-                                # Store the dataframe
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                            
-                            # if the following dataframe does not exist, then store the above dataframe
-                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                                # Store the dataframe if it does not exist
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                        
-                        ###### END COMPUTE MR STATISTICS
-
-
-
-
-
-                        ### CALCULATE THE STRUCTURES VOLUME
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                        ###
-                                
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-  
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                            interpolated_zvals_list,
-                            zslices_list,
-                            structure_info,
-                            patientUID,
-                            voxel_size_for_structure_volume_calc_non_bx,
-                            factor_for_voxel_size,
-                            cupy_array_upper_limit_NxN_size_input,
-                            layout_groups,
-                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                            structures_progress,
-                            live_display,
-                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
-                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                            include_edges_in_log_files = include_edges_in_log_files,
-                            custom_cuda_kernel_type = custom_cuda_kernel_type,
-                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
-                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
-                            plot_binary_mask_bool = plot_binary_mask_bool,
-                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                            )
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END STRUCTURE VOLUME CALCULATION
-
-
-
-                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                        ###
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
-
-                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                        interpolated_zvals_list,
-                                                                                                                        zslices_list,
-                                                                                                                        non_bx_structure_global_centroid,
-                                                                                                                        structure_info,
-                                                                                                                        patientUID,
-                                                                                                                        voxel_size_for_structure_dimension_calc,
-                                                                                                                        factor_for_voxel_size,
-                                                                                                                        cupy_array_upper_limit_NxN_size_input,
-                                                                                                                        layout_groups,
-                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                        structures_progress,
-                                                                                                                        live_display,
-                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
-                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
-                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
-                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                                                                                                                        )
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        """
-                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
-                        ###
-                        
-
-                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
-                                                                                                                    radius_for_normals_estimation,
-                                                                                                                    max_nn_for_normals_estimation,
-                                                                                                                    radius_for_curvature_estimation,
-                                                                                                                    display_curvature_bool)
-
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        """
-
-
-
-
-
-                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
-
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
-                        live_display.refresh()
-                        ###
-                        #live_display.stop()
-
-                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                            interp_intra_slice_dist,
-                            threeDdata_array_fully_interpolated_with_end_caps,
-                            radius_for_normals_estimation,
-                            max_nn_for_normals_estimation
-                            )
-                        
-                        if water_tight_bool == False:
-                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
-                        
-                        if display_structure_surface_mesh_bool == True:
-                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
-
-                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
-                        """
-                        end_caps_points = np.array(interpolation_information.endcaps_points)
-                        area_voxel_size = interp_dist_caps**2
-                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
-
-                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
-                        """
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        ### COMPUTE OTHER 3D SHAPE FEATURES
-
-                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
-                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        maximum_3D_diameter = maximum_distance 
-                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
-
-                        # Note that the eigenvectors are vstacked
-                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
-
-                        # This is the same method as pyradiomics
-                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
-                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
-                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
-
-                        if show_equivalent_ellipsoid_from_pca_bool == True:
-                            axis_diameters = list(equivalent_ellipse_dimensions.values())
-                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
-
-
-                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
-                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
-
-                        
-
-                        # Create dataframe of the 3d shape features
-                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
-                                                        "Structure ID": [structureID],
-                                                        "Structure index": [specific_structure_index],
-                                                        "Structure type": [structs],
-                                                        "Structure refnum": [structure_reference_number],
-                                                        "Volume": [structure_volume],
-                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
-                                                        "Surface area to volume ratio": [surface_volume_ratio],
-                                                        "Sphericity": [sphericity],
-                                                        "Compactness 1": [compactness_1],
-                                                        "Compactness 2": [compactness_2],
-                                                        "Spherical disproportion": [spherical_disproportion],
-                                                        "Maximum 3D diameter": [maximum_3D_diameter],
-                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
-                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
-                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
-                                                        "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
-                                                        "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
-                                                        "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
-                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
-                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
-                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
-                                                        "Elongation": [elongation],
-                                                        "Flatness": [flatness],
-                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
-                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
-                                                        "S/I arclength": [si_arclength]
-                                                        }
-
-
-
-                        
-
-                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
-                        shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
-
-
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
-
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
-
-
-                        structures_progress.update(processing_structures_task, advance=1)
-
-                    structures_progress.remove_task(processing_structures_task)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)    
-
-
-
-
-
-
-
-                ### PREPROCESSING URETHRAS
-
-
-                #live_display.stop()
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Processing patient urethras [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Processing patient urethras"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Processing patient urethras [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"          
-                    num_urethras = master_structure_info_dict["By patient"][patientUID][urethra_ref_key]["Num structs"]
-
-
-
-                    
-                    processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_urethras)
-
-                    structs = urethra_ref_key
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        processing_structures_task_main_description = "[cyan]Processing [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
-                            continue
-
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
-
-                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-                        
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])                                                       
-
-                        # build raw threeDdata for non biopsies
-                        lower_bound_index = 0  
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
-                        
-                        
-                        # conduct INTER-slice interpolation
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        
-                        # SLOWER TO ANALYZE PARALLEL
-                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        # FASTER TO ANALYZE SERIALLY
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
-
-                        # fill in the end caps
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        
-                        # old
-                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                        # new
-                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-
-                        # generate point cloud of raw threeDdata
-                        pcd_color = structs_referenced_dict[structs]['PCD color']
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        
-                        # generate delaunay triangulations 
-                        """
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        #delaunay_global_convex_structure_obj.generate_lineset()
-                        """
-
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
-                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
-                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
-                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
-
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
-
-
-
-
-                        ### COMPUTE MR STATISTICS
-                        
-                        if mr_adc_ref in pydicom_item:
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
-                            ###
-
-                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
-                                mr_adc_ref,
-                                filter_out_negatives = True)
-
-                            # Prepare data
-                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
-                            zslices_list = interslice_interpolation_information.interpolated_pts_list
-                            mr_adc_value_column_name_str = "MR ADC value"
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
-                                                                zslices_list,
-                                                                structure_info,
-                                                                constant_z_slice_polygons_handler_option, 
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                custom_cuda_kernel_type,
-                                                                associated_value_str = mr_adc_value_column_name_str)
-
-
-                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
-                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                    "Test pt X", 
-                                                    "Test pt Y", 
-                                                    "Test pt Z",
-                                                    "Pt clr R",
-                                                    "Pt clr G",
-                                                    "Pt clr B",
-                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
-                            ###
-
-                            # Create a summary statistics dataframe of the column 
-                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                                                                                                    mr_adc_value_column_name_str,
-                                                                                                                                    filter_column="Pt contained bool", 
-                                                                                                                                    filter_value=True)
-                            
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
-                            ###
-                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
-                            # Retrieve
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                                      
-                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
-                                                index_col= "Test pt index",
-                                                flag_col= "Pt contained bool",
-                                                keep_unmatched = True
-                                            )
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
-                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
-                            
-                            # if the following dataframe already exists, then merge the above with it by appending rows
-                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                            
-                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                    mr_adc_value_summary_statistics_specific_structure],
-                                                                                                    ignore_index = True)
-                                # Store the dataframe
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                            
-                            # if the following dataframe does not exist, then store the above dataframe
-                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                                # Store the dataframe if it does not exist
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                        
-                        ###### END COMPUTE MR STATISTICS
-
-
-
-                        
-
-                        ### CALCULATE THE STRUCTURES VOLUME
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                        ###
-
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)  
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                            interpolated_zvals_list,
-                            zslices_list,
-                            structure_info,
-                            patientUID,
-                            voxel_size_for_structure_volume_calc_non_bx,
-                            factor_for_voxel_size,
-                            cupy_array_upper_limit_NxN_size_input,
-                            layout_groups,
-                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                            structures_progress,
-                            live_display,
-                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
-                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                            include_edges_in_log_files = include_edges_in_log_files,
-                            custom_cuda_kernel_type = custom_cuda_kernel_type,
-                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
-                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
-                            plot_binary_mask_bool = plot_binary_mask_bool,
-                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                            )
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END STRUCTURE VOLUME CALCULATION
-
-
-
-                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                        ###
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
-
-                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                        interpolated_zvals_list,
-                                                                                                                        zslices_list,
-                                                                                                                        non_bx_structure_global_centroid,
-                                                                                                                        structure_info,
-                                                                                                                        patientUID,
-                                                                                                                        voxel_size_for_structure_dimension_calc,
-                                                                                                                        factor_for_voxel_size,
-                                                                                                                        cupy_array_upper_limit_NxN_size_input,
-                                                                                                                        layout_groups,
-                                                                                                                        nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                        structures_progress,
-                                                                                                                        live_display,
-                                                                                                                        generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
-                                                                                                                        constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                                                                                                                        remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                                                                                                                        include_edges_in_log_files = include_edges_in_log_files,
-                                                                                                                        custom_cuda_kernel_type = custom_cuda_kernel_type,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
-                                                                                                                        demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
-                                                                                                                        other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                                                                                                                        )
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        """
-                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
-                        ###
-                        
-
-                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
-                                                                                                                    radius_for_normals_estimation,
-                                                                                                                    max_nn_for_normals_estimation,
-                                                                                                                    radius_for_curvature_estimation,
-                                                                                                                    display_curvature_bool)
-
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        """
-
-
-
-
-
-                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
-
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
-                        live_display.refresh()
-                        ###
-                        #live_display.stop()
-
-                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                            interp_intra_slice_dist,
-                            threeDdata_array_fully_interpolated_with_end_caps,
-                            radius_for_normals_estimation,
-                            max_nn_for_normals_estimation
-                            )
-                        
-                        if water_tight_bool == False:
-                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
-
-                        if display_structure_surface_mesh_bool == True:
-                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
-
-                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
-                        """
-                        end_caps_points = np.array(interpolation_information.endcaps_points)
-                        area_voxel_size = interp_dist_caps**2
-                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
-
-                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
-                        """
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        ### COMPUTE OTHER 3D SHAPE FEATURES
-
-                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
-                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        maximum_3D_diameter = maximum_distance 
-                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
-
-                        # Note that the eigenvectors are vstacked
-                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
-
-                        # This is the same method as pyradiomics
-                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
-                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
-                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
-
-                        if show_equivalent_ellipsoid_from_pca_bool == True:
-                            axis_diameters = list(equivalent_ellipse_dimensions.values())
-                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
-
-
-                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
-                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
-
-                        
-
-                        # Create dataframe of the 3d shape features
-                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
-                                                        "Structure ID": [structureID],
-                                                        "Structure index": [specific_structure_index],
-                                                        "Structure type": [structs],
-                                                        "Structure refnum": [structure_reference_number],
-                                                        "Volume": [structure_volume],
-                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
-                                                        "Surface area to volume ratio": [surface_volume_ratio],
-                                                        "Sphericity": [sphericity],
-                                                        "Compactness 1": [compactness_1],
-                                                        "Compactness 2": [compactness_2],
-                                                        "Spherical disproportion": [spherical_disproportion],
-                                                        "Maximum 3D diameter": [maximum_3D_diameter],
-                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
-                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
-                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
-                                                        "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
-                                                        "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
-                                                        "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
-                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
-                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
-                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
-                                                        "Elongation": [elongation],
-                                                        "Flatness": [flatness],
-                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
-                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
-                                                        "S/I arclength": [si_arclength]
-                                                        }
-
-
-
-                        
-
-                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
-                        shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
-
-
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
-
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
-                        
-
-
-                        structures_progress.update(processing_structures_task, advance=1)
-
-                    structures_progress.remove_task(processing_structures_task)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                ##### PREPROCESSING DILs
-                #live_display.stop()
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Processing patient DILs [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Processing patient DILs"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Processing patient DILs [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"
-                    #num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    num_total_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    num_bx_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][bx_ref]["Num structs"]
-                    
-                    num_dils = len(pydicom_item[dil_ref])
-
-
-                    ### SELECT PROSTATE, OR DEFAULT TO ORIGIN FOR PROSTATE COM IF NONE FOUND
-                    #selected_prostate_info, message_string, prostate_found_bool, num_prostates_found = misc_tools.specific_structure_selector(pydicom_item,
-                    #                                                                                                                        oar_ref,
-                    #                                                                                                                        prostate_contour_name)   
-                    
-                    sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]
-
-                    
-                    
-                    processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
-                    processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_dils)
-
-
-                    structs = dil_ref
-                    for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-                        structureID = specific_structure["ROI"]
-                        structure_reference_number = specific_structure["Ref #"]
-                        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
-                        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-                        modular_validation_snapshot = None
-                        modular_live_state = None
-                        if validate_non_biopsy_structure_preprocessing_equivalence_bool == True:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                                sp_patient_selected_structure_info_dataframe=(
-                                    sp_patient_selected_structure_info_dataframe
-                                ),
-                            )
-                            modular_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            modular_live_state = capture_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                        else:
-                            live_display = preprocess_non_biopsy_structure(
-                                patient_uid=patientUID,
-                                pydicom_item=pydicom_item,
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                structs_referenced_dict=structs_referenced_dict,
-                                config=non_bx_structure_preprocessing_config,
-                                parallel_pool=parallel_pool,
-                                layout_groups=layout_groups,
-                                structures_progress=structures_progress,
-                                indeterminate_progress_sub=indeterminate_progress_sub,
-                                important_info=important_info,
-                                live_display=live_display,
-                                runtime_logger=runtime_logger,
-                                sp_patient_selected_structure_info_dataframe=(
-                                    sp_patient_selected_structure_info_dataframe
-                                ),
-                            )
-                            structures_progress.update(processing_structures_task, advance=1)
-                            continue
-
-                        # The below print lines were just for my own understanding of how to access the data structure
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[0].ContourData)
-                        #print(RTst_dcms[dcm_index].ROIContourSequence[int(specific_structure["Ref #"])].ContourSequence[1].ContourData)
-
-                        threeDdata_zslice_list = master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts zslice list"].copy()
-                        
-                        total_structure_points = sum([np.shape(x)[0] for x in threeDdata_zslice_list])
-                        threeDdata_array = np.empty([total_structure_points,3])                                                       
-
-                        # build raw threeDdata for non biopsies
-                        lower_bound_index = 0  
-                        for index, threeDdata_zslice in enumerate(threeDdata_zslice_list):
-                            current_zslice_num_points = np.size(threeDdata_zslice,0)
-                            threeDdata_array[lower_bound_index:lower_bound_index + current_zslice_num_points] = threeDdata_zslice
-                            lower_bound_index = lower_bound_index + current_zslice_num_points 
-                        
-                        
-                        # conduct INTER-slice interpolation
-                        interslice_interpolation_information, threeDdata_equal_pt_zslice_list = anatomy_reconstructor_tools.inter_zslice_interpolator(parallel_pool, threeDdata_zslice_list, interp_inter_slice_dist)
-                        
-                        # conduct INTRA-slice interpolation
-                        # do you want to interpolate the zslice interpolated data or the raw data? comment out the appropriate line below..
-                        threeDdata_to_intra_zslice_interpolate_zslice_list = interslice_interpolation_information.interpolated_pts_list
-                        # threeDdata_to_intra_zslice_interpolate_zslice_list = threeDdata_zslice_list
-
-                        num_z_slices_data_to_intra_slice_interpolate = len(threeDdata_to_intra_zslice_interpolate_zslice_list)
-                        
-                        # SLOWER TO ANALYZE PARALLEL
-                        #interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        #interpolation_information.parallel_analyze(parallel_pool, threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        # FASTER TO ANALYZE SERIALLY
-                        interpolation_information = interpolation_information_obj(num_z_slices_data_to_intra_slice_interpolate)
-                        interpolation_information.serial_analyze(threeDdata_to_intra_zslice_interpolate_zslice_list,interp_intra_slice_dist)
-                        
-
-                        #for index, threeDdata_zslice in enumerate(threeDdata_to_intra_zslice_interpolate_zslice_list):
-                        #    interpolation_information.analyze_structure_slice(threeDdata_zslice,interp_intra_slice_dist)
-
-                        # fill in the end caps
-                        first_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[0]
-                        last_zslice = threeDdata_to_intra_zslice_interpolate_zslice_list[-1]
-                        
-                        # old
-                        #interpolation_information.create_fill(first_zslice, interp_dist_caps)
-                        #interpolation_information.create_fill(last_zslice, interp_dist_caps)
-
-                        # new
-                        interpolation_information.create_fill_new_v2(first_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-                        interpolation_information.create_fill_new_v2(last_zslice, interp_dist_caps, kernel_type=custom_cuda_kernel_type)
-
-                        # generate point cloud of raw threeDdata
-                        pcd_color = structs_referenced_dict[structs]['PCD color']
-
-                        threeDdata_point_cloud = point_containment_tools.create_point_cloud(threeDdata_array, pcd_color)
-                        
-                        # generate delaunay triangulations 
-                        """
-                        deulaunay_objs_zslice_wise_list = point_containment_tools.adjacent_slice_delaunay_parallel(parallel_pool, threeDdata_zslice_list)
-
-                        zslice1 = threeDdata_array[0,2]
-                        zslice2 = threeDdata_array[-1,2]
-                        delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(threeDdata_array, threeDdata_pcd_color, zslice1, zslice2)
-                        #delaunay_global_convex_structure_obj.generate_lineset()
-                        """
-
-                        threeDdata_array_fully_interpolated = interpolation_information.interpolated_pts_np_arr
-                        threeDdata_array_fully_interpolated_with_end_caps = interpolation_information.interpolated_pts_with_end_caps_np_arr
-                        threeDdata_array_interslice_interpolation = np.vstack(interslice_interpolation_information.interpolated_pts_list)
-                        interslice_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_interslice_interpolation, pcd_color)
-                        inter_and_intra_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated, pcd_color)
-                        inter_and_intra_and_end_caps_interp_pcd = point_containment_tools.create_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, pcd_color)
-                        interpolated_pcd_dict = {"Interslice": interslice_interp_pcd, "Full": inter_and_intra_interp_pcd, "Full with end caps": inter_and_intra_and_end_caps_interp_pcd}
-                        # plot raw points ?
-                        #plotting_funcs.plot_point_clouds(threeDdata_array, label='Unknown')
-
-                        # WARNING : The function (plotting_funcs.point_cloud_with_order_labels) has an error, when called the second time after .run it outputs a GLFW not initialized error!
-                        # plot points with order labels of interpolated intraslice ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_fully_interpolated)
-
-                        # plot points with order labels of raw data ?
-                        #if test_ind > 1:
-                        #   plotting_funcs.point_cloud_with_order_labels(threeDdata_array)
-                        #test_ind = test_ind + 1
-
-                        
-                        # plot fully interpolated points of z data ?
-                        #plotting_funcs.point_cloud_with_order_labels(threeDdata_array_interslice_interpolation)
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation,threeDdata_array,threeDdata_array_fully_interpolated, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_interslice_interpolation, label='Unknown')
-                        #plotting_funcs.plot_point_clouds(threeDdata_array_fully_interpolated, label='Unknown')
-
-
-                        # plot two point clouds side by side ? 
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated)
-                        #plotting_funcs.plot_two_point_clouds_side_by_side(threeDdata_array, threeDdata_array_fully_interpolated_with_end_caps)
-                        
-
-
-
-
-                        ### COMPUTE MR STATISTICS
-                        
-                        if mr_adc_ref in pydicom_item:
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (determining containment)", total = None)
-                            ###
-
-                            adc_mr_phys_space_arr = mr_localizers.grab_mr_adc_2d_arr(pydicom_item,
-                                mr_adc_ref,
-                                filter_out_negatives = True)
-
-                            # Prepare data
-                            structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure)
-                            #interslice_interpolation_information = specific_relative_structure["Inter-slice interpolation information"]
-                            zslices_list = interslice_interpolation_information.interpolated_pts_list
-                            mr_adc_value_column_name_str = "MR ADC value"
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe = mr_localizers.test_points_of_given_2d_lattice_from_within_given_structure_and_return_dataframe_type_2III(adc_mr_phys_space_arr,
-                                                                zslices_list,
-                                                                structure_info,
-                                                                constant_z_slice_polygons_handler_option, 
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                custom_cuda_kernel_type,
-                                                                associated_value_str = mr_adc_value_column_name_str)
-
-
-                            if demonstrate_mr_adc_pcd_containment_correctness_bool == True:
-                                plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                    "Test pt X", 
-                                                    "Test pt Y", 
-                                                    "Test pt Z",
-                                                    "Pt clr R",
-                                                    "Pt clr G",
-                                                    "Pt clr B",
-                                                    additional_point_clouds=[interpolated_pcd_dict['Full with end caps']])
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR statistics (computing statistics)", total = None)
-                            ###
-
-                            # Create a summary statistics dataframe of the column 
-                            mr_adc_value_summary_statistics_specific_structure = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe, 
-                                                                                                                                    mr_adc_value_column_name_str,
-                                                                                                                                    filter_column="Pt contained bool", 
-                                                                                                                                    filter_value=True)
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-
-                            ###
-                            indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Keeping track of prostate only MR ADC values", total = None)
-                            ###
-                            # Keep track of the points that are ONLY in the prostate (ie with all other structure points removed)
-                            # Retrieve
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]                                                                                              
-                            # remove the points from the prostate true dataframe that are contained true in the rectum data frame
-                            containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = dataframe_builders.drop_rows_where_b_is_true(
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only,
-                                                containment_info_for_all_lattice_points_grand_pandas_dataframe,
-                                                index_col= "Test pt index",
-                                                flag_col= "Pt contained bool",
-                                                keep_unmatched = True
-                                            )
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"] = containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only                                                                                              
-
-                            
-                            del containment_info_for_all_lattice_points_grand_pandas_dataframe
-                            
-                            # if the following dataframe already exists, then merge the above with it by appending rows
-                            if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                            
-                                mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                                mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                    mr_adc_value_summary_statistics_specific_structure],
-                                                                                                    ignore_index = True)
-                                # Store the dataframe
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                            
-                            # if the following dataframe does not exist, then store the above dataframe
-                            elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                                # Store the dataframe if it does not exist
-                                master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure
-
-                            ###
-                            indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                            ###
-                        
-                        ###### END COMPUTE MR STATISTICS
-
-
-
-
-
-
-
-
-
-
-                        
-
-
-                        ### CALCULATE THE STRUCTURES VOLUME
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure volume", total = None)
-                        ###
-                        
-
-                        structure_info = misc_tools.specific_structure_info_dict_creator('given', specific_structure = specific_structure) 
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-
-                        structure_volume, maximum_distance, voxel_size_for_structure_volume_calc, binary_mask_arr, live_display = misc_tools.structure_volume_calculator(interpolated_pts_np_arr,
-                            interpolated_zvals_list,
-                            zslices_list,
-                            structure_info,
-                            patientUID,
-                            voxel_size_for_structure_volume_calc_non_bx,
-                            factor_for_voxel_size,
-                            cupy_array_upper_limit_NxN_size_input,
-                            layout_groups,
-                            nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                            structures_progress,
-                            live_display,
-                            generate_cuda_log_files_volume_calculation = generate_cuda_log_files_volume_calculation,
-                            constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                            remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                            include_edges_in_log_files = include_edges_in_log_files,
-                            custom_cuda_kernel_type = custom_cuda_kernel_type,
-                            demonstrate_volume_calculation_correctness_bool_1 = demonstrate_volume_calculation_correctness_bool_1,
-                            plot_volume_calculation_containment_result_bool_1_old = plot_volume_calculation_containment_result_bool_1_old,
-                            plot_binary_mask_bool = plot_binary_mask_bool,
-                            other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                            )
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###### END STRUCTURE VOLUME CALCULATION
-
-
-
-                        ### CALCULATE THE STRUCTURES DIMENSIONS AT THE CENTROID IN X,Y,Z DIRECTIONS
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure dimensions", total = None)
-                        ###
-                        
-                        interpolated_pts_np_arr = interslice_interpolation_information.interpolated_pts_np_arr
-                        interpolated_zvals_list = interslice_interpolation_information.zslice_vals_after_interpolation_list
-                        zslices_list = interslice_interpolation_information.interpolated_pts_list
-                        non_bx_structure_global_centroid = specific_structure["Structure global centroid"].copy()
-                        non_bx_structure_global_centroid = np.reshape(non_bx_structure_global_centroid,(3))
-
-                        structure_dimension_at_centroid_dict, voxel_size_for_structure_dimension_calc, live_display = misc_tools.structure_dimensions_calculator(interpolated_pts_np_arr,
-                                                                                                                    interpolated_zvals_list,
-                                                                                                                    zslices_list,
-                                                                                                                    non_bx_structure_global_centroid,
-                                                                                                                    structure_info,
-                                                                                                                    patientUID,
-                                                                                                                    voxel_size_for_structure_dimension_calc,
-                                                                                                                    factor_for_voxel_size,
-                                                                                                                    cupy_array_upper_limit_NxN_size_input,
-                                                                                                                    layout_groups,
-                                                                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                                                                    structures_progress,
-                                                                                                                    live_display,
-                                                                                                                    generate_cuda_log_files_structure_dimension_calculation = generate_cuda_log_files_structure_dimension_calculation,
-                                                                                                                    constant_z_slice_polygons_handler_option = constant_z_slice_polygons_handler_option,
-                                                                                                                    remove_consecutive_duplicate_points_in_polygons = remove_consecutive_duplicate_points_in_polygons,
-                                                                                                                    include_edges_in_log_files = include_edges_in_log_files,
-                                                                                                                    custom_cuda_kernel_type = custom_cuda_kernel_type,
-                                                                                                                    demonstrate_structure_dimension_calculation_correctness_bool_1 = demonstrate_structure_dimension_calculation_correctness_bool_1,
-                                                                                                                    demonstrate_structure_dimension_calculation_correctness_bool_1_old = demonstrate_structure_dimension_calculation_correctness_bool_1_old,
-                                                                                                                    other_pcds_to_plot_list = [interpolated_pcd_dict['Full with end caps']]
-                                                                                                                    )
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        """
-                        ### COMPUTE POINT-WISE CURVATURE FOR DILS ONLY
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure curvature", total = None)
-                        ###
-                        
-
-                        structure_curvature_dictionary = misc_tools.determine_structure_curvature_dictionary_output(threeDdata_array_fully_interpolated_with_end_caps,
-                                                                                                                    radius_for_normals_estimation,
-                                                                                                                    max_nn_for_normals_estimation,
-                                                                                                                    radius_for_curvature_estimation,
-                                                                                                                    display_curvature_bool)
-
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        """
-
-
-
-
-
-                        ### COMPUTE TRIANGLE MESH AND STRUCTURE SURFACE AREA
-
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating structure triangle mesh and surface area", total = None)
-                        live_display.refresh()
-                        ###
-                        #live_display.stop()
-
-                        fully_interp_with_end_caps_structure_triangle_mesh, water_tight_bool = misc_tools.compute_structure_triangle_mesh(interp_inter_slice_dist, 
-                            interp_intra_slice_dist,
-                            threeDdata_array_fully_interpolated_with_end_caps,
-                            radius_for_normals_estimation,
-                            max_nn_for_normals_estimation
-                            )
-                        
-                        if water_tight_bool == False:
-                            important_info.add_text_line(f"WARNING! Patient: {patientUID}, Structure: {structureID}, ({structs}) is not water tight! Surface area may be inaccurate!", live_display)
-                        
-                        if display_structure_surface_mesh_bool == True:
-                            o3d.visualization.draw_geometries([fully_interp_with_end_caps_structure_triangle_mesh], mesh_show_back_face=True)
-
-                        structure_fully_interp_with_end_caps_surface_area = misc_tools.compute_surface_area(fully_interp_with_end_caps_structure_triangle_mesh)
-                        """
-                        end_caps_points = np.array(interpolation_information.endcaps_points)
-                        area_voxel_size = interp_dist_caps**2
-                        end_caps_area = misc_tools.compute_end_caps_area(end_caps_points,area_voxel_size)
-
-                        structure_total_surface_area = structure_fully_interp_surface_area + end_caps_area
-                        """
-
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-
-                        ### COMPUTE OTHER 3D SHAPE FEATURES
-
-                        surface_volume_ratio = structure_fully_interp_with_end_caps_surface_area/structure_volume
-                        sphericity = misc_tools.calculate_sphericity(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_1 = misc_tools.calculate_compactness_1(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        compactness_2 = misc_tools.calculate_compactness_2(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        spherical_disproportion = misc_tools.spherical_disproportion(structure_volume,structure_fully_interp_with_end_caps_surface_area)
-                        maximum_3D_diameter = maximum_distance 
-                        si_arclength = misc_tools.compute_arc_length_from_centroids(specific_structure["Structure centroid pts"])
-
-                        # Note that the eigenvectors are vstacked
-                        pca_lengths_of_structure_dict, pca_eigenvectors_of_structure_arr = misc_tools.pca_lengths(binary_mask_arr)
-
-                        # This is the same method as pyradiomics
-                        equivalent_ellipse_dimensions = {"Major axis": 4*math.sqrt(pca_lengths_of_structure_dict["Major"]),
-                                                            "Minor axis": 4*math.sqrt(pca_lengths_of_structure_dict["Minor"]),
-                                                            "Least axis": 4*math.sqrt(pca_lengths_of_structure_dict["Least"])}
-
-                        if show_equivalent_ellipsoid_from_pca_bool == True:
-                            axis_diameters = list(equivalent_ellipse_dimensions.values())
-                            misc_tools.draw_oriented_ellipse_point_cloud(threeDdata_array_fully_interpolated_with_end_caps, axis_diameters, pca_eigenvectors_of_structure_arr)
-
-
-                        elongation = math.sqrt(pca_lengths_of_structure_dict["Minor"]/pca_lengths_of_structure_dict["Major"])
-                        flatness = math.sqrt(pca_lengths_of_structure_dict["Least"]/pca_lengths_of_structure_dict["Major"])
-
-                        
-                        selected_prostate_df = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Struct ref type"] == oar_ref]
-                        selected_prostate_info = selected_prostate_df.to_dict('records')[0]
-
-                        prostate_found_bool = selected_prostate_info["Struct found bool"]
-                            
-
-                        live_display.refresh()
-                        if prostate_found_bool == True:
-                            prostate_structure_index = selected_prostate_info["Index number"]
-                            prostate_structure = pydicom_item[oar_ref][prostate_structure_index]
-                            prostate_structure_global_centroid = prostate_structure["Structure global centroid"].copy().reshape((3))
-                            prostate_dimension_at_centroid_dict = prostate_structure["Structure dimension at centroid dict"]
-                            prostate_z_dimension_length_at_centroid = prostate_dimension_at_centroid_dict["Z dimension length at centroid"]
-                        
-                            # note that distance_to_mid_gland_threshold should be a positive quantity for the position classifier function below!
-                            distance_to_mid_gland_threshold = abs(prostate_z_dimension_length_at_centroid/6) 
-
-                            # determine dil location within prostate 
-                            # Calculate DIL location in prostate reference frame 
-                            specific_structure_global_centroid = specific_structure["Structure global centroid"][0]
-                            specific_structure_global_centroid_in_prostate_frame = specific_structure_global_centroid - prostate_structure_global_centroid
-
-                            # despite the function name, it can be used on any structure, not just biopsies
-                            dil_prostate_position_dict = misc_tools.bx_position_classifier_in_prostate_frame_sextant(specific_structure_global_centroid_in_prostate_frame,
-                                        distance_to_mid_gland_threshold)
-                        else: 
-                            dil_prostate_position_dict = {"LR": None,"AP": None,"SI": None}
-
-                        # Create dataframe of the 3d shape features
-                        shape_features_3d_dictionary = {"Patient ID": [patientUID],
-                                                        "Structure ID": [structureID],
-                                                        "Structure index": [specific_structure_index],
-                                                        "Structure type": [structs],
-                                                        "Structure refnum": [structure_reference_number],
-                                                        "Volume": [structure_volume],
-                                                        "Surface area": [structure_fully_interp_with_end_caps_surface_area],
-                                                        "Surface area to volume ratio": [surface_volume_ratio],
-                                                        "Sphericity": [sphericity],
-                                                        "Compactness 1": [compactness_1],
-                                                        "Compactness 2": [compactness_2],
-                                                        "Spherical disproportion": [spherical_disproportion],
-                                                        "Maximum 3D diameter": [maximum_3D_diameter],
-                                                        "PCA major": [pca_lengths_of_structure_dict["Major"]],
-                                                        "PCA minor": [pca_lengths_of_structure_dict["Minor"]],
-                                                        "PCA least": [pca_lengths_of_structure_dict["Least"]],
-                                                        "PCA eigenvector major": [tuple(pca_eigenvectors_of_structure_arr[0,:])],
-                                                        "PCA eigenvector minor": [tuple(pca_eigenvectors_of_structure_arr[1,:])],
-                                                        "PCA eigenvector least": [tuple(pca_eigenvectors_of_structure_arr[2,:])],
-                                                        "Major axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Major axis"]],
-                                                        "Minor axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Minor axis"]],
-                                                        "Least axis (equivalent ellipse)": [equivalent_ellipse_dimensions["Least axis"]],
-                                                        "Elongation": [elongation],
-                                                        "Flatness": [flatness],
-                                                        "L/R dimension at centroid": structure_dimension_at_centroid_dict['X dimension length at centroid'],
-                                                        "A/P dimension at centroid": structure_dimension_at_centroid_dict['Y dimension length at centroid'],
-                                                        "S/I dimension at centroid": structure_dimension_at_centroid_dict['Z dimension length at centroid'],
-                                                        "S/I arclength": [si_arclength],
-                                                        "DIL centroid (X, prostate frame)": specific_structure_global_centroid_in_prostate_frame[0],
-                                                        "DIL centroid (Y, prostate frame)": specific_structure_global_centroid_in_prostate_frame[1],
-                                                        "DIL centroid (Z, prostate frame)": specific_structure_global_centroid_in_prostate_frame[2],
-                                                        "DIL centroid distance (prostate frame)": np.linalg.norm(specific_structure_global_centroid_in_prostate_frame),
-                                                        "DIL prostate sextant (LR)": dil_prostate_position_dict["LR"],
-                                                        "DIL prostate sextant (AP)": dil_prostate_position_dict["AP"],
-                                                        "DIL prostate sextant (SI)": dil_prostate_position_dict["SI"]                                                        
-                                                        }
-
-
-
-                        
-
-                        shape_features_dataframe = pandas.DataFrame(shape_features_3d_dictionary)
-                        shape_features_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(shape_features_dataframe, threshold=0.25)
-
-
-                        # store all calculated quantities
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Raw contour pts"] = threeDdata_array
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Equal num zslice contour pts"] = threeDdata_equal_pt_zslice_list
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Inter-slice interpolation information"] = interslice_interpolation_information                        
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Intra-slice interpolation information"] = interpolation_information
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation zslice-wise list"] = deulaunay_objs_zslice_wise_list # DEPRECATED
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Delaunay triangulation global structure"] = delaunay_global_convex_structure_obj # DEPRECATED
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Maximum pairwise distance"] = maximum_3D_diameter
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure volume"] = structure_volume
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure volume calc"] = voxel_size_for_structure_volume_calc
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure dimension at centroid dict"] = structure_dimension_at_centroid_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Voxel size for structure dimension calc"] = voxel_size_for_structure_dimension_calc
-                        #master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure curvature dict"] = structure_curvature_dictionary
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure surface area"] = structure_fully_interp_with_end_caps_surface_area
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure features dataframe"] = shape_features_dataframe
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Point cloud raw"] = threeDdata_point_cloud
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Interpolated structure point cloud dict"] = interpolated_pcd_dict
-                        master_structure_reference_dict[patientUID][structs][specific_structure_index]["Structure OPEN3D triangle mesh object"] = fully_interp_with_end_caps_structure_triangle_mesh
-
-                        if modular_validation_snapshot is not None:
-                            legacy_validation_snapshot = capture_non_biopsy_structure_processing_snapshot(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                            )
-                            validation_result = compare_non_biopsy_structure_processing_snapshots(
-                                modular_validation_snapshot,
-                                legacy_validation_snapshot,
-                            )
-                            restore_non_biopsy_modular_live_state(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                struct_ref_type=structs,
-                                specific_structure_index=specific_structure_index,
-                                all_ref_key=all_ref_key,
-                                saved_state=modular_live_state,
-                            )
-                            append_non_biopsy_structure_validation_result(
-                                master_structure_reference_dict=master_structure_reference_dict,
-                                patient_uid=patientUID,
-                                all_ref_key=all_ref_key,
-                                validation_result=validation_result,
-                            )
-                            if runtime_logger is not None:
-                                runtime_logger.checkpoint(
-                                    "preprocessing.structure.validation",
-                                    f"Validated modular non-biopsy preprocessing against legacy inline path for {structureID}.",
-                                    details={
-                                        "patient_uid": patientUID,
-                                        "structure_id": structureID,
-                                        "structure_type": structs,
-                                        "structure_index": specific_structure_index,
-                                        "overall_match_bool": validation_result["overall_match_bool"],
-                                        "mismatch_count": validation_result["mismatch_count"],
-                                        "mismatch_fields": validation_result["mismatch_fields"][:10],
-                                    },
-                                )
-                            if validation_result["overall_match_bool"] == False:
-                                mismatch_summary = validation_result["mismatch_summary"]
-                                if len(mismatch_summary) > 400:
-                                    mismatch_summary = mismatch_summary[:400] + "..."
-                                important_info.add_text_line(
-                                    f"WARNING! Modular non-biopsy preprocessing mismatch for patient {patientUID}, structure {structureID} ({structs}). {mismatch_summary}",
-                                    live_display,
-                                )
-
-
-
-                        structures_progress.update(processing_structures_task, advance=1)
-
-                    structures_progress.remove_task(processing_structures_task)
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)    
-
-
-                ### END DIL STRUCTURE PROCESSING
+                        structures_progress.remove_task(processing_structures_task)
+                        patients_progress.update(processing_patients_task, advance=1)
+                        completed_progress.update(processing_patients_task_completed, advance=1)
+                    patients_progress.update(processing_patients_task, visible=False)
+                    completed_progress.update(processing_patients_task_completed,  visible=True)
+
+
+                    ### END DIL STRUCTURE PROCESSING
+
+                    live_display = finalize_standard_non_biopsy_structure_stage_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        all_ref_key=all_ref_key,
+                        validation_context=non_biopsy_structure_stage_validation_context,
+                        important_info=important_info,
+                        live_display=live_display,
+                        runtime_logger=runtime_logger,
+                    )
 
                 
 
@@ -4491,106 +3783,18 @@ def main():
 
                 ### CALCULATE PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
 
-                #live_display.stop()
-
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Computing Prostate Only MR Values [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Computing Prostate Only MR Values "
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Computing Prostate Only MR Values  [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-                    
-                    structureID_default = "Initializing"
-
-                    if mr_adc_ref in pydicom_item:
-                    
-                        sp_patient_selected_structure_info_dataframe = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"]                 
-
-
-                        # include all selected structures (except dils)
-                        list_of_additional_pcds = []
-                        for _, row in sp_patient_selected_structure_info_dataframe.iterrows():
-                            struct_type = row["Struct ref type"]
-                            struct_found_bool = row["Struct found bool"]
-                            if struct_found_bool == True:
-                                struct_index = row["Index number"]
-                                interpolated_pcd_dict = pydicom_item[struct_type][struct_index]["Interpolated structure point cloud dict"]
-                                list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
-
-                        # Include the dils pointclouds as well
-                        for specific_dil_structure_index, specific_dil_structure in enumerate(pydicom_item[dil_ref]):
-                            interpolated_pcd_dict = specific_dil_structure["Interpolated structure point cloud dict"]
-                            list_of_additional_pcds.append(interpolated_pcd_dict['Full with end caps'])
-
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Demonstrating prostate only correctness", total = None)
-                        ###
-
-                        containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
-
-
-
-                        if demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool == True:
-                            plotting_funcs.plot_containment_info_dataframe_to_point_cloud_plus_other_clouds(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
-                                                "Test pt X", 
-                                                "Test pt Y", 
-                                                "Test pt Z",
-                                                "Pt clr R",
-                                                "Pt clr G",
-                                                "Pt clr B",
-                                                additional_point_clouds=list_of_additional_pcds)
-
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-                        ###
-                        indeterminate_task = indeterminate_progress_sub.add_task("[cyan]~~Calculating MR ADC statistics (Prostate - UDR)", total = None)
-                        ###
-
-                        mr_adc_value_column_name_str = "MR ADC value"
-
-                        # Create a summary statistics dataframe of the column 
-                        mr_adc_value_summary_statistics_prostate_only_excluding_UDR = dataframe_builders.dataframe_mr_summary_statistics(containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only, 
-                                                                                                                                mr_adc_value_column_name_str,
-                                                                                                                                filter_column="Pt contained bool", 
-                                                                                                                                filter_value=True,
-                                                                                                                                id_cols=("Relative structure ROI", "Relative structure type", "Relative structure index"),
-                                                                                                                                id_values=("Prostate_excluding_UDR", "custom_P-UDR", 0))
-
-                        
-
-                        # if the following dataframe already exists, then merge the above with it by appending rows
-                        if master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is not None:
-                        
-                            mr_adc_value_summary_statistics_specific_structure_master = master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"]                  
-                            mr_adc_value_summary_statistics_specific_structure_master = pandas.concat([mr_adc_value_summary_statistics_specific_structure_master,
-                                                                                                mr_adc_value_summary_statistics_prostate_only_excluding_UDR],
-                                                                                                ignore_index = True)
-                            # Store the dataframe
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_specific_structure_master
-                        
-                        # if the following dataframe does not exist, then store the above dataframe
-                        elif master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] is None:
-                            # Store the dataframe if it does not exist
-                            master_structure_reference_dict[patientUID][all_ref_key]["Multi-structure pre-processing output dataframes dict"]["MR - ADC - summary statistics by structure dataframe"] = mr_adc_value_summary_statistics_prostate_only_excluding_UDR
-
-
-
-                        # Free up memory
-                        del containment_info_for_all_lattice_points_grand_pandas_dataframe_prostate_only
-                        del pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Prostate only points MR ADC dataframe (temporary for pre-processing)"]
-                        
-                        ###
-                        indeterminate_progress_sub.update(indeterminate_task, visible = False)
-                        ###
-
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)   
+                live_display = prostate_only_mr_adc_processer(
+                    master_structure_reference_dict,
+                    master_structure_info_dict,
+                    all_ref_key,
+                    dil_ref,
+                    mr_adc_ref,
+                    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool,
+                    patients_progress,
+                    completed_progress,
+                    indeterminate_progress_sub,
+                    live_display,
+                )
 
                 ### END CALCULATING PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
 
@@ -6269,880 +5473,6 @@ def main():
     if runtime_logger is not None:
         runtime_logger.mark_completed("Programme complete.")
     sys.exit("> Programme complete.")
-
-
-def UID_generator(pydicom_obj):
-    UID_def = f"{str(pydicom_obj[0x0010,0x0010].value)} ({str(pydicom_obj[0x0010,0x0020].value)})"
-    return UID_def
-
-
-def structure_referencer(data_removals_dict_bx,
-                        data_removals_dict_prostate,
-                        data_removals_dict_dil,
-                        data_removals_dict_urethra,
-                        data_removals_dict_rectum,
-                         structure_dcm_dict, 
-                         dose_dcm_dict, 
-                         plan_dcm_dict,
-                         US_dcms_dict,
-                         MR_T2_dcms_dict,
-                         MR_ADC_dcms_dict,
-                         OAR_list,
-                         DIL_list,
-                         Bx_list,
-                         st_ref_list,
-                         structs_referenced_dict,
-                         ds_ref,
-                         pln_ref,
-                         mr_adc_ref,
-                         mr_t2_ref,
-                         us_ref,
-                         all_ref_key,
-                         mr_global_multi_structure_output_dataframe_str,
-                         mr_global_by_voxel_multi_structure_output_dataframe_str,
-                         bx_sim_locations_dict,
-                         rectum_list,
-                         urethra_list,
-                         interp_inter_slice_dist,
-                         interp_intra_slice_dist,
-                         simulated_biopsy_fraction_numbers_to_create,
-                         fraction_prefixes,
-                         important_info,
-                         live_display
-                         ):
-    """
-    A function that builds a reference library of the dicom elements passed to it so that 
-    we can match the ROI name to the contour information, since the contour
-    information is referenced to the name by a number.
-    """
-    master_st_ds_ref_dict = {}
-    master_st_ds_info_dict = {}
-    master_st_ds_info_global_dict = {"Global": None, "By patient": None}
-    
-    global_num_biopsies = 0
-    global_num_OAR = 0
-    global_num_DIL = 0
-    global_total_num_structs = 0
-    global_num_cases = 0
-    global_unique_patient_names_list = []
-
-    for UID, structure_item_path in structure_dcm_dict.items():
-        with pydicom.dcmread(structure_item_path, defer_size = '2 MB') as structure_item:      
-            
-            filtered_OARs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in OAR_list)]
-
-            ### Remove unwanted data (prostate)
-            if UID in data_removals_dict_prostate.keys():
-                for prost_id_to_remove in data_removals_dict_prostate[UID]:
-                    for prost in filtered_OARs:
-                        if prost.ROIName == prost_id_to_remove:
-                            filtered_OARs.remove(prost)
-                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Prostate: {prost_id_to_remove})) ", live_display)
-
-            OAR_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber,
-                        "Index number": idx,
-                        "Struct type": st_ref_list[1],
-                        "Raw contour pts zslice list": None, 
-                        "Raw contour pts": None, 
-                        "Equal num zslice contour pts": None, 
-                        "Intra-slice interpolation information": None, 
-                        "Inter-slice interpolation information": None, 
-                        "Point cloud raw": None, 
-                        "Delaunay triangulation global structure": None, 
-                        "Delaunay triangulation zslice-wise list": None, 
-                        "Structure centroid pts": None, 
-                        "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None,
-                        "Structure global centroid": None,  
-                        "Reconstructed structure pts arr": None, 
-                        "Interpolated structure point cloud dict": None, 
-                        "Reconstructed structure delaunay global": None,
-                        "Maximum pairwise distance": None,
-                        "Structure volume": None,
-                        "Structure OPEN3D triangle mesh object": None,
-                        "Voxel size for structure volume calc": None,
-                        "Uncertainty data": None, 
-                        "MC data: Generated normal dist random samples arr": None, 
-                        "KDtree": None, 
-                        "Nearest neighbours objects": []
-                        } for idx, x in enumerate(filtered_OARs)]
-            
-            filtered_DILs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in DIL_list)]
-
-            ### Remove unwanted data (dils)
-            if UID in data_removals_dict_dil.keys():
-                for dil_id_to_remove in data_removals_dict_dil[UID]:
-                    for dil in filtered_DILs:
-                        if dil.ROIName == dil_id_to_remove:
-                            filtered_DILs.remove(dil)
-                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, DIL: {dil_id_to_remove})) ", live_display)
-
-            DIL_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber,
-                        "Index number": idx,
-                        "Struct type": st_ref_list[2],
-                        "Raw contour pts zslice list": None, 
-                        "Raw contour pts": None, 
-                        "Equal num zslice contour pts": None, 
-                        "Intra-slice interpolation information": None, 
-                        "Inter-slice interpolation information": None, 
-                        "Point cloud raw": None, 
-                        "Delaunay triangulation global structure": None, 
-                        "Delaunay triangulation zslice-wise list": None, 
-                        "Structure centroid pts": None, 
-                        "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None,
-                        "Structure global centroid": None, 
-                        "Reconstructed structure pts arr": None, 
-                        "Interpolated structure point cloud dict": None, 
-                        "Reconstructed structure delaunay global": None,
-                        "Maximum pairwise distance": None,
-                        "Structure OPEN3D triangle mesh object": None,
-                        "Structure volume": None, 
-                        "Voxel size for structure volume calc": None,
-                        "Uncertainty data": None, 
-                        "MC data: Generated normal dist random samples arr": None, 
-                        "KDtree": None, 
-                        "Nearest neighbours objects": []
-                        } for idx, x in enumerate(filtered_DILs)] 
-
-            filtered_rectums = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in rectum_list)]
-
-            ### Remove unwanted data (rectum)
-            if UID in data_removals_dict_rectum.keys():
-                for rect_id_to_remove in data_removals_dict_rectum[UID]:
-                    for rect in filtered_rectums:
-                        if rect.ROIName == rect_id_to_remove:
-                            filtered_rectums.remove(rect)
-                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Rect: {rect_id_to_remove})) ", live_display)
-
-            rectum_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber,
-                        "Index number": idx,
-                        "Struct type": st_ref_list[3],
-                        "Raw contour pts zslice list": None, 
-                        "Raw contour pts": None, 
-                        "Equal num zslice contour pts": None, 
-                        "Intra-slice interpolation information": None, 
-                        "Inter-slice interpolation information": None, 
-                        "Point cloud raw": None, 
-                        "Delaunay triangulation global structure": None, 
-                        "Delaunay triangulation zslice-wise list": None, 
-                        "Structure centroid pts": None, 
-                        "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None,
-                        "Structure global centroid": None,  
-                        "Reconstructed structure pts arr": None, 
-                        "Interpolated structure point cloud dict": None, 
-                        "Reconstructed structure delaunay global": None,
-                        "Maximum pairwise distance": None,
-                        "Structure OPEN3D triangle mesh object": None,
-                        "Structure volume": None,
-                        "Voxel size for structure volume calc": None,
-                        "Uncertainty data": None, 
-                        "MC data: Generated normal dist random samples arr": None, 
-                        "KDtree": None, 
-                        "Nearest neighbours objects": []
-                        } for idx, x in enumerate(filtered_rectums)]
-
-            filtered_urethras = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in urethra_list)]
-
-            ### Remove unwanted data (urethra)
-            if UID in data_removals_dict_urethra.keys():
-                for uret_id_to_remove in data_removals_dict_urethra[UID]:
-                    for uret in filtered_urethras:
-                        if uret.ROIName == uret_id_to_remove:
-                            filtered_urethras.remove(uret)
-                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Uret: {uret_id_to_remove})) ", live_display)
-
-            urethra_ref = [{"ROI":x.ROIName, 
-                        "Ref #":x.ROINumber,
-                        "Index number": idx,
-                        "Struct type": st_ref_list[4],
-                        "Raw contour pts zslice list": None, 
-                        "Raw contour pts": None, 
-                        "Equal num zslice contour pts": None, 
-                        "Intra-slice interpolation information": None, 
-                        "Inter-slice interpolation information": None, 
-                        "Point cloud raw": None, 
-                        "Delaunay triangulation global structure": None, 
-                        "Delaunay triangulation zslice-wise list": None, 
-                        "Structure centroid pts": None, 
-                        "Best fit line of centroid pts": None, 
-                        "Centroid line sample pts": None,
-                        "Structure global centroid": None,  
-                        "Reconstructed structure pts arr": None, 
-                        "Interpolated structure point cloud dict": None, 
-                        "Reconstructed structure delaunay global": None,
-                        "Maximum pairwise distance": None,
-                        "Structure OPEN3D triangle mesh object": None,
-                        "Structure volume": None,
-                        "Voxel size for structure volume calc": None,
-                        "Uncertainty data": None, 
-                        "MC data: Generated normal dist random samples arr": None, 
-                        "KDtree": None, 
-                        "Nearest neighbours objects": []
-                        } for idx, x in enumerate(filtered_urethras)]
-            
-            filtered_BXs = [x for x in structure_item.StructureSetROISequence if any(i.lower() in x.ROIName.lower() for i in Bx_list)]
-
-            ### Remove unwanted data (bx)
-            if UID in data_removals_dict_bx.keys():
-                for bx_id_to_remove in data_removals_dict_bx[UID]:
-                    for bpsy in filtered_BXs:
-                        if bpsy.ROIName == bx_id_to_remove:
-                            filtered_BXs.remove(bpsy)
-                            important_info.add_text_line(f"Removed data-point (Pt: {UID}, Bx: {bx_id_to_remove})) ", live_display)
-
-
-            bpsy_ref = [{"ROI": x.ROIName, 
-                         "Ref #": x.ROINumber,
-                         "Index number": idx, 
-                         "Struct type": st_ref_list[0],
-                         "Simulated bool": False,
-                         "Simulated type": 'Real',
-                         "Reconstructed biopsy cylinder length (from contour data)": None, 
-                         "Raw contour pts zslice list": None,
-                         "Raw contour pts": None, 
-                         "Centroid variation arr": None,
-                         "Mean centroid variation": None,
-                         "Maximum projected distance between original centroids": None,
-                         "Equal num zslice contour pts": None, 
-                         "Intra-slice interpolation information": None, 
-                         "Inter-slice interpolation information": None, 
-                         "Point cloud raw": None, 
-                         "Delaunay triangulation global structure": None, 
-                         "Delaunay triangulation zslice-wise list": None,
-                         "Structure global centroid": None, 
-                         "Structure centroid pts": None, 
-                         "Best fit line of centroid pts": None, 
-                         "Centroid line sample pts": None, 
-                         "Centroid line unit vec (bx needle base to bx needle tip)": None,
-                         "Interpolated structure point cloud dict": None, 
-                         "Reconstructed structure pts arr": None, 
-                         "Reconstructed structure point cloud": None, 
-                         "Reconstructed structure delaunay global": None,
-                         "Maximum pairwise distance": None,
-                         "Structure volume": None, 
-                         "Voxel size for structure volume calc": None,
-                         "Target DIL dict": None,
-                         "Random uniformly sampled volume pts arr": None, 
-                         "Random uniformly sampled volume pts pcd": None, 
-                         "Random uniformly sampled volume pts bx coord sys arr": None, 
-                         "Random uniformly sampled volume pts bx coord sys pcd": None, 
-                         "Bounding box for random uniformly sampled volume pts": None, 
-                         "Num sampled bx pts": None,
-                         "Uncertainty data": None, 
-                         "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None,
-                         "MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr": None, 
-                         "MC data: Generated normal dist random samples arr": None,
-                         "MC data: Total rigid shift vectors arr": None, 
-                         "MC data: bx only shifted 3darr": None,
-                         "MC data: bx and structure shifted dict": None, 
-                         "MC data: MC sim translation results dict": None,
-                         "MC data: MC sim containment raw results dataframe": None,
-                         "MC data: MC sim compiled distances global dataframe": None,
-                         "MC data: MC sim compiled distances point-wise dataframe": None,
-                         "MC data: MC sim compiled distances voxel-wise dataframe": None,
-                         "MC data: MC sim containment and distance all trials dataframe (light)": None,
-                         "MC data: compiled sim results dataframe": None,
-                         "MC data: compiled sim sum-to-one results dataframe": None,
-                         #"MC data: mutual compiled sim results dataframe": None,
-                         "MC data: compiled sim results": None, 
-                         "MC data: mutual compiled sim results": None,
-                         #"MC data: tumor tissue probability": None,
-                         #"MC data: miss structure tissue probability": None,
-                         #"MC data: tissue length above threshold dict": None,
-                         "MC data: voxelized containment results dict": None, 
-                         "MC data: voxelized containment results dict (dict of lists)": None, 
-                         "MC data: bx to dose NN search objects list": None, 
-                         #"MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
-                         "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
-                         #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
-                         #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
-                         "MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)": None,
-                         "MC data: Differential DVH dict": None,
-                         "MC data: Cumulative DVH dict": None,
-                         "MC data: dose volume metrics dict": None, 
-                         "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
-                         "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
-                         "MC data: voxelized dose results list": None, 
-                         "MC data: voxelized dose results dict (dict of lists)": None, 
-                         "Output csv file paths dict": {}, 
-                         "Output data frames": {"Dose output Z and radius": None,
-                                                "Dose output voxelized": None,
-                                                "Point-wise dose output by MC trial number": None,
-                                                "Voxel-wise dose output by MC trial number": None,
-                                                #"Mutual containment output by bx point": None,
-                                                "Differential DVH by MC trial": None,
-                                                "Cumulative DVH by MC trial": None},
-                         "Output dicts for data frames": {},  
-                         "KDtree": None, 
-                         "Nearest neighbours objects": []
-                         } for idx, x in enumerate(filtered_BXs)]
-
-
-            
-
-
-            bpsy_ref_index_start = len(bpsy_ref)
-            patient_fraction_number = misc_tools.extract_number_from_string(str(structure_item[0x0010,0x0020].value), fraction_prefixes)
-            if simulated_biopsy_fraction_numbers_to_create == 'all':
-                create_simulated_biopsies_for_this_fraction = True
-            elif type(simulated_biopsy_fraction_numbers_to_create) in [list, tuple, set]:
-                create_simulated_biopsies_for_this_fraction = patient_fraction_number in simulated_biopsy_fraction_numbers_to_create
-            else:
-                create_simulated_biopsies_for_this_fraction = patient_fraction_number == simulated_biopsy_fraction_numbers_to_create
-            sim_bpsy_ref_index_start = 0
-            bpsy_ref_simulated_total = []
-            for bx_sim_type_str, bx_sim_type_dict in bx_sim_locations_dict.items():
-                if bx_sim_type_dict["Create"] == True and create_simulated_biopsies_for_this_fraction == True:
-                    sim_bx_relative_to = bx_sim_type_dict["Relative to struct type"]
-                    bx_sim_ref_identifier_str = bx_sim_type_dict["Identifier string"]
-
-                    sim_bx_relative_to_contour_names = structs_referenced_dict[sim_bx_relative_to]["Contour names"]
-                    
-
-                    # Determine the appropriate removal list based on the relative structure type.
-                    if bx_sim_type_dict["Relative to struct type"] == st_ref_list[2]:
-                        removal_list = data_removals_dict_dil.get(UID, [])
-                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[0]:
-                        removal_list = data_removals_dict_bx.get(UID, [])
-                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[1]:
-                        removal_list = data_removals_dict_prostate.get(UID, [])
-                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[3]:
-                        removal_list = data_removals_dict_rectum.get(UID, [])
-                    elif bx_sim_type_dict["Relative to struct type"] == st_ref_list[4]:
-                        removal_list = data_removals_dict_urethra.get(UID, [])
-                    else:
-                        removal_list = []
-
-                    # Now filter simulated biopsy candidates by including the removal condition.
-                    filtered_sim_BXs = [
-                        x for x in structure_item.StructureSetROISequence
-                        if any(contour.lower() in x.ROIName.lower() for contour in sim_bx_relative_to_contour_names)
-                        and x.ROIName not in removal_list
-                    ]
-
-                    # old doesnt account for data point removals of relative structures for simulating biopsies!
-                    #filtered_sim_BXs = [x for x in structure_item.StructureSetROISequence if sim_bx_relative_to.lower() in x.ROIName.lower()]
-                    
-                    
-                    bpsy_ref_simulated = [{"ROI": "Bx_Tr_"+bx_sim_ref_identifier_str+" " + x.ROIName, 
-                                "Ref #": bx_sim_ref_identifier_str +" "+ x.ROIName,
-                                "Index number": bpsy_ref_index_start + sim_bpsy_ref_index_start + idx,
-                                "Struct type": st_ref_list[0],
-                                "Simulated bool": True,
-                                "Simulated type": bx_sim_type_str,
-                                "Transport family": bx_sim_type_dict.get("Transport family", "identity"),
-                                "Relative structure type": bx_sim_type_dict["Relative to struct type"],
-                                "Relative structure name": x.ROIName,
-                                "Relative structure ref #": x.ROINumber, 
-                                "Reconstructed biopsy cylinder length (from contour data)": None, 
-                                "Raw contour pts zslice list": None,
-                                "Raw contour pts": None, 
-                                "Centroid variation arr": None,
-                                "Mean centroid variation": None,
-                                "Maximum projected distance between original centroids": None,
-                                "Equal num zslice contour pts": None, 
-                                "Intra-slice interpolation information": None, 
-                                "Inter-slice interpolation information": None, 
-                                "Point cloud raw": None, 
-                                "Delaunay triangulation global structure": None, 
-                                "Delaunay triangulation zslice-wise list": None,
-                                "Structure global centroid": None,  
-                                "Structure centroid pts": None, 
-                                "Best fit line of centroid pts": None, 
-                                "Centroid line sample pts": None, 
-                                "Centroid line unit vec (bx needle base to bx needle tip)": None,
-                                "Interpolated structure point cloud dict": None, 
-                                "Reconstructed structure pts arr": None, 
-                                "Reconstructed structure point cloud": None, 
-                                "Reconstructed structure delaunay global": None,
-                                "Maximum pairwise distance": None,
-                                "Structure volume": None, 
-                                "Voxel size for structure volume calc": None, 
-                                "Target DIL dict": None,
-                                "Random uniformly sampled volume pts arr": None, 
-                                "Random uniformly sampled volume pts pcd": None, 
-                                "Random uniformly sampled volume pts bx coord sys arr": None, 
-                                "Random uniformly sampled volume pts bx coord sys pcd": None, 
-                                "Bounding box for random uniformly sampled volume pts": None,
-                                "Num sampled bx pts": None, 
-                                "Uncertainty data": None, 
-                                "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None,
-                                "MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr": None, 
-                                "MC data: Generated normal dist random samples arr": None, 
-                                "MC data: Total rigid shift vectors arr": None, 
-                                "MC data: bx only shifted 3darr": None, 
-                                "MC data: bx and structure shifted dict": None, 
-                                "MC data: MC sim translation results dict": None,
-                                "MC data: MC sim containment raw results dataframe": None,
-                                "MC data: MC sim compiled distances global dataframe": None,
-                                "MC data: MC sim compiled distances point-wise dataframe": None,
-                                "MC data: MC sim compiled distances voxel-wise dataframe": None,
-                                "MC data: MC sim containment and distance all trials dataframe (light)": None,
-                                "MC data: compiled sim results dataframe": None,
-                                "MC data: compiled sim sum-to-one results dataframe": None,
-                                #"MC data: mutual compiled sim results dataframe": None,
-                                "MC data: compiled sim results": None,
-                                "MC data: mutual compiled sim results": None, 
-                                #"MC data: tumor tissue probability": None,
-                                #"MC data: miss structure tissue probability": None,
-                                #"MC data: tissue length above threshold dict": None,
-                                "MC data: voxelized containment results dict": None, 
-                                "MC data: voxelized containment results dict (dict of lists)": None, 
-                                "MC data: bx to dose NN search objects list": None, 
-                                #"MC data: Dose NN child obj for each sampled bx pt list (nominal & all MC trials)": None,
-                                "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
-                                #"MC data: Dose vals for each sampled bx pt arr (all MC trials)": None,
-                                #"MC data: Dose vals for each sampled bx pt arr (nominal)": None,
-                                "MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)": None,
-                                "MC data: Differential DVH dict": None,
-                                "MC data: Cumulative DVH dict": None,
-                                "MC data: dose volume metrics dict": None,
-                                "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None, 
-                                "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None, 
-                                "MC data: voxelized dose results list": None, 
-                                "MC data: voxelized dose results dict (dict of lists)": None, 
-                                "Simulated biopsy transport request dict": None,
-                                "Output csv file paths dict": {}, 
-                                "Output data frames": {"Dose output Z and radius": None,
-                                                       "Dose output voxelized": None,
-                                                       "Point-wise dose output by MC trial number": None,
-                                                       "Voxel-wise dose output by MC trial number": None,
-                                                       #"Mutual containment output by bx point": None,
-                                                       "Differential DVH by MC trial": None},
-                                "Output dicts for data frames": {}, 
-                                "KDtree": None, 
-                                "Nearest neighbours objects": []
-                                } for idx, x in enumerate(filtered_sim_BXs)]
-
-                    sim_bpsy_ref_index_start = len(bpsy_ref_simulated)
-
-                    bpsy_ref_simulated_total = bpsy_ref_simulated_total + bpsy_ref_simulated
-                else:
-                    pass
-                
-                
-            
-            bpsy_ref = bpsy_ref + bpsy_ref_simulated_total 
-
-            """
-            ## for each reference type, store each item's index number
-            for index, item in enumerate(bpsy_ref):
-                item["Index number"] = index
-            for index, item in enumerate(DIL_ref):
-                item["Index number"] = index
-            for index, item in enumerate(OAR_ref):
-                item["Index number"] = index
-            """
-
-            # Note that all of the dataframes in the below "Multi-structure output data frames dict" are output as csvs in the final report
-            all_ref = {"Multi-structure information dict (not for csv output)": {"Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe": None, # THIS DATAFRAME WAS DELETED AFTER OPTIMIZATION TO SAVE MEMORY!
-                                                                                  },
-                        "Multi-structure pre-processing output dataframes dict": {"Selected structures": None,
-                                                                                  "Biopsy basic spatial features dataframe": None,
-                                                                                  "Simulated biopsy preparation dataframe": None,
-                                                                                  #"Structure information dimension": pandas.DataFrame(),
-                                                                                  #"Structure information (Non-BX)": pandas.DataFrame(),
-                                                                                  "Nearest DILs info dataframe": None,
-                                                                                  "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": None,
-                                                                                  "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
-                                                                                  "Biopsy optimization - Optimal DIL targeting dataframe": None,
-                                                                                  "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None,
-                                                                                  TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY: None,
-                                                                                  TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY: None,
-                                                                                  "Biopsy optimization - Guidance-map firing depth recommendations dataframe": None,
-                                                                                  "3D radiomic features all OAR and DIL structures": None,
-                                                                                  "Per sample point prostate double sextant classification": None,
-                                                                                  "Per voxel prostate double sextant classification": None,
-                                                                                  "Simulated biopsy planned vs realized centroid variation validation": None,
-                                                                                  "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
-                                                                                  "MR - ADC - summary statistics by structure dataframe": None},    
-                        "Multi-structure MC simulation output dataframes dict": {"All MC structure transformation values": None,
-                                                                                 "Tissue class - Global tissue class statistics": None,
-                                                                                 "Tissue class - Global tissue by structure statistics": None,
-                                                                                 "Tissue class - Tissue length above threshold": None,
-                                                                                 "Tissue class - sum-to-one mc results": None,
-                                                                                 "Tissue class - distances global results": None,
-                                                                                 "Tissue class - distances pt-wise results": None,
-                                                                                 "Tissue class - distances voxel-wise results": None,
-                                                                                 "Tissue class - containment and distances (light) results": None,
-                                                                                 #"Tissue class - Pt wise mutual tissue class results": None,
-                                                                                 "Tissue class - Pt wise structure specific results": None,
-                                                                                 #"Dosimetry - All points and trials": pandas.DataFrame(),
-                                                                                 "DVH metrics (Dx, Vx) statistics": None,
-                                                                                 "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
-                                                                                 "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None},
-                        }
-            
-            
-
-            # Dictionary comprehension to count occurrences of each type of biopsy
-            bpsy_type_counts_dict = {item["Simulated type"]: sum(1 for d in bpsy_ref if d["Simulated type"] == item["Simulated type"]) for item in bpsy_ref}
-
-            bpsy_info = {"Num structs": len(bpsy_ref), 
-                         "Num sim structs": len(bpsy_ref_simulated_total), 
-                         "Num real structs": len(bpsy_ref) - len(bpsy_ref_simulated_total),
-                         "Biopsy type counts": bpsy_type_counts_dict}
-            OAR_info = {"Num structs": len(OAR_ref)}
-            DIL_info = {"Num structs": len(DIL_ref)}
-            rectum_info = {"Num structs": len(rectum_ref)}
-            urethra_info = {"Num structs": len(urethra_ref)}
-            patient_total_num_structs = bpsy_info["Num structs"] + OAR_info["Num structs"] + DIL_info["Num structs"] + rectum_info["Num structs"] + urethra_info["Num structs"]
-            all_structs_info = {"Total num structs": patient_total_num_structs}
-            
-            global_num_OAR = global_num_OAR + OAR_info["Num structs"]
-            global_num_DIL = global_num_DIL + DIL_info["Num structs"] 
-            global_num_biopsies = global_num_biopsies + bpsy_info["Num structs"]
-            global_total_num_structs = global_total_num_structs + patient_total_num_structs
-            global_num_cases = global_num_cases + 1
-            if str(structure_item[0x0010,0x0010].value) not in global_unique_patient_names_list:
-                global_unique_patient_names_list.append(str(structure_item[0x0010,0x0010].value))
-
-            master_st_ds_ref_dict[UID] = {"Patient UID (generated)": str(UID),
-                                            "Patient ID (from dicom)": str(structure_item[0x0010,0x0020].value),
-                                            "Patient Name": str(structure_item[0x0010,0x0010].value),
-                                            "Fraction number": misc_tools.extract_number_from_string(str(structure_item[0x0010,0x0020].value), fraction_prefixes),
-                                            st_ref_list[0]: bpsy_ref, 
-                                            st_ref_list[1]: OAR_ref, 
-                                            st_ref_list[2]: DIL_ref,
-                                            st_ref_list[3]: rectum_ref,
-                                            st_ref_list[4]: urethra_ref,
-                                            all_ref_key: all_ref,
-                                            "Ready to plot data list": None
-                                        }
-            
-            master_st_ds_info_dict[UID] = {"Patient UID (generated)": str(UID),
-                                            "Patient ID (from dicom)": str(structure_item[0x0010,0x0020].value),
-                                            "Patient Name": str(structure_item[0x0010,0x0010].value),
-                                            "Fraction number": misc_tools.extract_number_from_string(str(structure_item[0x0010,0x0020].value), fraction_prefixes),
-                                            st_ref_list[0]: bpsy_info, 
-                                            st_ref_list[1]: OAR_info, 
-                                            st_ref_list[2]: DIL_info, 
-                                            st_ref_list[3]: rectum_info,
-                                            st_ref_list[4]: urethra_info,
-                                            all_ref_key: all_structs_info
-                                        }
-    
-    ### Dosimetry
-    for UID, dose_item_path in dose_dcm_dict.items():
-        if master_st_ds_ref_dict[UID]["Fraction number"] == 1:
-            continue
-        with pydicom.dcmread(dose_item_path, defer_size = '2 MB') as dose_item: 
-            dose_ID = UID + dose_item.StudyDate
-            dose_ref_dict = {"Dose ID": dose_ID, 
-                             "Study date": dose_item.StudyDate, 
-                             "Dose pixel data": dose_item.PixelData, 
-                             "Dose pixel arr": dose_item.pixel_array, 
-                             "Pixel spacing": [float(item) for item in dose_item.PixelSpacing], 
-                             "Dose grid scaling": float(dose_item.DoseGridScaling), 
-                             "Dose units": dose_item.DoseUnits, 
-                             "Dose type": dose_item.DoseType, 
-                             "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector], 
-                             "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient], 
-                             "Image position patient": [float(item) for item in dose_item.ImagePositionPatient], 
-                             #"Dose phys space and pixel 3d arr": None,
-                             "Dose and gradient phys space and pixel 3d arr": None, 
-                             "Dose grid point cloud": None, 
-                             "Dose grid point cloud thresholded": None,
-                             "Dose grid gradient point cloud": None,
-                             "Dose grid gradient point cloud thresholded": None,
-                             "KDtree": None,
-                             "KDtree gradient": None
-                             }
-            master_st_ds_ref_dict[UID][ds_ref] = dose_ref_dict
-    
-    """
-    ### MR ADC
-    for UID, mr_adc_item_paths_list in MR_ADC_dcms_dict.items():
-        mr_adc_ref_dict = {}
-        for mr_adc_item_path in mr_adc_item_paths_list:
-            with pydicom.dcmread(mr_adc_item_path, defer_size = '2 MB') as mr_adc_item:
-                seriesinstanceUID = mr_adc_item.SeriesInstanceUID
-                mr_adc_ID = UID + mr_adc_item.StudyDate
-                
-                
-
-                if len(mr_adc_item.RealWorldValueMappingSequence) > 1:
-                    important_info.add_text_line(f"Multiple real world value mappings detected for ({UID}, {mr_adc_ID})) ", live_display)
-                if seriesinstanceUID not in mr_adc_ref_dict: 
-                    mr_adc_ref_subdict = {"MR ADC ID": mr_adc_ID,
-                                    "Series instance UID": seriesinstanceUID, 
-                                    "Study date": mr_adc_item.StudyDate, 
-                                    "Pixel arr (all slices)": mr_adc_item.pixel_array, 
-                                    "Pixel spacing": np.array(mr_adc_item.PixelSpacing),
-                                    "Units": str(mr_adc_item.RealWorldValueMappingSequence[0].MeasurementUnitsCodeSequence[0].CodeMeaning),
-                                    "RWVSlope (all slices)": np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueSlope),
-                                    "RWVIntercept (all slices)": np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueIntercept),
-                                    "RWV Units": mr_adc_item.RealWorldValueMappingSequence[0].LUTLabel,
-                                    "Slice thickness":  mr_adc_item.SliceThickness,
-                                    "Image orientation patient": np.array(mr_adc_item.ImageOrientationPatient), 
-                                    "Image position patient (all slices)": np.array(mr_adc_item.ImagePositionPatient), 
-                                    "MR ADC phys space Nx4 arr": None,
-                                    "MR ADC phys space Nx4 arr (filtered, non-negative)": None,
-                                    "MR ADC grid point cloud": None,
-                                    "MR ADC grid point cloud thresholded": None, 
-                                    "KDtree": None
-                                    }
-                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
-                else:
-                    mr_adc_ref_subdict = mr_adc_ref_dict[seriesinstanceUID]
-                    mr_adc_ref_subdict["Pixel arr (all slices)"] = np.dstack((mr_adc_ref_subdict["Pixel arr (all slices)"], mr_adc_item.pixel_array))
-                    mr_adc_ref_subdict["RWVSlope (all slices)"] = np.hstack((mr_adc_ref_subdict["RWVSlope (all slices)"], np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueSlope)))
-                    mr_adc_ref_subdict["RWVIntercept (all slices)"] = np.hstack((mr_adc_ref_subdict["RWVIntercept (all slices)"], np.array(mr_adc_item.RealWorldValueMappingSequence[0].RealWorldValueIntercept)))
-                    mr_adc_ref_subdict["Image position patient (all slices)"] = np.vstack((mr_adc_ref_subdict["Image position patient (all slices)"], np.array(mr_adc_item.ImagePositionPatient)))
-                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
-
-        master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
-
-    """
-
-    ### MR ADC, updated to account for missing RealWorldValueMappingSequence
-    for UID, mr_adc_item_paths_list in MR_ADC_dcms_dict.items():
-        mr_adc_ref_dict = {}
-        for mr_adc_item_path in mr_adc_item_paths_list:
-            with pydicom.dcmread(mr_adc_item_path, defer_size='2 MB') as mr_adc_item:
-                seriesinstanceUID = mr_adc_item.SeriesInstanceUID
-                mr_adc_ID = UID + mr_adc_item.StudyDate
-
-                rwvm = getattr(mr_adc_item, "RealWorldValueMappingSequence", None)
-
-                # Handle multiple RWVMs
-                if rwvm and len(rwvm) > 1:
-                    important_info.add_text_line(
-                        f"Multiple real world value mappings detected for ({UID}, {mr_adc_ID})", live_display
-                    )
-
-                # Safely extract or assign defaults
-                if rwvm and len(rwvm) > 0:
-                    rwv = rwvm[0]
-                    units = str(getattr(rwv.MeasurementUnitsCodeSequence[0], "CodeMeaning", "unknown"))
-                    slope = np.array(rwv.RealWorldValueSlope)
-                    intercept = np.array(rwv.RealWorldValueIntercept)
-                    rwv_units = getattr(rwv, "LUTLabel", "unknown")
-                else:
-                    units = "mm\u00B2/s (assumed)"
-                    slope = np.array([1e-6])  # Default slope for mm2/s
-                    intercept = np.array([0.0])
-                    rwv_units = "mm\u00B2/s (assumed)"
-                    important_info.add_text_line(
-                        f"No RealWorldValueMappingSequence found for ({UID}, {mr_adc_ID}) – using defaults.",
-                        live_display
-                    )
-
-                if seriesinstanceUID not in mr_adc_ref_dict:
-                    mr_adc_ref_subdict = {
-                        "MR ADC ID": mr_adc_ID,
-                        "Series instance UID": seriesinstanceUID,
-                        "Study date": mr_adc_item.StudyDate,
-                        "Pixel arr (all slices)": mr_adc_item.pixel_array,
-                        "Pixel spacing": np.array(mr_adc_item.PixelSpacing),
-                        "Units": units,
-                        "RWVSlope (all slices)": slope,
-                        "RWVIntercept (all slices)": intercept,
-                        "RWV Units": rwv_units,
-                        "Slice thickness": getattr(mr_adc_item, "SliceThickness", -1),
-                        "Image orientation patient": np.array(mr_adc_item.ImageOrientationPatient),
-                        "Image position patient (all slices)": np.array(mr_adc_item.ImagePositionPatient),
-                        "MR ADC phys space Nx4 arr": None,
-                        "MR ADC phys space Nx4 arr (filtered, non-negative)": None,
-                        "MR ADC grid point cloud": None,
-                        "MR ADC grid point cloud thresholded": None,
-                        "KDtree": None
-                    }
-                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
-                else:
-                    mr_adc_ref_subdict = mr_adc_ref_dict[seriesinstanceUID]
-                    mr_adc_ref_subdict["Pixel arr (all slices)"] = np.dstack(
-                        (mr_adc_ref_subdict["Pixel arr (all slices)"], mr_adc_item.pixel_array)
-                    )
-                    mr_adc_ref_subdict["RWVSlope (all slices)"] = np.hstack(
-                        (mr_adc_ref_subdict["RWVSlope (all slices)"], slope)
-                    )
-                    mr_adc_ref_subdict["RWVIntercept (all slices)"] = np.hstack(
-                        (mr_adc_ref_subdict["RWVIntercept (all slices)"], intercept)
-                    )
-                    mr_adc_ref_subdict["Image position patient (all slices)"] = np.vstack(
-                        (mr_adc_ref_subdict["Image position patient (all slices)"], np.array(mr_adc_item.ImagePositionPatient))
-                    )
-                    mr_adc_ref_dict[seriesinstanceUID] = mr_adc_ref_subdict
-
-                pass
-        pass
-
-        master_st_ds_ref_dict[UID][mr_adc_ref] = mr_adc_ref_dict
-
-
-
-    
-
-    ### Plan file
-    for UID, plan_item_path in plan_dcm_dict.items():
-        with pydicom.dcmread(plan_item_path, defer_size = '2 MB') as plan_item: 
-            plan_ID = UID + plan_item.StudyDate
-            plan_ref_dict = {"Plan ID": plan_ID, 
-                             "Study date": plan_item.StudyDate,
-                             "Dose units": 'Gy', # this is by default for this dicom tag: (300A,0026)
-                             "Prescription doses dict": {}
-                             }
-            
-            for dose_ref_seq_ind in range(len(plan_item.DoseReferenceSequence)):
-                plan_ref_dict["Prescription doses dict"][plan_item.DoseReferenceSequence[dose_ref_seq_ind]["DoseReferenceType"].value] = plan_item.DoseReferenceSequence[dose_ref_seq_ind]["TargetPrescriptionDose"].value
-                
-            master_st_ds_ref_dict[UID][pln_ref] = plan_ref_dict
-
-    preprocessing_info = {"Interslice interp dist": interp_inter_slice_dist,
-                          "Intraslice interp dist": interp_intra_slice_dist,
-                          "Preprocessing performed": False,}
-
-    mc_info = {"Num MC containment simulations": None, 
-               "Num MC dose simulations": None,
-               "Num MC MR simulations": None,
-               "Num optimizer v2 transform samples": None,
-               "Num stochastic targeting transform samples": None,
-               "Num sample pts per BX core": None, 
-               "BX sample pt lattice spacing (mm)": None,
-               "BX sample pt volume element (mm^3)": None,
-               "Max of num MC simulations": None,
-               "Max of generated transform samples": None,
-               'MC sim performed': False,
-               'MC containment sim performed': False,
-               'MC dose sim performed': False,
-               'MC MR sim performed': False,
-               }
-
-    random_info = {"Transform generation random seed": None,
-                   "Optimizer v1 random seed": None,
-                   }
-    
-    # count number of biopsies of each type for the entire cohort
-    list_of_bpsy_nums_by_bpsy_type_all_patients = [pt_sp_dict[st_ref_list[0]]["Biopsy type counts"] for pt_sp_dict in master_st_ds_info_dict.values()]
-    global_num_biopsies_by_type = {key: sum(d[key] for d in list_of_bpsy_nums_by_bpsy_type_all_patients if key in d) for d in list_of_bpsy_nums_by_bpsy_type_all_patients for key in d}              
-    
-    # Determine the types of biopsies made
-    bx_types_list = ['Real'] + [key for key, value in bx_sim_locations_dict.items() if value.get("Create", False)] 
-
-    master_st_ds_info_global_dict["Global"] = {"Num cases": global_num_cases, # This is a mixture of patients and fractions, ie. 181 F1 and 181 F2 are two different cases
-                                               "Num unique patient names": len(global_unique_patient_names_list),
-                                               "Num structures": global_total_num_structs, 
-                                               "Num biopsies": global_num_biopsies,
-                                               "Num biopsies by bx type dict": global_num_biopsies_by_type, 
-                                               "Num DILs": global_num_DIL,
-                                               "Bx types list": bx_types_list, 
-                                               "Preprocessing info": preprocessing_info,
-                                               "MC info": mc_info, 
-                                               "Random info": random_info,
-                                               'Patient specific guidance map figures directory dict': None,
-                                               'Guidance map figures dir': None,
-                                               "Specific output dir": None
-                                               }
-    
-    master_st_ds_info_global_dict["By patient"] = master_st_ds_info_dict
-    return master_st_ds_ref_dict, master_st_ds_info_global_dict
-
-class uncertainty_data:
-    def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):
-        self.patientUID = patientUID
-        self.struct_type = struct_type
-        self.structure_roi = structure_roi
-        self.struct_ref_num = struct_ref_num
-        self.master_ref_dict_specific_structure_index = master_ref_dict_specific_structure_index
-        self.uncertainty_data_mean_arr = None
-        self.uncertainty_data_sigma_arr = None
-        self.uncertainty_data_info_dict = {"Frame of reference": frame_of_reference, "Distribution": 'Normal'} 
-    def fill_means_and_sigmas(self, means_arr, sigmas_arr, means_arr_dilations, sigmas_arr_dilations, means_arr_rotations, sigmas_arr_rotations):
-        self.uncertainty_data_mean_arr = means_arr
-        self.uncertainty_data_sigma_arr = sigmas_arr
-        self.uncertainty_data_dilations_mean_arr = means_arr_dilations
-        self.uncertainty_data_dilations_sigma_arr = sigmas_arr_dilations
-        self.uncertainty_data_rotations_mean_arr = means_arr_rotations
-        self.uncertainty_data_rotations_sigma_arr = sigmas_arr_rotations
-
-
-
-"""
-class plot_attributes:
-    def __init__(self,plot_bool_init = True):
-        self.plot_bool = plot_bool_init
-        self.color_raw = 'r'
-        self.color_best_fit = 'g' 
-"""
-
-class nearest_neighbour_parent:
-    def __init__(self,BX_struct_name,comparison_struct_name,comparison_struct_type,comparison_structure_points_that_made_KDtree,queried_BX_points,NN_search_output):
-        self.BX_structure_name = BX_struct_name
-        self.comparison_structure_name = comparison_struct_name
-        self.comparison_structure_type = comparison_struct_type
-        #self.comparison_structure_points = comparison_structure_points_that_made_KDtree
-        self.queried_Bx_points = queried_BX_points
-        self.NN_search_output = NN_search_output
-        self.NN_data_list = self.NN_list_builder(comparison_structure_points_that_made_KDtree)
-
-    def NN_list_builder(self,comparison_structure_points_that_made_KDtree):
-        comparison_structure_NN_distances = self.NN_search_output[0]
-        comparison_structure_NN_indices = self.NN_search_output[1]
-        nearest_points_on_comparison_struct = comparison_structure_points_that_made_KDtree[comparison_structure_NN_indices]
-        
-        NN_data_list = [nearest_neighbour_child(self.queried_Bx_points[index], nearest_points_on_comparison_struct[index], comparison_structure_NN_distances[index]) for index in range(0,len(self.queried_Bx_points))]
-        #NN_data_list = [{"Queried BX pt": self.queried_Bx_points[index], "NN pt on comparison struct": nearest_points_on_comparison_struct[index], "Euclidean distance": comparison_structure_NN_distances[index]} for index in range(0,len(self.queried_Bx_points))]
-        return NN_data_list
-
-
-class nearest_neighbour_child:
-    def __init__(self, queried_BX_pt, NN_pt_on_comparison_struct, euclidean_dist):
-        self.queried_BX_pt = queried_BX_pt
-        self.NN_pt_on_comparison_struct = NN_pt_on_comparison_struct
-        self.euclidean_dist = euclidean_dist
-
-class delaunay_obj:
-    def __init__(self, np_points, delaunay_tri_color):
-        self.delaunay_triangulation = self.scipy_delaunay_triangulation(np_points)
-        self.delaunay_line_set = self.line_set(np_points, self.delaunay_triangulation, delaunay_tri_color)
-
-    def scipy_delaunay_triangulation(self, numpy_points):
-        delaunay_triang = scipy.spatial.Delaunay(numpy_points)
-        return delaunay_triang
-
-    def collect_edges(self, tri):
-        edges = set()
-
-        def sorted_tuple(a,b):
-            return (a,b) if a < b else (b,a)
-        # Add edges of tetrahedron (sorted so we don't add an edge twice, even if it comes in reverse order).
-        for (i0, i1, i2, i3) in tri.simplices:
-            edges.add(sorted_tuple(i0,i1))
-            edges.add(sorted_tuple(i0,i2))
-            edges.add(sorted_tuple(i0,i3))
-            edges.add(sorted_tuple(i1,i2))
-            edges.add(sorted_tuple(i1,i3))
-            edges.add(sorted_tuple(i2,i3))
-        return edges
-
-    def line_set(self, points, tri, color):
-        edges = self.collect_edges(tri)
-        colors = [[color[0], color[1], color[2]] for i in range(len(edges))]
-        x = np.array([])
-        y = np.array([])
-        z = np.array([])
-        for (i,j) in edges:
-            x = np.append(x, [points[i, 0], points[j, 0], np.nan])      
-            y = np.append(y, [points[i, 1], points[j, 1], np.nan])      
-            z = np.append(z, [points[i, 2], points[j, 2], np.nan])
-
-        line_set = o3d.geometry.LineSet()
-        line_set.points = o3d.utility.Vector3dVector(points)
-        line_set.lines = o3d.utility.Vector2iVector(edges)
-        line_set.colors = o3d.utility.Vector3dVector(colors)
-        return line_set
-
-
-
-
-
-
 
 
 if __name__ == '__main__':    

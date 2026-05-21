@@ -59,8 +59,8 @@ Parallelism policy:
   not just CPU count.
 
 The detailed recommendations and non-recommendations for patient-level
-parallelism live in `PATIENT_RUNNER_UPGRADE_ROADMAP.md` under "Parallelism
-Opportunities and Recommendations".
+parallelism live in `../../docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` under
+"Parallelism Opportunities and Recommendations".
 
 Current Phase D scope:
 
@@ -94,6 +94,12 @@ Typed patient-local interface direction:
   runner, then translate to legacy dict shape only at the old function boundary,
 - each migrated stage should move repeated dictionary access behind typed
   accessors or small dataclasses,
+- behavior-preserving preprocessing wrappers should accept explicit legacy key
+  names and patient-local state so future typed adapters can replace the backing
+  dictionary without changing the runner-facing stage contract,
+- wrappers should remain domain-selectable where the future GUI may expose
+  separate actions, such as dose mapping, MR mapping, targeting, QA, or full-run
+  execution,
 - once a stage no longer reads raw legacy paths internally, the legacy adapter
   can be replaced without changing the runner contract.
 

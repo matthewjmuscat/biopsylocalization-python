@@ -1,6 +1,6 @@
 # GUI And Startup Architecture Plan
 
-Last updated: 2026-04-30
+Last updated: 2026-05-20
 
 ## Purpose
 
@@ -85,3 +85,37 @@ This structure supports either of the following without forcing the choice now:
 - several narrower tools such as an MR-focused tool, a dose-focused tool, or a validation-focused tool.
 
 In either case, the GUI layer should call stable orchestration helpers rather than duplicating bootstrap logic.
+
+## Product-Ready Boundary Direction
+
+The future GUI should consume the scientific pipeline through stable contracts,
+not by reaching into legacy mutable dictionaries. The durable public boundary
+should be input manifests, run/session configuration, patient artifacts, schema
+registry entries, validation reports, and orchestration helpers that can run
+without a GUI.
+
+This keeps the core repository usable as a validated research/developer engine
+while allowing a separate application layer to own product-specific workflow,
+deployment, visualization polish, and user interaction. Any business, licensing,
+or patent strategy belongs in private notes and counsel review; the public code
+direction is simply to keep the scientific core UI-neutral and adapter-driven.
+
+## Selectable Stage Direction
+
+The GUI-facing architecture should support both a single full workflow and
+separate task-focused tools. Near-term module extraction should therefore avoid
+blending distinct scientific domains into one wrapper when those domains could
+be useful as independent product actions.
+
+Examples of future selectable actions:
+
+- map dose,
+- map MR,
+- perform targeting,
+- perform QA or validation,
+- run the full patient/cohort pipeline.
+
+The selection can be driven by available input data, explicit user choice, or a
+combination of both. A GUI mother application can still compose these smaller
+stage surfaces into guided workflows, but the domain modules themselves should
+remain independently callable.

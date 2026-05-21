@@ -9,6 +9,26 @@ import pandas
 import uncertainty_file_writer
 
 
+class uncertainty_data:
+    def __init__(self, patientUID, struct_type, structure_roi, struct_ref_num, master_ref_dict_specific_structure_index, frame_of_reference):
+        self.patientUID = patientUID
+        self.struct_type = struct_type
+        self.structure_roi = structure_roi
+        self.struct_ref_num = struct_ref_num
+        self.master_ref_dict_specific_structure_index = master_ref_dict_specific_structure_index
+        self.uncertainty_data_mean_arr = None
+        self.uncertainty_data_sigma_arr = None
+        self.uncertainty_data_info_dict = {"Frame of reference": frame_of_reference, "Distribution": 'Normal'}
+
+    def fill_means_and_sigmas(self, means_arr, sigmas_arr, means_arr_dilations, sigmas_arr_dilations, means_arr_rotations, sigmas_arr_rotations):
+        self.uncertainty_data_mean_arr = means_arr
+        self.uncertainty_data_sigma_arr = sigmas_arr
+        self.uncertainty_data_dilations_mean_arr = means_arr_dilations
+        self.uncertainty_data_dilations_sigma_arr = sigmas_arr_dilations
+        self.uncertainty_data_rotations_mean_arr = means_arr_rotations
+        self.uncertainty_data_rotations_sigma_arr = sigmas_arr_rotations
+
+
 def attach_uncertainty_data_from_dataframe(master_structure_reference_dict,
                                            read_uncertainties_dataframe,
                                            uncertainty_data_cls
