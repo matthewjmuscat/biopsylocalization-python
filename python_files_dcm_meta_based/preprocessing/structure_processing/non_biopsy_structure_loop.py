@@ -95,6 +95,13 @@ def prepare_non_biopsy_structure_legacy_validation(
         live_display,
         runtime_logger,
         sp_patient_selected_structure_info_dataframe=None):
+    pre_modular_live_state = capture_non_biopsy_modular_live_state(
+        master_structure_reference_dict=master_structure_reference_dict,
+        patient_uid=patient_uid,
+        struct_ref_type=struct_ref_type,
+        specific_structure_index=specific_structure_index,
+        all_ref_key=config.all_ref_key,
+    )
     live_display = run_non_biopsy_structure_primary(
         patient_uid=patient_uid,
         pydicom_item=pydicom_item,
@@ -127,6 +134,14 @@ def prepare_non_biopsy_structure_legacy_validation(
         struct_ref_type=struct_ref_type,
         specific_structure_index=specific_structure_index,
         all_ref_key=config.all_ref_key,
+    )
+    restore_non_biopsy_modular_live_state(
+        master_structure_reference_dict=master_structure_reference_dict,
+        patient_uid=patient_uid,
+        struct_ref_type=struct_ref_type,
+        specific_structure_index=specific_structure_index,
+        all_ref_key=config.all_ref_key,
+        saved_state=pre_modular_live_state,
     )
     return live_display, modular_validation_snapshot, modular_live_state
 
