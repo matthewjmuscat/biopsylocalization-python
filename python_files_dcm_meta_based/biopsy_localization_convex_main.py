@@ -815,7 +815,7 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    validate_non_biopsy_structure_preprocessing_equivalence_bool = True # Runs the modular helper on the live structure, shadows it with the legacy inline path for validation, then restores the modular outputs. Intended for focused validation only.
+    validate_non_biopsy_structure_preprocessing_equivalence_bool = False # False uses the modular helper as the primary path. True runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
 
     ###
 

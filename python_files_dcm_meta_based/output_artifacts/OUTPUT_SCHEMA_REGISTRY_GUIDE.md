@@ -104,11 +104,17 @@ The first four simple-concat route targets have been wired through patient-level
 
 The May 19, 2026 full Phase 3C run confirmed all four stitched outputs match the legacy final tables, so their cohort registry specs are now marked `validated_phase3c`.
 
+The optional `Structure preprocessing validation` patient artifact is registered
+as validation-only. It should be emitted during focused modular-vs-legacy
+validation runs and kept with validation outputs, not treated as a normal
+analysis table.
+
 ## May 19, 2026 Simplification Pass
 
-After the sister-repository scan and user review, the current registry was
-reduced to 62 specs by removing outputs that should not remain core patient-runner
-surfaces:
+After the sister-repository scan and user review, the registry was reduced to 62
+specs by removing outputs that should not remain core patient-runner surfaces.
+It is currently 63 specs after adding the optional structure-preprocessing
+validation artifact:
 
 - `Cohort: DIL global tissue scores and DIL features` - derived join; regenerate downstream if needed.
 - `Cohort: tissue volume above threshold` and its biopsy fragment - downstream-calculable threshold summary.

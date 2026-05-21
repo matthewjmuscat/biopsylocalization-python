@@ -20,7 +20,7 @@ import pandas as pd
 
 OUTPUT_SCHEMA_REGISTRY_VERSION = "phase3d_output_schema_registry_v1"
 OUTPUT_SCHEMA_COVERAGE_SCHEMA_VERSION = "phase3d_output_schema_coverage_v1"
-EXPECTED_CURRENT_REGISTRY_COUNT = 62
+EXPECTED_CURRENT_REGISTRY_COUNT = 63
 
 
 @dataclass(frozen=True)
@@ -223,6 +223,7 @@ OUTPUT_TABLE_SPECS = (
     _spec("patient_selected_structures", "Selected structures", "Output CSVs/Preprocessing", "patient", "preprocessing", "structure", _key("Patient ID", "Struct ref type", "Index number"), stitch_method="source_fragment", validation_status="phase3c_source_surface"),
     _spec("patient_simulated_biopsy_preparation", "Simulated biopsy preparation dataframe", "Output CSVs/Preprocessing", "patient", "biopsy_geometry", "biopsy", _key("Patient ID", "Bx index"), stitch_method="source_fragment", validation_status="phase3c_source_surface"),
     _spec("patient_planned_vs_realized_centroid_validation", "Simulated biopsy planned vs realized centroid variation validation", "Output CSVs/Preprocessing", "patient", "validation", "biopsy_validation_field", _key("Patient ID", "Bx index", "validation comparison field"), stitch_method="source_fragment", validation_status="phase3c_source_surface"),
+    _spec("patient_structure_preprocessing_validation", "Structure preprocessing validation", "Output CSVs/Preprocessing", "patient", "validation", "structure_validation_result", _key("Patient ID", "Structure type", "Structure index"), stitch_method="source_fragment", validation_status="phase3c_source_surface", retention_policy="validation_only", downstream_usage="not_for_analysis", notes="Optional modular-vs-legacy non-biopsy preprocessing sidecar output; keep with validation artifacts, not as a normal analysis table."),
     _spec("patient_structure_preprocessing_timings", "Structure preprocessing timings", "Output CSVs/Preprocessing", "patient", "preprocessing", "structure_timing", _key("Patient ID", "Structure ref type", "Structure index", "preprocessing phase/subphase"), stitch_method="source_fragment", validation_status="phase3c_source_surface"),
 
     _spec("input_case_manifest", "input_case_manifest", "manifests", "run_metadata", "input_manifest", "run", _key("manifest row identity"), legacy_key_columns=(), stitch_method="manifest_metadata", validation_status="metadata_only", retention_policy="retain_core"),

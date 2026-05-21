@@ -789,7 +789,8 @@ Scientific modularization rule:
 
 Current Phase E preprocessing status:
 
-- non-biopsy structure preprocessing has an extracted modular validation surface,
+- non-biopsy structure preprocessing has an extracted modular surface and uses
+  that modular path by default,
 - prostate-only MR ADC post-processing is already behind a preprocessing helper,
 - dose-grid runtime-object construction lives behind
   `preprocessing/dose_grid_processing.py`, with the same legacy dictionary
@@ -800,9 +801,14 @@ Current Phase E preprocessing status:
 - patient raw-contour pulling lives behind
   `preprocessing/structure_processing/raw_contour_pulling.py`, with the same
   RTSTRUCT read path and legacy contour/centroid writeback keys,
-- the non-validation OAR/rectum/urethra/DIL preprocessing path already uses
-  `process_standard_non_biopsy_structure_families(...)`, but the validation
-  shadow path still carries large legacy family loops in `main`,
+- the OAR/rectum/urethra/DIL preprocessing path uses
+  `process_standard_non_biopsy_structure_families(...)`; DIL-specific behavior
+  is controlled through family configuration/context rather than a separate DIL
+  module,
+- `Structure preprocessing validation` is registered as a validation-only
+  patient preprocessing artifact for focused modular-vs-legacy validation runs,
+- the opt-in validation shadow path still carries large legacy family loops in
+  `main`,
 - the next safest main-facing preprocessing pass is to move that validation
   shadow OAR/rectum/urethra/DIL family orchestration behind a named wrapper,
   preserving the current modular-vs-legacy comparison before any deeper
