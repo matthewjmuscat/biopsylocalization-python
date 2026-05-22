@@ -143,13 +143,27 @@ Scientific modularization rule:
 - scientific behavior changes require a separate deliberate change with focused
   validation and review.
 
+Current implementation guardrail:
+
+- keep the validated legacy/semi-modular cohort path as the oracle,
+- build the real patient-runner path as separate patient-facing modules,
+- for high-risk MC simulation work, prefer copy-assisted patient-module
+  extraction over in-place cleanup of `MC_simulator_convex.py`,
+- make cohort wrappers boring loops over the same patient modules, used only for
+  transition and validation,
+- keep scientific patient modules sequential by default; batch/process
+  parallelism can be added after patient-local inputs are stable,
+- do not create module-local `ALL_CAPS` constants for legacy dictionary keys when
+  the value should come from `LegacyRuntimeKeys`, a typed accessor, or another
+  adapter contract.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
 - no output schema churn,
-- no broad cleanup inside `MC_simulator_convex.py`,
+- no broad cleanup inside `MC_simulator_convex.py` or other legacy oracle files,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to finish main-facing preprocessing modularization
-as exact wrapper extraction, then wire the pre-MC patient stage tranche behind
-the validation gate.
+The next integration step is to validate the current semi-modular main path,
+then wire the remaining pre-MC patient stage tranche and begin separate
+patient-facing MC module extraction.
