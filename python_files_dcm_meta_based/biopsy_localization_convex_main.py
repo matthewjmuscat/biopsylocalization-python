@@ -111,12 +111,15 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
+from preprocessing.output_runtime_dirs import write_run_completion_manifest
 from preprocessing.dose_grid_processing import LegacyDoseGridProcessingConfig
 from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohort
 from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
 from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_selection import select_unique_structures_for_cohort
+from preprocessing.structure_selection_validation import begin_selected_structures_legacy_validation
+from preprocessing.structure_selection_validation import finalize_selected_structures_legacy_validation
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import begin_standard_non_biopsy_structure_stage_legacy_validation
@@ -139,6 +142,7 @@ from config import PreprocessingConfig
 from config import RandomSeedConfig
 from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
+from config import ValidationSidecarConfig
 from guidance_maps.config import GuidanceMapPlanningConfig
 from guidance_maps.planning import precompute_guidance_map_firing_depth_recommendations_for_run
 from input_data import write_input_manifest_files
@@ -818,7 +822,9 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = True # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
+    validate_selected_structures_module_against_legacy = True
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = True
+    validate_prostate_only_mr_adc_module_against_legacy = True
 
     ###
 
@@ -1111,9 +1117,15 @@ def main():
             transform_generation_random_seed=transform_generation_random_seed,
             optimizer_v1_random_seed=optimizer_v1_random_seed,
         ),
+        validation_sidecars=ValidationSidecarConfig(
+            selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
+            non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
+            prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
+        ),
     )
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
+    validation_sidecar_config = pipeline_config.validation_sidecars
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = bool(num_MC_dose_simulations_input)
@@ -1511,9 +1523,27 @@ def main():
                     pipeline_config.random_seeds.optimizer_v1_random_seed,
                 )
 
+                input_data_type_counts = {
+                    "dicom": num_dicoms,
+                    "rtstruct": num_RTst_dcms_entries,
+                    "rtdose": num_RTdose_dcms_entries,
+                    "rtplan": num_RTplan_dcms_entries,
+                    "mr-t2": num_MR_T2_dcms_entries,
+                    "mr-adc": num_MR_ADC_dcms_entries,
+                    "us": num_US_dcms_entries,
+                }
+                validation_run_type = validation_sidecar_config.validation_run_type_string()
+                run_folder_suffix = validation_sidecar_config.build_run_folder_suffix(input_data_type_counts)
+
                 specific_output_dir, raw_mc_output_dir = create_run_output_directories(
                     master_structure_info_dict,
                     output_dir,
+                    run_label=run_folder_suffix,
+                    run_metadata={
+                        "validation_run_type": validation_run_type,
+                        "active_validation_sidecars": validation_sidecar_config.active_validation_labels(),
+                        "input_data_type_counts": input_data_type_counts,
+                    },
                 )
                 runtime_logger.attach_output_dir(specific_output_dir)
                 runtime_logger.checkpoint(
@@ -1638,6 +1668,15 @@ def main():
 
                 ### Selecting unqiue structures of each type (except biopsies and dils) for future calculations
 
+                selected_structures_validation_context = None
+                if validation_sidecar_config.selected_structures_against_legacy == True:
+                    selected_structures_validation_context = begin_selected_structures_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_list_generalized=structs_referenced_list_generalized,
+                        all_ref_key=all_ref_key,
+                    )
+
                 select_unique_structures_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
@@ -1650,6 +1689,22 @@ def main():
                     important_info=important_info,
                     live_display=live_display,
                 )
+
+                if validation_sidecar_config.selected_structures_against_legacy == True:
+                    live_display = finalize_selected_structures_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_dict=structs_referenced_dict,
+                        structs_referenced_list_generalized=structs_referenced_list_generalized,
+                        structs_referenced_list_generalized_unique_structs=structs_referenced_list_generalized_unique_structs,
+                        all_ref_key=all_ref_key,
+                        patients_progress=patients_progress,
+                        completed_progress=completed_progress,
+                        important_info=important_info,
+                        live_display=live_display,
+                        validation_context=selected_structures_validation_context,
+                        runtime_logger=runtime_logger,
+                    )
 
 
 
@@ -1667,7 +1722,7 @@ def main():
                 )
 
                 non_biopsy_structure_stage_validation_context = None
-                if run_non_biopsy_structure_legacy_sidecar_validation_bool == True:
+                if validation_sidecar_config.non_biopsy_structures_against_legacy == True:
                     non_biopsy_structure_stage_validation_context = begin_standard_non_biopsy_structure_stage_legacy_validation(
                         oar_ref=oar_ref,
                         rectum_ref_key=rectum_ref_key,
@@ -1697,7 +1752,7 @@ def main():
                     runtime_logger=runtime_logger,
                 )
 
-                if run_non_biopsy_structure_legacy_sidecar_validation_bool == True:
+                if validation_sidecar_config.non_biopsy_structures_against_legacy == True:
                     ### LEGACY NON-BIOPSY VALIDATION SIDECAR
                     ### The normal modular stage above is the main-facing path under test.
                     ### This sidecar restores the pre-stage state, executes the full legacy
@@ -3734,6 +3789,9 @@ def main():
                     completed_progress,
                     indeterminate_progress_sub,
                     live_display,
+                    validate_against_legacy=validation_sidecar_config.prostate_only_mr_adc_against_legacy,
+                    important_info=important_info,
+                    runtime_logger=runtime_logger,
                 )
 
                 ### END CALCULATING PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
@@ -5411,6 +5469,18 @@ def main():
 
             live_display.stop()
     if runtime_logger is not None:
+        if "specific_output_dir" in locals() and "master_structure_info_dict" in locals():
+            completion_manifest_path = write_run_completion_manifest(
+                output_dir=specific_output_dir,
+                master_structure_info_dict=master_structure_info_dict,
+                status="completed",
+                message="Programme complete.",
+            )
+            runtime_logger.checkpoint(
+                "run_output_dir.complete_manifest",
+                "Wrote root-level run completion manifest.",
+                details={"completion_manifest_path": str(completion_manifest_path)},
+            )
         runtime_logger.mark_completed("Programme complete.")
     sys.exit("> Programme complete.")
 

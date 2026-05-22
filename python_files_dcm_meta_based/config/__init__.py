@@ -8,6 +8,7 @@ from .pipeline import PreprocessingConfig
 from .pipeline import RandomSeedConfig
 from .pipeline import RuntimeReplayConfig
 from .pipeline import RuntimeUIConfig
+from .pipeline import ValidationSidecarConfig
 
 __all__ = [
     "ArtifactConfig",
@@ -20,4 +21,5 @@ __all__ = [
     "RandomSeedConfig",
     "RuntimeReplayConfig",
     "RuntimeUIConfig",
+    "ValidationSidecarConfig",
 ]
