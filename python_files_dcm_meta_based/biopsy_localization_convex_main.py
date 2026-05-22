@@ -116,6 +116,7 @@ from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohor
 from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
 from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
+from preprocessing.structure_selection import select_unique_structures_for_cohort
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import begin_standard_non_biopsy_structure_stage_legacy_validation
@@ -1637,80 +1638,18 @@ def main():
 
                 ### Selecting unqiue structures of each type (except biopsies and dils) for future calculations
 
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Selecting unique structures [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Selecting unique structures"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
-
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Selecting unique structures [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
-
-
-                    sp_patient_selected_structure_info_dataframe = pandas.DataFrame()
-
-                    for structure_type in structs_referenced_list_generalized_unique_structs:
-                        structure_type_contour_names_list =  structs_referenced_dict[structure_type]["Contour names"]
-
-                        selected_structure_info_dataframe, message_string = misc_tools.specific_structure_selector_dataframe_version(pydicom_item,
-                                                                                                                                            structure_type,
-                                                                                                                                            structure_type_contour_names_list)
-
-
-                        important_info.add_text_line(message_string, live_display)
-
-
-                        sp_patient_selected_structure_info_dataframe = pandas.concat([sp_patient_selected_structure_info_dataframe,selected_structure_info_dataframe], ignore_index = True)
-
-                    sp_patient_selected_structure_info_dataframe.insert(loc=0, column="Patient ID", value=patientUID)
-
-                    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"] = sp_patient_selected_structure_info_dataframe
-
-
-
-                    ### Now delete all the structures that were not chosen from the master ref dict
-                    ### Note that this was done primarily for the MC simulation section to simplify modifying the code for testing tissue class against
-                    ### individual structures. Instead of modifying that section of code heavily, I am simply removing the structures
-                    ### that weren't selected
-
-                    sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Total num structs found"] > 1]
-                    num_structs_difference = 0
-                    for row_index, row in sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe.iterrows():
-                        struct_selected_type = row["Struct ref type"]
-                        struct_selected_index = row["Index number"]
-
-                        updated_sp_structure_list = [pydicom_item[struct_selected_type][struct_selected_index]] if 0 <= struct_selected_index < len(pydicom_item[struct_selected_type]) else []
-
-                        pydicom_item[struct_selected_type] = updated_sp_structure_list
-
-
-                        # Update the master patient info record
-                        current_num_structs = master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"]
-                        updated_num_structs = len(updated_sp_structure_list)
-                        difference = current_num_structs - updated_num_structs
-                        num_structs_difference += difference
-
-                        master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"] = updated_num_structs
-
-
-                    # Update the master patient info record
-                    current_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"] = current_total_num_structs - num_structs_difference
-
-                    total_num_structs_updated = 0
-                    for patientUID,pydicom_item in master_structure_reference_dict.items():
-                        for structure_type in structs_referenced_list_generalized:
-
-                            num_structs = len(pydicom_item[structure_type])
-                            total_num_structs_updated += num_structs
-
-                    master_structure_info_dict["Global"]["Num structures"] = total_num_structs_updated
-
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)
+                select_unique_structures_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    structs_referenced_dict=structs_referenced_dict,
+                    structs_referenced_list_generalized=structs_referenced_list_generalized,
+                    structs_referenced_list_generalized_unique_structs=structs_referenced_list_generalized_unique_structs,
+                    all_ref_key=all_ref_key,
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    important_info=important_info,
+                    live_display=live_display,
+                )
 
 
 
