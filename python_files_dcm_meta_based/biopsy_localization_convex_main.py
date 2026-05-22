@@ -112,10 +112,11 @@ from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runt
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.output_runtime_dirs import write_run_completion_manifest
-from preprocessing.dose_grid_processing import LegacyDoseGridProcessingConfig
-from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohort
-from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
-from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
+from preprocessing.dose_grid_processing import DoseGridProcessingConfig
+from preprocessing.dose_grid_processing import build_dose_grids_for_cohort
+from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
+from preprocessing.mr_adc_grid_processing import build_mr_adc_grids_for_cohort
+from preprocessing.mr_adc_input_checking import validate_and_normalize_mr_adc_inputs_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_selection import select_unique_structures_for_cohort
 from preprocessing.structure_selection_validation import begin_selected_structures_legacy_validation
@@ -1561,41 +1562,17 @@ def main():
                         live_display,
                     )
 
-                #live_display.stop()
-                ### Check if there are more than one ADC MRs for each patient:
-                mr_adc_units = None 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                validate_and_normalize_mr_adc_inputs_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    mr_adc_ref=mr_adc_ref,
+                    important_info=important_info,
+                    live_display=live_display,
+                )
 
-                    if mr_adc_ref not in pydicom_item:
-                        important_info.add_text_line("Notice! no ADC MR for: "+ str(patientUID), live_display)  
-                        continue
-                     
-                    if len(master_structure_reference_dict[patientUID][mr_adc_ref]) > 1: 
-                        important_info.add_text_line("Notice! There are "+ str(len(master_structure_reference_dict[patientUID][mr_adc_ref]))+ "ADC MRs for: " +str(patientUID), live_display)                           
-
-                        ###### IMPORTANT! WE REMOVE ALL ENTRIES OF MR ADC IMAGES EXCEPT FOR THE FIRST!
-
-                        important_info.add_text_line("Removing all MR ADCs except the first for: " +str(patientUID), live_display)   
-
-                    # Delete all MR ADCs except the first one 
-                    # Get the first key-value pair
-                    series_uid, mr_adc_subdict = next(iter(master_structure_reference_dict[patientUID][mr_adc_ref].items()))
-
-                    # Only store the sub dictionary of the first MR series
-                    master_structure_reference_dict[patientUID][mr_adc_ref] = mr_adc_subdict
-
-                    if mr_adc_units == None:
-                        mr_adc_units = mr_adc_subdict["Units"]
-                    elif mr_adc_units != mr_adc_units:
-                        important_info.add_text_line("The units of your MRs are not the same between patients! Detected on patient: "+ str(patientUID), live_display)   
-
-                
-                
-                
-                dose_grid_processing_result = build_legacy_dose_grids_for_cohort(
+                dose_grid_processing_result = build_dose_grids_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
-                    config=LegacyDoseGridProcessingConfig(
+                    config=DoseGridProcessingConfig(
                         dose_ref=dose_ref,
                         plan_ref=plan_ref,
                         lower_bound_dose_value=lower_bound_dose_value,
@@ -1609,10 +1586,10 @@ def main():
                 )
                 lower_bound_dose_value = dose_grid_processing_result.lower_bound_dose_value
 
-                mr_adc_grid_processing_result = build_legacy_mr_adc_grids_for_cohort(
+                mr_adc_grid_processing_result = build_mr_adc_grids_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
-                    config=LegacyMRADCGridProcessingConfig(
+                    config=MRADCGridProcessingConfig(
                         mr_adc_ref=mr_adc_ref,
                         color_flattening_deg_mr=color_flattening_deg_MR,
                         lower_bound_mr_adc_value=lower_bound_mr_adc_value,

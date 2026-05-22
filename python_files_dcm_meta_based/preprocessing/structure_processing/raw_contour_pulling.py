@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-"""Legacy raw-contour pulling adapters for patient preprocessing.
+"""Raw-contour pulling adapters for patient preprocessing.
 
 This module moves the main-body RTSTRUCT contour-read block behind a named
 boundary. It preserves the current pydicom read path, simulated-biopsy skip,
-centroid writes for non-biopsy structures, and legacy dictionary keys.
+centroid writes for non-biopsy structures, and existing dictionary keys.
 """
 
 import numpy as np
@@ -20,7 +20,7 @@ def pull_raw_structure_contour_for_structure(
     specific_structure_index,
     bx_ref,
 ):
-    """Pull raw contour points for one legacy structure entry."""
+    """Pull raw contour points for one structure entry."""
     specific_structure = pydicom_item[structure_type][specific_structure_index]
     if structure_type == bx_ref:
         simulated_bool = specific_structure["Simulated bool"]
@@ -84,7 +84,7 @@ def pull_raw_structure_contours_for_cohort(
     structures_progress,
     completed_progress,
 ):
-    """Run the legacy raw-contour pulling block for every patient."""
+    """Run the main-facing raw-contour pulling block for every patient."""
     patientUID_default = "Initializing"
     pulling_patients_task_main_description = "[red]Pulling patient structure data [{}]...".format(patientUID_default)
     pulling_patients_task_completed_main_description = "[green]Pulling patient structure data"
