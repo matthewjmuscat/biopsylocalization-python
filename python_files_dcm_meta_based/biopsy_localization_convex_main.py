@@ -1402,27 +1402,7 @@ def main():
                     important_info.add_text_line("Each patient contains a structure, dose and plan file.", live_display)    
                 
                 
-                # setting some variables for use in simulating biopsies
-                """
-                if len(bx_sim_locations) >= 1:
-                    simulate_biopsies_relative_to_struct_type_list = [None]*len(simulate_biopsies_relative_to)
-                    for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
-                        keyfound = False
-                        for struct_type_key in structs_referenced_dict.keys():
-                            if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]["Contour names"]:
-                                if keyfound == True:
-                                    raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
-                                simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
-                                keyfound = True
-                        if keyfound == False:
-                            raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
-                    important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
-                    live_display.refresh()
-                else: 
-                    simulate_biopsies_relative_to_struct_type_list = []
-                    important_info.add_text_line("Not creating any simulated biopsies.", live_display)          
-                    live_display.refresh() 
-                """
+                # simulated biopsy info
                 if num_simulated_bxs_to_create >= 1:
                     for sim_bx_type_str,sim_bx_type_dict in bx_sim_locations_dict.items():
                         simulate_biopsies_relative_to = sim_bx_type_dict["Relative to struct type"]
