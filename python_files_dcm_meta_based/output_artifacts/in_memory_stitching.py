@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from .exporters import write_dataframe_artifact
+from .schema_registry import OutputSchemaRegistry
 from .stitch_validation import SHADOW_STITCH_PAIRS
 from .stitch_validation import ShadowStitchPair
 
@@ -56,6 +57,42 @@ def _ordered_hashes(dataframe: pd.DataFrame) -> pd.Series:
     return pd.util.hash_pandas_object(
         _canonical_value_dataframe(dataframe),
         index=False,
+    )
+
+
+def _cohort_sort_columns(stitch_pair: ShadowStitchPair) -> tuple[str, ...]:
+    if stitch_pair.row_order_columns:
+        return stitch_pair.row_order_columns
+    spec = OutputSchemaRegistry().match_spec(
+        stitch_pair.final_table_name,
+        "Output CSVs/Cohort",
+        stitch_pair.file_extension,
+    )
+    return spec.canonical_primary_key if spec is not None else ()
+
+
+def _sort_dataframe_by_columns(dataframe: pd.DataFrame, sort_columns: tuple[str, ...]) -> pd.DataFrame:
+    present_columns = [column for column in sort_columns if column in dataframe.columns]
+    if not present_columns:
+        return dataframe.reset_index(drop=True)
+
+    sortable_df = dataframe.copy()
+    helper_columns: list[str] = []
+    for column_index, column in enumerate(present_columns):
+        text_values = sortable_df[column].astype("string").fillna("")
+        numeric_values = pd.to_numeric(text_values, errors="coerce")
+        is_text_helper = f"__canonical_sort_is_text_{column_index}"
+        numeric_helper = f"__canonical_sort_numeric_{column_index}"
+        text_helper = f"__canonical_sort_text_{column_index}"
+        sortable_df[is_text_helper] = numeric_values.isna()
+        sortable_df[numeric_helper] = numeric_values.fillna(0)
+        sortable_df[text_helper] = text_values
+        helper_columns.extend([is_text_helper, numeric_helper, text_helper])
+
+    return (
+        sortable_df.sort_values(helper_columns, kind="mergesort")
+        .drop(columns=helper_columns)
+        .reset_index(drop=True)
     )
 
 
@@ -175,7 +212,10 @@ def build_in_memory_stitch_validation(master_structure_reference_dict: dict,
             rows.append(row)
             continue
 
-        recreated_df = pd.concat(source_dataframes, ignore_index=True)
+        recreated_df = _sort_dataframe_by_columns(
+            pd.concat(source_dataframes, ignore_index=True),
+            _cohort_sort_columns(stitch_pair),
+        )
         stitched_tables[stitch_pair.final_table_name] = recreated_df
         row.update(_compare_dataframes(recreated_df, final_df))
         if row["shape_match"] and row["column_set_match"] and row["row_hash_match_ignore_order"]:

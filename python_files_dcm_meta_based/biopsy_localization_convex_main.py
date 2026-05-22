@@ -118,6 +118,7 @@ from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_c
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import begin_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import finalize_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import prepare_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
@@ -1726,47 +1727,47 @@ def main():
                     mr_adc_ref=mr_adc_ref,
                 )
 
-                if run_non_biopsy_structure_legacy_sidecar_validation_bool != True:
-                    live_display = process_standard_non_biopsy_structure_preprocessing_stage(
+                non_biopsy_structure_stage_validation_context = None
+                if run_non_biopsy_structure_legacy_sidecar_validation_bool == True:
+                    non_biopsy_structure_stage_validation_context = begin_standard_non_biopsy_structure_stage_legacy_validation(
                         oar_ref=oar_ref,
                         rectum_ref_key=rectum_ref_key,
                         urethra_ref_key=urethra_ref_key,
                         dil_ref=dil_ref,
                         master_structure_reference_dict=master_structure_reference_dict,
-                        master_structure_info_dict=master_structure_info_dict,
-                        structs_referenced_dict=structs_referenced_dict,
                         config=non_bx_structure_preprocessing_config,
-                        parallel_pool=parallel_pool,
-                        layout_groups=layout_groups,
-                        patients_progress=patients_progress,
-                        structures_progress=structures_progress,
-                        completed_progress=completed_progress,
-                        indeterminate_progress_sub=indeterminate_progress_sub,
-                        important_info=important_info,
-                        live_display=live_display,
-                        runtime_logger=runtime_logger,
                     )
-                else:
+
+                live_display = process_standard_non_biopsy_structure_preprocessing_stage(
+                    oar_ref=oar_ref,
+                    rectum_ref_key=rectum_ref_key,
+                    urethra_ref_key=urethra_ref_key,
+                    dil_ref=dil_ref,
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    structs_referenced_dict=structs_referenced_dict,
+                    config=non_bx_structure_preprocessing_config,
+                    parallel_pool=parallel_pool,
+                    layout_groups=layout_groups,
+                    patients_progress=patients_progress,
+                    structures_progress=structures_progress,
+                    completed_progress=completed_progress,
+                    indeterminate_progress_sub=indeterminate_progress_sub,
+                    important_info=important_info,
+                    live_display=live_display,
+                    runtime_logger=runtime_logger,
+                )
+
+                if run_non_biopsy_structure_legacy_sidecar_validation_bool == True:
                     ### LEGACY NON-BIOPSY VALIDATION SIDECAR
-                    ### This branch validates the modular main-facing stage wrapper against
-                    ### the full legacy inline OAR/rectum/urethra/DIL stage, then restores
+                    ### The normal modular stage above is the main-facing path under test.
+                    ### This sidecar restores the pre-stage state, executes the full legacy
+                    ### inline OAR/rectum/urethra/DIL stage, compares outputs, then restores
                     ### the modular state for downstream processing.
                     live_display, non_biopsy_structure_stage_validation_context = prepare_standard_non_biopsy_structure_stage_legacy_validation(
-                        oar_ref=oar_ref,
-                        rectum_ref_key=rectum_ref_key,
-                        urethra_ref_key=urethra_ref_key,
-                        dil_ref=dil_ref,
                         master_structure_reference_dict=master_structure_reference_dict,
-                        master_structure_info_dict=master_structure_info_dict,
-                        structs_referenced_dict=structs_referenced_dict,
-                        config=non_bx_structure_preprocessing_config,
-                        parallel_pool=parallel_pool,
-                        layout_groups=layout_groups,
-                        patients_progress=patients_progress,
-                        structures_progress=structures_progress,
-                        completed_progress=completed_progress,
-                        indeterminate_progress_sub=indeterminate_progress_sub,
-                        important_info=important_info,
+                        all_ref_key=all_ref_key,
+                        validation_context=non_biopsy_structure_stage_validation_context,
                         live_display=live_display,
                         runtime_logger=runtime_logger,
                     )
