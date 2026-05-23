@@ -66,6 +66,9 @@ Keep three layers distinct:
   scientific operations, dictionary writebacks, array shapes, and ordering as the
   oracle for that stage. These may initially copy known-good legacy scientific
   blocks into new patient modules instead of refactoring the legacy file.
+  Additive one-patient stage adapters should live under
+  `python_files_dcm_meta_based/patient_stages/` unless a stage already has a
+  clearly separate patient-facing home.
 - Runner and assembly layer: selects patients, calls patient stages, writes
   patient artifacts, assembles cohort tables, and compares against the oracle.
 
@@ -150,7 +153,7 @@ tracking; keep this section as the higher-level boundary map.
 Use these labels when documenting, extracting, or removing blocks from
 `biopsy_localization_convex_main.py`. The labels are intentionally short so the
 whole pipeline can be reviewed at a high level before individual functions are
-rewired.
+extracted.
 
 | Block | Scope | Patient-runner status | Notes |
 | --- | --- | --- | --- |
@@ -807,9 +810,10 @@ run logging.
 
 Phase E should not keep blending two concepts: the legacy cohort oracle and the
 new patient-runner pathway. Legacy cohort code remains the comparator. New
-patient-facing modules are the implementation path. Cohort wrappers around new
-patient modules should be plain iteration utilities used for validation and
-main-facing transition only; they should not become a second hidden monolith.
+patient-facing modules are the implementation path. Additive extraction should
+not rewire the frozen cohort/oracle path to call new patient modules. Separate
+validation utilities can iterate over patient modules when the patient-runner
+path is ready to compare against the oracle.
 
 For MC simulation, prefer this extraction order:
 

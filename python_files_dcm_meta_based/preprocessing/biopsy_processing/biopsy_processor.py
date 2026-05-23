@@ -1,84 +1,6 @@
 from preprocessing.biopsy_processing.biopsy_geometry_helper import finalize_biopsy_geometry_from_zslice_list
 
 
-def process_patient_real_biopsies(*,
-                                  patient_uid,
-                                  pydicom_item,
-                                  master_structure_reference_dict,
-                                  structs_referenced_dict,
-                                  bx_ref,
-                                  parallel_pool,
-                                  interp_inter_slice_dist,
-                                  interp_intra_slice_dist,
-                                  interp_dist_caps,
-                                  biopsy_radius,
-                                  display_pca_fit_variation_for_biopsies_bool,
-                                  voxel_size_for_structure_volume_calc_non_bx,
-                                  factor_for_voxel_size,
-                                  cupy_array_upper_limit_NxN_size_input,
-                                  layout_groups,
-                                  nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                  generate_cuda_log_files_volume_calculation,
-                                  constant_z_slice_polygons_handler_option,
-                                  remove_consecutive_duplicate_points_in_polygons,
-                                  include_edges_in_log_files,
-                                  custom_cuda_kernel_type,
-                                  demonstrate_volume_calculation_correctness_bool_1,
-                                  plot_volume_calculation_containment_result_bool_1_old,
-                                  plot_binary_mask_bool,
-                                  structures_progress,
-                                  processing_structures_task,
-                                  indeterminate_progress_sub,
-                                  live_display):
-    """Finalize all real biopsy geometry for one patient."""
-    for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
-        structureID = specific_structure["ROI"]
-        simulated_bool = specific_structure["Simulated bool"]
-
-        # IF THIS IS A SIMULATED BIOPSY, THEN DO NOTHING!
-        if simulated_bool == True:
-            continue
-
-        processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patient_uid,structureID)
-        structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
-
-        threeDdata_zslice_list = specific_structure["Raw contour pts zslice list"].copy()
-        live_display = finalize_biopsy_geometry_from_zslice_list(master_structure_reference_dict,
-                                                                patient_uid,
-                                                                bx_ref,
-                                                                specific_structure_index,
-                                                                specific_structure,
-                                                                threeDdata_zslice_list,
-                                                                structs_referenced_dict,
-                                                                parallel_pool,
-                                                                interp_inter_slice_dist,
-                                                                interp_intra_slice_dist,
-                                                                interp_dist_caps,
-                                                                biopsy_radius,
-                                                                voxel_size_for_structure_volume_calc_non_bx,
-                                                                factor_for_voxel_size,
-                                                                cupy_array_upper_limit_NxN_size_input,
-                                                                layout_groups,
-                                                                nearest_zslice_vals_and_indices_cupy_generic_max_size,
-                                                                generate_cuda_log_files_volume_calculation,
-                                                                constant_z_slice_polygons_handler_option,
-                                                                remove_consecutive_duplicate_points_in_polygons,
-                                                                include_edges_in_log_files,
-                                                                custom_cuda_kernel_type,
-                                                                demonstrate_volume_calculation_correctness_bool_1,
-                                                                plot_volume_calculation_containment_result_bool_1_old,
-                                                                plot_binary_mask_bool,
-                                                                structures_progress,
-                                                                indeterminate_progress_sub,
-                                                                live_display,
-                                                                display_pca_fit_variation_for_biopsies_bool=display_pca_fit_variation_for_biopsies_bool,
-                                                                store_raw_contour_pts_zslice_list_bool=False)
-
-        structures_progress.update(processing_structures_task, advance=1)
-
-    return live_display
-
-
 def real_biopsy_processer(master_structure_reference_dict,
                             master_structure_info_dict,
                             structs_referenced_dict,
@@ -130,36 +52,50 @@ def real_biopsy_processer(master_structure_reference_dict,
         processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID_default)
         processing_structures_task = structures_progress.add_task(processing_structures_task_main_description, total=num_nonsim_bx_structs_patient_specific)
 
-        live_display = process_patient_real_biopsies(
-            patient_uid=patientUID,
-            pydicom_item=pydicom_item,
-            master_structure_reference_dict=master_structure_reference_dict,
-            structs_referenced_dict=structs_referenced_dict,
-            bx_ref=bx_ref,
-            parallel_pool=parallel_pool,
-            interp_inter_slice_dist=interp_inter_slice_dist,
-            interp_intra_slice_dist=interp_intra_slice_dist,
-            interp_dist_caps=interp_dist_caps,
-            biopsy_radius=biopsy_radius,
-            display_pca_fit_variation_for_biopsies_bool=display_pca_fit_variation_for_biopsies_bool,
-            voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
-            factor_for_voxel_size=factor_for_voxel_size,
-            cupy_array_upper_limit_NxN_size_input=cupy_array_upper_limit_NxN_size_input,
-            layout_groups=layout_groups,
-            nearest_zslice_vals_and_indices_cupy_generic_max_size=nearest_zslice_vals_and_indices_cupy_generic_max_size,
-            generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
-            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=remove_consecutive_duplicate_points_in_polygons,
-            include_edges_in_log_files=include_edges_in_log_files,
-            custom_cuda_kernel_type=custom_cuda_kernel_type,
-            demonstrate_volume_calculation_correctness_bool_1=demonstrate_volume_calculation_correctness_bool_1,
-            plot_volume_calculation_containment_result_bool_1_old=plot_volume_calculation_containment_result_bool_1_old,
-            plot_binary_mask_bool=plot_binary_mask_bool,
-            structures_progress=structures_progress,
-            processing_structures_task=processing_structures_task,
-            indeterminate_progress_sub=indeterminate_progress_sub,
-            live_display=live_display,
-        )
+        for specific_structure_index, specific_structure in enumerate(pydicom_item[bx_ref]):
+            structureID = specific_structure["ROI"]
+            simulated_bool = specific_structure["Simulated bool"]
+
+            # IF THIS IS A SIMULATED BIOPSY, THEN DO NOTHING!
+            if simulated_bool == True:
+                continue
+
+            processing_structures_task_main_description = "[cyan]Processing structures [{},{}]...".format(patientUID,structureID)
+            structures_progress.update(processing_structures_task, description = processing_structures_task_main_description)
+
+            threeDdata_zslice_list = specific_structure["Raw contour pts zslice list"].copy()
+            live_display = finalize_biopsy_geometry_from_zslice_list(master_structure_reference_dict,
+                                                                    patientUID,
+                                                                    bx_ref,
+                                                                    specific_structure_index,
+                                                                    specific_structure,
+                                                                    threeDdata_zslice_list,
+                                                                    structs_referenced_dict,
+                                                                    parallel_pool,
+                                                                    interp_inter_slice_dist,
+                                                                    interp_intra_slice_dist,
+                                                                    interp_dist_caps,
+                                                                    biopsy_radius,
+                                                                    voxel_size_for_structure_volume_calc_non_bx,
+                                                                    factor_for_voxel_size,
+                                                                    cupy_array_upper_limit_NxN_size_input,
+                                                                    layout_groups,
+                                                                    nearest_zslice_vals_and_indices_cupy_generic_max_size,
+                                                                    generate_cuda_log_files_volume_calculation,
+                                                                    constant_z_slice_polygons_handler_option,
+                                                                    remove_consecutive_duplicate_points_in_polygons,
+                                                                    include_edges_in_log_files,
+                                                                    custom_cuda_kernel_type,
+                                                                    demonstrate_volume_calculation_correctness_bool_1,
+                                                                    plot_volume_calculation_containment_result_bool_1_old,
+                                                                    plot_binary_mask_bool,
+                                                                    structures_progress,
+                                                                    indeterminate_progress_sub,
+                                                                    live_display,
+                                                                    display_pca_fit_variation_for_biopsies_bool=display_pca_fit_variation_for_biopsies_bool,
+                                                                    store_raw_contour_pts_zslice_list_bool=False)
+
+            structures_progress.update(processing_structures_task, advance=1)
 
         structures_progress.remove_task(processing_structures_task)
         patients_progress.update(processing_patients_task, advance=1)

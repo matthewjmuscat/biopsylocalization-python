@@ -73,46 +73,6 @@ def pull_raw_structure_contour_for_structure(
     pydicom_item[structure_type][specific_structure_index]["Raw contour pts zslice list"] = threeDdata_zslice_list
 
 
-def pull_raw_structure_contours_for_patient(
-    *,
-    patient_uid,
-    pydicom_item,
-    rtstruct_dicom_path,
-    structs_referenced_list_generalized,
-    bx_ref,
-    structures_progress=None,
-    pulling_structures_task=None,
-):
-    """Pull raw contour points for every eligible structure in one patient."""
-    for structs in structs_referenced_list_generalized:
-        for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
-            structureID = specific_structure["ROI"]
-            structure_reference_number = specific_structure["Ref #"]
-            if structs == bx_ref:
-                simulated_bool = specific_structure["Simulated bool"]
-            else:
-                simulated_bool = None
-            pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patient_uid,structureID)
-            if structures_progress is not None and pulling_structures_task is not None:
-                structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
-
-            if simulated_bool == True:
-                if structures_progress is not None and pulling_structures_task is not None:
-                    structures_progress.update(pulling_structures_task, advance=1)
-                continue # dont do anything if its a simulated biopsy!
-
-            pull_raw_structure_contour_for_structure(
-                pydicom_item,
-                rtstruct_dicom_path,
-                structs,
-                specific_structure_index,
-                bx_ref,
-            )
-
-            if structures_progress is not None and pulling_structures_task is not None:
-                structures_progress.update(pulling_structures_task, advance=1)
-
-
 def pull_raw_structure_contours_for_cohort(
     master_structure_reference_dict,
     master_structure_info_dict,
@@ -139,15 +99,30 @@ def pull_raw_structure_contours_for_cohort(
         num_general_structs_patient_specific = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
         pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID_default)
         pulling_structures_task = structures_progress.add_task(pulling_structures_task_main_description, total=num_general_structs_patient_specific)
-        pull_raw_structure_contours_for_patient(
-            patient_uid=patientUID,
-            pydicom_item=pydicom_item,
-            rtstruct_dicom_path=rtstruct_dicom_paths_by_patient_uid[patientUID],
-            structs_referenced_list_generalized=structs_referenced_list_generalized,
-            bx_ref=bx_ref,
-            structures_progress=structures_progress,
-            pulling_structures_task=pulling_structures_task,
-        )
+        for structs in structs_referenced_list_generalized:
+            for specific_structure_index, specific_structure in enumerate(pydicom_item[structs]):
+                structureID = specific_structure["ROI"]
+                structure_reference_number = specific_structure["Ref #"]
+                if structs == bx_ref:
+                    simulated_bool = specific_structure["Simulated bool"]
+                else:
+                    simulated_bool = None
+                pulling_structures_task_main_description = "[cyan]Pulling structures [{},{}]...".format(patientUID,structureID)
+                structures_progress.update(pulling_structures_task, description = pulling_structures_task_main_description)
+
+                if simulated_bool == True:
+                    structures_progress.update(pulling_structures_task, advance=1)
+                    continue # dont do anything if its a simulated biopsy!
+
+                pull_raw_structure_contour_for_structure(
+                    pydicom_item,
+                    rtstruct_dicom_paths_by_patient_uid[patientUID],
+                    structs,
+                    specific_structure_index,
+                    bx_ref,
+                )
+
+                structures_progress.update(pulling_structures_task, advance=1)
         structures_progress.remove_task(pulling_structures_task)
         patients_progress.update(pulling_patients_task, advance=1)
         completed_progress.update(pulling_patients_task_completed, advance=1)

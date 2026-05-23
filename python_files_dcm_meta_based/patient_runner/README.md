@@ -147,10 +147,13 @@ Current implementation guardrail:
 
 - keep the validated legacy/semi-modular cohort path as the oracle,
 - build the real patient-runner path as separate patient-facing modules,
+- put additive one-patient stage adapters under `../patient_stages/` unless a
+  stage already has a clearly separate patient-facing home,
 - for high-risk MC simulation work, prefer copy-assisted patient-module
   extraction over in-place cleanup of `MC_simulator_convex.py`,
-- make cohort wrappers boring loops over the same patient modules, used only for
-  transition and validation,
+- do not rewire frozen cohort/oracle wrappers to call new patient modules during
+  additive extraction; call those modules from the patient runner once that path
+  is ready for comparison,
 - keep scientific patient modules sequential by default; batch/process
   parallelism can be added after patient-local inputs are stable,
 - do not create module-local `ALL_CAPS` constants for legacy dictionary keys when
