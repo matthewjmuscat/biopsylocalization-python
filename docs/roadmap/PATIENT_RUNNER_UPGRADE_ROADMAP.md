@@ -143,6 +143,10 @@ requires them.
 
 ## Pipeline Boundary Map
 
+The detailed stage-by-stage readiness checklist lives in
+`PATIENT_RUNNER_MODULE_READINESS.md`. Use that document for implementation
+tracking; keep this section as the higher-level boundary map.
+
 Use these labels when documenting, extracting, or removing blocks from
 `biopsy_localization_convex_main.py`. The labels are intentionally short so the
 whole pipeline can be reviewed at a high level before individual functions are

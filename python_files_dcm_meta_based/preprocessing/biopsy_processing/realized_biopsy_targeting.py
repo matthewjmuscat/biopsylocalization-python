@@ -158,6 +158,39 @@ def apply_legacy_realized_biopsy_targeting_fields(pydicom_item,
     )
 
 
+def determine_patient_realized_biopsy_targeting(*,
+                                                patient_uid,
+                                                pydicom_item,
+                                                all_ref_key,
+                                                bx_ref,
+                                                oar_ref,
+                                                dil_ref,
+                                                structures_progress,
+                                                processing_structures_task):
+    """Determine realized biopsy targeting fields for one patient."""
+    selected_prostate_info, prostate_found_bool = _get_selected_prostate_info(
+        pydicom_item,
+        all_ref_key,
+        oar_ref,
+    )
+
+    for specific_bx_structure in pydicom_item[bx_ref]:
+        structure_id = specific_bx_structure["ROI"]
+        processing_structures_task_main_description = "[cyan]Determining biopsy targets [{},{}]...".format(patient_uid, structure_id)
+        structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
+
+        apply_legacy_realized_biopsy_targeting_fields(
+            pydicom_item,
+            specific_bx_structure,
+            selected_prostate_info,
+            prostate_found_bool,
+            oar_ref,
+            dil_ref,
+        )
+
+        structures_progress.update(processing_structures_task, advance=1)
+
+
 def realized_biopsy_targeting_processer(master_structure_reference_dict,
                                         master_structure_info_dict,
                                         all_ref_key,
@@ -188,12 +221,6 @@ def realized_biopsy_targeting_processer(master_structure_reference_dict,
         processing_patients_task_main_description = "[red]Determining realized biopsy targeting [{}]...".format(patient_uid)
         patients_progress.update(processing_patients_task, description=processing_patients_task_main_description)
 
-        selected_prostate_info, prostate_found_bool = _get_selected_prostate_info(
-            pydicom_item,
-            all_ref_key,
-            oar_ref,
-        )
-
         structure_id_default = "Initializing"
         num_bx_structs_patient_specific = len(pydicom_item[bx_ref])
         processing_structures_task_main_description = "[cyan]Determining biopsy targets [{},{}]...".format(patient_uid, structure_id_default)
@@ -202,21 +229,16 @@ def realized_biopsy_targeting_processer(master_structure_reference_dict,
             total=num_bx_structs_patient_specific,
         )
 
-        for specific_bx_structure in pydicom_item[bx_ref]:
-            structure_id = specific_bx_structure["ROI"]
-            processing_structures_task_main_description = "[cyan]Determining biopsy targets [{},{}]...".format(patient_uid, structure_id)
-            structures_progress.update(processing_structures_task, description=processing_structures_task_main_description)
-
-            apply_legacy_realized_biopsy_targeting_fields(
-                pydicom_item,
-                specific_bx_structure,
-                selected_prostate_info,
-                prostate_found_bool,
-                oar_ref,
-                dil_ref,
-            )
-
-            structures_progress.update(processing_structures_task, advance=1)
+        determine_patient_realized_biopsy_targeting(
+            patient_uid=patient_uid,
+            pydicom_item=pydicom_item,
+            all_ref_key=all_ref_key,
+            bx_ref=bx_ref,
+            oar_ref=oar_ref,
+            dil_ref=dil_ref,
+            structures_progress=structures_progress,
+            processing_structures_task=processing_structures_task,
+        )
 
         structures_progress.remove_task(processing_structures_task)
         patients_progress.update(processing_patients_task, advance=1)
