@@ -20,10 +20,7 @@ Guardrails for this checklist:
   not that the existing cohort wrapper has been rewritten to call it.
 
 Canonical module placement is governed by
-`../architecture/PATIENT_MODULE_TREE_GUIDE.md`. References to
-`python_files_dcm_meta_based/patient_stages/` below describe temporary current
-repository state from the 2026-05-23 pass and should be relocated into owning
-scientific packages in the next cleanup pass.
+`../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
 
 ## Status Legend
 
@@ -39,15 +36,15 @@ scientific packages in the next cleanup pass.
 
 Completed in the 2026-05-23 pass:
 
-The five additive patient wrappers below currently live under the temporary
-`python_files_dcm_meta_based/patient_stages/preprocessing/` staging area. Their
-canonical homes are listed in `../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
+- The initial additive patient wrappers were moved out of the temporary top-level
+  `patient_stages` area and into family-local `per_patient/` homes inside the
+  existing scientific tree.
 
-- `pull_raw_structure_contours_for_patient(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/raw_contour_pulling.py` for future runner use; the cohort wrapper remains on its frozen body.
-- `process_patient_real_biopsies(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/real_biopsy_processing.py` for future runner use; the cohort wrapper remains on its frozen body.
-- `assign_patient_simulated_biopsy_targets(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/simulated_biopsy_preparation.py` for future runner use; the target-assignment cohort wrapper remains on its frozen body.
-- `plan_patient_simulated_biopsies(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/simulated_biopsy_planning.py` for future runner use; the cohort wrapper remains on its frozen body.
-- `determine_patient_realized_biopsy_targeting(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/realized_biopsy_targeting.py` for future runner use; the cohort wrapper remains on its frozen body.
+- `pull_raw_structure_contours_for_patient(...)` lives in `python_files_dcm_meta_based/preprocessing/structure_processing/per_patient/raw_contour_pulling.py` for future runner use; the cohort wrapper remains on its frozen body.
+- `process_patient_real_biopsies(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/real_biopsy_processing.py` for future runner use; the cohort wrapper remains on its frozen body.
+- `assign_patient_simulated_biopsy_targets(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_preparation.py` for future runner use; the target-assignment cohort wrapper remains on its frozen body.
+- `plan_patient_simulated_biopsies(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_planning.py` for future runner use; the cohort wrapper remains on its frozen body.
+- `determine_patient_realized_biopsy_targeting(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` for future runner use; the cohort wrapper remains on its frozen body.
 
 ## Main Pipeline Readiness Checklist
 
@@ -61,25 +58,25 @@ canonical homes are listed in `../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
 | 6 | MR ADC input normalization | `normalize_patient_mr_adc_input(...)`, `validate_and_normalize_mr_adc_inputs_for_cohort(...)` | Complete | Wrapper is patient-level already. The cohort wrapper tracks cross-patient unit consistency as a run validation concern. |
 | 7 | Dose grid preprocessing | `build_dose_grid_runtime_objects_for_patient(...)`, `build_dose_grids_for_cohort(...)` | Complete | Future runner should pass patient-local progress/log adapters instead of cohort Rich tasks. |
 | 8 | MR ADC grid preprocessing | `build_mr_adc_grid_runtime_objects_for_patient(...)`, `build_mr_adc_grids_for_cohort(...)` | Complete | Preserve `filter_out_negatives=True`. Future runner should pass patient-local progress/log adapters. |
-| 9 | Raw contour pulling | `patient_stages.preprocessing.raw_contour_pulling.pull_raw_structure_contours_for_patient(...)`, `pull_raw_structure_contours_for_cohort(...)` | Complete | Additive patient module exists. Current cohort wrapper remains frozen; future typed wrapper should replace direct legacy dictionary arguments in the patient runner. |
+| 9 | Raw contour pulling | `preprocessing.structure_processing.per_patient.raw_contour_pulling.pull_raw_structure_contours_for_patient(...)`, `pull_raw_structure_contours_for_cohort(...)` | Complete | Additive patient module exists in the owning structure-processing family. Current cohort wrapper remains frozen; future typed wrapper should replace direct legacy dictionary arguments in the patient runner. |
 | 10 | Unique structure selection | `select_patient_unique_structures(...)`, `select_unique_structures_for_cohort(...)` | Complete | Patient function exists. Global structure count update should eventually move to cohort assembly/summary. |
 | 11 | Selected-structure legacy validation sidecar | `begin_selected_structures_legacy_validation(...)`, `finalize_selected_structures_legacy_validation(...)` | Assembly | Keep sidecar/oracle scoped; do not include in normal patient runner. |
 | 12 | Standard non-biopsy structure preprocessing | `preprocess_non_biopsy_structure(...)`, `process_standard_non_biopsy_structure_preprocessing_stage(...)` | Partial | Add a patient-level family wrapper that processes prostate/rectum/urethra/DIL for one patient in the same order. Do not route the frozen cohort wrapper through it yet. Keep existing sidecar as oracle. |
 | 13 | Non-biopsy legacy validation sidecar | `begin/prepare/finalize_standard_non_biopsy_structure_stage_legacy_validation(...)` | Assembly | Keep validation-only. Remove or disable after patient module validation is stable. |
 | 14 | Prostate-only MR ADC summary | `process_patient_prostate_only_mr_adc(...)`, `prostate_only_mr_adc_processer(...)` | Complete | Patient function and legacy comparison surface exist. |
-| 15 | Real biopsy preprocessing | `patient_stages.preprocessing.real_biopsy_processing.process_patient_real_biopsies(...)`, `real_biopsy_processer(...)` | Complete | Additive patient module exists. Current cohort wrapper remains frozen; future typed wrapper should isolate geometry config and progress adapters. |
-| 16 | Simulated biopsy preparation: target assignment | `patient_stages.preprocessing.simulated_biopsy_preparation.assign_patient_simulated_biopsy_targets(...)`, `assign_simulated_biopsy_targets(...)` | Complete | Additive patient module exists for target assignment only. Current cohort wrapper remains frozen. |
+| 15 | Real biopsy preprocessing | `preprocessing.biopsy_processing.per_patient.real_biopsy_processing.process_patient_real_biopsies(...)`, `real_biopsy_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future typed wrapper should isolate geometry config and progress adapters. |
+| 16 | Simulated biopsy preparation: target assignment | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.assign_patient_simulated_biopsy_targets(...)`, `assign_simulated_biopsy_targets(...)` | Complete | Additive patient module exists for target assignment only in the owning biopsy-processing family. Current cohort wrapper remains frozen. |
 | 17 | Simulated biopsy preparation: multiplicity expansion | `expand_simulated_biopsy_multiplicity(...)` | Partial | Add `expand_patient_simulated_biopsy_multiplicity(...)`; keep global biopsy count refresh in cohort wrapper. |
 | 18 | Simulated biopsy preparation: length policy | `determine_simulated_biopsy_lengths(...)` | Partial | Add patient-level length determination after confirming no hidden cohort fallback is reintroduced. Current policy is patient-compatible. |
 | 19 | Simulated biopsy preparation dataframe | `simulated_biopsy_preparation_dataframe_builder(...)` | Partial | Add `build_patient_simulated_biopsy_preparation_dataframe(...)` and make cohort output assembly concatenate patient fragments. |
-| 20 | Simulated biopsy planning | `patient_stages.preprocessing.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
+| 20 | Simulated biopsy planning | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
 | 21 | Uncertainty generation and attachment | `prepare_and_attach_uncertainty_data(...)`, `attach_uncertainty_data_from_dataframe(...)` | Partial | Keep template generation run-scoped. Add patient-level attachment from a resolved uncertainty dataframe fragment. |
 | 22 | Transform generation/prep | `MC_prepper_funcs.generate_transformations(...)` | Missing | Build a patient-level transform generation/prep wrapper outside `MC_simulator_convex.py`. Do not change sampled transform math. |
 | 23 | Optimizer v1 | `biopsy_optimizer_module_v1(...)` | Missing | Add patient-level optimizer v1 wrapper or mark as legacy-only if v2 becomes the validated target path. |
 | 24 | Optimizer v2 live integration | `run_target_dil_optimizer_v2_for_live_simulated_family(...)` | Partial | Internal v2 modules are modular, but the main live integration surface still needs a patient-stage wrapper and validation against current outputs. |
 | 25 | Simulated biopsy finalization | `simulated_biopsy_processer(...)` | Partial | Add `process_patient_simulated_biopsies(...)` for future runner use. Do not route the frozen cohort wrapper through it yet. Structure-level helper boundaries already exist. |
 | 26 | Planned-vs-realized centroid validation | `validate_simulated_biopsy_planned_vs_realized_centroid_variation(...)` | Partial | Add patient validation helper that returns one patient fragment plus a run-level summarizer. |
-| 27 | Realized biopsy targeting | `patient_stages.preprocessing.realized_biopsy_targeting.determine_patient_realized_biopsy_targeting(...)`, `realized_biopsy_targeting_processer(...)` | Complete | Additive patient module exists. Current cohort wrapper remains frozen. |
+| 27 | Realized biopsy targeting | `preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting.determine_patient_realized_biopsy_targeting(...)`, `realized_biopsy_targeting_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen. |
 | 28 | Pickled preprocessed bundle export/load | `export_preprocessed_pickle_bundle(...)`, `load_selected_pickle_bundle_run(...)` | Assembly | Keep run-scoped. Future patient runner can consume patient case fragments from bundles. |
 | 29 | Sampled biopsy processing | `sampled_biopsy_processing_processer(...)` | Partial | Split sampling arg construction, result storage, and biopsy-frame coordinate generation into patient-level surfaces. Preserve sampling order and any random-color side effects during validation. |
 | 30 | Prostate double-sextant classification | `biopsy_double_sextant_processer(...)` | Partial | Patient sample-point helper exists. Be careful moving per-voxel aggregation because random tie-breaking order could affect outputs. |

@@ -70,9 +70,8 @@ Keep three layers distinct:
   oracle for that stage. These may initially copy known-good legacy scientific
   blocks into new patient modules instead of refactoring the legacy file. Prefer
   stage-local patient modules inside the existing scientific package tree, with a
-  family-local `per_patient/` subpackage when a family grows. A top-level
-  `python_files_dcm_meta_based/patient_stages/` tree is temporary migration debt,
-  not the target architecture.
+  family-local `per_patient/` subpackage when a family grows. Do not introduce a
+  top-level `python_files_dcm_meta_based/patient_stages/` tree.
 - Runner and assembly layer: selects patients, calls patient stages, writes
   patient artifacts, assembles cohort tables, and compares against the oracle.
 

@@ -151,8 +151,7 @@ Current implementation guardrail:
 - prefer explicit patient entrypoints in the stage file or a family-local
   `per_patient/` subpackage over a parallel top-level `../patient_stages/`
   tree,
-- if `../patient_stages/` exists from an earlier pass, treat it as temporary
-  migration debt and stop adding new modules there,
+- do not recreate a top-level `../patient_stages/` tree,
 - for high-risk MC simulation work, prefer copy-assisted patient-module
   extraction over in-place cleanup of `MC_simulator_convex.py`,
 - do not rewire frozen cohort/oracle wrappers to call new patient modules during

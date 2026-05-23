@@ -18,9 +18,10 @@ Prefer patient-local scientific code inside the existing scientific package
 tree. Do not grow a parallel top-level
 `python_files_dcm_meta_based/patient_stages/` tree.
 
-If `python_files_dcm_meta_based/patient_stages/` exists from an earlier pass,
-treat it as temporary staging only. Fold its contents back into canonical
-stage-local homes in the next cleanup pass and stop adding new modules there.
+If older branches or notes still reference
+`python_files_dcm_meta_based/patient_stages/`, treat that as historical
+staging only and relocate the code into canonical stage-local homes before
+continuing extraction.
 
 Keep three layers distinct:
 
@@ -116,21 +117,20 @@ Boundary packages should stay narrow:
 - `validation/` owns comparisons and audits, not canonical implementations.
 - `input_data/` owns discovery/manifests, not downstream scientific stages.
 
-## Current Temporary Migration Debt
+## Current Canonical Patient-Module Homes
 
-The following paths are temporary and should be relocated before more patient
-module extraction continues:
+Current repository placement after the 2026-05-23 cleanup pass:
 
-| Current temporary path | Canonical home | Next-pass action |
-| --- | --- | --- |
-| `python_files_dcm_meta_based/patient_stages/preprocessing/raw_contour_pulling.py` | `python_files_dcm_meta_based/preprocessing/structure_processing/raw_contour_pulling.py` | fold the patient entrypoint into the owning stage module or a local `structure_processing/per_patient/` subpackage if the file becomes crowded |
-| `python_files_dcm_meta_based/patient_stages/preprocessing/real_biopsy_processing.py` | `python_files_dcm_meta_based/preprocessing/biopsy_processing/biopsy_processor.py` | move the patient wrapper into the biopsy-science family |
-| `python_files_dcm_meta_based/patient_stages/preprocessing/simulated_biopsy_preparation.py` | `python_files_dcm_meta_based/preprocessing/biopsy_processing/simulated_biopsy_preparation.py` | move the patient wrapper into the owning stage module or family-local `per_patient/` area |
-| `python_files_dcm_meta_based/patient_stages/preprocessing/simulated_biopsy_planning.py` | `python_files_dcm_meta_based/preprocessing/biopsy_processing/simulated_biopsy_planner.py` | move the patient wrapper into the biopsy-science family |
-| `python_files_dcm_meta_based/patient_stages/preprocessing/realized_biopsy_targeting.py` | `python_files_dcm_meta_based/preprocessing/biopsy_processing/realized_biopsy_targeting.py` | move the patient wrapper into the biopsy-science family |
+| Stage | Canonical home |
+| --- | --- |
+| Raw contour pulling | `python_files_dcm_meta_based/preprocessing/structure_processing/per_patient/raw_contour_pulling.py` |
+| Real biopsy preprocessing | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/real_biopsy_processing.py` |
+| Simulated biopsy target assignment | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_preparation.py` |
+| Simulated biopsy planning | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_planning.py` |
+| Realized biopsy targeting | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` |
 
-No new modules should be added under `python_files_dcm_meta_based/patient_stages/`
-before that cleanup is complete.
+Do not recreate these same entrypoints under a top-level
+`python_files_dcm_meta_based/patient_stages/` tree.
 
 ## Naming and Review Rules
 
@@ -153,8 +153,8 @@ Before adding or moving a patient-facing module, check:
 3. Can the patient entrypoint live in the same stage file with an explicit
    patient name?
 4. If not, should a family-local `per_patient/` subpackage hold it?
-5. Are we accidentally adding more code under `patient_stages/` or
-   `patient_runner/` that belongs elsewhere?
+5. Are we accidentally adding more code under a parallel top-level patient tree
+  or under `patient_runner/` that belongs elsewhere?
 6. Does the readiness checklist need to point at the canonical home after the
    move?
 
