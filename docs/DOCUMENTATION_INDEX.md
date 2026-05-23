@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-05-21
+Last updated: 2026-05-23
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -20,6 +20,9 @@ this index.
 
 Current durable docs:
 
+- `architecture/PATIENT_MODULE_TREE_GUIDE.md` - canonical ownership and
+  placement guide for patient-level scientific modules and the
+  science-orchestration split.
 - `roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` - active migration roadmap toward
   a validated per-patient runner.
 - `runtime/RUNTIME_LOGGING_DESIGN.md` - runtime logging, crash localization, and
@@ -88,6 +91,7 @@ docs/
   architecture/
     CONFIG_LAYER_REWRITE_PLAN.md
     GUI_AND_STARTUP_ARCHITECTURE_PLAN.md
+    PATIENT_MODULE_TREE_GUIDE.md
   boundaries/
     PICKLE_EXPORT_BOUNDARIES.md
   input/

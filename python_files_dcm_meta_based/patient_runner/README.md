@@ -146,9 +146,13 @@ Scientific modularization rule:
 Current implementation guardrail:
 
 - keep the validated legacy/semi-modular cohort path as the oracle,
-- build the real patient-runner path as separate patient-facing modules,
-- put additive one-patient stage adapters under `../patient_stages/` unless a
-  stage already has a clearly separate patient-facing home,
+- build patient scientific modules in their owning scientific packages; see
+  `../../docs/architecture/PATIENT_MODULE_TREE_GUIDE.md`,
+- prefer explicit patient entrypoints in the stage file or a family-local
+  `per_patient/` subpackage over a parallel top-level `../patient_stages/`
+  tree,
+- if `../patient_stages/` exists from an earlier pass, treat it as temporary
+  migration debt and stop adding new modules there,
 - for high-risk MC simulation work, prefer copy-assisted patient-module
   extraction over in-place cleanup of `MC_simulator_convex.py`,
 - do not rewire frozen cohort/oracle wrappers to call new patient modules during

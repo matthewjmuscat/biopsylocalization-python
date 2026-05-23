@@ -19,6 +19,12 @@ Guardrails for this checklist:
   a future patient runner without reading unrelated patients for scientific state,
   not that the existing cohort wrapper has been rewritten to call it.
 
+Canonical module placement is governed by
+`../architecture/PATIENT_MODULE_TREE_GUIDE.md`. References to
+`python_files_dcm_meta_based/patient_stages/` below describe temporary current
+repository state from the 2026-05-23 pass and should be relocated into owning
+scientific packages in the next cleanup pass.
+
 ## Status Legend
 
 | Status | Meaning |
@@ -32,6 +38,10 @@ Guardrails for this checklist:
 ## Current Pass Summary
 
 Completed in the 2026-05-23 pass:
+
+The five additive patient wrappers below currently live under the temporary
+`python_files_dcm_meta_based/patient_stages/preprocessing/` staging area. Their
+canonical homes are listed in `../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
 
 - `pull_raw_structure_contours_for_patient(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/raw_contour_pulling.py` for future runner use; the cohort wrapper remains on its frozen body.
 - `process_patient_real_biopsies(...)` added in `python_files_dcm_meta_based/patient_stages/preprocessing/real_biopsy_processing.py` for future runner use; the cohort wrapper remains on its frozen body.
