@@ -1,5 +1,11 @@
 """Patient-local biopsy-processing entrypoints."""
 
+from .centroid_variation_validation import assemble_simulated_biopsy_centroid_variation_validation_fragments
+from .centroid_variation_validation import build_patient_simulated_biopsy_centroid_variation_validation_fragment
+from .centroid_variation_validation import summarize_simulated_biopsy_centroid_variation_validation_dataframe
+from .double_sextant_classification import assemble_biopsy_double_sextant_classification_fragments
+from .double_sextant_classification import build_patient_biopsy_double_sextant_sample_point_fragment
+from .double_sextant_classification import store_patient_biopsy_double_sextant_voxel_fragment
 from .real_biopsy_processing import process_patient_real_biopsies
 from .realized_biopsy_targeting import determine_patient_realized_biopsy_targeting
 from .simulated_biopsy_planning import plan_patient_simulated_biopsies
@@ -12,6 +18,10 @@ from .simulated_biopsy_preparation import prepare_patient_simulated_biopsies
 
 __all__ = [
     "assign_patient_simulated_biopsy_targets",
+    "assemble_biopsy_double_sextant_classification_fragments",
+    "assemble_simulated_biopsy_centroid_variation_validation_fragments",
+    "build_patient_biopsy_double_sextant_sample_point_fragment",
+    "build_patient_simulated_biopsy_centroid_variation_validation_fragment",
     "build_patient_simulated_biopsy_preparation_dataframe",
     "determine_patient_simulated_biopsy_lengths",
     "determine_patient_realized_biopsy_targeting",
@@ -20,4 +30,6 @@ __all__ = [
     "prepare_patient_simulated_biopsies",
     "process_patient_real_biopsies",
     "process_patient_simulated_biopsies",
+    "store_patient_biopsy_double_sextant_voxel_fragment",
+    "summarize_simulated_biopsy_centroid_variation_validation_dataframe",
 ]

@@ -37,9 +37,9 @@ If you want the shortest answer to "what is still missing for a per-patient
 runner?", it is this:
 
 - several preprocessing stages are already patient-ready,
-- several biopsy stages already have partial patient helpers but still do not
-  have the one callable that packages the legacy cohort-loop body for one
-  patient,
+- the remaining missing or partial stages are now mostly structure bootstrap,
+  optimizers, guidance-map precompute, downstream annotations, and actual MC/MR
+  simulation,
 - the runner itself is still mostly orchestration/artifact writing and does not
   yet execute the full scientific stage sequence independently,
 - the later MC and MR simulation tranche still needs dedicated patient wrappers
@@ -62,19 +62,15 @@ runner?", it is this:
 - Sampled biopsy processing
 - Uncertainty attachment
 - Realized biopsy targeting
+- Planned-vs-realized centroid validation
+- Prostate double-sextant classification
 - Transform generation/prep
 - BX-only transform application
 - Relative-structure transform application
 
 ### Has Patient Helpers But Still Missing The Full Patient Stage
 
-- Planned-vs-realized centroid validation
-  reason: the current function already writes patient fragments, but it still
-  returns a cohort-wide dataframe/summary rather than exposing an explicit
-  patient-stage surface plus run summarizer.
-- Prostate double-sextant classification
-  reason: a patient sample-point builder exists, but the stage still includes
-  cohort aggregation and random tie behavior in voxel-level aggregation.
+None currently identified in this pass.
 
 ### Runner-Relevant But Intentionally Run Scoped
 
@@ -116,7 +112,11 @@ bodies that currently live inside those oracle functions.
 
 Current MC-prep patient module home:
 
-- `python_files_dcm_meta_based/mc/per_patient/`
+- `python_files_dcm_meta_based/mc/prep/per_patient/`
+
+Future MC simulation module home:
+
+- `python_files_dcm_meta_based/mc/simulation/per_patient/`
 
 ## Status Legend
 
@@ -145,7 +145,9 @@ Completed through the 2026-05-24 pass:
 - `determine_patient_realized_biopsy_targeting(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` for future runner use; the cohort wrapper remains on its frozen body.
 - `attach_patient_uncertainty_data_from_dataframe(...)` lives in `python_files_dcm_meta_based/preprocessing/uncertainty_attachment.py` for future runner use with a resolved patient uncertainty dataframe fragment; template generation, file workflow, and cohort bookkeeping remain on the frozen run-scoped path.
 - `process_patient_sampled_biopsies(...)` plus the patient-local sampling-arg, sampled-result storage, and biopsy-coordinate helpers live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/sampled_biopsy_processing.py`; the cohort wrapper remains on its frozen body.
-- `generate_transformations_for_patient(...)`, `apply_patient_biopsy_self_transforms(...)`, and `apply_patient_relative_structure_transforms(...)` live in `python_files_dcm_meta_based/mc/per_patient/` as additive patient-local MC prep surfaces; the frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies.
+- `build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)` and `assemble_simulated_biopsy_centroid_variation_validation_fragments(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` for future runner use; the cohort validation wrapper remains on its frozen body.
+- `build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `assemble_biopsy_double_sextant_classification_fragments(...)`, and `store_patient_biopsy_double_sextant_voxel_fragment(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` for future runner use; the cohort wrapper remains on its frozen body. The per-voxel table remains assembled from patient sample-point fragments to preserve legacy aggregation and random-tie behavior.
+- `generate_transformations_for_patient(...)`, `apply_patient_biopsy_self_transforms(...)`, and `apply_patient_relative_structure_transforms(...)` live in `python_files_dcm_meta_based/mc/prep/per_patient/` as additive patient-local MC prep surfaces; the frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies.
 
 ## Main Pipeline Readiness Checklist
 
@@ -172,15 +174,15 @@ Completed through the 2026-05-24 pass:
 | 19 | Simulated biopsy preparation dataframe | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.build_patient_simulated_biopsy_preparation_dataframe(...)`, `simulated_biopsy_preparation_dataframe_builder(...)` | Complete | Additive patient preparation-fragment builder exists. Future cohort output assembly can concatenate patient fragments after row-order validation. |
 | 20 | Simulated biopsy planning | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
 | 21 | Uncertainty generation and attachment | `preprocessing.uncertainty_attachment.attach_patient_uncertainty_data_from_dataframe(...)`, `prepare_and_attach_uncertainty_data(...)`, `attach_uncertainty_data_from_dataframe(...)` | Complete | Additive patient-level attachment from a resolved uncertainty dataframe fragment exists. Keep template generation, file prompts, and run-level dataframe bookkeeping on the frozen run-scoped path. |
-| 22 | Transform generation/prep | `mc.per_patient.transform_generation.generate_transformations_for_patient(...)`, `mc.per_patient.biopsy_self_transforms.apply_patient_biopsy_self_transforms(...)`, `mc.per_patient.relative_structure_transforms.apply_patient_relative_structure_transforms(...)`, `MC_prepper_funcs.generate_transformations(...)`, `MC_prepper_funcs.biopsy_only_transformer(...)`, `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)` | Complete | Additive patient-level MC prep surfaces now exist in the dedicated MC scientific package. Frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies and are not routed through the patient entrypoints. |
+| 22 | Transform generation/prep | `mc.prep.per_patient.transform_generation.generate_transformations_for_patient(...)`, `mc.prep.per_patient.biopsy_self_transforms.apply_patient_biopsy_self_transforms(...)`, `mc.prep.per_patient.relative_structure_transforms.apply_patient_relative_structure_transforms(...)`, `MC_prepper_funcs.generate_transformations(...)`, `MC_prepper_funcs.biopsy_only_transformer(...)`, `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)` | Complete | Additive patient-level MC prep surfaces now exist in the dedicated MC prep scientific package. Frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies and are not routed through the patient entrypoints. |
 | 23 | Optimizer v1 | `biopsy_optimizer_module_v1(...)` | Missing | Add patient-level optimizer v1 wrapper or mark as legacy-only if v2 becomes the validated target path. |
 | 24 | Optimizer v2 live integration | `run_target_dil_optimizer_v2_for_live_simulated_family(...)` | Partial | Internal v2 modules are modular, but the main live integration surface still needs a patient-stage wrapper and validation against current outputs. |
 | 25 | Simulated biopsy finalization | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_processing.process_patient_simulated_biopsies(...)`, `simulated_biopsy_processer(...)` | Complete | Additive patient finalization module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen and is not routed through the patient module. |
-| 26 | Planned-vs-realized centroid validation | `validate_simulated_biopsy_planned_vs_realized_centroid_variation(...)` | Partial | Add patient validation helper that returns one patient fragment plus a run-level summarizer. |
+| 26 | Planned-vs-realized centroid validation | `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)`, `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.assemble_simulated_biopsy_centroid_variation_validation_fragments(...)`, `validate_simulated_biopsy_planned_vs_realized_centroid_variation(...)` | Complete | Additive patient fragment builder plus run-level summarizer exist. Current cohort validation wrapper remains frozen and is not routed through the patient module. |
 | 27 | Realized biopsy targeting | `preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting.determine_patient_realized_biopsy_targeting(...)`, `realized_biopsy_targeting_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen. |
 | 28 | Pickled preprocessed bundle export/load | `export_preprocessed_pickle_bundle(...)`, `load_selected_pickle_bundle_run(...)` | Assembly | Keep run-scoped. Future patient runner can consume patient case fragments from bundles. |
 | 29 | Sampled biopsy processing | `preprocessing.biopsy_processing.sampled_biopsy_processing.process_patient_sampled_biopsies(...)`, `sampled_biopsy_processing_processer(...)` | Complete | Additive patient stage now exists in the owning biopsy-processing module and preserves the current per-patient sampling order by composing patient-local sampling-arg, sampled-result storage, and biopsy-coordinate helpers. Current cohort wrapper remains frozen. |
-| 30 | Prostate double-sextant classification | `biopsy_double_sextant_processer(...)` | Partial | Patient sample-point helper exists. Be careful moving per-voxel aggregation because random tie-breaking order could affect outputs. |
+| 30 | Prostate double-sextant classification | `preprocessing.biopsy_processing.per_patient.double_sextant_classification.build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `preprocessing.biopsy_processing.per_patient.double_sextant_classification.assemble_biopsy_double_sextant_classification_fragments(...)`, `biopsy_double_sextant_processer(...)` | Complete | Additive patient sample-point fragment builder plus run-level per-voxel summarizer exist. Per-voxel aggregation stays run-level to preserve legacy random-tie behavior. Current cohort wrapper remains frozen. |
 | 31 | MC simulation | `MC_simulator_convex.simulator_parallel(...)` | Out of scope | Explicitly excluded from this pass. Build separate patient-facing MC modules later without editing the oracle file first. |
 | 32 | Cohort simulated-biopsy preparation table | `dataframe_builders.cohort_simulated_biopsy_preparation_dataframe_builder(...)` | Assembly | Replace with concatenation of patient preparation fragments after row-order validation. Patient fragment building now exists in the owning biopsy-processing family. |
 | 33 | Guidance map precompute/render | `precompute_guidance_map_firing_depth_recommendations_for_run(...)`, `render_guidance_maps_for_run(...)` | Partial | Treat render as run/UI scoped. Add patient precompute fragments if guidance maps become patient-runner outputs. |
@@ -194,8 +196,9 @@ Completed through the 2026-05-24 pass:
 
 Recommended next implementation items:
 
-1. Add patient-level planned-vs-realized centroid validation helper plus run-level summarizer.
-2. Extract prostate double-sextant classification into a patient-stage surface while preserving voxel aggregation and random tie behavior.
+1. Decide whether optimizer v1 should receive a patient wrapper or be marked legacy-only if optimizer v2 is the validated target path.
+2. Add a patient-stage wrapper around the optimizer-v2 live integration surface after confirming its required inputs and output annotations.
+3. Split structure reference/bootstrap dictionary construction into patient-local dictionary construction plus run-level count/summary assembly.
 
 Recommended later MC/MR tranche after the non-MC patient-stage surface is more
 complete:

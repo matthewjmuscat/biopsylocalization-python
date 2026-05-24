@@ -41,7 +41,8 @@ Keep three layers distinct:
 | `python_files_dcm_meta_based/preprocessing/` | Pre-MC scientific stages | adding or extracting patient-level science for preprocessing, structure work, biopsy work, uncertainty attachment, dose, or MR stages | batch orchestration, manifests, output assembly, GUI/startup policy |
 | `python_files_dcm_meta_based/preprocessing/structure_processing/` | Structure-science family | raw contour pulling, non-biopsy preprocessing, selected-structure logic, prostate-only MR ADC structure summaries | patient-runner stage lists, assembly outputs, cross-run logging policy |
 | `python_files_dcm_meta_based/preprocessing/biopsy_processing/` | Biopsy-science family | real/simulated biopsy preparation, planning, finalization, targeting, sampled-biopsy preprocessing, biopsy QA helpers | batch execution backend policy, artifact manifests, UI workflow code |
-| `python_files_dcm_meta_based/mc/` | MC-prep and MC simulation science | patient-local transform-bank generation, biopsy self-transforms, relative-structure transforms, and later MC/MR simulation modules | patient-runner orchestration, GUI/startup policy, artifact assembly |
+| `python_files_dcm_meta_based/mc/prep/` | MC-preparation science | patient-local transform-bank generation, biopsy self-transforms, and relative-structure transforms | patient-runner orchestration, GUI/startup policy, artifact assembly, MC simulation loop bodies |
+| `python_files_dcm_meta_based/mc/simulation/` | Future MC simulation science | later patient-local containment/dose/MR simulation loop-body extractions from the current simulator oracle files | MC prep transforms, patient-runner orchestration, GUI/startup policy, artifact assembly |
 | `python_files_dcm_meta_based/biopsy_optimizer/` | Optimization science | optimizer wrappers, patient-local optimization adapters, target-ranking science | patient batch orchestration, shadow-output assembly |
 | `python_files_dcm_meta_based/guidance_maps/` | Guidance-map science | patient-local guidance-map precompute/planning logic and domain-specific helpers | generic runner contracts, runtime logging, GUI bootstrapping |
 | `python_files_dcm_meta_based/output_artifacts/` | Artifact contracts and assembly | dataframe export surfaces, schema contracts, cohort assembly, shadow stitching, output inventory | new scientific geometry, targeting, or MC algorithms |
@@ -83,7 +84,7 @@ Preferred future examples:
 
 - `preprocessing/structure_processing/per_patient/`
 - `preprocessing/biopsy_processing/per_patient/`
-- `mc/per_patient/`
+- `mc/prep/per_patient/`
 - `guidance_maps/per_patient/`
 
 3. New top-level scientific package
@@ -128,9 +129,11 @@ Current repository placement after the 2026-05-24 MC prep package pass:
 | Simulated biopsy target assignment | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_preparation.py` |
 | Simulated biopsy planning | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_planning.py` |
 | Realized biopsy targeting | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` |
-| MC transform-bank generation | `python_files_dcm_meta_based/mc/per_patient/transform_generation.py` |
-| MC BX-only transform application | `python_files_dcm_meta_based/mc/per_patient/biopsy_self_transforms.py` |
-| MC relative-structure transform application | `python_files_dcm_meta_based/mc/per_patient/relative_structure_transforms.py` |
+| Simulated biopsy planned-vs-realized centroid validation | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` |
+| Prostate double-sextant biopsy classification | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` |
+| MC transform-bank generation | `python_files_dcm_meta_based/mc/prep/per_patient/transform_generation.py` |
+| MC BX-only transform application | `python_files_dcm_meta_based/mc/prep/per_patient/biopsy_self_transforms.py` |
+| MC relative-structure transform application | `python_files_dcm_meta_based/mc/prep/per_patient/relative_structure_transforms.py` |
 
 Do not recreate these same entrypoints under a top-level
 `python_files_dcm_meta_based/patient_stages/` tree.
