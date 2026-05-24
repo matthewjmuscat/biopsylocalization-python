@@ -33,6 +33,43 @@ Keep three layers distinct:
   artifact writing, assembly, validation harnesses, startup, runtime logging,
   UI, and other workflow control code.
 
+## Presentation And Rich Boundary
+
+Rich is a presentation adapter, not a scientific dependency. Keep it available
+for the current legacy CLI/batch workflow while the patient-runner path is being
+validated, but do not make new patient scientific functions require Rich objects
+such as `live_display`, Rich `Progress` instances, or `important_info` panels.
+
+Preferred direction:
+
+1. Now, continue extracting patient-local scientific modules and avoid adding new
+   required Rich arguments to those modules.
+2. Near-term, introduce a thin progress/log/event adapter surface so the same
+   patient functions can run under Rich, a future GUI, or no presentation layer.
+3. After patient-runner validation, remove remaining Rich references from patient
+   scientific interiors and keep Rich only in legacy/main/frontend wrappers.
+
+Acceptable temporary migration debt:
+
+- Existing patient functions may still accept Rich/progress/live-display objects
+  while they are being validated against the legacy path.
+- Legacy cohort wrappers may keep constructing Rich tasks and may translate
+  patient progress/events into Rich.
+- Patient-stage extraction should not be blocked just because an older nearby
+  interface still has Rich coupling.
+
+Not acceptable for new patient surfaces:
+
+- importing Rich directly inside a scientific `per_patient` module,
+- requiring `live_display`, Rich `Progress`, or `important_info` for core
+  scientific execution,
+- moving UI or presentation behavior into `patient_runner/` or scientific
+  packages just because the runner needs status reporting.
+
+The long-term shape is one scientific patient function with replaceable
+presentation adapters: Rich for the legacy CLI/batch surface, a GUI adapter for
+the product surface, and a null/log-only adapter for headless validation.
+
 ## Ownership Map
 
 | Path | Ownership | Put new code here when... | Keep out |
@@ -50,7 +87,7 @@ Keep three layers distinct:
 | `python_files_dcm_meta_based/validation/` and validation helpers | Comparison and regression surfaces | oracle comparisons, rerunnable validation scripts, mismatch localization | canonical scientific implementations |
 | `python_files_dcm_meta_based/input_data/` | Input discovery contracts | manifests, routing profiles, DICOM input shape and provenance surfaces | downstream scientific stage logic |
 | `python_files_dcm_meta_based/startup/` | Bootstrap and runtime wiring | startup flow, logging, process watchdogs, pickle-load workflow, runtime configuration glue | new scientific stage implementations |
-| `python_files_dcm_meta_based/ui/` | UI/product surface | user-facing controls, rendering broker behavior, UI-only view models | scientific stage algorithms |
+| `python_files_dcm_meta_based/ui/` | UI/product surface | user-facing controls, rendering broker behavior, UI-only view models, GUI presentation adapters | scientific stage algorithms |
 | Current MC files beside repo root (`MC_prepper_funcs.py`, `MC_simulator_convex.py`, `MC_simulator_MR.py`) | Current MC oracle surface | preserving the validated cohort MC/prep call graph or adding a tightly scoped approved bug fix | new patient MC modules, patient-runner orchestration, unrelated preprocessing code |
 
 ## Preferred Placement Pattern
@@ -110,7 +147,14 @@ Orchestration/product packages should own:
 - patient runner contracts and stage sequencing,
 - artifact writing, manifests, and cohort assembly,
 - runtime logging, retries, worker policy, and startup/bootstrap,
-- UI and product-specific interaction surfaces.
+- UI and product-specific interaction surfaces,
+- presentation adapters that translate generic patient progress/events into
+  Rich, GUI widgets, logs, or no-op behavior.
+
+Patient scientific packages should avoid depending on any single presentation
+implementation. If a patient stage needs status reporting, prefer an optional
+adapter/protocol argument with a no-op default or return structured status rows
+that callers can display elsewhere.
 
 Boundary packages should stay narrow:
 
@@ -163,6 +207,9 @@ Before adding or moving a patient-facing module, check:
   or under `patient_runner/` that belongs elsewhere?
 6. Does the readiness checklist need to point at the canonical home after the
    move?
+7. Does the new patient entrypoint require Rich, `live_display`, or
+  `important_info`? If yes, move that dependency to a wrapper or adapter before
+  treating the interface as clean.
 
 If the answer would create a parallel tree, stop and update the plan before
 editing code.

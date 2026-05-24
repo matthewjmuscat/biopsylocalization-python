@@ -13,6 +13,8 @@ Guardrails for this checklist:
 - no scientific behavior changes in readiness passes,
 - no edits to `python_files_dcm_meta_based/MC_simulator_convex.py` in the current pass,
 - no raw CUDA/kernel math edits in the current pass,
+- Rich is a presentation adapter, not a scientific dependency; avoid adding new
+  required Rich/progress/live-display arguments to patient scientific modules,
 - cohort aggregation, manifests, validation, and output stitching are allowed to stay
   cohort/run scoped,
 - patient-ready means the stage has a one-patient entrypoint that can be called by
@@ -40,10 +42,32 @@ runner?", it is this:
 - the remaining missing or partial stages are now mostly structure bootstrap,
   optimizers, guidance-map precompute, downstream annotations, and actual MC/MR
   simulation,
-- the runner itself is still mostly orchestration/artifact writing and does not
-  yet execute the full scientific stage sequence independently,
+- a thin runner/validation scaffold can exist while modules are still being
+  extracted, but the complete patient runner should come after the remaining
+  patient-stage modules have stable contracts,
 - the later MC and MR simulation tranche still needs dedicated patient wrappers
   around the active legacy transform and simulation surfaces.
+
+## Presentation/Rich Decoupling Policy
+
+Rich should remain available for the legacy CLI/batch surface while the patient
+runner is being validated, but patient scientific modules should be written as if
+Rich can be swapped for a GUI adapter or for no presentation layer at all.
+
+Working order for this policy:
+
+1. Now: keep building patient modules, but avoid adding new required Rich args
+   whenever possible.
+2. Near-term: add a thin progress/log/event adapter layer so patient modules can
+   run with Rich, a GUI, or a null/headless implementation.
+3. After patient-runner validation: remove remaining Rich references from patient
+   scientific functions and leave Rich only in legacy/main/frontend wrappers.
+
+Existing Rich/progress/live-display arguments in patient functions are migration
+debt, not placement failures. Do not stop patient-stage extraction just to remove
+all of that debt upfront. Also do not route frozen legacy cohort wrappers through
+new patient functions only to clean up Rich; preserve the oracle path until a
+deliberate validation pass is ready.
 
 ### Already Has A Real Patient Stage
 
@@ -194,15 +218,32 @@ Completed through the 2026-05-24 pass:
 
 ## Next Implementation Order
 
-Recommended next implementation items:
+Recommended order of operations from this point:
 
-1. Decide whether optimizer v1 should receive a patient wrapper or be marked legacy-only if optimizer v2 is the validated target path.
-2. Add a patient-stage wrapper around the optimizer-v2 live integration surface after confirming its required inputs and output annotations.
-3. Split structure reference/bootstrap dictionary construction into patient-local dictionary construction plus run-level count/summary assembly.
-
-Recommended later MC/MR tranche after the non-MC patient-stage surface is more
-complete:
-
-1. Extract patient containment/dose simulation modules from the per-patient loop bodies inside `MC_simulator_convex.simulator_parallel(...)` without editing the oracle file first.
-2. Extract patient MR localization/simulation modules from the per-patient loop bodies inside `MC_simulator_MR.simulator_parallel(...)`.
-3. Add downstream patient MC annotation/output wrappers only after the upstream patient MC state is validated.
+1. Keep extracting missing patient scientific modules where the next loop-body
+   boundary is clear, while avoiding new required Rich dependencies.
+2. Add a small presentation-neutral progress/log/event adapter surface with Rich,
+   null/headless, and future GUI implementations. This should be thin enough not
+   to become a new orchestration framework.
+3. Split structure reference/bootstrap dictionary construction into patient-local
+   dictionary construction plus run-level count/summary assembly.
+4. Add or expose guidance-map patient precompute fragments, while keeping
+   guidance-map rendering run/UI scoped.
+5. Decide whether optimizer v1 should receive a patient wrapper or be marked
+   legacy-only if optimizer v2 is the validated target path.
+6. Add a patient-stage wrapper around the optimizer-v2 live integration surface
+   after confirming its required inputs, memory behavior, rendering policy, and
+   output annotations.
+7. Extract patient containment/dose simulation modules from the per-patient loop
+   bodies inside `MC_simulator_convex.simulator_parallel(...)` without editing the
+   oracle file first.
+8. Extract patient MR localization/simulation modules from the per-patient loop
+   bodies inside `MC_simulator_MR.simulator_parallel(...)`.
+9. Add downstream patient MC annotation/output wrappers only after the upstream
+   patient MC state is validated.
+10. Build out the complete patient runner after the scientific patient-stage
+    modules above have stable contracts. Earlier runner work should stay limited
+    to scaffolding, manifests, adapters, and shadow-validation harnesses.
+11. After patient-runner validation against the legacy cohort oracle, remove
+    remaining Rich dependencies from patient scientific functions and keep Rich
+    only in legacy/main/frontend wrappers.
