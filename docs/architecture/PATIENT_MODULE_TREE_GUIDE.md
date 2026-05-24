@@ -1,6 +1,6 @@
 # Patient Module Tree Guide
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 This document is the source of truth for where new patient-level modules belong
 and which existing module locations are temporary migration debt. Use it before
@@ -41,6 +41,7 @@ Keep three layers distinct:
 | `python_files_dcm_meta_based/preprocessing/` | Pre-MC scientific stages | adding or extracting patient-level science for preprocessing, structure work, biopsy work, uncertainty attachment, dose, or MR stages | batch orchestration, manifests, output assembly, GUI/startup policy |
 | `python_files_dcm_meta_based/preprocessing/structure_processing/` | Structure-science family | raw contour pulling, non-biopsy preprocessing, selected-structure logic, prostate-only MR ADC structure summaries | patient-runner stage lists, assembly outputs, cross-run logging policy |
 | `python_files_dcm_meta_based/preprocessing/biopsy_processing/` | Biopsy-science family | real/simulated biopsy preparation, planning, finalization, targeting, sampled-biopsy preprocessing, biopsy QA helpers | batch execution backend policy, artifact manifests, UI workflow code |
+| `python_files_dcm_meta_based/mc/` | MC-prep and MC simulation science | patient-local transform-bank generation, biopsy self-transforms, relative-structure transforms, and later MC/MR simulation modules | patient-runner orchestration, GUI/startup policy, artifact assembly |
 | `python_files_dcm_meta_based/biopsy_optimizer/` | Optimization science | optimizer wrappers, patient-local optimization adapters, target-ranking science | patient batch orchestration, shadow-output assembly |
 | `python_files_dcm_meta_based/guidance_maps/` | Guidance-map science | patient-local guidance-map precompute/planning logic and domain-specific helpers | generic runner contracts, runtime logging, GUI bootstrapping |
 | `python_files_dcm_meta_based/output_artifacts/` | Artifact contracts and assembly | dataframe export surfaces, schema contracts, cohort assembly, shadow stitching, output inventory | new scientific geometry, targeting, or MC algorithms |
@@ -49,7 +50,7 @@ Keep three layers distinct:
 | `python_files_dcm_meta_based/input_data/` | Input discovery contracts | manifests, routing profiles, DICOM input shape and provenance surfaces | downstream scientific stage logic |
 | `python_files_dcm_meta_based/startup/` | Bootstrap and runtime wiring | startup flow, logging, process watchdogs, pickle-load workflow, runtime configuration glue | new scientific stage implementations |
 | `python_files_dcm_meta_based/ui/` | UI/product surface | user-facing controls, rendering broker behavior, UI-only view models | scientific stage algorithms |
-| Current MC files beside repo root (`MC_prepper_funcs.py`, `MC_simulator_convex.py`, `MC_simulator_MR.py`) | Current MC oracle surface | approved MC bug fixes or deliberate patient-MC extraction beside the existing MC family | patient-runner orchestration or unrelated preprocessing code |
+| Current MC files beside repo root (`MC_prepper_funcs.py`, `MC_simulator_convex.py`, `MC_simulator_MR.py`) | Current MC oracle surface | preserving the validated cohort MC/prep call graph or adding a tightly scoped approved bug fix | new patient MC modules, patient-runner orchestration, unrelated preprocessing code |
 
 ## Preferred Placement Pattern
 
@@ -82,9 +83,8 @@ Preferred future examples:
 
 - `preprocessing/structure_processing/per_patient/`
 - `preprocessing/biopsy_processing/per_patient/`
+- `mc/per_patient/`
 - `guidance_maps/per_patient/`
-- a future dedicated MC family such as `mc/per_patient/` if MC extraction grows
-  beyond a small number of files
 
 3. New top-level scientific package
 
@@ -119,7 +119,7 @@ Boundary packages should stay narrow:
 
 ## Current Canonical Patient-Module Homes
 
-Current repository placement after the 2026-05-23 cleanup pass:
+Current repository placement after the 2026-05-24 MC prep package pass:
 
 | Stage | Canonical home |
 | --- | --- |
@@ -128,6 +128,9 @@ Current repository placement after the 2026-05-23 cleanup pass:
 | Simulated biopsy target assignment | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_preparation.py` |
 | Simulated biopsy planning | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_planning.py` |
 | Realized biopsy targeting | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` |
+| MC transform-bank generation | `python_files_dcm_meta_based/mc/per_patient/transform_generation.py` |
+| MC BX-only transform application | `python_files_dcm_meta_based/mc/per_patient/biopsy_self_transforms.py` |
+| MC relative-structure transform application | `python_files_dcm_meta_based/mc/per_patient/relative_structure_transforms.py` |
 
 Do not recreate these same entrypoints under a top-level
 `python_files_dcm_meta_based/patient_stages/` tree.
