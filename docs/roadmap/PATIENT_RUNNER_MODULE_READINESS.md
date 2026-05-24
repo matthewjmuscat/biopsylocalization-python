@@ -22,6 +22,125 @@ Guardrails for this checklist:
 Canonical module placement is governed by
 `../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
 
+## Quick Human Snapshot
+
+Working definition used in this file:
+
+- a patient-level module means one callable that performs one iteration of the
+  legacy cohort loop for that stage,
+- helper functions do not count by themselves if the main stage still has no
+  clear one-patient entrypoint,
+- run-scoped discovery, manifests, assembly, and validation remain allowed to
+  stay outside the patient-stage surface.
+
+If you want the shortest answer to "what is still missing for a per-patient
+runner?", it is this:
+
+- several preprocessing stages are already patient-ready,
+- several biopsy stages already have partial patient helpers but still do not
+  have the one callable that packages the legacy cohort-loop body for one
+  patient,
+- the runner itself is still mostly orchestration/artifact writing and does not
+  yet execute the full scientific stage sequence independently,
+- the later MC and MR simulation tranche still needs dedicated patient wrappers
+  around the active legacy transform and simulation surfaces.
+
+### Already Has A Real Patient Stage
+
+- MR ADC input normalization
+- Dose-grid preprocessing
+- MR ADC grid preprocessing
+- Raw contour pulling
+- Unique structure selection
+- Prostate-only MR ADC summary
+- Real biopsy preprocessing
+- Simulated biopsy target assignment
+- Simulated biopsy planning
+- Realized biopsy targeting
+
+### Has Patient Helpers But Still Missing The Full Patient Stage
+
+- Standard non-biopsy structure preprocessing
+  reason: the file already has a per-structure primitive, but still lacks one
+  patient-family wrapper that runs prostate, rectum, urethra, and DIL for one
+  patient in the legacy order.
+- Simulated biopsy preparation
+  reason: target assignment exists, but multiplicity expansion, length policy,
+  preparation-dataframe building, and the overall one-patient preparation
+  wrapper are still cohort-oriented.
+- Simulated biopsy finalization
+  reason: the stage has reusable transport and geometry helpers, but still lacks
+  one patient-level wrapper for finalizing all simulated biopsies for one
+  patient.
+- Uncertainty attachment
+  reason: attachment logic exists, but the current main-facing stage is still a
+  run-scoped file/template/UI workflow rather than a clean patient attach step.
+- Planned-vs-realized centroid validation
+  reason: the current function already writes patient fragments, but it still
+  returns a cohort-wide dataframe/summary rather than exposing an explicit
+  patient-stage surface plus run summarizer.
+- Sampled biopsy processing
+  reason: the file is internally split, but the full stage is still cohort/MC
+  adjacent and not yet safe to treat as a finished patient-stage surface.
+- Prostate double-sextant classification
+  reason: a patient sample-point builder exists, but the stage still includes
+  cohort aggregation and random tie behavior in voxel-level aggregation.
+
+### Runner-Relevant But Intentionally Run Scoped
+
+- Input discovery and modality routing
+- Structure reference/bootstrap dictionaries
+- Transform/random-seed config
+- Run output directory creation
+- Input manifest writing
+- Pickled preprocessed bundle export/load
+- Final dataframe builders and cohort table assembly
+- Phase3B/Phase3C output surface
+- Patient-runner validation gate
+- Run completion manifest
+
+### Later MC And MR Simulation Modules To Build
+
+These are not the next tranche, but they are part of the eventual patient-runner
+surface and should be included in planning.
+
+For the MC/MR tranche, the target is not a thin wrapper around the current
+top-level legacy entrypoints. The target is patient-level modules for the loop
+bodies that currently live inside those oracle functions.
+
+- Patient transform-bank generation modules extracted from the patient-level work
+  inside `MC_prepper_funcs.generate_transformations(...)`
+  purpose: create one patient's transform/precompute state without changing
+  transform math.
+- Patient BX-only transform application modules extracted from the patient-level
+  work inside `MC_prepper_funcs.biopsy_only_transformer(...)`
+  purpose: apply the already generated biopsy-only transform bank for one
+  patient.
+- Patient relative-structure transform modules extracted from the patient-level
+  work inside `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)`
+  purpose: apply the active relative-structure transform path for one patient.
+- Do not target `MC_prepper_funcs.biopsy_and_structure_shifter(...)` unless the
+  older global anatomy-shift path is deliberately revived. The active main path
+  currently uses BX-only plus relative-structure transforms instead.
+- Patient containment/dose simulation modules extracted from the patient-facing
+  loop bodies inside `MC_simulator_convex.simulator_parallel(...)`
+  purpose: reproduce one patient's active containment and dose simulation path
+  while keeping the current oracle file frozen.
+- Patient MR localization/simulation modules extracted from the patient-facing
+  loop bodies inside `MC_simulator_MR.simulator_parallel(...)`
+  purpose: reproduce one patient's MR ADC localization/simulation path after
+  biopsy MC transforms already exist.
+- Downstream patient MC annotation/output wrappers after patient-local sampling
+  and MC outputs exist
+  purpose: replace current downstream cohort annotations only after upstream
+  patient MC state is stable.
+
+Likely home when that later tranche starts:
+
+- a future dedicated MC scientific family such as `python_files_dcm_meta_based/mc/per_patient/`,
+- or, if extraction begins beside the current oracle files first, thin explicit
+  patient wrappers next to the existing MC files until the MC family is stable.
+
 ## Status Legend
 
 | Status | Meaning |
@@ -99,3 +218,13 @@ Recommended next non-MC items:
 4. Split sampled biopsy processing into patient sampling args, patient result storage, and patient biopsy-frame coordinate generation without changing the current cohort wrapper.
 5. Add patient-level uncertainty attachment from an already resolved uncertainty dataframe.
 6. Build transform-generation wrappers in `MC_prepper_funcs.py` without entering `MC_simulator_convex.py` or raw kernel code.
+
+Recommended later MC/MR tranche after the non-MC patient-stage surface is more
+complete:
+
+1. Extract patient transform-generation/precompute modules from the per-patient work inside `MC_prepper_funcs.generate_transformations(...)`.
+2. Extract patient BX-only transform application modules from the per-patient work inside `MC_prepper_funcs.biopsy_only_transformer(...)`.
+3. Extract patient relative-structure transform modules from the per-patient work inside `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)`.
+4. Extract patient containment/dose simulation modules from the per-patient loop bodies inside `MC_simulator_convex.simulator_parallel(...)` without editing the oracle file first.
+5. Extract patient MR localization/simulation modules from the per-patient loop bodies inside `MC_simulator_MR.simulator_parallel(...)`.
+6. Add downstream patient MC annotation/output wrappers only after the upstream patient MC state is validated.
