@@ -126,6 +126,9 @@ Datatype direction for new patient surfaces:
 - prefer explicit conversion methods such as `to_legacy_dict()` and
   `from_legacy_dict(...)` over scattering ad hoc dictionary construction through
   runner code,
+- keep legacy key spellings in package-local key contract modules when a stage
+  still writes old dictionaries; do not duplicate `Global`, `By patient`, `MC
+  info`, `Ref #`, or `MC data: ...` strings across adapters and collectors,
 - allow shallow `dict(...)` copies at adapter boundaries for metadata and legacy
   compatibility, but do not treat those copies as the final scientific data
   model.

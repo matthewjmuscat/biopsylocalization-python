@@ -5,16 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from .legacy_keys import legacy_mc_keys
 
-MC_CONTAINMENT_BIOPSY_OUTPUT_KEYS = (
-    "MC data: compiled sim results dataframe",
-    "MC data: compiled sim sum-to-one results dataframe",
-    "MC data: compiled sim results",
-    "MC data: MC sim compiled distances global dataframe",
-    "MC data: MC sim compiled distances point-wise dataframe",
-    "MC data: MC sim compiled distances voxel-wise dataframe",
-    "MC data: MC sim containment and distance all trials dataframe (light)",
-)
+MC_CONTAINMENT_BIOPSY_OUTPUT_KEYS = legacy_mc_keys.biopsy_outputs.containment_output_keys
 
 
 @dataclass(slots=True)
@@ -36,6 +29,7 @@ def collect_patient_containment_outputs(patient_uid: str,
                                         *,
                                         bx_ref: str) -> PatientContainmentOutputs:
     """Collect containment artifacts written into one patient dictionary."""
+    identity_keys = legacy_mc_keys.biopsy_identity
     biopsy_outputs: list[dict[str, Any]] = []
     for biopsy_index, biopsy_structure in enumerate(patient_reference_dict.get(bx_ref, ())):
         outputs = {
@@ -46,11 +40,11 @@ def collect_patient_containment_outputs(patient_uid: str,
         if outputs:
             biopsy_outputs.append(
                 {
-                    "ROI": biopsy_structure.get("ROI"),
-                    "Ref #": biopsy_structure.get("Ref #"),
-                    "Index number": biopsy_structure.get("Index number", biopsy_index),
-                    "Simulated bool": biopsy_structure.get("Simulated bool"),
-                    "Simulated type": biopsy_structure.get("Simulated type"),
+                    identity_keys.roi_key: biopsy_structure.get(identity_keys.roi_key),
+                    identity_keys.ref_number_key: biopsy_structure.get(identity_keys.ref_number_key),
+                    identity_keys.index_number_key: biopsy_structure.get(identity_keys.index_number_key, biopsy_index),
+                    identity_keys.simulated_bool_key: biopsy_structure.get(identity_keys.simulated_bool_key),
+                    identity_keys.simulated_type_key: biopsy_structure.get(identity_keys.simulated_type_key),
                     "outputs": outputs,
                 }
             )
