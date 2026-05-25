@@ -42,10 +42,20 @@ class LegacyStructureRecordKeys:
     """Stable names for legacy per-structure record fields."""
 
     roi_key: str = "ROI"
+    struct_type_key: str = "Struct type"
     ref_number_key: str = "Ref #"
     index_number_key: str = "Index number"
     simulated_bool_key: str = "Simulated bool"
     simulated_type_key: str = "Simulated type"
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyStructureMetadataKeys:
+    """Stable names for legacy structure metadata dictionaries passed to helpers."""
+
+    structure_id_key: str = "Structure ID"
+    struct_ref_type_key: str = "Struct ref type"
+    dicom_ref_number_key: str = "Dicom ref num"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +93,12 @@ class LegacyBiopsyRuntimeKeys:
 
     output_dataframes_key: str = "Output data frames"
     simulated_biopsy_transport_request_key: str = "Simulated biopsy transport request dict"
+    num_sampled_bx_points_key: str = "Num sampled bx pts"
+    random_uniformly_sampled_volume_points_array_key: str = "Random uniformly sampled volume pts arr"
+    random_uniformly_sampled_volume_points_pcd_key: str = "Random uniformly sampled volume pts pcd"
+    random_uniformly_sampled_volume_points_bx_coord_sys_array_key: str = (
+        "Random uniformly sampled volume pts bx coord sys arr"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +115,7 @@ class LegacyDataKeyBundle:
     master_info: LegacyMasterInfoKeys = field(default_factory=LegacyMasterInfoKeys)
     patient_reference: LegacyPatientReferenceKeys = field(default_factory=LegacyPatientReferenceKeys)
     structure_record: LegacyStructureRecordKeys = field(default_factory=LegacyStructureRecordKeys)
+    structure_metadata: LegacyStructureMetadataKeys = field(default_factory=LegacyStructureMetadataKeys)
     structure_info: LegacyStructureInfoKeys = field(default_factory=LegacyStructureInfoKeys)
     structure_geometry: LegacyStructureGeometryKeys = field(default_factory=LegacyStructureGeometryKeys)
     patient_all_reference: LegacyPatientAllReferenceKeys = field(default_factory=LegacyPatientAllReferenceKeys)

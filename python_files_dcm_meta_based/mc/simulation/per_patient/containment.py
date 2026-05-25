@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping
 
 from legacy_data_keys import legacy_data_keys
 
-from .contracts import MCContainmentSimulationConfig
+from .contracts import MCContainmentSimulationConfig, MCSimulationRuntimeConfig
 from .legacy_keys import legacy_mc_keys
+from .relative_structure_inventory import (
+    PatientRelativeStructureInventory,
+    RelativeStructureInfo,
+    build_patient_relative_structure_inventory,
+)
 
 MC_CONTAINMENT_BIOPSY_OUTPUT_KEYS = legacy_mc_keys.biopsy_outputs.containment_output_keys
 MC_STRUCTURE_SPECIFIC_RESULT_KEYS = (
@@ -18,21 +23,14 @@ MC_STRUCTURE_SPECIFIC_RESULT_KEYS = (
     "Standard error (containment) list",
     "Nominal containment list",
 )
-
-
-@dataclass(slots=True)
-class PatientContainmentStructureInventory:
-    """Patient-local non-biopsy structures and legacy count metadata for containment."""
-
-    patient_uid: str
-    relative_structure_template: dict[tuple[Any, str, Any, int], None]
-    total_num_structures: int
-    total_num_biopsies: int
-    total_num_non_biopsies: int
-
-    @property
-    def relative_structure_infos(self) -> tuple[tuple[Any, str, Any, int], ...]:
-        return tuple(self.relative_structure_template.keys())
+MC_CONTAINMENT_DISTANCE_MERGE_COLUMNS = (
+    "Trial num",
+    "Original pt index",
+    "Relative struct input index",
+)
+MC_CONTAINMENT_POINT_CONTAINED_COLUMN = "Pt contained bool"
+MC_CONTAINMENT_NN_DISTANCE_COLUMN = "Struct. boundary NN dist."
+PatientContainmentStructureInventory = PatientRelativeStructureInventory
 
 
 @dataclass(slots=True)
@@ -40,13 +38,92 @@ class PatientContainmentDilatedStructureBank:
     """Patient-local relative-structure dilation state reused for each biopsy."""
 
     patient_uid: str
-    dilated_structures_by_structure: dict[tuple[Any, str, Any, int], list[Any]] = field(default_factory=dict)
-    centroids_by_structure: dict[tuple[Any, str, Any, int], Any] = field(default_factory=dict)
-    relative_structure_mapping_by_structure: dict[tuple[Any, str, Any, int], Any] = field(default_factory=dict)
+    dilated_structures_by_structure: dict[RelativeStructureInfo, list[Any]] = field(default_factory=dict)
+    centroids_by_structure: dict[RelativeStructureInfo, Any] = field(default_factory=dict)
+    relative_structure_mapping_by_structure: dict[RelativeStructureInfo, Any] = field(default_factory=dict)
 
     @property
-    def relative_structure_infos(self) -> tuple[tuple[Any, str, Any, int], ...]:
+    def relative_structure_infos(self) -> tuple[RelativeStructureInfo, ...]:
         return tuple(self.dilated_structures_by_structure.keys())
+
+
+@dataclass(slots=True)
+class PatientContainmentBiopsyContext:
+    """Patient-local biopsy inputs for the containment loop."""
+
+    patient_uid: str
+    biopsy_index: int
+    num_sample_points: int
+    roi: Any
+    ref_number: Any
+    simulated_bool: Any
+    simulated_type: Any
+    unshifted_sampled_points: Any
+    shifted_points_by_relative_structure: Mapping[RelativeStructureInfo, Any]
+    biopsy_structure_info: dict[str, Any]
+
+
+@dataclass(slots=True)
+class PatientContainmentRelativeStructureInput:
+    """Prepared one-biopsy/one-relative-structure containment inputs."""
+
+    structure_info: RelativeStructureInfo
+    shifted_biopsy_points: Any
+    shifted_biopsy_points_cutoff: Any
+    combined_nominal_and_shifted_biopsy_points: Any
+    combined_nominal_and_shifted_biopsy_points_reshaped: Any
+    nominal_and_dilated_structures: list[Any]
+    centroids_of_nominal_and_dilated_structures: Any
+    trial_to_relative_structure_mapping: Any
+
+    @property
+    def roi(self) -> Any:
+        return self.structure_info[0]
+
+    @property
+    def structure_type(self) -> str:
+        return self.structure_info[1]
+
+    @property
+    def ref_number(self) -> Any:
+        return self.structure_info[2]
+
+    @property
+    def structure_index(self) -> int:
+        return self.structure_info[3]
+
+
+@dataclass(slots=True)
+class PatientContainmentCentroidDistanceResult:
+    """Relative-structure centroid distance outputs for one containment comparison."""
+
+    dataframe: Any
+    centroid_distances: Any
+    centroid_distances_x: Any
+    centroid_distances_y: Any
+    centroid_distances_z: Any
+    sorted_centroids: Any
+
+
+@dataclass(slots=True)
+class PatientContainmentNearestNeighbourResult:
+    """Nearest-neighbour boundary distance outputs for one containment comparison."""
+
+    dataframe: Any
+    distances: Any
+    relative_indices: Any
+    candidates_stacked: Any
+    candidates_indices: Any
+    absolute_indices: Any
+
+
+@dataclass(slots=True)
+class PatientContainmentKernelResult:
+    """Point-containment kernel outputs for one containment comparison."""
+
+    dataframe: Any
+    containment_result_array: Any
+    prepper_output_tuple: tuple[Any, ...]
 
 
 @dataclass(slots=True)
@@ -73,50 +150,6 @@ def build_mutual_structure_specific_results_template() -> dict[str, None]:
     return {key: None for key in MC_STRUCTURE_SPECIFIC_RESULT_KEYS}
 
 
-def _resolve_patient_info(patient_uid: str, patient_info_dict: Mapping[str, Any]) -> Mapping[str, Any]:
-    master_keys = legacy_data_keys.master_info
-    if master_keys.by_patient_key in patient_info_dict:
-        by_patient = patient_info_dict[master_keys.by_patient_key]
-        if patient_uid in by_patient:
-            return by_patient[patient_uid]
-        return by_patient[str(patient_uid)]
-    return patient_info_dict
-
-
-def build_patient_relative_structure_inventory(patient_uid: str,
-                                               patient_reference_dict: Mapping[str, Any],
-                                               patient_info_dict: Mapping[str, Any],
-                                               *,
-                                               structs_referenced_list: Sequence[str],
-                                               bx_ref: str,
-                                               all_ref_key: str) -> PatientContainmentStructureInventory:
-    """Mirror the oracle's patient-specific non-biopsy structure inventory."""
-    identity_keys = legacy_mc_keys.biopsy_identity
-    structure_info_keys = legacy_data_keys.structure_info
-    resolved_patient_info = _resolve_patient_info(patient_uid, patient_info_dict)
-
-    relative_structure_template: dict[tuple[Any, str, Any, int], None] = {}
-    for non_bx_struct_type in tuple(structs_referenced_list)[1:]:
-        for structure_index, specific_non_bx_structure in enumerate(patient_reference_dict[non_bx_struct_type]):
-            structure_info = (
-                specific_non_bx_structure[identity_keys.roi_key],
-                non_bx_struct_type,
-                specific_non_bx_structure[identity_keys.ref_number_key],
-                structure_index,
-            )
-            relative_structure_template[structure_info] = None
-
-    total_num_structures = int(resolved_patient_info[all_ref_key][structure_info_keys.total_num_structs_key])
-    total_num_biopsies = int(resolved_patient_info[bx_ref][structure_info_keys.num_structs_key])
-    return PatientContainmentStructureInventory(
-        patient_uid=str(patient_uid),
-        relative_structure_template=relative_structure_template,
-        total_num_structures=total_num_structures,
-        total_num_biopsies=total_num_biopsies,
-        total_num_non_biopsies=total_num_structures - total_num_biopsies,
-    )
-
-
 def _structure_zslices_for_containment(patient_reference_dict: Mapping[str, Any],
                                        *,
                                        non_bx_structure_type: str,
@@ -135,10 +168,333 @@ def _structure_zslices_for_containment(patient_reference_dict: Mapping[str, Any]
     return interslice_information.interpolated_pts_list
 
 
+def _build_legacy_biopsy_structure_info(biopsy_structure: Mapping[str, Any]) -> dict[str, Any]:
+    structure_record_keys = legacy_data_keys.structure_record
+    structure_metadata_keys = legacy_data_keys.structure_metadata
+    return {
+        structure_metadata_keys.structure_id_key: biopsy_structure[structure_record_keys.roi_key],
+        structure_metadata_keys.struct_ref_type_key: biopsy_structure[structure_record_keys.struct_type_key],
+        structure_metadata_keys.dicom_ref_number_key: biopsy_structure[structure_record_keys.ref_number_key],
+        structure_record_keys.index_number_key: biopsy_structure[structure_record_keys.index_number_key],
+        structure_record_keys.simulated_bool_key: biopsy_structure[structure_record_keys.simulated_bool_key],
+        structure_record_keys.simulated_type_key: biopsy_structure[structure_record_keys.simulated_type_key],
+    }
+
+
+def build_patient_containment_biopsy_context(patient_uid: str,
+                                             biopsy_index: int,
+                                             biopsy_structure: Mapping[str, Any]) -> PatientContainmentBiopsyContext:
+    """Build the per-biopsy context used by the containment loop."""
+    identity_keys = legacy_mc_keys.biopsy_identity
+    biopsy_runtime_keys = legacy_data_keys.biopsy_runtime
+    intermediate_keys = legacy_mc_keys.containment_intermediates
+    return PatientContainmentBiopsyContext(
+        patient_uid=str(patient_uid),
+        biopsy_index=int(biopsy_index),
+        num_sample_points=int(biopsy_structure[biopsy_runtime_keys.num_sampled_bx_points_key]),
+        roi=biopsy_structure[identity_keys.roi_key],
+        ref_number=biopsy_structure[identity_keys.ref_number_key],
+        simulated_bool=biopsy_structure[identity_keys.simulated_bool_key],
+        simulated_type=biopsy_structure[identity_keys.simulated_type_key],
+        unshifted_sampled_points=biopsy_structure[
+            biopsy_runtime_keys.random_uniformly_sampled_volume_points_array_key
+        ],
+        shifted_points_by_relative_structure=biopsy_structure[
+            intermediate_keys.bx_and_structure_shifted_dict_key
+        ],
+        biopsy_structure_info=_build_legacy_biopsy_structure_info(biopsy_structure),
+    )
+
+
+def build_patient_containment_relative_structure_input(
+    biopsy_context: PatientContainmentBiopsyContext,
+    dilated_structure_bank: PatientContainmentDilatedStructureBank,
+    structure_info: RelativeStructureInfo,
+    shifted_biopsy_points_source: Any,
+    *,
+    num_mc_containment_simulations: int,
+) -> PatientContainmentRelativeStructureInput:
+    """Build the one-biopsy/one-relative-structure arrays consumed by containment kernels."""
+    import cupy as cp
+    import numpy as np
+
+    shifted_biopsy_points = cp.asnumpy(shifted_biopsy_points_source)
+    shifted_biopsy_points_cutoff = shifted_biopsy_points[0:int(num_mc_containment_simulations)]
+    combined_biopsy_points = np.concatenate(
+        [
+            biopsy_context.unshifted_sampled_points[np.newaxis, :, :],
+            shifted_biopsy_points_cutoff,
+        ],
+        axis=0,
+    )
+    return PatientContainmentRelativeStructureInput(
+        structure_info=structure_info,
+        shifted_biopsy_points=shifted_biopsy_points,
+        shifted_biopsy_points_cutoff=shifted_biopsy_points_cutoff,
+        combined_nominal_and_shifted_biopsy_points=combined_biopsy_points,
+        combined_nominal_and_shifted_biopsy_points_reshaped=np.reshape(combined_biopsy_points, (-1, 3)),
+        nominal_and_dilated_structures=dilated_structure_bank.dilated_structures_by_structure[structure_info],
+        centroids_of_nominal_and_dilated_structures=dilated_structure_bank.centroids_by_structure[structure_info],
+        trial_to_relative_structure_mapping=dilated_structure_bank.relative_structure_mapping_by_structure[structure_info],
+    )
+
+
+def iter_patient_containment_relative_structure_inputs(
+    biopsy_context: PatientContainmentBiopsyContext,
+    dilated_structure_bank: PatientContainmentDilatedStructureBank,
+    *,
+    num_mc_containment_simulations: int,
+) -> Iterator[PatientContainmentRelativeStructureInput]:
+    """Yield prepared containment inputs for each relative structure for one biopsy."""
+    for structure_info, shifted_biopsy_points_source in biopsy_context.shifted_points_by_relative_structure.items():
+        yield build_patient_containment_relative_structure_input(
+            biopsy_context,
+            dilated_structure_bank,
+            structure_info,
+            shifted_biopsy_points_source,
+            num_mc_containment_simulations=num_mc_containment_simulations,
+        )
+
+
+def calculate_patient_relative_structure_centroid_distances(
+    relative_structure_input: PatientContainmentRelativeStructureInput,
+    biopsy_context: PatientContainmentBiopsyContext,
+    *,
+    num_mc_containment_simulations: int,
+) -> PatientContainmentCentroidDistanceResult:
+    """Calculate centroid distances for one biopsy/relative-structure containment comparison."""
+    import numpy as np
+    import relative_structure_centroid_calc
+
+    (
+        centroid_distances,
+        centroid_distances_x,
+        centroid_distances_y,
+        centroid_distances_z,
+        sorted_centroids,
+    ) = relative_structure_centroid_calc.relative_structure_centroid_calculation_function(
+        relative_structure_input.centroids_of_nominal_and_dilated_structures,
+        relative_structure_input.trial_to_relative_structure_mapping,
+        relative_structure_input.combined_nominal_and_shifted_biopsy_points,
+    )
+    dataframe = relative_structure_centroid_calc.relative_structure_centroid_df(
+        centroid_distances,
+        centroid_distances_x,
+        centroid_distances_y,
+        centroid_distances_z,
+        int(num_mc_containment_simulations),
+        biopsy_context.num_sample_points,
+        relative_structure_input.trial_to_relative_structure_mapping,
+        convert_to_categorical_and_downcast=False,
+        do_not_convert_column_names_to_categorical=[],
+        float_dtype=np.float32,
+        int_dtype=np.int32,
+    )
+    return PatientContainmentCentroidDistanceResult(
+        dataframe=dataframe,
+        centroid_distances=centroid_distances,
+        centroid_distances_x=centroid_distances_x,
+        centroid_distances_y=centroid_distances_y,
+        centroid_distances_z=centroid_distances_z,
+        sorted_centroids=sorted_centroids,
+    )
+
+
+def calculate_patient_relative_structure_nearest_neighbour_distances(
+    relative_structure_input: PatientContainmentRelativeStructureInput,
+    biopsy_context: PatientContainmentBiopsyContext,
+    *,
+    num_mc_containment_simulations: int,
+    containment_config: MCContainmentSimulationConfig,
+    runtime_config: MCSimulationRuntimeConfig,
+) -> PatientContainmentNearestNeighbourResult:
+    """Calculate nearest-neighbour boundary distances using the existing kernel helper API."""
+    import numpy as np
+    import custom_raw_kernel_cuda_nearest_neighbour
+
+    (
+        distances,
+        relative_indices,
+        candidates_stacked,
+        candidates_indices,
+        absolute_indices,
+    ) = custom_raw_kernel_cuda_nearest_neighbour.custom_gpu_kernel_NN_search_mother_function(
+        relative_structure_input.nominal_and_dilated_structures,
+        relative_structure_input.trial_to_relative_structure_mapping,
+        relative_structure_input.combined_nominal_and_shifted_biopsy_points,
+        biopsy_context.num_sample_points,
+        int(num_mc_containment_simulations),
+        grid_factor=containment_config.nn_search_end_cap_grid_factor,
+        kernel_type=runtime_config.custom_cuda_kernel_type,
+        check_if_end_caps_filled_proper_NN_num=containment_config.check_if_end_caps_filled_proper_NN_num,
+        block_size=256,
+    )
+    dataframe = custom_raw_kernel_cuda_nearest_neighbour.build_results_df(
+        distances,
+        relative_indices,
+        int(num_mc_containment_simulations),
+        biopsy_context.num_sample_points,
+        relative_structure_input.trial_to_relative_structure_mapping,
+        convert_to_categorical_and_downcast=False,
+        do_not_convert_column_names_to_categorical=[],
+        float_dtype=np.float32,
+        int_dtype=np.int32,
+    )
+    return PatientContainmentNearestNeighbourResult(
+        dataframe=dataframe,
+        distances=distances,
+        relative_indices=relative_indices,
+        candidates_stacked=candidates_stacked,
+        candidates_indices=candidates_indices,
+        absolute_indices=absolute_indices,
+    )
+
+
+def run_patient_relative_structure_containment_kernel(
+    relative_structure_input: PatientContainmentRelativeStructureInput,
+    biopsy_context: PatientContainmentBiopsyContext,
+    *,
+    num_mc_containment_simulations: int,
+    containment_config: MCContainmentSimulationConfig,
+    runtime_config: MCSimulationRuntimeConfig,
+    include_edges_in_log: bool = False,
+) -> PatientContainmentKernelResult:
+    """Run the existing point-containment kernel helper API for one comparison."""
+    import numpy as np
+    import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
+
+    structure_metadata_keys = legacy_data_keys.structure_metadata
+    structure_record_keys = legacy_data_keys.structure_record
+    log_sub_dirs_list = [
+        biopsy_context.patient_uid,
+        biopsy_context.roi,
+        relative_structure_input.structure_type,
+    ]
+    if containment_config.generate_cuda_log_files_MC_containment_sim:
+        custom_cuda_log_file_name = (
+            f"{biopsy_context.patient_uid}_{biopsy_context.roi}_"
+            f"{relative_structure_input.structure_type}_N-{int(num_mc_containment_simulations)}_containment_log.txt"
+        )
+    else:
+        custom_cuda_log_file_name = None
+
+    containment_result_array, prepper_output_tuple = (
+        custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.custom_point_containment_mother_function(
+            relative_structure_input.nominal_and_dilated_structures,
+            relative_structure_input.combined_nominal_and_shifted_biopsy_points,
+            relative_structure_input.trial_to_relative_structure_mapping,
+            constant_z_slice_polygons_handler_option=containment_config.constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                containment_config.remove_consecutive_duplicate_points_in_polygons
+            ),
+            log_sub_dirs_list=log_sub_dirs_list,
+            log_file_name=custom_cuda_log_file_name,
+            include_edges_in_log=include_edges_in_log,
+            kernel_type=runtime_config.custom_cuda_kernel_type,
+        )
+    )
+    structure_info_dict = {
+        structure_metadata_keys.structure_id_key: relative_structure_input.roi,
+        structure_metadata_keys.struct_ref_type_key: relative_structure_input.structure_type,
+        structure_record_keys.index_number_key: relative_structure_input.structure_index,
+    }
+    dataframe = custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p.create_containment_results_dataframe_type_II(
+        biopsy_context.patient_uid,
+        biopsy_context.biopsy_structure_info,
+        structure_info_dict,
+        prepper_output_tuple[0],
+        relative_structure_input.combined_nominal_and_shifted_biopsy_points,
+        containment_result_array,
+        relative_structure_input.trial_to_relative_structure_mapping,
+        convert_to_categorical_and_downcast=False,
+        do_not_convert_column_names_to_categorical=[MC_CONTAINMENT_POINT_CONTAINED_COLUMN],
+        float_dtype=np.float64,
+        int_dtype=np.int64,
+        df_type="mc containment simulator",
+    )
+    return PatientContainmentKernelResult(
+        dataframe=dataframe,
+        containment_result_array=containment_result_array,
+        prepper_output_tuple=prepper_output_tuple,
+    )
+
+
+def merge_patient_relative_structure_containment_dataframes(
+    containment_dataframe: Any,
+    nearest_neighbour_dataframe: Any,
+    centroid_dataframe: Any,
+) -> Any:
+    """Merge containment, NN-boundary, and centroid-distance dataframes like the oracle."""
+    import numpy as np
+    import pandas
+    import dataframe_builders
+
+    merged_dataframe = pandas.merge(
+        containment_dataframe,
+        nearest_neighbour_dataframe,
+        on=list(MC_CONTAINMENT_DISTANCE_MERGE_COLUMNS),
+        how="left",
+    )
+    merged_dataframe[MC_CONTAINMENT_NN_DISTANCE_COLUMN] = np.where(
+        merged_dataframe[MC_CONTAINMENT_POINT_CONTAINED_COLUMN],
+        -abs(merged_dataframe[MC_CONTAINMENT_NN_DISTANCE_COLUMN]),
+        abs(merged_dataframe[MC_CONTAINMENT_NN_DISTANCE_COLUMN]),
+    )
+    merged_dataframe = pandas.merge(
+        merged_dataframe,
+        centroid_dataframe,
+        on=list(MC_CONTAINMENT_DISTANCE_MERGE_COLUMNS),
+        how="left",
+    )
+    return dataframe_builders.convert_columns_to_categorical_and_downcast(
+        merged_dataframe,
+        threshold=0.25,
+        do_not_convert_column_names_to_categorical=[
+            MC_CONTAINMENT_POINT_CONTAINED_COLUMN,
+            "Original pt index",
+        ],
+    )
+
+
+def run_patient_relative_structure_containment_core(
+    relative_structure_input: PatientContainmentRelativeStructureInput,
+    biopsy_context: PatientContainmentBiopsyContext,
+    *,
+    num_mc_containment_simulations: int,
+    containment_config: MCContainmentSimulationConfig,
+    runtime_config: MCSimulationRuntimeConfig,
+) -> Any:
+    """Run the core one-biopsy/one-relative-structure containment computation."""
+    centroid_result = calculate_patient_relative_structure_centroid_distances(
+        relative_structure_input,
+        biopsy_context,
+        num_mc_containment_simulations=num_mc_containment_simulations,
+    )
+    nearest_neighbour_result = calculate_patient_relative_structure_nearest_neighbour_distances(
+        relative_structure_input,
+        biopsy_context,
+        num_mc_containment_simulations=num_mc_containment_simulations,
+        containment_config=containment_config,
+        runtime_config=runtime_config,
+    )
+    containment_result = run_patient_relative_structure_containment_kernel(
+        relative_structure_input,
+        biopsy_context,
+        num_mc_containment_simulations=num_mc_containment_simulations,
+        containment_config=containment_config,
+        runtime_config=runtime_config,
+    )
+    return merge_patient_relative_structure_containment_dataframes(
+        containment_result.dataframe,
+        nearest_neighbour_result.dataframe,
+        centroid_result.dataframe,
+    )
+
+
 def build_patient_containment_dilated_structure_bank(
     patient_uid: str,
     patient_reference_dict: Mapping[str, Any],
-    inventory: PatientContainmentStructureInventory,
+    inventory: PatientRelativeStructureInventory,
     *,
     num_mc_containment_simulations: int,
     oar_ref: str,
@@ -154,9 +510,9 @@ def build_patient_containment_dilated_structure_bank(
 
     intermediate_keys = legacy_mc_keys.containment_intermediates
     geometry_keys = legacy_data_keys.structure_geometry
-    dilated_structures_by_structure: dict[tuple[Any, str, Any, int], list[Any]] = {}
-    centroids_by_structure: dict[tuple[Any, str, Any, int], Any] = {}
-    relative_structure_mapping_by_structure: dict[tuple[Any, str, Any, int], Any] = {}
+    dilated_structures_by_structure: dict[RelativeStructureInfo, list[Any]] = {}
+    centroids_by_structure: dict[RelativeStructureInfo, Any] = {}
+    relative_structure_mapping_by_structure: dict[RelativeStructureInfo, Any] = {}
 
     for structure_info in inventory.relative_structure_infos:
         non_bx_structure_type = structure_info[1]
