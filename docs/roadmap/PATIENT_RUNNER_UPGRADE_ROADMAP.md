@@ -129,8 +129,9 @@ Datatype direction for new patient surfaces:
 - keep generic legacy dictionary spellings in
   `python_files_dcm_meta_based/legacy_data_keys.py` and package/family-specific
   spellings in local key contract modules when a stage still writes old
-  dictionaries; do not duplicate `Global`, `By patient`, `MC info`, `Ref #`, or
-  `MC data: ...` strings across adapters and collectors,
+  dictionaries; do not duplicate `Global`, `By patient`, `MC info`, `Ref #`,
+  generic structure-geometry keys, or `MC data: ...` strings across adapters and
+  collectors,
 - do not broad-refactor raw legacy key literals in the frozen oracle or older
   mutable preprocessing wrappers just to satisfy style; move those call sites to
   contracts only when they cross into additive patient, runner, artifact, or
@@ -138,6 +139,12 @@ Datatype direction for new patient surfaces:
 - allow shallow `dict(...)` copies at adapter boundaries for metadata and legacy
   compatibility, but do not treat those copies as the final scientific data
   model.
+
+For MC containment specifically, extract the setup and computation in small
+validated slices. The patient-local relative-structure inventory and dilation
+bank can move before the kernel-call loop. The raw CUDA containment and nearest
+neighbour kernels should remain untouched; patient modules should call the same
+kernel helper APIs as the oracle until parity is proven.
 
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be

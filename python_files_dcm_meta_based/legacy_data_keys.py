@@ -60,6 +60,15 @@ class LegacyStructureInfoKeys:
 
 
 @dataclass(frozen=True, slots=True)
+class LegacyStructureGeometryKeys:
+    """Stable names for legacy per-structure geometry fields."""
+
+    equal_num_zslice_contour_points_key: str = "Equal num zslice contour pts"
+    interslice_interpolation_information_key: str = "Inter-slice interpolation information"
+    structure_global_centroid_key: str = "Structure global centroid"
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyPatientAllReferenceKeys:
     """Stable names for legacy all-reference nested stores."""
 
@@ -91,6 +100,7 @@ class LegacyDataKeyBundle:
     patient_reference: LegacyPatientReferenceKeys = field(default_factory=LegacyPatientReferenceKeys)
     structure_record: LegacyStructureRecordKeys = field(default_factory=LegacyStructureRecordKeys)
     structure_info: LegacyStructureInfoKeys = field(default_factory=LegacyStructureInfoKeys)
+    structure_geometry: LegacyStructureGeometryKeys = field(default_factory=LegacyStructureGeometryKeys)
     patient_all_reference: LegacyPatientAllReferenceKeys = field(default_factory=LegacyPatientAllReferenceKeys)
     biopsy_runtime: LegacyBiopsyRuntimeKeys = field(default_factory=LegacyBiopsyRuntimeKeys)
     artifacts: LegacyArtifactKeys = field(default_factory=LegacyArtifactKeys)

@@ -80,12 +80,26 @@ class LegacyMCBiopsyOutputKeys:
 
 
 @dataclass(frozen=True, slots=True)
+class LegacyMCContainmentIntermediateKeys:
+    """Stable names for intermediate containment state stored on legacy records."""
+
+    bx_only_shifted_points_array_key: str = "MC data: bx only shifted 3darr"
+    bx_and_structure_shifted_dict_key: str = "MC data: bx and structure shifted dict"
+    normal_dist_dilations_samples_array_key: str = "MC data: Generated normal dist random samples dilations arr"
+    nominal_containment_raw_dataframe_key: str = "MC data: Nominal containment raw results dataframe"
+    containment_raw_dataframe_key: str = "MC data: MC sim containment raw results dataframe"
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyMCKeyBundle:
     """Default key bundle for legacy MC adapters and output collectors."""
 
     master_info: LegacyMCMasterInfoKeys = field(default_factory=LegacyMCMasterInfoKeys)
     biopsy_identity: LegacyMCBiopsyIdentityKeys = field(default_factory=LegacyMCBiopsyIdentityKeys)
     biopsy_outputs: LegacyMCBiopsyOutputKeys = field(default_factory=LegacyMCBiopsyOutputKeys)
+    containment_intermediates: LegacyMCContainmentIntermediateKeys = field(
+        default_factory=LegacyMCContainmentIntermediateKeys
+    )
 
 
 legacy_mc_keys = LegacyMCKeyBundle()
