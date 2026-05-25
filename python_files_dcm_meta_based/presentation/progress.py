@@ -218,6 +218,14 @@ class LegacyNullLiveDisplay:
 
     is_started = False
 
+    def __enter__(self) -> "LegacyNullLiveDisplay":
+        self.start()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
+        self.stop()
+        return False
+
     def start(self, *args: Any, **kwargs: Any) -> None:
         self.is_started = True
 
