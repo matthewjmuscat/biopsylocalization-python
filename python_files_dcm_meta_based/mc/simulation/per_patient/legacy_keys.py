@@ -13,6 +13,10 @@ class LegacyMCMasterInfoKeys:
     by_patient_key: str = "By patient"
     num_cases_key: str = "Num cases"
     mc_info_key: str = "MC info"
+    max_simulations_key: str = "Max of num MC simulations"
+    num_containment_simulations_key: str = "Num MC containment simulations"
+    num_dose_simulations_key: str = "Num MC dose simulations"
+    num_mr_simulations_key: str = "Num MC MR simulations"
     containment_performed_key: str = "MC containment sim performed"
     dose_performed_key: str = "MC dose sim performed"
     mr_performed_key: str = "MC MR sim performed"
@@ -112,6 +116,40 @@ class LegacyMCMRReferenceKeys:
 
 
 @dataclass(frozen=True, slots=True)
+class LegacyMCOutputTableKeys:
+    """Stable names for MC dataframe fragments stored by downstream builders."""
+
+    all_structure_transformations_key: str = "All MC structure transformation values"
+    tissue_structure_specific_ptwise_key: str = "Tissue class - Pt wise structure specific results"
+    tissue_sum_to_one_ptwise_key: str = "Tissue class - sum-to-one mc results"
+    tissue_sum_to_one_global_scores_key: str = "Cohort: global sum-to-one mc results"
+    tissue_global_by_structure_key: str = "Tissue class - Global tissue by structure statistics"
+    tissue_distances_global_key: str = "Tissue class - distances global results"
+    tissue_distances_ptwise_key: str = "Tissue class - distances pt-wise results"
+    tissue_distances_voxelwise_key: str = "Tissue class - distances voxel-wise results"
+    tissue_containment_distances_light_key: str = "Tissue class - containment and distances (light) results"
+    pointwise_dose_by_trial_key: str = "Point-wise dose output by MC trial number"
+    voxelwise_dose_by_trial_key: str = "Voxel-wise dose output by MC trial number"
+    differential_dvh_by_trial_key: str = "Differential DVH by MC trial"
+    cumulative_dvh_by_trial_key: str = "Cumulative DVH by MC trial"
+    dosimetry_global_key: str = "Dosimetry - Global dosimetry (NEW)"
+    dosimetry_global_by_voxel_key: str = "Dosimetry - Global dosimetry by voxel statistics"
+    dvh_metrics_generalized_key: str = "DVH metrics (Dx, Vx) statistics"
+    pointwise_mr_adc_by_trial_key: str = "Point-wise MR ADC output by MC trial number"
+    mr_adc_column_prefix: str = "MR ADC"
+    mr_global_statistics_label: str = "Global MR ADC statistics"
+    mr_global_by_voxel_statistics_label: str = "Global by voxel MR ADC statistics"
+
+    @property
+    def mr_global_statistics_key(self) -> str:
+        return "MR - " + self.mr_global_statistics_label
+
+    @property
+    def mr_global_by_voxel_statistics_key(self) -> str:
+        return "MR - " + self.mr_global_by_voxel_statistics_label
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyMCContainmentIntermediateKeys:
     """Stable names for intermediate containment state stored on legacy records."""
 
@@ -131,6 +169,7 @@ class LegacyMCKeyBundle:
     biopsy_outputs: LegacyMCBiopsyOutputKeys = field(default_factory=LegacyMCBiopsyOutputKeys)
     dose_reference: LegacyMCDoseReferenceKeys = field(default_factory=LegacyMCDoseReferenceKeys)
     mr_reference: LegacyMCMRReferenceKeys = field(default_factory=LegacyMCMRReferenceKeys)
+    output_tables: LegacyMCOutputTableKeys = field(default_factory=LegacyMCOutputTableKeys)
     containment_intermediates: LegacyMCContainmentIntermediateKeys = field(
         default_factory=LegacyMCContainmentIntermediateKeys
     )

@@ -39,18 +39,18 @@ If you want the shortest answer to "what is still missing for a per-patient
 runner?", it is this:
 
 - several preprocessing stages are already patient-ready,
-- the remaining missing or partial stages are now mostly downstream annotations,
-  deeper MC loop-body extraction, and MR simulation,
+- the remaining missing or partial stages are now mostly adapter/parity decisions
+  for optimizer bridges and runner orchestration rather than missing scientific
+  loop-body modules,
 - a thin runner/validation scaffold can exist while modules are still being
   extracted, but the complete patient runner should come after the remaining
   patient-stage modules have stable contracts,
-- convex MC simulation now has typed patient contracts, containment/dose/MR output
-  collectors, a singleton legacy adapter, containment helper slices, additive
+- convex/MR MC simulation now has typed patient contracts, containment/dose/MR
+  output collectors, singleton legacy adapters, containment helper slices, additive
   dose/dose-gradient localization plus DVH helper slices, and additive MR ADC
-  localization helpers; remaining MC work is downstream annotation/output wrappers
-  plus inactive legacy dose statistics only if parity proves them required,
-- MR simulation still needs dedicated patient-facing modules around the active
-  legacy simulation surface.
+  localization helpers, plus downstream MC annotation/output table wrappers;
+  remaining MC work is parity validation and inactive legacy dose statistics only
+  if parity proves them required.
 
 ## Presentation/Rich Decoupling Policy
 
@@ -136,8 +136,9 @@ bodies that currently live inside those oracle functions.
   biopsy MC transforms already exist.
 - Downstream patient MC annotation/output wrappers after patient-local sampling
   and MC outputs exist
-  purpose: replace current downstream cohort annotations only after upstream
-  patient MC state is stable.
+  purpose: expose current downstream MC dataframe-fragment builders and optimizer
+  annotations through singleton-patient wrappers while leaving final cohort table
+  assembly run-scoped.
 
 Current MC-prep patient module home:
 
@@ -177,7 +178,7 @@ Completed through the 2026-05-24 pass:
 - `build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)` and `assemble_simulated_biopsy_centroid_variation_validation_fragments(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` for future runner use; the cohort validation wrapper remains on its frozen body.
 - `build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `assemble_biopsy_double_sextant_classification_fragments(...)`, and `store_patient_biopsy_double_sextant_voxel_fragment(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` for future runner use; the cohort wrapper remains on its frozen body. The per-voxel table remains assembled from patient sample-point fragments to preserve legacy aggregation and random-tie behavior.
 - `generate_transformations_for_patient(...)`, `apply_patient_biopsy_self_transforms(...)`, and `apply_patient_relative_structure_transforms(...)` live in `python_files_dcm_meta_based/mc/prep/per_patient/` as additive patient-local MC prep surfaces; the frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies.
-- `MCReferenceKeys`, `MCContainmentSimulationConfig`, `MCDoseSimulationConfig`, `MCMRSimulationConfig`, `LegacyMCKeyBundle`, containment/dose/MR output collectors, a neutral patient relative-structure inventory module, containment biopsy/input/dilation-bank helpers, containment core wrappers around the existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, and `run_patient_mc_convex_legacy_adapter(...)` live in `python_files_dcm_meta_based/mc/simulation/per_patient/` as the additive patient-local MC simulation landing zone; `MC_simulator_convex.simulator_parallel(...)` and `MC_simulator_MR.simulator_parallel(...)` remain untouched as the oracles.
+- `MCReferenceKeys`, `MCContainmentSimulationConfig`, `MCDoseSimulationConfig`, `MCMRSimulationConfig`, `LegacyMCKeyBundle`, containment/dose/MR output collectors, a neutral patient relative-structure inventory module, containment biopsy/input/dilation-bank helpers, containment core wrappers around the existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, downstream MC output table/annotation wrappers, `run_patient_mc_convex_legacy_adapter(...)`, and `run_patient_mc_mr_legacy_adapter(...)` live in `python_files_dcm_meta_based/mc/simulation/per_patient/` as the additive patient-local MC simulation landing zone; `MC_simulator_convex.simulator_parallel(...)` and `MC_simulator_MR.simulator_parallel(...)` remain untouched as the oracles.
 - `ProgressEvent`, `ProgressSink`, null legacy shims, and `RichProgressSink` live in `python_files_dcm_meta_based/presentation/` as a presentation-neutral adapter surface for future patient modules.
 - `build_patient_structure_reference_bootstrap_fragment(...)`, `PatientStructureReferenceState`, `PatientStructureInfoState`, typed registries, run-level assembly, and dose/plan/MR attachment helpers live in `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py`; the frozen `structure_referencer(...)` oracle remains untouched.
 - `python_files_dcm_meta_based/legacy_data_keys.py` owns generic legacy master-info, patient-reference, structure-record, structure-metadata, structure-geometry, biopsy runtime/sample, nested dataframe-store, and artifact sentinel spellings for additive adapters; older live mutation wrappers remain deferred until they cross a patient/runner/artifact boundary.
@@ -219,10 +220,10 @@ Completed through the 2026-05-24 pass:
 | 28 | Pickled preprocessed bundle export/load | `export_preprocessed_pickle_bundle(...)`, `load_selected_pickle_bundle_run(...)` | Assembly | Keep run-scoped. Future patient runner can consume patient case fragments from bundles. |
 | 29 | Sampled biopsy processing | `preprocessing.biopsy_processing.sampled_biopsy_processing.process_patient_sampled_biopsies(...)`, `sampled_biopsy_processing_processer(...)` | Complete | Additive patient stage now exists in the owning biopsy-processing module and preserves the current per-patient sampling order by composing patient-local sampling-arg, sampled-result storage, and biopsy-coordinate helpers. Current cohort wrapper remains frozen. |
 | 30 | Prostate double-sextant classification | `preprocessing.biopsy_processing.per_patient.double_sextant_classification.build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `preprocessing.biopsy_processing.per_patient.double_sextant_classification.assemble_biopsy_double_sextant_classification_fragments(...)`, `biopsy_double_sextant_processer(...)` | Complete | Additive patient sample-point fragment builder plus run-level per-voxel summarizer exist. Per-voxel aggregation stays run-level to preserve legacy random-tie behavior. Current cohort wrapper remains frozen. |
-| 31 | MC simulation | `mc.simulation.per_patient.run_patient_mc_convex_legacy_adapter(...)`, `MC_simulator_convex.simulator_parallel(...)`, `MC_simulator_MR.simulator_parallel(...)` | Partial | Typed MC simulation contracts, package-local legacy key contracts, containment/dose/MR output collectors, a neutral relative-structure inventory module, containment setup/input builders, containment core wrappers around existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, and a singleton convex adapter now exist. Keep all additive helpers unrouted until parity checks; next add downstream MC annotation/output wrappers, with inactive/legacy dose statistics or voxelization only if downstream parity requires them. |
+| 31 | MC simulation | `mc.simulation.per_patient.run_patient_mc_convex_legacy_adapter(...)`, `mc.simulation.per_patient.run_patient_mc_mr_legacy_adapter(...)`, `MC_simulator_convex.simulator_parallel(...)`, `MC_simulator_MR.simulator_parallel(...)` | Partial | Typed MC simulation contracts, package-local legacy key contracts, containment/dose/MR output collectors, a neutral relative-structure inventory module, containment setup/input builders, containment core wrappers around existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, downstream MC output table/annotation wrappers, and singleton convex/MR oracle adapters now exist. Keep all additive helpers unrouted until parity checks; extract inactive/legacy dose statistics or voxelization only if downstream parity requires them. |
 | 32 | Cohort simulated-biopsy preparation table | `dataframe_builders.cohort_simulated_biopsy_preparation_dataframe_builder(...)` | Assembly | Replace with concatenation of patient preparation fragments after row-order validation. Patient fragment building now exists in the owning biopsy-processing family. |
 | 33 | Guidance map precompute/render | `precompute_guidance_map_firing_depth_recommendations_for_patient(...)`, `precompute_guidance_map_firing_depth_recommendations_for_run(...)`, `render_guidance_maps_for_run(...)` | Complete | Additive patient precompute entrypoint exists and the run wrapper calls it. Keep rendering run/UI scoped unless a future product surface needs a dedicated adapter. |
-| 34 | Optimizer-v2 downstream annotations | `annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(...)`, `annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(...)` | Partial | Add patient-level annotation wrappers after sampled biopsy and MC outputs are patient-local. |
+| 34 | Optimizer-v2 downstream annotations | `mc.simulation.per_patient.annotate_patient_optimizer_v2_outputs_with_downstream_mc_scores(...)`, `annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(...)`, `annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(...)` | Complete | MC-score annotation has a singleton-patient wrapper. Biopsy-sampling audit annotation is already downstream of patient sampled-biopsy fragments and can remain with the optimizer-v2 adapter until runner wiring decides where to call it. |
 | 35 | Final dataframe builders | `dataframe_builders.*` calls in main | Assembly | Move final cohort tables to assembly from patient base artifacts. Avoid schema churn during migration. |
 | 36 | Phase3B/Phase3C output surface | `build_in_memory_stitch_validation(...)`, `write_phase3c_output_surface(...)` | Assembly | Existing patient-fragment output/assembly surface is validated as a shadow gate, not scientific recomputation. |
 | 37 | Patient-runner validation gate | `run_patient_runner_main_validation(...)` | Assembly | Keep as validation gate until scientific patient stages are independently runnable. |
@@ -246,11 +247,11 @@ Recommended order of operations from this point:
 4. Keep MR ADC helpers behind `mc/simulation/per_patient/mr.py`. The lattice
   context, per-biopsy localization, array writeback, and collector helpers now
   exist; route through them only after parity validation against the oracle.
-5. Add downstream patient MC annotation/output wrappers only after the upstream
-   patient MC state is validated.
+5. Validate the additive MC containment/dose/MR/output wrappers against the
+  frozen cohort oracle before live routing.
 6. Build out the complete patient runner after the scientific patient-stage
-    modules above have stable contracts. Earlier runner work should stay limited
-    to scaffolding, manifests, adapters, and shadow-validation harnesses.
+  modules above have stable contracts. Earlier runner work should stay limited
+  to scaffolding, manifests, adapters, and shadow-validation harnesses.
 7. After patient-runner validation against the legacy cohort oracle, remove
     remaining Rich dependencies from patient scientific functions and keep Rich
     only in legacy/main/frontend wrappers.

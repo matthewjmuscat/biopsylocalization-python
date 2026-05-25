@@ -184,3 +184,23 @@ class MCConvexPatientRunResult:
         self.patient_uid = str(self.patient_uid)
         self.performed_flags = dict(self.performed_flags or {})
         self.metadata = dict(self.metadata or {})
+
+
+@dataclass(slots=True)
+class MCMRPatientRunResult:
+    """Output bundle from running the MR MC oracle against one patient."""
+
+    patient_uid: str
+    patient_reference_dict: dict[str, Any]
+    master_structure_reference_dict: dict[str, dict[str, Any]]
+    master_structure_info_dict: dict[str, Any]
+    mr_outputs: Any
+    presentation_context: LegacyPresentationContext
+    live_display: Any = None
+    performed_flags: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.patient_uid = str(self.patient_uid)
+        self.performed_flags = dict(self.performed_flags or {})
+        self.metadata = dict(self.metadata or {})

@@ -162,8 +162,16 @@ lattice reconstruction, KD-tree context construction, per-biopsy
 nearest-neighbour localization through the existing `mr_localizers` helper,
 point-by-trial array compilation, output collection, and legacy biopsy-record
 writeback. It deliberately does not own raw CSV dumps, plotting, Rich progress,
-or live routing through `MC_simulator_MR.py`; the MR simulator remains the oracle
-until a patient-level parity harness proves row/key equivalence.
+or live routing through `MC_simulator_MR.py`. A singleton MR oracle adapter exists
+for validation runs, but the MR simulator itself remains frozen until a
+patient-level parity harness proves row/key equivalence.
+
+For downstream MC outputs specifically, the additive patient module now owns
+singleton wrappers around the existing MC transform, tissue/containment,
+dosimetry/DVH, MR ADC dataframe-fragment builders, and the optimizer-v2
+downstream MC-score annotation call. These wrappers build the same legacy
+patient and biopsy dataframe stores for one patient, but they do not write CSVs,
+perform cohort stitching, or route the frozen main/oracle path.
 
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
