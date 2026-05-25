@@ -12,8 +12,15 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from legacy_data_keys import legacy_data_keys
 from presentation import LegacyPresentationContext
 
+
+LEGACY_MASTER_INFO_KEYS = legacy_data_keys.master_info
+LEGACY_PATIENT_REFERENCE_KEYS = legacy_data_keys.patient_reference
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
+LEGACY_STRUCTURE_INFO_KEYS = legacy_data_keys.structure_info
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
 
 OPTIMIZER_V1_DIL_OUTPUT_KEYS = (
     "Biopsy optimization: DIL centroid optimal biopsy location dataframe",
@@ -127,7 +134,7 @@ def build_patient_info_from_reference(patient_uid: str,
     biopsies = list(patient_reference_dict.get(bx_ref, ()))
     biopsy_type_counts: dict[str, int] = {}
     for biopsy in biopsies:
-        biopsy_type = str(biopsy.get("Simulated type", "Real"))
+        biopsy_type = str(biopsy.get(LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key, "Real"))
         biopsy_type_counts[biopsy_type] = biopsy_type_counts.get(biopsy_type, 0) + 1
 
     rectum_count = len(patient_reference_dict.get(rectum_ref, ())) if rectum_ref else 0
@@ -140,19 +147,29 @@ def build_patient_info_from_reference(patient_uid: str,
         + urethra_count
     )
     return {
-        "Patient UID (generated)": str(patient_uid),
-        "Patient ID (from dicom)": patient_reference_dict.get("Patient ID (from dicom)"),
-        "Patient Name": patient_reference_dict.get("Patient Name"),
-        "Fraction number": patient_reference_dict.get("Fraction number"),
+        LEGACY_PATIENT_REFERENCE_KEYS.patient_uid_generated_key: str(patient_uid),
+        LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key: patient_reference_dict.get(
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key
+        ),
+        LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key: patient_reference_dict.get(
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key
+        ),
+        LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key: patient_reference_dict.get(
+            LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key
+        ),
         bx_ref: {
-            "Num structs": len(biopsies),
-            "Num sim structs": sum(1 for biopsy in biopsies if biopsy.get("Simulated bool", False)),
-            "Num real structs": sum(1 for biopsy in biopsies if not biopsy.get("Simulated bool", False)),
-            "Biopsy type counts": biopsy_type_counts,
+            LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(biopsies),
+            LEGACY_STRUCTURE_INFO_KEYS.num_sim_structs_key: sum(
+                1 for biopsy in biopsies if biopsy.get(LEGACY_STRUCTURE_RECORD_KEYS.simulated_bool_key, False)
+            ),
+            LEGACY_STRUCTURE_INFO_KEYS.num_real_structs_key: sum(
+                1 for biopsy in biopsies if not biopsy.get(LEGACY_STRUCTURE_RECORD_KEYS.simulated_bool_key, False)
+            ),
+            LEGACY_STRUCTURE_INFO_KEYS.biopsy_type_counts_key: biopsy_type_counts,
         },
-        oar_ref: {"Num structs": len(patient_reference_dict.get(oar_ref, ()))},
-        dil_ref: {"Num structs": len(patient_reference_dict.get(dil_ref, ()))},
-        all_ref_key: {"Total num structs": total_num_structs},
+        oar_ref: {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(patient_reference_dict.get(oar_ref, ()))},
+        dil_ref: {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(patient_reference_dict.get(dil_ref, ()))},
+        all_ref_key: {LEGACY_STRUCTURE_INFO_KEYS.total_num_structs_key: total_num_structs},
     }
 
 
@@ -164,25 +181,29 @@ def build_single_patient_master_structure_info(patient_uid: str,
                                                all_ref_key: str,
                                                bx_types_list: list[str] | None = None) -> dict[str, Any]:
     """Wrap one patient info dict in the legacy master-info shape."""
-    if "Global" in patient_info_dict and "By patient" in patient_info_dict:
+    if LEGACY_MASTER_INFO_KEYS.global_key in patient_info_dict and LEGACY_MASTER_INFO_KEYS.by_patient_key in patient_info_dict:
         return copy.deepcopy(dict(patient_info_dict))
 
     biopsy_info = patient_info_dict.get(bx_ref, {})
     dil_info = patient_info_dict.get(dil_ref, {})
     all_info = patient_info_dict.get(all_ref_key, {})
     if bx_types_list is None:
-        bx_types_list = list(biopsy_info.get("Biopsy type counts", {"Real": 0}).keys())
+        bx_types_list = list(biopsy_info.get(LEGACY_STRUCTURE_INFO_KEYS.biopsy_type_counts_key, {"Real": 0}).keys())
 
     return {
-        "Global": {
-            "Num cases": 1,
-            "Num structures": all_info.get("Total num structs"),
-            "Num biopsies": biopsy_info.get("Num structs"),
-            "Num biopsies by bx type dict": dict(biopsy_info.get("Biopsy type counts", {})),
-            "Num DILs": dil_info.get("Num structs"),
-            "Bx types list": bx_types_list,
+        LEGACY_MASTER_INFO_KEYS.global_key: {
+            LEGACY_MASTER_INFO_KEYS.num_cases_key: 1,
+            LEGACY_MASTER_INFO_KEYS.num_structures_key: all_info.get(
+                LEGACY_STRUCTURE_INFO_KEYS.total_num_structs_key
+            ),
+            LEGACY_MASTER_INFO_KEYS.num_biopsies_key: biopsy_info.get(LEGACY_STRUCTURE_INFO_KEYS.num_structs_key),
+            LEGACY_MASTER_INFO_KEYS.num_biopsies_by_type_key: dict(
+                biopsy_info.get(LEGACY_STRUCTURE_INFO_KEYS.biopsy_type_counts_key, {})
+            ),
+            LEGACY_MASTER_INFO_KEYS.num_dils_key: dil_info.get(LEGACY_STRUCTURE_INFO_KEYS.num_structs_key),
+            LEGACY_MASTER_INFO_KEYS.bx_types_list_key: bx_types_list,
         },
-        "By patient": {
+        LEGACY_MASTER_INFO_KEYS.by_patient_key: {
             str(patient_uid): copy.deepcopy(dict(patient_info_dict)),
         },
     }
@@ -193,14 +214,22 @@ def collect_optimizer_v1_patient_outputs(patient_reference_dict: Mapping[str, An
                                          dil_ref: str,
                                          all_ref_key: str) -> dict[str, Any]:
     """Collect the optimizer-v1 outputs written into the patient dictionary."""
-    multi_structure_info = patient_reference_dict[all_ref_key]["Multi-structure information dict (not for csv output)"]
-    preprocessing_outputs = patient_reference_dict[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+    multi_structure_info = patient_reference_dict[all_ref_key][
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.multi_structure_information_key
+    ]
+    preprocessing_outputs = patient_reference_dict[all_ref_key][
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key
+    ]
     return {
         "per_dil": [
             {
-                "ROI": dil_structure.get("ROI"),
-                "Ref #": dil_structure.get("Ref #"),
-                "Index number": dil_structure.get("Index number"),
+                LEGACY_STRUCTURE_RECORD_KEYS.roi_key: dil_structure.get(LEGACY_STRUCTURE_RECORD_KEYS.roi_key),
+                LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key: dil_structure.get(
+                    LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key
+                ),
+                LEGACY_STRUCTURE_RECORD_KEYS.index_number_key: dil_structure.get(
+                    LEGACY_STRUCTURE_RECORD_KEYS.index_number_key
+                ),
                 "outputs": {
                     output_key: dil_structure.get(output_key)
                     for output_key in OPTIMIZER_V1_DIL_OUTPUT_KEYS

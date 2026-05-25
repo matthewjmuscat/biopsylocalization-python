@@ -8,8 +8,11 @@ from typing import Any
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 
 OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION = "phase2_output_table_contracts_v1"
+LEGACY_ARTIFACT_KEYS = legacy_data_keys.artifacts
 UNSTABLE_LEGACY_KEY_COLUMNS = "Bx refnum; Relative DIL ref num; Structure ref num"
 CANONICAL_KEY_POLICY_NOTE = (
     "Do not rely on refnum columns for uniqueness. Canonical biopsy identity is "
@@ -46,7 +49,11 @@ def _normalize_legacy_table_name(row: pd.Series) -> str:
     legacy_name = str(row.get("legacy_dataframe_name", ""))
     patient_uid = str(row.get("patient_uid", ""))
     parts = _path_parts(relative_path)
-    if output_section != "Output CSVs/MC simulation" or len(parts) < 4 or patient_uid == "Global":
+    if (
+        output_section != "Output CSVs/MC simulation"
+        or len(parts) < 4
+        or patient_uid == LEGACY_ARTIFACT_KEYS.global_patient_uid
+    ):
         return legacy_name
 
     biopsy_index = _parse_biopsy_index_from_dir(relative_path)

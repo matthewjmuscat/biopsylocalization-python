@@ -11,8 +11,14 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
+from legacy_data_keys import legacy_data_keys
 from presentation import LegacyPresentationContext
 
+
+LEGACY_MASTER_INFO_KEYS = legacy_data_keys.master_info
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
+LEGACY_BIOPSY_RUNTIME_KEYS = legacy_data_keys.biopsy_runtime
 
 OPTIMIZER_V2_OUTPUT_KEYS = (
     "Biopsy optimization - Target DIL optimizer v2 summary dataframe",
@@ -122,16 +128,20 @@ def build_single_patient_optimizer_v2_master_info(patient_uid: str,
                                                   *,
                                                   global_info: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Build the minimal legacy master-info shape for one optimizer-v2 patient."""
-    if patient_info_dict is not None and "Global" in patient_info_dict and "By patient" in patient_info_dict:
+    if (
+        patient_info_dict is not None
+        and LEGACY_MASTER_INFO_KEYS.global_key in patient_info_dict
+        and LEGACY_MASTER_INFO_KEYS.by_patient_key in patient_info_dict
+    ):
         master_info = copy.deepcopy(dict(patient_info_dict))
-        master_info.setdefault("Global", {})["Num cases"] = 1
+        master_info.setdefault(LEGACY_MASTER_INFO_KEYS.global_key, {})[LEGACY_MASTER_INFO_KEYS.num_cases_key] = 1
         return master_info
 
     resolved_global_info = dict(global_info or {})
-    resolved_global_info["Num cases"] = 1
+    resolved_global_info[LEGACY_MASTER_INFO_KEYS.num_cases_key] = 1
     return {
-        "Global": resolved_global_info,
-        "By patient": {
+        LEGACY_MASTER_INFO_KEYS.global_key: resolved_global_info,
+        LEGACY_MASTER_INFO_KEYS.by_patient_key: {
             str(patient_uid): copy.deepcopy(dict(patient_info_dict or {})),
         },
     }
@@ -143,18 +153,24 @@ def collect_optimizer_v2_patient_outputs(patient_reference_dict: Mapping[str, An
                                          all_ref_key: str) -> dict[str, Any]:
     """Collect optimizer-v2 outputs written into one patient's legacy dictionary."""
     pre_processing_dataframe_dict = patient_reference_dict[all_ref_key][
-        "Multi-structure pre-processing output dataframes dict"
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key
     ]
     biopsy_transport_requests = []
     for biopsy_structure in patient_reference_dict.get(bx_ref, ()):
-        transport_request = biopsy_structure.get("Simulated biopsy transport request dict")
+        transport_request = biopsy_structure.get(LEGACY_BIOPSY_RUNTIME_KEYS.simulated_biopsy_transport_request_key)
         if transport_request is not None:
             biopsy_transport_requests.append(
                 {
-                    "ROI": biopsy_structure.get("ROI"),
-                    "Ref #": biopsy_structure.get("Ref #"),
-                    "Index number": biopsy_structure.get("Index number"),
-                    "Simulated type": biopsy_structure.get("Simulated type"),
+                    LEGACY_STRUCTURE_RECORD_KEYS.roi_key: biopsy_structure.get(LEGACY_STRUCTURE_RECORD_KEYS.roi_key),
+                    LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key: biopsy_structure.get(
+                        LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key
+                    ),
+                    LEGACY_STRUCTURE_RECORD_KEYS.index_number_key: biopsy_structure.get(
+                        LEGACY_STRUCTURE_RECORD_KEYS.index_number_key
+                    ),
+                    LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key: biopsy_structure.get(
+                        LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key
+                    ),
                     "transport_request": transport_request,
                 }
             )

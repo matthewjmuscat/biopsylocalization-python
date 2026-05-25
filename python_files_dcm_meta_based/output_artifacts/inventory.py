@@ -8,9 +8,12 @@ from typing import Any
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 
 OUTPUT_ARTIFACT_INVENTORY_SCHEMA_VERSION = "phase2_output_artifact_inventory_v1"
 INVENTORY_EXTENSIONS = {".csv", ".parquet", ".json", ".jsonl", ".log", ".svg", ".pdf", ".html", ".png"}
+LEGACY_ARTIFACT_KEYS = legacy_data_keys.artifacts
 
 
 def _utc_now_iso() -> str:
@@ -65,7 +68,7 @@ def _classify_relative_path(relative_path: Path) -> dict[str, Any]:
         output_section = "Output CSVs/Preprocessing"
         patient_uid = parts[2]
         dataframe_name = _strip_patient_prefix(relative_path.stem, patient_uid)
-        if patient_uid == "Global":
+        if patient_uid == LEGACY_ARTIFACT_KEYS.global_patient_uid:
             output_class = "true_cohort_post_aggregation"
             lifetime_recommendation = "cohort_post_aggregation"
             classification_reason = "Preprocessing global folder artifact."
@@ -77,7 +80,7 @@ def _classify_relative_path(relative_path: Path) -> dict[str, Any]:
         output_section = "Output CSVs/MC simulation"
         patient_uid = parts[2]
         dataframe_name = _strip_patient_prefix(relative_path.stem, patient_uid)
-        if patient_uid == "Global":
+        if patient_uid == LEGACY_ARTIFACT_KEYS.global_patient_uid:
             output_class = "true_cohort_post_aggregation"
             lifetime_recommendation = "cohort_post_aggregation"
             classification_reason = "MC global folder artifact."

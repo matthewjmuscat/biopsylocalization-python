@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
 from output_artifacts import OutputSchemaRegistry
 from output_artifacts import normalize_legacy_table_name
 from output_artifacts import write_dataframe_artifact
@@ -24,7 +25,7 @@ from .contracts import validate_patient_uids
 
 PATIENT_BATCH_COHORT_ASSEMBLY_SCHEMA_VERSION = "patient_batch_cohort_assembly_v1"
 PATIENT_BATCH_COHORT_VALIDATION_SCHEMA_VERSION = "patient_batch_cohort_validation_v1"
-COHORT_ARTIFACT_PATIENT_UID = "Global"
+COHORT_ARTIFACT_PATIENT_UID = legacy_data_keys.artifacts.global_patient_uid
 
 
 @dataclass(frozen=True, slots=True)

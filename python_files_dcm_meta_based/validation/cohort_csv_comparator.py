@@ -8,8 +8,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 from .run_output_paths import DEFAULT_VALIDATION_OUTPUT_ROOT, discover_cohort_csvs
 
+
+LEGACY_PATIENT_REFERENCE_KEYS = legacy_data_keys.patient_reference
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
 
 KNOWN_MULTIINDEX_FILES = {
     "Cohort: Tissue class - distances global results.csv": [0, 1],
@@ -19,7 +24,7 @@ IDENTIFIER_PRIORITY = [
     "Patient ID",
     "Base patient ID",
     "Fraction label",
-    "Fraction number",
+    LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key,
     "Biopsy member ID",
     "Real biopsy attempt ID",
     "Attempt family ID",
@@ -28,8 +33,8 @@ IDENTIFIER_PRIORITY = [
     "Bx refnum",
     "Bx ref #",
     "Bx index",
-    "Simulated bool",
-    "Simulated type",
+    LEGACY_STRUCTURE_RECORD_KEYS.simulated_bool_key,
+    LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key,
     "Tissue class",
     "Struct type",
     "Relative DIL ID",
@@ -41,9 +46,9 @@ IDENTIFIER_PRIORITY = [
     "Matched real biopsy ref #",
     "Matched real biopsy index",
     "Multiplicity index",
-    "ROI",
-    "Ref #",
-    "Index number",
+    LEGACY_STRUCTURE_RECORD_KEYS.roi_key,
+    LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key,
+    LEGACY_STRUCTURE_RECORD_KEYS.index_number_key,
     "Trial num",
     "Voxel index",
 ]

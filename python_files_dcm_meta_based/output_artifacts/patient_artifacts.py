@@ -8,11 +8,14 @@ from typing import Any
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 from .contracts import normalize_legacy_table_name
 
 
 PATIENT_ARTIFACT_MANIFEST_SCHEMA_VERSION = "phase3a_patient_artifact_manifest_v1"
 PATIENT_STITCH_PLAN_SCHEMA_VERSION = "phase3a_patient_stitch_plan_v1"
+LEGACY_ARTIFACT_KEYS = legacy_data_keys.artifacts
 CURRENT_DTYPE_POLICY_NOTE = (
     "Shadow manifest only; does not convert dataframe dtypes. Current runtime memory policy remains "
     "dataframe_builders.convert_columns_to_categorical_and_downcast(...)."
@@ -33,7 +36,7 @@ def _safe_path_name(value: str) -> str:
 def _patient_scope(patient_uid: str) -> str:
     if patient_uid == "":
         return "run_or_cohort"
-    if patient_uid == "Global":
+    if patient_uid == LEGACY_ARTIFACT_KEYS.global_patient_uid:
         return "global"
     return "patient"
 
