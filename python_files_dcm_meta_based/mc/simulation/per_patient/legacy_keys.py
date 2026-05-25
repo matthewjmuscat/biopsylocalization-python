@@ -80,6 +80,21 @@ class LegacyMCBiopsyOutputKeys:
 
 
 @dataclass(frozen=True, slots=True)
+class LegacyMCDoseReferenceKeys:
+    """Stable names for legacy dose-grid and plan-dose records."""
+
+    dose_and_gradient_map_array_key: str = "Dose and gradient phys space and pixel 3d arr"
+    dose_grid_point_cloud_key: str = "Dose grid point cloud"
+    dose_grid_point_cloud_thresholded_key: str = "Dose grid point cloud thresholded"
+    dose_grid_gradient_point_cloud_key: str = "Dose grid gradient point cloud"
+    dose_grid_gradient_point_cloud_thresholded_key: str = "Dose grid gradient point cloud thresholded"
+    dose_kdtree_key: str = "KDtree"
+    dose_gradient_kdtree_key: str = "KDtree gradient"
+    prescription_doses_dict_key: str = "Prescription doses dict"
+    target_prescription_key: str = "TARGET"
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyMCContainmentIntermediateKeys:
     """Stable names for intermediate containment state stored on legacy records."""
 
@@ -97,6 +112,7 @@ class LegacyMCKeyBundle:
     master_info: LegacyMCMasterInfoKeys = field(default_factory=LegacyMCMasterInfoKeys)
     biopsy_identity: LegacyMCBiopsyIdentityKeys = field(default_factory=LegacyMCBiopsyIdentityKeys)
     biopsy_outputs: LegacyMCBiopsyOutputKeys = field(default_factory=LegacyMCBiopsyOutputKeys)
+    dose_reference: LegacyMCDoseReferenceKeys = field(default_factory=LegacyMCDoseReferenceKeys)
     containment_intermediates: LegacyMCContainmentIntermediateKeys = field(
         default_factory=LegacyMCContainmentIntermediateKeys
     )

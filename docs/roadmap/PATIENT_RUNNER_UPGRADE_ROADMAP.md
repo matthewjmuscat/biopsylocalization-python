@@ -149,6 +149,14 @@ patient-level parity harness proves row/key equivalence. The raw CUDA containmen
 and nearest-neighbour kernels should remain untouched; patient modules should
 call the same kernel helper APIs as the oracle until parity is proven.
 
+For MC dose specifically, the additive patient module now owns dose and
+dose-gradient lattice context construction, per-biopsy nearest-neighbour
+localization through the existing `dosimetric_localizer` helper, point-by-trial
+array compilation, and DVH compile/writeback helpers. It deliberately does not
+own raw CSV dumps, plotting, Rich progress, or live routing through the frozen
+oracle. Legacy inactive dose-statistics and voxelization blocks should only be
+extracted if downstream parity checks prove those outputs are still required.
+
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
 introduced behind the same runner-facing contract after validation is green.
