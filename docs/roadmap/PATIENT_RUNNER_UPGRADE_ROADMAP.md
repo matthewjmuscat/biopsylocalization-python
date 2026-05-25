@@ -157,6 +157,14 @@ own raw CSV dumps, plotting, Rich progress, or live routing through the frozen
 oracle. Legacy inactive dose-statistics and voxelization blocks should only be
 extracted if downstream parity checks prove those outputs are still required.
 
+For MC MR specifically, the additive patient module now owns filtered MR ADC
+lattice reconstruction, KD-tree context construction, per-biopsy
+nearest-neighbour localization through the existing `mr_localizers` helper,
+point-by-trial array compilation, output collection, and legacy biopsy-record
+writeback. It deliberately does not own raw CSV dumps, plotting, Rich progress,
+or live routing through `MC_simulator_MR.py`; the MR simulator remains the oracle
+until a patient-level parity harness proves row/key equivalence.
+
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
 introduced behind the same runner-facing contract after validation is green.

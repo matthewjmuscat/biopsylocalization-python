@@ -140,6 +140,22 @@ class MCDoseSimulationConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MCMRSimulationConfig:
+    """Configuration for patient-local MR ADC localization."""
+
+    num_mr_calc_NN: int
+    mr_views_jsons_paths_list: Sequence[Any]
+    show_NN_mr_adc_demonstration_plots: bool
+    show_NN_mr_adc_demonstration_plots_all_trials_at_once: bool
+    perform_mc_mr_sim: bool
+    idw_power: float
+    raw_data_mc_mr_dump_bool: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mr_views_jsons_paths_list", tuple(self.mr_views_jsons_paths_list))
+
+
+@dataclass(frozen=True, slots=True)
 class MCConvexSimulationConfig:
     """Complete typed boundary for the current convex MC simulator oracle."""
 

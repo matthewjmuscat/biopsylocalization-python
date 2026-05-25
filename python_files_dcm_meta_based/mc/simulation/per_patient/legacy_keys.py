@@ -15,6 +15,7 @@ class LegacyMCMasterInfoKeys:
     mc_info_key: str = "MC info"
     containment_performed_key: str = "MC containment sim performed"
     dose_performed_key: str = "MC dose sim performed"
+    mr_performed_key: str = "MC MR sim performed"
     sim_performed_key: str = "MC sim performed"
 
 
@@ -51,6 +52,9 @@ class LegacyMCBiopsyOutputKeys:
     dose_statistics_basic_key: str = "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)"
     voxelized_dose_results_list_key: str = "MC data: voxelized dose results list"
     voxelized_dose_results_dict_key: str = "MC data: voxelized dose results dict (dict of lists)"
+    mr_adc_values_nominal_and_trials_array_key: str = (
+        "MC data: MR ADC vals for each sampled bx pt arr (nominal & all MC trials)"
+    )
 
     @property
     def containment_output_keys(self) -> tuple[str, ...]:
@@ -78,6 +82,10 @@ class LegacyMCBiopsyOutputKeys:
             self.voxelized_dose_results_dict_key,
         )
 
+    @property
+    def mr_output_keys(self) -> tuple[str, ...]:
+        return (self.mr_adc_values_nominal_and_trials_array_key,)
+
 
 @dataclass(frozen=True, slots=True)
 class LegacyMCDoseReferenceKeys:
@@ -92,6 +100,15 @@ class LegacyMCDoseReferenceKeys:
     dose_gradient_kdtree_key: str = "KDtree gradient"
     prescription_doses_dict_key: str = "Prescription doses dict"
     target_prescription_key: str = "TARGET"
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyMCMRReferenceKeys:
+    """Stable names for legacy MR ADC runtime records."""
+
+    mr_adc_grid_point_cloud_key: str = "MR ADC grid point cloud"
+    mr_adc_grid_point_cloud_thresholded_key: str = "MR ADC grid point cloud thresholded"
+    mr_adc_kdtree_key: str = "KDtree"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +130,7 @@ class LegacyMCKeyBundle:
     biopsy_identity: LegacyMCBiopsyIdentityKeys = field(default_factory=LegacyMCBiopsyIdentityKeys)
     biopsy_outputs: LegacyMCBiopsyOutputKeys = field(default_factory=LegacyMCBiopsyOutputKeys)
     dose_reference: LegacyMCDoseReferenceKeys = field(default_factory=LegacyMCDoseReferenceKeys)
+    mr_reference: LegacyMCMRReferenceKeys = field(default_factory=LegacyMCMRReferenceKeys)
     containment_intermediates: LegacyMCContainmentIntermediateKeys = field(
         default_factory=LegacyMCContainmentIntermediateKeys
     )
