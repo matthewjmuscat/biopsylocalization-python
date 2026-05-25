@@ -115,6 +115,21 @@ Near-term rule:
 - keep typed runner contracts and artifact manifests independent of the legacy
   dictionary shape.
 
+Datatype direction for new patient surfaces:
+
+- use dataclasses for stable patient identity, configuration, stage results,
+  and patient-state boundaries,
+- keep legacy dictionaries as adapter/output forms while oracle parity is still
+  being tested,
+- avoid converting every nested structure record to a dataclass in the same pass
+  unless the fields and mutability rules are stable,
+- prefer explicit conversion methods such as `to_legacy_dict()` and
+  `from_legacy_dict(...)` over scattering ad hoc dictionary construction through
+  runner code,
+- allow shallow `dict(...)` copies at adapter boundaries for metadata and legacy
+  compatibility, but do not treat those copies as the final scientific data
+  model.
+
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
 introduced behind the same runner-facing contract after validation is green.
