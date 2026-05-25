@@ -84,6 +84,7 @@ the product surface, and a null/log-only adapter for headless validation.
 | `python_files_dcm_meta_based/guidance_maps/` | Guidance-map science | patient-local guidance-map precompute/planning logic and domain-specific helpers | generic runner contracts, runtime logging, GUI bootstrapping |
 | `python_files_dcm_meta_based/output_artifacts/` | Artifact contracts and assembly | dataframe export surfaces, schema contracts, cohort assembly, shadow stitching, output inventory | new scientific geometry, targeting, or MC algorithms |
 | `python_files_dcm_meta_based/patient_runner/` | Typed orchestration | patient case contracts, stage sequencing, manifests, batch execution, runner validation hooks | new scientific math, geometry, targeting, optimizer, or MC algorithms |
+| `python_files_dcm_meta_based/presentation/` | Presentation adapters | neutral progress/event protocols plus Rich, GUI, or null/headless adapters | scientific algorithms, runner stage sequencing, output assembly |
 | `python_files_dcm_meta_based/validation/` and validation helpers | Comparison and regression surfaces | oracle comparisons, rerunnable validation scripts, mismatch localization | canonical scientific implementations |
 | `python_files_dcm_meta_based/input_data/` | Input discovery contracts | manifests, routing profiles, DICOM input shape and provenance surfaces | downstream scientific stage logic |
 | `python_files_dcm_meta_based/startup/` | Bootstrap and runtime wiring | startup flow, logging, process watchdogs, pickle-load workflow, runtime configuration glue | new scientific stage implementations |
@@ -164,7 +165,7 @@ Boundary packages should stay narrow:
 
 ## Current Canonical Patient-Module Homes
 
-Current repository placement after the 2026-05-24 MC prep package pass:
+Current repository placement after the 2026-05-24 additive patient-module passes:
 
 | Stage | Canonical home |
 | --- | --- |
@@ -178,6 +179,8 @@ Current repository placement after the 2026-05-24 MC prep package pass:
 | MC transform-bank generation | `python_files_dcm_meta_based/mc/prep/per_patient/transform_generation.py` |
 | MC BX-only transform application | `python_files_dcm_meta_based/mc/prep/per_patient/biopsy_self_transforms.py` |
 | MC relative-structure transform application | `python_files_dcm_meta_based/mc/prep/per_patient/relative_structure_transforms.py` |
+| Structure reference/bootstrap dictionaries | `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py` |
+| Optimizer-v1 singleton validation adapter | `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` |
 
 Do not recreate these same entrypoints under a top-level
 `python_files_dcm_meta_based/patient_stages/` tree.

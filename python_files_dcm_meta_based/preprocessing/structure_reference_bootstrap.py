@@ -1,0 +1,747 @@
+"""Patient-local structure reference/bootstrap helpers.
+
+These functions are additive patient-runner surfaces for the dictionary shell
+currently built inside ``structure_referencer(...)``. The legacy cohort function
+remains the oracle and is not routed through this module.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pydicom
+
+import misc_tools
+from biopsy_optimizer.v2.live_integration import (
+    TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
+    TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
+)
+from presentation import ProgressEvent
+from presentation import ProgressSink
+from presentation import coerce_progress_sink
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStructureReferenceBootstrapFragment:
+    """One patient's legacy-shaped reference and info dictionaries."""
+
+    patient_uid: str
+    patient_reference_dict: dict[str, Any]
+    patient_info_dict: dict[str, Any]
+    messages: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "patient_uid", str(self.patient_uid))
+        object.__setattr__(self, "messages", tuple(str(message) for message in self.messages))
+        object.__setattr__(self, "metadata", dict(self.metadata or {}))
+
+
+def _patient_dicom_value(structure_item: Any, tag: tuple[int, int]) -> str:
+    return str(structure_item[tag].value)
+
+
+def _emit(progress_sink: ProgressSink,
+          patient_uid: str,
+          message: str,
+          **details: Any) -> None:
+    progress_sink.emit(
+        ProgressEvent(
+            "structure_reference_bootstrap.notice",
+            message=message,
+            patient_uid=patient_uid,
+            stage_name="structure_reference_bootstrap",
+            details=details,
+        )
+    )
+
+
+def _matching_rois(structure_item: Any, contour_names: Sequence[str]) -> list[Any]:
+    return [
+        roi
+        for roi in structure_item.StructureSetROISequence
+        if any(str(contour).lower() in roi.ROIName.lower() for contour in contour_names)
+    ]
+
+
+def _filter_removed_rois(rois: Sequence[Any],
+                         removal_names: Sequence[str],
+                         *,
+                         patient_uid: str,
+                         removal_label: str,
+                         progress_sink: ProgressSink) -> list[Any]:
+    filtered_rois = list(rois)
+    for roi_name_to_remove in removal_names:
+        retained_rois = [roi for roi in filtered_rois if roi.ROIName != roi_name_to_remove]
+        if len(retained_rois) != len(filtered_rois):
+            _emit(
+                progress_sink,
+                patient_uid,
+                "Removed data-point (Pt: {}, {}: {})) ".format(
+                    patient_uid,
+                    removal_label,
+                    roi_name_to_remove,
+                ),
+                removed_roi_name=str(roi_name_to_remove),
+                removal_label=removal_label,
+            )
+        filtered_rois = retained_rois
+    return filtered_rois
+
+
+def _build_non_biopsy_structure_record(roi: Any,
+                                       index_number: int,
+                                       struct_type: str) -> dict[str, Any]:
+    return {
+        "ROI": roi.ROIName,
+        "Ref #": roi.ROINumber,
+        "Index number": index_number,
+        "Struct type": struct_type,
+        "Raw contour pts zslice list": None,
+        "Raw contour pts": None,
+        "Equal num zslice contour pts": None,
+        "Intra-slice interpolation information": None,
+        "Inter-slice interpolation information": None,
+        "Point cloud raw": None,
+        "Delaunay triangulation global structure": None,
+        "Delaunay triangulation zslice-wise list": None,
+        "Structure centroid pts": None,
+        "Best fit line of centroid pts": None,
+        "Centroid line sample pts": None,
+        "Structure global centroid": None,
+        "Reconstructed structure pts arr": None,
+        "Interpolated structure point cloud dict": None,
+        "Reconstructed structure delaunay global": None,
+        "Maximum pairwise distance": None,
+        "Structure volume": None,
+        "Structure OPEN3D triangle mesh object": None,
+        "Voxel size for structure volume calc": None,
+        "Uncertainty data": None,
+        "MC data: Generated normal dist random samples arr": None,
+        "KDtree": None,
+        "Nearest neighbours objects": [],
+    }
+
+
+def _build_biopsy_structure_record(roi_name: str,
+                                   ref_number: Any,
+                                   index_number: int,
+                                   struct_type: str,
+                                   simulated_bool: bool,
+                                   simulated_type: str,
+                                   simulated_metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    record = {
+        "ROI": roi_name,
+        "Ref #": ref_number,
+        "Index number": index_number,
+        "Struct type": struct_type,
+        "Simulated bool": bool(simulated_bool),
+        "Simulated type": simulated_type,
+    }
+    if simulated_metadata:
+        record.update(dict(simulated_metadata))
+    record.update(
+        {
+            "Reconstructed biopsy cylinder length (from contour data)": None,
+            "Raw contour pts zslice list": None,
+            "Raw contour pts": None,
+            "Centroid variation arr": None,
+            "Mean centroid variation": None,
+            "Maximum projected distance between original centroids": None,
+            "Equal num zslice contour pts": None,
+            "Intra-slice interpolation information": None,
+            "Inter-slice interpolation information": None,
+            "Point cloud raw": None,
+            "Delaunay triangulation global structure": None,
+            "Delaunay triangulation zslice-wise list": None,
+            "Structure global centroid": None,
+            "Structure centroid pts": None,
+            "Best fit line of centroid pts": None,
+            "Centroid line sample pts": None,
+            "Centroid line unit vec (bx needle base to bx needle tip)": None,
+            "Interpolated structure point cloud dict": None,
+            "Reconstructed structure pts arr": None,
+            "Reconstructed structure point cloud": None,
+            "Reconstructed structure delaunay global": None,
+            "Maximum pairwise distance": None,
+            "Structure volume": None,
+            "Voxel size for structure volume calc": None,
+            "Target DIL dict": None,
+            "Random uniformly sampled volume pts arr": None,
+            "Random uniformly sampled volume pts pcd": None,
+            "Random uniformly sampled volume pts bx coord sys arr": None,
+            "Random uniformly sampled volume pts bx coord sys pcd": None,
+            "Bounding box for random uniformly sampled volume pts": None,
+            "Num sampled bx pts": None,
+            "Uncertainty data": None,
+            "MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr": None,
+            "MC data: Generated uniform (biopsy needle compartment) random vectors (z_needle) samples arr": None,
+            "MC data: Generated normal dist random samples arr": None,
+            "MC data: Total rigid shift vectors arr": None,
+            "MC data: bx only shifted 3darr": None,
+            "MC data: bx and structure shifted dict": None,
+            "MC data: MC sim translation results dict": None,
+            "MC data: MC sim containment raw results dataframe": None,
+            "MC data: MC sim compiled distances global dataframe": None,
+            "MC data: MC sim compiled distances point-wise dataframe": None,
+            "MC data: MC sim compiled distances voxel-wise dataframe": None,
+            "MC data: MC sim containment and distance all trials dataframe (light)": None,
+            "MC data: compiled sim results dataframe": None,
+            "MC data: compiled sim sum-to-one results dataframe": None,
+            "MC data: compiled sim results": None,
+            "MC data: mutual compiled sim results": None,
+            "MC data: voxelized containment results dict": None,
+            "MC data: voxelized containment results dict (dict of lists)": None,
+            "MC data: bx to dose NN search objects list": None,
+            "MC data: Dose vals for each sampled bx pt arr (nominal & all MC trials)": None,
+            "MC data: Dose gradient vals for each sampled bx pt arr (nominal & all MC trials)": None,
+            "MC data: Differential DVH dict": None,
+            "MC data: Cumulative DVH dict": None,
+            "MC data: dose volume metrics dict": None,
+            "MC data: Dose statistics for each sampled bx pt list (mean, std, quantiles)": None,
+            "MC data: Dose statistics (MLE) for each sampled bx pt list (mean, std)": None,
+            "MC data: voxelized dose results list": None,
+            "MC data: voxelized dose results dict (dict of lists)": None,
+            "Output csv file paths dict": {},
+            "Output dicts for data frames": {},
+            "KDtree": None,
+            "Nearest neighbours objects": [],
+        }
+    )
+    if simulated_bool:
+        record["Simulated biopsy transport request dict"] = None
+        record["Output data frames"] = {
+            "Dose output Z and radius": None,
+            "Dose output voxelized": None,
+            "Point-wise dose output by MC trial number": None,
+            "Voxel-wise dose output by MC trial number": None,
+            "Differential DVH by MC trial": None,
+        }
+    else:
+        record["Output data frames"] = {
+            "Dose output Z and radius": None,
+            "Dose output voxelized": None,
+            "Point-wise dose output by MC trial number": None,
+            "Voxel-wise dose output by MC trial number": None,
+            "Differential DVH by MC trial": None,
+            "Cumulative DVH by MC trial": None,
+        }
+    return record
+
+
+def _build_all_ref_dict(mr_global_multi_structure_output_dataframe_str: str,
+                        mr_global_by_voxel_multi_structure_output_dataframe_str: str) -> dict[str, Any]:
+    return {
+        "Multi-structure information dict (not for csv output)": {
+            "Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe": None,
+        },
+        "Multi-structure pre-processing output dataframes dict": {
+            "Selected structures": None,
+            "Biopsy basic spatial features dataframe": None,
+            "Simulated biopsy preparation dataframe": None,
+            "Nearest DILs info dataframe": None,
+            "Biopsy optimization - Cumulative projection (all points within prostate) dataframe": None,
+            "Biopsy optimization - DIL centroids optimal targeting dataframe": None,
+            "Biopsy optimization - Optimal DIL targeting dataframe": None,
+            "Biopsy optimization - Optimal DIL targeting entire lattice dataframe": None,
+            TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY: None,
+            TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY: None,
+            "Biopsy optimization - Guidance-map firing depth recommendations dataframe": None,
+            "3D radiomic features all OAR and DIL structures": None,
+            "Per sample point prostate double sextant classification": None,
+            "Per voxel prostate double sextant classification": None,
+            "Simulated biopsy planned vs realized centroid variation validation": None,
+            "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
+            "MR - ADC - summary statistics by structure dataframe": None,
+        },
+        "Multi-structure MC simulation output dataframes dict": {
+            "All MC structure transformation values": None,
+            "Tissue class - Global tissue class statistics": None,
+            "Tissue class - Global tissue by structure statistics": None,
+            "Tissue class - Tissue length above threshold": None,
+            "Tissue class - sum-to-one mc results": None,
+            "Tissue class - distances global results": None,
+            "Tissue class - distances pt-wise results": None,
+            "Tissue class - distances voxel-wise results": None,
+            "Tissue class - containment and distances (light) results": None,
+            "Tissue class - Pt wise structure specific results": None,
+            "DVH metrics (Dx, Vx) statistics": None,
+            "MR - " + str(mr_global_multi_structure_output_dataframe_str): None,
+            "MR - " + str(mr_global_by_voxel_multi_structure_output_dataframe_str): None,
+        },
+    }
+
+
+def _should_create_simulated_biopsies(simulated_biopsy_fraction_numbers_to_create: Any,
+                                      patient_fraction_number: Any) -> bool:
+    if simulated_biopsy_fraction_numbers_to_create == "all":
+        return True
+    if isinstance(simulated_biopsy_fraction_numbers_to_create, (list, tuple, set)):
+        return patient_fraction_number in simulated_biopsy_fraction_numbers_to_create
+    return patient_fraction_number == simulated_biopsy_fraction_numbers_to_create
+
+
+def build_patient_structure_reference_bootstrap_fragment(
+    *,
+    patient_uid: str,
+    structure_item: Any,
+    data_removals_dict_bx: Mapping[str, Sequence[str]],
+    data_removals_dict_prostate: Mapping[str, Sequence[str]],
+    data_removals_dict_dil: Mapping[str, Sequence[str]],
+    data_removals_dict_urethra: Mapping[str, Sequence[str]],
+    data_removals_dict_rectum: Mapping[str, Sequence[str]],
+    OAR_list: Sequence[str],
+    DIL_list: Sequence[str],
+    Bx_list: Sequence[str],
+    st_ref_list: Sequence[str],
+    structs_referenced_dict: Mapping[str, Any],
+    all_ref_key: str,
+    mr_global_multi_structure_output_dataframe_str: str,
+    mr_global_by_voxel_multi_structure_output_dataframe_str: str,
+    bx_sim_locations_dict: Mapping[str, Mapping[str, Any]],
+    rectum_list: Sequence[str],
+    urethra_list: Sequence[str],
+    simulated_biopsy_fraction_numbers_to_create: Any,
+    fraction_prefixes: Sequence[str],
+    progress_sink: ProgressSink | None = None,
+) -> PatientStructureReferenceBootstrapFragment:
+    """Build the one-patient reference/info shell from an RTSTRUCT dataset."""
+    progress_sink = coerce_progress_sink(progress_sink)
+    patient_uid = str(patient_uid)
+    messages_before = tuple(getattr(progress_sink, "emitted_events", ()))
+
+    filtered_oars = _filter_removed_rois(
+        _matching_rois(structure_item, OAR_list),
+        data_removals_dict_prostate.get(patient_uid, ()),
+        patient_uid=patient_uid,
+        removal_label="Prostate",
+        progress_sink=progress_sink,
+    )
+    filtered_dils = _filter_removed_rois(
+        _matching_rois(structure_item, DIL_list),
+        data_removals_dict_dil.get(patient_uid, ()),
+        patient_uid=patient_uid,
+        removal_label="DIL",
+        progress_sink=progress_sink,
+    )
+    filtered_rectums = _filter_removed_rois(
+        _matching_rois(structure_item, rectum_list),
+        data_removals_dict_rectum.get(patient_uid, ()),
+        patient_uid=patient_uid,
+        removal_label="Rect",
+        progress_sink=progress_sink,
+    )
+    filtered_urethras = _filter_removed_rois(
+        _matching_rois(structure_item, urethra_list),
+        data_removals_dict_urethra.get(patient_uid, ()),
+        patient_uid=patient_uid,
+        removal_label="Uret",
+        progress_sink=progress_sink,
+    )
+    filtered_biopsies = _filter_removed_rois(
+        _matching_rois(structure_item, Bx_list),
+        data_removals_dict_bx.get(patient_uid, ()),
+        patient_uid=patient_uid,
+        removal_label="Bx",
+        progress_sink=progress_sink,
+    )
+
+    oar_ref = [
+        _build_non_biopsy_structure_record(roi, index, st_ref_list[1])
+        for index, roi in enumerate(filtered_oars)
+    ]
+    dil_ref = [
+        _build_non_biopsy_structure_record(roi, index, st_ref_list[2])
+        for index, roi in enumerate(filtered_dils)
+    ]
+    rectum_ref = [
+        _build_non_biopsy_structure_record(roi, index, st_ref_list[3])
+        for index, roi in enumerate(filtered_rectums)
+    ]
+    urethra_ref = [
+        _build_non_biopsy_structure_record(roi, index, st_ref_list[4])
+        for index, roi in enumerate(filtered_urethras)
+    ]
+    biopsy_ref = [
+        _build_biopsy_structure_record(
+            roi.ROIName,
+            roi.ROINumber,
+            index,
+            st_ref_list[0],
+            False,
+            "Real",
+        )
+        for index, roi in enumerate(filtered_biopsies)
+    ]
+
+    biopsy_ref_index_start = len(biopsy_ref)
+    patient_id_from_dicom = _patient_dicom_value(structure_item, (0x0010, 0x0020))
+    patient_name_from_dicom = _patient_dicom_value(structure_item, (0x0010, 0x0010))
+    patient_fraction_number = misc_tools.extract_number_from_string(patient_id_from_dicom, fraction_prefixes)
+    create_simulated_for_fraction = _should_create_simulated_biopsies(
+        simulated_biopsy_fraction_numbers_to_create,
+        patient_fraction_number,
+    )
+
+    simulated_biopsy_ref_index_start = 0
+    simulated_biopsy_refs_total: list[dict[str, Any]] = []
+    for biopsy_sim_type, biopsy_sim_config in bx_sim_locations_dict.items():
+        if not bool(biopsy_sim_config.get("Create", False)) or not create_simulated_for_fraction:
+            continue
+
+        simulated_relative_struct_type = biopsy_sim_config["Relative to struct type"]
+        simulated_ref_identifier = biopsy_sim_config["Identifier string"]
+        simulated_relative_contour_names = structs_referenced_dict[simulated_relative_struct_type]["Contour names"]
+
+        if simulated_relative_struct_type == st_ref_list[2]:
+            removal_list = data_removals_dict_dil.get(patient_uid, ())
+        elif simulated_relative_struct_type == st_ref_list[0]:
+            removal_list = data_removals_dict_bx.get(patient_uid, ())
+        elif simulated_relative_struct_type == st_ref_list[1]:
+            removal_list = data_removals_dict_prostate.get(patient_uid, ())
+        elif simulated_relative_struct_type == st_ref_list[3]:
+            removal_list = data_removals_dict_rectum.get(patient_uid, ())
+        elif simulated_relative_struct_type == st_ref_list[4]:
+            removal_list = data_removals_dict_urethra.get(patient_uid, ())
+        else:
+            removal_list = ()
+
+        filtered_simulated_biopsies = [
+            roi
+            for roi in _matching_rois(structure_item, simulated_relative_contour_names)
+            if roi.ROIName not in removal_list
+        ]
+        simulated_biopsy_refs = [
+            _build_biopsy_structure_record(
+                "Bx_Tr_" + str(simulated_ref_identifier) + " " + roi.ROIName,
+                str(simulated_ref_identifier) + " " + roi.ROIName,
+                biopsy_ref_index_start + simulated_biopsy_ref_index_start + index,
+                st_ref_list[0],
+                True,
+                str(biopsy_sim_type),
+                {
+                    "Transport family": biopsy_sim_config.get("Transport family", "identity"),
+                    "Relative structure type": simulated_relative_struct_type,
+                    "Relative structure name": roi.ROIName,
+                    "Relative structure ref #": roi.ROINumber,
+                },
+            )
+            for index, roi in enumerate(filtered_simulated_biopsies)
+        ]
+        simulated_biopsy_ref_index_start = len(simulated_biopsy_refs)
+        simulated_biopsy_refs_total.extend(simulated_biopsy_refs)
+
+    biopsy_ref.extend(simulated_biopsy_refs_total)
+    all_ref = _build_all_ref_dict(
+        mr_global_multi_structure_output_dataframe_str,
+        mr_global_by_voxel_multi_structure_output_dataframe_str,
+    )
+
+    biopsy_type_counts = {
+        item["Simulated type"]: sum(1 for record in biopsy_ref if record["Simulated type"] == item["Simulated type"])
+        for item in biopsy_ref
+    }
+    biopsy_info = {
+        "Num structs": len(biopsy_ref),
+        "Num sim structs": len(simulated_biopsy_refs_total),
+        "Num real structs": len(biopsy_ref) - len(simulated_biopsy_refs_total),
+        "Biopsy type counts": biopsy_type_counts,
+    }
+    oar_info = {"Num structs": len(oar_ref)}
+    dil_info = {"Num structs": len(dil_ref)}
+    rectum_info = {"Num structs": len(rectum_ref)}
+    urethra_info = {"Num structs": len(urethra_ref)}
+    patient_total_num_structs = (
+        biopsy_info["Num structs"]
+        + oar_info["Num structs"]
+        + dil_info["Num structs"]
+        + rectum_info["Num structs"]
+        + urethra_info["Num structs"]
+    )
+    all_structs_info = {"Total num structs": patient_total_num_structs}
+
+    patient_reference_dict = {
+        "Patient UID (generated)": patient_uid,
+        "Patient ID (from dicom)": patient_id_from_dicom,
+        "Patient Name": patient_name_from_dicom,
+        "Fraction number": patient_fraction_number,
+        st_ref_list[0]: biopsy_ref,
+        st_ref_list[1]: oar_ref,
+        st_ref_list[2]: dil_ref,
+        st_ref_list[3]: rectum_ref,
+        st_ref_list[4]: urethra_ref,
+        all_ref_key: all_ref,
+        "Ready to plot data list": None,
+    }
+    patient_info_dict = {
+        "Patient UID (generated)": patient_uid,
+        "Patient ID (from dicom)": patient_id_from_dicom,
+        "Patient Name": patient_name_from_dicom,
+        "Fraction number": patient_fraction_number,
+        st_ref_list[0]: biopsy_info,
+        st_ref_list[1]: oar_info,
+        st_ref_list[2]: dil_info,
+        st_ref_list[3]: rectum_info,
+        st_ref_list[4]: urethra_info,
+        all_ref_key: all_structs_info,
+    }
+
+    emitted_events = tuple(getattr(progress_sink, "emitted_events", ()))
+    new_events = emitted_events[len(messages_before):]
+    messages = tuple(event.message for event in new_events if getattr(event, "message", ""))
+    return PatientStructureReferenceBootstrapFragment(
+        patient_uid=patient_uid,
+        patient_reference_dict=patient_reference_dict,
+        patient_info_dict=patient_info_dict,
+        messages=messages,
+        metadata={
+            "num_real_biopsies": biopsy_info["Num real structs"],
+            "num_simulated_biopsies": biopsy_info["Num sim structs"],
+            "num_total_structures": patient_total_num_structs,
+        },
+    )
+
+
+def build_patient_structure_reference_bootstrap_fragment_from_path(
+    *,
+    patient_uid: str,
+    structure_item_path: str | Path,
+    **kwargs: Any,
+) -> PatientStructureReferenceBootstrapFragment:
+    """Read one RTSTRUCT file and build its patient reference fragment."""
+    with pydicom.dcmread(structure_item_path, defer_size="2 MB") as structure_item:
+        return build_patient_structure_reference_bootstrap_fragment(
+            patient_uid=patient_uid,
+            structure_item=structure_item,
+            **kwargs,
+        )
+
+
+def attach_patient_dose_reference_from_path(patient_reference_dict: dict[str, Any],
+                                            *,
+                                            patient_uid: str,
+                                            dose_item_path: str | Path,
+                                            ds_ref: str) -> bool:
+    """Attach the legacy-shaped dose dictionary for one patient when applicable."""
+    if patient_reference_dict["Fraction number"] == 1:
+        return False
+    with pydicom.dcmread(dose_item_path, defer_size="2 MB") as dose_item:
+        dose_id = str(patient_uid) + dose_item.StudyDate
+        patient_reference_dict[ds_ref] = {
+            "Dose ID": dose_id,
+            "Study date": dose_item.StudyDate,
+            "Dose pixel data": dose_item.PixelData,
+            "Dose pixel arr": dose_item.pixel_array,
+            "Pixel spacing": [float(item) for item in dose_item.PixelSpacing],
+            "Dose grid scaling": float(dose_item.DoseGridScaling),
+            "Dose units": dose_item.DoseUnits,
+            "Dose type": dose_item.DoseType,
+            "Grid frame offset vector": [float(item) for item in dose_item.GridFrameOffsetVector],
+            "Image orientation patient": [float(item) for item in dose_item.ImageOrientationPatient],
+            "Image position patient": [float(item) for item in dose_item.ImagePositionPatient],
+            "Dose and gradient phys space and pixel 3d arr": None,
+            "Dose grid point cloud": None,
+            "Dose grid point cloud thresholded": None,
+            "Dose grid gradient point cloud": None,
+            "Dose grid gradient point cloud thresholded": None,
+            "KDtree": None,
+            "KDtree gradient": None,
+        }
+    return True
+
+
+def attach_patient_plan_reference_from_path(patient_reference_dict: dict[str, Any],
+                                            *,
+                                            patient_uid: str,
+                                            plan_item_path: str | Path,
+                                            pln_ref: str) -> None:
+    """Attach the legacy-shaped treatment-plan dictionary for one patient."""
+    with pydicom.dcmread(plan_item_path, defer_size="2 MB") as plan_item:
+        plan_id = str(patient_uid) + plan_item.StudyDate
+        plan_ref_dict = {
+            "Plan ID": plan_id,
+            "Study date": plan_item.StudyDate,
+            "Dose units": "Gy",
+            "Prescription doses dict": {},
+        }
+        for dose_ref_seq_index in range(len(plan_item.DoseReferenceSequence)):
+            dose_reference = plan_item.DoseReferenceSequence[dose_ref_seq_index]
+            plan_ref_dict["Prescription doses dict"][dose_reference["DoseReferenceType"].value] = (
+                dose_reference["TargetPrescriptionDose"].value
+            )
+        patient_reference_dict[pln_ref] = plan_ref_dict
+
+
+def attach_patient_mr_adc_references_from_paths(patient_reference_dict: dict[str, Any],
+                                                *,
+                                                patient_uid: str,
+                                                mr_adc_item_paths: Sequence[str | Path],
+                                                mr_adc_ref: str,
+                                                progress_sink: ProgressSink | None = None) -> None:
+    """Attach the legacy-shaped MR ADC dictionary for one patient."""
+    progress_sink = coerce_progress_sink(progress_sink)
+    mr_adc_ref_dict: dict[str, Any] = {}
+    for mr_adc_item_path in mr_adc_item_paths:
+        with pydicom.dcmread(mr_adc_item_path, defer_size="2 MB") as mr_adc_item:
+            series_instance_uid = mr_adc_item.SeriesInstanceUID
+            mr_adc_id = str(patient_uid) + mr_adc_item.StudyDate
+            rwvm = getattr(mr_adc_item, "RealWorldValueMappingSequence", None)
+            if rwvm and len(rwvm) > 1:
+                _emit(
+                    progress_sink,
+                    str(patient_uid),
+                    "Multiple real world value mappings detected for ({}, {})".format(patient_uid, mr_adc_id),
+                    mr_adc_id=mr_adc_id,
+                )
+            if rwvm and len(rwvm) > 0:
+                rwv = rwvm[0]
+                units = str(getattr(rwv.MeasurementUnitsCodeSequence[0], "CodeMeaning", "unknown"))
+                slope = np.array(rwv.RealWorldValueSlope)
+                intercept = np.array(rwv.RealWorldValueIntercept)
+                rwv_units = getattr(rwv, "LUTLabel", "unknown")
+            else:
+                units = "mm\u00B2/s (assumed)"
+                slope = np.array([1e-6])
+                intercept = np.array([0.0])
+                rwv_units = "mm\u00B2/s (assumed)"
+                _emit(
+                    progress_sink,
+                    str(patient_uid),
+                    "No RealWorldValueMappingSequence found for ({}, {}) - using defaults.".format(patient_uid, mr_adc_id),
+                    mr_adc_id=mr_adc_id,
+                )
+
+            if series_instance_uid not in mr_adc_ref_dict:
+                mr_adc_ref_dict[series_instance_uid] = {
+                    "MR ADC ID": mr_adc_id,
+                    "Series instance UID": series_instance_uid,
+                    "Study date": mr_adc_item.StudyDate,
+                    "Pixel arr (all slices)": mr_adc_item.pixel_array,
+                    "Pixel spacing": np.array(mr_adc_item.PixelSpacing),
+                    "Units": units,
+                    "RWVSlope (all slices)": slope,
+                    "RWVIntercept (all slices)": intercept,
+                    "RWV Units": rwv_units,
+                    "Slice thickness": getattr(mr_adc_item, "SliceThickness", -1),
+                    "Image orientation patient": np.array(mr_adc_item.ImageOrientationPatient),
+                    "Image position patient (all slices)": np.array(mr_adc_item.ImagePositionPatient),
+                    "MR ADC phys space Nx4 arr": None,
+                    "MR ADC phys space Nx4 arr (filtered, non-negative)": None,
+                    "MR ADC grid point cloud": None,
+                    "MR ADC grid point cloud thresholded": None,
+                    "KDtree": None,
+                }
+            else:
+                mr_adc_ref_subdict = mr_adc_ref_dict[series_instance_uid]
+                mr_adc_ref_subdict["Pixel arr (all slices)"] = np.dstack(
+                    (mr_adc_ref_subdict["Pixel arr (all slices)"], mr_adc_item.pixel_array)
+                )
+                mr_adc_ref_subdict["RWVSlope (all slices)"] = np.hstack(
+                    (mr_adc_ref_subdict["RWVSlope (all slices)"], slope)
+                )
+                mr_adc_ref_subdict["RWVIntercept (all slices)"] = np.hstack(
+                    (mr_adc_ref_subdict["RWVIntercept (all slices)"], intercept)
+                )
+                mr_adc_ref_subdict["Image position patient (all slices)"] = np.vstack(
+                    (
+                        mr_adc_ref_subdict["Image position patient (all slices)"],
+                        np.array(mr_adc_item.ImagePositionPatient),
+                    )
+                )
+    patient_reference_dict[mr_adc_ref] = mr_adc_ref_dict
+
+
+def assemble_master_structure_reference_from_patient_fragments(
+    fragments: Sequence[PatientStructureReferenceBootstrapFragment],
+) -> dict[str, Any]:
+    """Assemble a legacy-shaped patient dictionary from patient fragments."""
+    return {
+        fragment.patient_uid: fragment.patient_reference_dict
+        for fragment in fragments
+    }
+
+
+def assemble_structure_reference_info_for_run(
+    fragments: Sequence[PatientStructureReferenceBootstrapFragment],
+    *,
+    st_ref_list: Sequence[str],
+    all_ref_key: str,
+    bx_sim_locations_dict: Mapping[str, Mapping[str, Any]],
+    interp_inter_slice_dist: float,
+    interp_intra_slice_dist: float,
+) -> dict[str, Any]:
+    """Build run-level structure info from patient-local info fragments."""
+    by_patient_info = {
+        fragment.patient_uid: fragment.patient_info_dict
+        for fragment in fragments
+    }
+    global_num_cases = len(fragments)
+    global_unique_patient_names = []
+    for fragment in fragments:
+        patient_name = str(fragment.patient_info_dict["Patient Name"])
+        if patient_name not in global_unique_patient_names:
+            global_unique_patient_names.append(patient_name)
+    global_num_biopsies = sum(info[st_ref_list[0]]["Num structs"] for info in by_patient_info.values())
+    global_num_oar = sum(info[st_ref_list[1]]["Num structs"] for info in by_patient_info.values())
+    global_num_dil = sum(info[st_ref_list[2]]["Num structs"] for info in by_patient_info.values())
+    global_total_num_structs = sum(info[all_ref_key]["Total num structs"] for info in by_patient_info.values())
+    biopsy_type_counts_by_patient = [
+        info[st_ref_list[0]]["Biopsy type counts"]
+        for info in by_patient_info.values()
+    ]
+    global_num_biopsies_by_type = {
+        key: sum(counts[key] for counts in biopsy_type_counts_by_patient if key in counts)
+        for counts in biopsy_type_counts_by_patient
+        for key in counts
+    }
+    bx_types_list = ["Real"] + [
+        key
+        for key, value in bx_sim_locations_dict.items()
+        if value.get("Create", False)
+    ]
+    preprocessing_info = {
+        "Interslice interp dist": interp_inter_slice_dist,
+        "Intraslice interp dist": interp_intra_slice_dist,
+        "Preprocessing performed": False,
+    }
+    mc_info = {
+        "Num MC containment simulations": None,
+        "Num MC dose simulations": None,
+        "Num MC MR simulations": None,
+        "Num optimizer v2 transform samples": None,
+        "Num stochastic targeting transform samples": None,
+        "Num sample pts per BX core": None,
+        "BX sample pt lattice spacing (mm)": None,
+        "BX sample pt volume element (mm^3)": None,
+        "Max of num MC simulations": None,
+        "Max of generated transform samples": None,
+        "MC sim performed": False,
+        "MC containment sim performed": False,
+        "MC dose sim performed": False,
+        "MC MR sim performed": False,
+    }
+    random_info = {
+        "Transform generation random seed": None,
+        "Optimizer v1 random seed": None,
+    }
+    return {
+        "Global": {
+            "Num cases": global_num_cases,
+            "Num unique patient names": len(global_unique_patient_names),
+            "Num structures": global_total_num_structs,
+            "Num biopsies": global_num_biopsies,
+            "Num biopsies by bx type dict": global_num_biopsies_by_type,
+            "Num DILs": global_num_dil,
+            "Bx types list": bx_types_list,
+            "Preprocessing info": preprocessing_info,
+            "MC info": mc_info,
+            "Random info": random_info,
+            "Patient specific guidance map figures directory dict": None,
+            "Guidance map figures dir": None,
+            "Specific output dir": None,
+        },
+        "By patient": by_patient_info,
+    }

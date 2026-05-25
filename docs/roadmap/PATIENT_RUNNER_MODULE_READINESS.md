@@ -39,8 +39,8 @@ If you want the shortest answer to "what is still missing for a per-patient
 runner?", it is this:
 
 - several preprocessing stages are already patient-ready,
-- the remaining missing or partial stages are now mostly structure bootstrap,
-  optimizers, guidance-map precompute, downstream annotations, and actual MC/MR
+- the remaining missing or partial stages are now mostly optimizer-v2 live
+  integration, guidance-map precompute, downstream annotations, and actual MC/MR
   simulation,
 - a thin runner/validation scaffold can exist while modules are still being
   extracted, but the complete patient runner should come after the remaining
@@ -58,8 +58,9 @@ Working order for this policy:
 
 1. Now: keep building patient modules, but avoid adding new required Rich args
    whenever possible.
-2. Near-term: add a thin progress/log/event adapter layer so patient modules can
-   run with Rich, a GUI, or a null/headless implementation.
+2. Near-term: use the thin progress/log/event adapter layer in
+  `python_files_dcm_meta_based/presentation/` so patient modules can run with
+  Rich, a GUI, or a null/headless implementation.
 3. After patient-runner validation: remove remaining Rich references from patient
    scientific functions and leave Rich only in legacy/main/frontend wrappers.
 
@@ -172,13 +173,16 @@ Completed through the 2026-05-24 pass:
 - `build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)` and `assemble_simulated_biopsy_centroid_variation_validation_fragments(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` for future runner use; the cohort validation wrapper remains on its frozen body.
 - `build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `assemble_biopsy_double_sextant_classification_fragments(...)`, and `store_patient_biopsy_double_sextant_voxel_fragment(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` for future runner use; the cohort wrapper remains on its frozen body. The per-voxel table remains assembled from patient sample-point fragments to preserve legacy aggregation and random-tie behavior.
 - `generate_transformations_for_patient(...)`, `apply_patient_biopsy_self_transforms(...)`, and `apply_patient_relative_structure_transforms(...)` live in `python_files_dcm_meta_based/mc/prep/per_patient/` as additive patient-local MC prep surfaces; the frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies.
+- `ProgressEvent`, `ProgressSink`, null legacy shims, and `RichProgressSink` live in `python_files_dcm_meta_based/presentation/` as a presentation-neutral adapter surface for future patient modules.
+- `build_patient_structure_reference_bootstrap_fragment(...)` plus run-level assembly and dose/plan/MR attachment helpers live in `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py`; the frozen `structure_referencer(...)` oracle remains untouched.
+- `run_patient_optimizer_v1_legacy_adapter(...)` lives in `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` as a singleton-patient validation bridge around the legacy optimizer-v1 oracle.
 
 ## Main Pipeline Readiness Checklist
 
 | Order | Pipeline stage | Main-facing function/module | Current status | Remaining work |
 | --- | --- | --- | --- | --- |
 | 1 | Input discovery and modality routing | Inline in `biopsy_localization_convex_main.py`; `UID_generator(...)` | Assembly | Keep run-scoped. Later extract discovery into a run manifest builder that emits patient case inputs. |
-| 2 | Structure reference/bootstrap dictionaries | `structure_referencer(...)` | Partial | Split patient dictionary construction from global count/summary updates. Keep legacy dictionary shape during validation. |
+| 2 | Structure reference/bootstrap dictionaries | `preprocessing.structure_reference_bootstrap.build_patient_structure_reference_bootstrap_fragment(...)`, `structure_referencer(...)` | Complete | Additive patient bootstrap surface exists with run-level assembly helpers. Validate row/key parity against the frozen `structure_referencer(...)` oracle before routing a full patient runner through it. |
 | 3 | Transform precompute/random seed config | `configure_transform_precompute_settings(...)`, `configure_runtime_random_seed_settings(...)` | Assembly | Keep run-scoped; patient stages should receive resolved config values. |
 | 4 | Run output directory creation | `create_run_output_directories(...)` | Assembly | Keep run-scoped; patient outputs should write under per-patient subdirectories. |
 | 5 | Input manifest writing | `write_input_manifest_files(...)` | Assembly | Keep run-scoped; add patient case manifests when discovery is split. |
@@ -199,7 +203,7 @@ Completed through the 2026-05-24 pass:
 | 20 | Simulated biopsy planning | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
 | 21 | Uncertainty generation and attachment | `preprocessing.uncertainty_attachment.attach_patient_uncertainty_data_from_dataframe(...)`, `prepare_and_attach_uncertainty_data(...)`, `attach_uncertainty_data_from_dataframe(...)` | Complete | Additive patient-level attachment from a resolved uncertainty dataframe fragment exists. Keep template generation, file prompts, and run-level dataframe bookkeeping on the frozen run-scoped path. |
 | 22 | Transform generation/prep | `mc.prep.per_patient.transform_generation.generate_transformations_for_patient(...)`, `mc.prep.per_patient.biopsy_self_transforms.apply_patient_biopsy_self_transforms(...)`, `mc.prep.per_patient.relative_structure_transforms.apply_patient_relative_structure_transforms(...)`, `MC_prepper_funcs.generate_transformations(...)`, `MC_prepper_funcs.biopsy_only_transformer(...)`, `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)` | Complete | Additive patient-level MC prep surfaces now exist in the dedicated MC prep scientific package. Frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies and are not routed through the patient entrypoints. |
-| 23 | Optimizer v1 | `biopsy_optimizer_module_v1(...)` | Missing | Add patient-level optimizer v1 wrapper or mark as legacy-only if v2 becomes the validated target path. |
+| 23 | Optimizer v1 | `biopsy_optimizer.v1.per_patient.legacy_adapter.run_patient_optimizer_v1_legacy_adapter(...)`, `biopsy_optimizer_module_v1(...)` | Partial | Additive singleton-patient validation adapter exists. Keep it as a legacy-oracle bridge unless a clean v1 loop-body extraction becomes scientifically useful. |
 | 24 | Optimizer v2 live integration | `run_target_dil_optimizer_v2_for_live_simulated_family(...)` | Partial | Internal v2 modules are modular, but the main live integration surface still needs a patient-stage wrapper and validation against current outputs. |
 | 25 | Simulated biopsy finalization | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_processing.process_patient_simulated_biopsies(...)`, `simulated_biopsy_processer(...)` | Complete | Additive patient finalization module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen and is not routed through the patient module. |
 | 26 | Planned-vs-realized centroid validation | `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)`, `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.assemble_simulated_biopsy_centroid_variation_validation_fragments(...)`, `validate_simulated_biopsy_planned_vs_realized_centroid_variation(...)` | Complete | Additive patient fragment builder plus run-level summarizer exist. Current cohort validation wrapper remains frozen and is not routed through the patient module. |
@@ -221,29 +225,22 @@ Completed through the 2026-05-24 pass:
 Recommended order of operations from this point:
 
 1. Keep extracting missing patient scientific modules where the next loop-body
-   boundary is clear, while avoiding new required Rich dependencies.
-2. Add a small presentation-neutral progress/log/event adapter surface with Rich,
-   null/headless, and future GUI implementations. This should be thin enough not
-   to become a new orchestration framework.
-3. Split structure reference/bootstrap dictionary construction into patient-local
-   dictionary construction plus run-level count/summary assembly.
-4. Add or expose guidance-map patient precompute fragments, while keeping
+  boundary is clear, while avoiding new required Rich dependencies.
+2. Add or expose guidance-map patient precompute fragments, while keeping
    guidance-map rendering run/UI scoped.
-5. Decide whether optimizer v1 should receive a patient wrapper or be marked
-   legacy-only if optimizer v2 is the validated target path.
-6. Add a patient-stage wrapper around the optimizer-v2 live integration surface
+3. Add a patient-stage wrapper around the optimizer-v2 live integration surface
    after confirming its required inputs, memory behavior, rendering policy, and
    output annotations.
-7. Extract patient containment/dose simulation modules from the per-patient loop
+4. Extract patient containment/dose simulation modules from the per-patient loop
    bodies inside `MC_simulator_convex.simulator_parallel(...)` without editing the
    oracle file first.
-8. Extract patient MR localization/simulation modules from the per-patient loop
+5. Extract patient MR localization/simulation modules from the per-patient loop
    bodies inside `MC_simulator_MR.simulator_parallel(...)`.
-9. Add downstream patient MC annotation/output wrappers only after the upstream
+6. Add downstream patient MC annotation/output wrappers only after the upstream
    patient MC state is validated.
-10. Build out the complete patient runner after the scientific patient-stage
+7. Build out the complete patient runner after the scientific patient-stage
     modules above have stable contracts. Earlier runner work should stay limited
     to scaffolding, manifests, adapters, and shadow-validation harnesses.
-11. After patient-runner validation against the legacy cohort oracle, remove
+8. After patient-runner validation against the legacy cohort oracle, remove
     remaining Rich dependencies from patient scientific functions and keep Rich
     only in legacy/main/frontend wrappers.
