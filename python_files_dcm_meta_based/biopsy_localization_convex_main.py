@@ -111,13 +111,19 @@ from preprocessing.pickled_dataset_tools import export_preprocessed_pickle_bundl
 from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runtime_objects
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
-from preprocessing.dose_grid_processing import LegacyDoseGridProcessingConfig
-from preprocessing.dose_grid_processing import build_legacy_dose_grids_for_cohort
-from preprocessing.mr_adc_grid_processing import LegacyMRADCGridProcessingConfig
-from preprocessing.mr_adc_grid_processing import build_legacy_mr_adc_grids_for_cohort
+from preprocessing.output_runtime_dirs import write_run_completion_manifest
+from preprocessing.dose_grid_processing import DoseGridProcessingConfig
+from preprocessing.dose_grid_processing import build_dose_grids_for_cohort
+from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
+from preprocessing.mr_adc_grid_processing import build_mr_adc_grids_for_cohort
+from preprocessing.mr_adc_input_checking import validate_and_normalize_mr_adc_inputs_for_cohort
 from preprocessing.render_debug_surface import render_processed_dataset_debug_processer
+from preprocessing.structure_selection import select_unique_structures_for_cohort
+from preprocessing.structure_selection_validation import begin_selected_structures_legacy_validation
+from preprocessing.structure_selection_validation import finalize_selected_structures_legacy_validation
 from preprocessing.structure_processing.raw_contour_pulling import pull_raw_structure_contours_for_cohort
 from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
+from preprocessing.structure_processing.non_biopsy_structure_stage_validation import begin_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import finalize_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.non_biopsy_structure_stage_validation import prepare_standard_non_biopsy_structure_stage_legacy_validation
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
@@ -137,6 +143,7 @@ from config import PreprocessingConfig
 from config import RandomSeedConfig
 from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
+from config import ValidationSidecarConfig
 from guidance_maps.config import GuidanceMapPlanningConfig
 from guidance_maps.planning import precompute_guidance_map_firing_depth_recommendations_for_run
 from input_data import write_input_manifest_files
@@ -816,7 +823,9 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = True # False runs only the modular stage. True also runs the legacy inline sidecar validator and emits Structure preprocessing validation rows.
+    validate_selected_structures_module_against_legacy = True
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = True
+    validate_prostate_only_mr_adc_module_against_legacy = True
 
     ###
 
@@ -1109,9 +1118,15 @@ def main():
             transform_generation_random_seed=transform_generation_random_seed,
             optimizer_v1_random_seed=optimizer_v1_random_seed,
         ),
+        validation_sidecars=ValidationSidecarConfig(
+            selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
+            non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
+            prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
+        ),
     )
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
+    validation_sidecar_config = pipeline_config.validation_sidecars
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = bool(num_MC_dose_simulations_input)
@@ -1388,27 +1403,7 @@ def main():
                     important_info.add_text_line("Each patient contains a structure, dose and plan file.", live_display)    
                 
                 
-                # setting some variables for use in simulating biopsies
-                """
-                if len(bx_sim_locations) >= 1:
-                    simulate_biopsies_relative_to_struct_type_list = [None]*len(simulate_biopsies_relative_to)
-                    for bx_sim_relative_structure_index, bx_sim_relative_structure in enumerate(simulate_biopsies_relative_to):
-                        keyfound = False
-                        for struct_type_key in structs_referenced_dict.keys():
-                            if bx_sim_relative_structure in structs_referenced_dict[struct_type_key]["Contour names"]:
-                                if keyfound == True:
-                                    raise Exception("Structure specified to simulate biopsies to found in more than one structure type.")
-                                simulate_biopsies_relative_to_struct_type_list[bx_sim_relative_structure_index] = struct_type_key
-                                keyfound = True
-                        if keyfound == False:
-                            raise Exception("Structure specified to simulate biopsies to was not found in specified structures to analyse.")
-                    important_info.add_text_line("Simulating "+ ", ".join(bx_sim_locations)+" biopsies relative to "+", ".join(simulate_biopsies_relative_to)+" (Found under "+ ", ".join(simulate_biopsies_relative_to_struct_type_list)+").", live_display)          
-                    live_display.refresh()
-                else: 
-                    simulate_biopsies_relative_to_struct_type_list = []
-                    important_info.add_text_line("Not creating any simulated biopsies.", live_display)          
-                    live_display.refresh() 
-                """
+                # simulated biopsy info
                 if num_simulated_bxs_to_create >= 1:
                     for sim_bx_type_str,sim_bx_type_dict in bx_sim_locations_dict.items():
                         simulate_biopsies_relative_to = sim_bx_type_dict["Relative to struct type"]
@@ -1509,9 +1504,27 @@ def main():
                     pipeline_config.random_seeds.optimizer_v1_random_seed,
                 )
 
+                input_data_type_counts = {
+                    "dicom": num_dicoms,
+                    "rtstruct": num_RTst_dcms_entries,
+                    "rtdose": num_RTdose_dcms_entries,
+                    "rtplan": num_RTplan_dcms_entries,
+                    "mr-t2": num_MR_T2_dcms_entries,
+                    "mr-adc": num_MR_ADC_dcms_entries,
+                    "us": num_US_dcms_entries,
+                }
+                validation_run_type = validation_sidecar_config.validation_run_type_string()
+                run_folder_suffix = validation_sidecar_config.build_run_folder_suffix(input_data_type_counts)
+
                 specific_output_dir, raw_mc_output_dir = create_run_output_directories(
                     master_structure_info_dict,
                     output_dir,
+                    run_label=run_folder_suffix,
+                    run_metadata={
+                        "validation_run_type": validation_run_type,
+                        "active_validation_sidecars": validation_sidecar_config.active_validation_labels(),
+                        "input_data_type_counts": input_data_type_counts,
+                    },
                 )
                 runtime_logger.attach_output_dir(specific_output_dir)
                 runtime_logger.checkpoint(
@@ -1549,41 +1562,17 @@ def main():
                         live_display,
                     )
 
-                #live_display.stop()
-                ### Check if there are more than one ADC MRs for each patient:
-                mr_adc_units = None 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
+                validate_and_normalize_mr_adc_inputs_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    mr_adc_ref=mr_adc_ref,
+                    important_info=important_info,
+                    live_display=live_display,
+                )
 
-                    if mr_adc_ref not in pydicom_item:
-                        important_info.add_text_line("Notice! no ADC MR for: "+ str(patientUID), live_display)  
-                        continue
-                     
-                    if len(master_structure_reference_dict[patientUID][mr_adc_ref]) > 1: 
-                        important_info.add_text_line("Notice! There are "+ str(len(master_structure_reference_dict[patientUID][mr_adc_ref]))+ "ADC MRs for: " +str(patientUID), live_display)                           
-
-                        ###### IMPORTANT! WE REMOVE ALL ENTRIES OF MR ADC IMAGES EXCEPT FOR THE FIRST!
-
-                        important_info.add_text_line("Removing all MR ADCs except the first for: " +str(patientUID), live_display)   
-
-                    # Delete all MR ADCs except the first one 
-                    # Get the first key-value pair
-                    series_uid, mr_adc_subdict = next(iter(master_structure_reference_dict[patientUID][mr_adc_ref].items()))
-
-                    # Only store the sub dictionary of the first MR series
-                    master_structure_reference_dict[patientUID][mr_adc_ref] = mr_adc_subdict
-
-                    if mr_adc_units == None:
-                        mr_adc_units = mr_adc_subdict["Units"]
-                    elif mr_adc_units != mr_adc_units:
-                        important_info.add_text_line("The units of your MRs are not the same between patients! Detected on patient: "+ str(patientUID), live_display)   
-
-                
-                
-                
-                dose_grid_processing_result = build_legacy_dose_grids_for_cohort(
+                dose_grid_processing_result = build_dose_grids_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
-                    config=LegacyDoseGridProcessingConfig(
+                    config=DoseGridProcessingConfig(
                         dose_ref=dose_ref,
                         plan_ref=plan_ref,
                         lower_bound_dose_value=lower_bound_dose_value,
@@ -1597,10 +1586,10 @@ def main():
                 )
                 lower_bound_dose_value = dose_grid_processing_result.lower_bound_dose_value
 
-                mr_adc_grid_processing_result = build_legacy_mr_adc_grids_for_cohort(
+                mr_adc_grid_processing_result = build_mr_adc_grids_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
                     master_structure_info_dict=master_structure_info_dict,
-                    config=LegacyMRADCGridProcessingConfig(
+                    config=MRADCGridProcessingConfig(
                         mr_adc_ref=mr_adc_ref,
                         color_flattening_deg_mr=color_flattening_deg_MR,
                         lower_bound_mr_adc_value=lower_bound_mr_adc_value,
@@ -1636,80 +1625,43 @@ def main():
 
                 ### Selecting unqiue structures of each type (except biopsies and dils) for future calculations
 
-                patientUID_default = "Initializing"
-                processing_patients_task_main_description = "[red]Selecting unique structures [{}]...".format(patientUID_default)
-                processing_patients_task_completed_main_description = "[green]Selecting unique structures"
-                processing_patients_task = patients_progress.add_task(processing_patients_task_main_description, total=master_structure_info_dict["Global"]["Num cases"])
-                processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
+                selected_structures_validation_context = None
+                if validation_sidecar_config.selected_structures_against_legacy == True:
+                    selected_structures_validation_context = begin_selected_structures_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_list_generalized=structs_referenced_list_generalized,
+                        all_ref_key=all_ref_key,
+                    )
 
-                for patientUID,pydicom_item in master_structure_reference_dict.items():
-                    processing_patients_task_main_description = "[red]Selecting unique structures [{}]...".format(patientUID)
-                    patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
+                select_unique_structures_for_cohort(
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    structs_referenced_dict=structs_referenced_dict,
+                    structs_referenced_list_generalized=structs_referenced_list_generalized,
+                    structs_referenced_list_generalized_unique_structs=structs_referenced_list_generalized_unique_structs,
+                    all_ref_key=all_ref_key,
+                    patients_progress=patients_progress,
+                    completed_progress=completed_progress,
+                    important_info=important_info,
+                    live_display=live_display,
+                )
 
-
-                    sp_patient_selected_structure_info_dataframe = pandas.DataFrame()
-
-                    for structure_type in structs_referenced_list_generalized_unique_structs:
-                        structure_type_contour_names_list =  structs_referenced_dict[structure_type]["Contour names"]
-
-                        selected_structure_info_dataframe, message_string = misc_tools.specific_structure_selector_dataframe_version(pydicom_item,
-                                                                                                                                            structure_type,
-                                                                                                                                            structure_type_contour_names_list)
-
-
-                        important_info.add_text_line(message_string, live_display)
-
-
-                        sp_patient_selected_structure_info_dataframe = pandas.concat([sp_patient_selected_structure_info_dataframe,selected_structure_info_dataframe], ignore_index = True)
-
-                    sp_patient_selected_structure_info_dataframe.insert(loc=0, column="Patient ID", value=patientUID)
-
-                    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]["Selected structures"] = sp_patient_selected_structure_info_dataframe
-
-
-
-                    ### Now delete all the structures that were not chosen from the master ref dict
-                    ### Note that this was done primarily for the MC simulation section to simplify modifying the code for testing tissue class against
-                    ### individual structures. Instead of modifying that section of code heavily, I am simply removing the structures
-                    ### that weren't selected
-
-                    sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe = sp_patient_selected_structure_info_dataframe[sp_patient_selected_structure_info_dataframe["Total num structs found"] > 1]
-                    num_structs_difference = 0
-                    for row_index, row in sp_patient_selected_structure_info_dataframe_more_than_one_struct_found_subset_dataframe.iterrows():
-                        struct_selected_type = row["Struct ref type"]
-                        struct_selected_index = row["Index number"]
-
-                        updated_sp_structure_list = [pydicom_item[struct_selected_type][struct_selected_index]] if 0 <= struct_selected_index < len(pydicom_item[struct_selected_type]) else []
-
-                        pydicom_item[struct_selected_type] = updated_sp_structure_list
-
-
-                        # Update the master patient info record
-                        current_num_structs = master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"]
-                        updated_num_structs = len(updated_sp_structure_list)
-                        difference = current_num_structs - updated_num_structs
-                        num_structs_difference += difference
-
-                        master_structure_info_dict["By patient"][patientUID][struct_selected_type]["Num structs"] = updated_num_structs
-
-
-                    # Update the master patient info record
-                    current_total_num_structs = master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"]
-                    master_structure_info_dict["By patient"][patientUID][all_ref_key]["Total num structs"] = current_total_num_structs - num_structs_difference
-
-                    total_num_structs_updated = 0
-                    for patientUID,pydicom_item in master_structure_reference_dict.items():
-                        for structure_type in structs_referenced_list_generalized:
-
-                            num_structs = len(pydicom_item[structure_type])
-                            total_num_structs_updated += num_structs
-
-                    master_structure_info_dict["Global"]["Num structures"] = total_num_structs_updated
-
-                    patients_progress.update(processing_patients_task, advance=1)
-                    completed_progress.update(processing_patients_task_completed, advance=1)
-                patients_progress.update(processing_patients_task, visible=False)
-                completed_progress.update(processing_patients_task_completed,  visible=True)
+                if validation_sidecar_config.selected_structures_against_legacy == True:
+                    live_display = finalize_selected_structures_legacy_validation(
+                        master_structure_reference_dict=master_structure_reference_dict,
+                        master_structure_info_dict=master_structure_info_dict,
+                        structs_referenced_dict=structs_referenced_dict,
+                        structs_referenced_list_generalized=structs_referenced_list_generalized,
+                        structs_referenced_list_generalized_unique_structs=structs_referenced_list_generalized_unique_structs,
+                        all_ref_key=all_ref_key,
+                        patients_progress=patients_progress,
+                        completed_progress=completed_progress,
+                        important_info=important_info,
+                        live_display=live_display,
+                        validation_context=selected_structures_validation_context,
+                        runtime_logger=runtime_logger,
+                    )
 
 
 
@@ -1726,47 +1678,47 @@ def main():
                     mr_adc_ref=mr_adc_ref,
                 )
 
-                if run_non_biopsy_structure_legacy_sidecar_validation_bool != True:
-                    live_display = process_standard_non_biopsy_structure_preprocessing_stage(
+                non_biopsy_structure_stage_validation_context = None
+                if validation_sidecar_config.non_biopsy_structures_against_legacy == True:
+                    non_biopsy_structure_stage_validation_context = begin_standard_non_biopsy_structure_stage_legacy_validation(
                         oar_ref=oar_ref,
                         rectum_ref_key=rectum_ref_key,
                         urethra_ref_key=urethra_ref_key,
                         dil_ref=dil_ref,
                         master_structure_reference_dict=master_structure_reference_dict,
-                        master_structure_info_dict=master_structure_info_dict,
-                        structs_referenced_dict=structs_referenced_dict,
                         config=non_bx_structure_preprocessing_config,
-                        parallel_pool=parallel_pool,
-                        layout_groups=layout_groups,
-                        patients_progress=patients_progress,
-                        structures_progress=structures_progress,
-                        completed_progress=completed_progress,
-                        indeterminate_progress_sub=indeterminate_progress_sub,
-                        important_info=important_info,
-                        live_display=live_display,
-                        runtime_logger=runtime_logger,
                     )
-                else:
+
+                live_display = process_standard_non_biopsy_structure_preprocessing_stage(
+                    oar_ref=oar_ref,
+                    rectum_ref_key=rectum_ref_key,
+                    urethra_ref_key=urethra_ref_key,
+                    dil_ref=dil_ref,
+                    master_structure_reference_dict=master_structure_reference_dict,
+                    master_structure_info_dict=master_structure_info_dict,
+                    structs_referenced_dict=structs_referenced_dict,
+                    config=non_bx_structure_preprocessing_config,
+                    parallel_pool=parallel_pool,
+                    layout_groups=layout_groups,
+                    patients_progress=patients_progress,
+                    structures_progress=structures_progress,
+                    completed_progress=completed_progress,
+                    indeterminate_progress_sub=indeterminate_progress_sub,
+                    important_info=important_info,
+                    live_display=live_display,
+                    runtime_logger=runtime_logger,
+                )
+
+                if validation_sidecar_config.non_biopsy_structures_against_legacy == True:
                     ### LEGACY NON-BIOPSY VALIDATION SIDECAR
-                    ### This branch validates the modular main-facing stage wrapper against
-                    ### the full legacy inline OAR/rectum/urethra/DIL stage, then restores
+                    ### The normal modular stage above is the main-facing path under test.
+                    ### This sidecar restores the pre-stage state, executes the full legacy
+                    ### inline OAR/rectum/urethra/DIL stage, compares outputs, then restores
                     ### the modular state for downstream processing.
                     live_display, non_biopsy_structure_stage_validation_context = prepare_standard_non_biopsy_structure_stage_legacy_validation(
-                        oar_ref=oar_ref,
-                        rectum_ref_key=rectum_ref_key,
-                        urethra_ref_key=urethra_ref_key,
-                        dil_ref=dil_ref,
                         master_structure_reference_dict=master_structure_reference_dict,
-                        master_structure_info_dict=master_structure_info_dict,
-                        structs_referenced_dict=structs_referenced_dict,
-                        config=non_bx_structure_preprocessing_config,
-                        parallel_pool=parallel_pool,
-                        layout_groups=layout_groups,
-                        patients_progress=patients_progress,
-                        structures_progress=structures_progress,
-                        completed_progress=completed_progress,
-                        indeterminate_progress_sub=indeterminate_progress_sub,
-                        important_info=important_info,
+                        all_ref_key=all_ref_key,
+                        validation_context=non_biopsy_structure_stage_validation_context,
                         live_display=live_display,
                         runtime_logger=runtime_logger,
                     )
@@ -3794,6 +3746,9 @@ def main():
                     completed_progress,
                     indeterminate_progress_sub,
                     live_display,
+                    validate_against_legacy=validation_sidecar_config.prostate_only_mr_adc_against_legacy,
+                    important_info=important_info,
+                    runtime_logger=runtime_logger,
                 )
 
                 ### END CALCULATING PROSTATE ONLY MR ADC VALUES WITH DILS, RECTUM URETHRA POINTS REMOVED
@@ -5471,6 +5426,18 @@ def main():
 
             live_display.stop()
     if runtime_logger is not None:
+        if "specific_output_dir" in locals() and "master_structure_info_dict" in locals():
+            completion_manifest_path = write_run_completion_manifest(
+                output_dir=specific_output_dir,
+                master_structure_info_dict=master_structure_info_dict,
+                status="completed",
+                message="Programme complete.",
+            )
+            runtime_logger.checkpoint(
+                "run_output_dir.complete_manifest",
+                "Wrote root-level run completion manifest.",
+                details={"completion_manifest_path": str(completion_manifest_path)},
+            )
         runtime_logger.mark_completed("Programme complete.")
     sys.exit("> Programme complete.")
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-"""Legacy dose-grid preprocessing adapters.
+"""Dose-grid preprocessing adapters.
 
-The dose-grid builder preserves the legacy mapped array layout: slice, row,
+The dose-grid builder preserves the established mapped array layout: slice, row,
 column, physical X/Y/Z, dose, gradient X/Y/Z, gradient norm, and normalized
 feature X/Y/Z. The wrappers here only move main-facing orchestration; they do
 not change the dose calculation.
@@ -18,7 +18,7 @@ import plotting_funcs
 
 
 @dataclass(frozen=True)
-class LegacyDoseGridProcessingConfig:
+class DoseGridProcessingConfig:
     dose_ref: str
     plan_ref: str
     lower_bound_dose_value: Any
@@ -28,7 +28,7 @@ class LegacyDoseGridProcessingConfig:
 
 
 @dataclass(frozen=True)
-class LegacyDoseGridProcessingResult:
+class DoseGridProcessingResult:
     lower_bound_dose_value: Any
 
 
@@ -41,10 +41,10 @@ def build_dose_grid_runtime_objects_for_patient(
     processing_patients_dose_task_completed,
     stopwatch,
 ):
-    """Build and store the legacy dose-grid runtime objects for one patient.
+    """Build and store dose-grid runtime objects for one patient.
 
     This is a behavior-preserving adapter around the former main-body dose-grid
-    block. It writes the same legacy dictionary keys and keeps the same dose,
+    block. It writes the same dictionary keys and keeps the same dose,
     gradient, threshold, and optional debug-rendering calls.
     """
     dose_ref_dict = pydicom_item[config.dose_ref]
@@ -131,7 +131,7 @@ def build_dose_grid_runtime_objects_for_patient(
     return lower_bound_dose_value
 
 
-def build_legacy_dose_grids_for_cohort(
+def build_dose_grids_for_cohort(
     master_structure_reference_dict,
     master_structure_info_dict,
     config,
@@ -139,7 +139,7 @@ def build_legacy_dose_grids_for_cohort(
     completed_progress,
     stopwatch,
 ):
-    """Run the legacy main-facing dose-grid preprocessing block."""
+    """Run the main-facing dose-grid preprocessing block."""
     lower_bound_dose_value = config.lower_bound_dose_value
 
     patientUID_default = "Initializing"
@@ -159,7 +159,7 @@ def build_legacy_dose_grids_for_cohort(
             completed_progress.update(processing_patients_dose_task_completed, advance=1)
             continue
 
-        config_for_patient = LegacyDoseGridProcessingConfig(
+        config_for_patient = DoseGridProcessingConfig(
             dose_ref=config.dose_ref,
             plan_ref=config.plan_ref,
             lower_bound_dose_value=lower_bound_dose_value,
@@ -185,6 +185,6 @@ def build_legacy_dose_grids_for_cohort(
     patients_progress.update(processing_patients_dose_task, visible=False)
     completed_progress.update(processing_patients_dose_task_completed, visible=True)
 
-    return LegacyDoseGridProcessingResult(
+    return DoseGridProcessingResult(
         lower_bound_dose_value=lower_bound_dose_value,
     )

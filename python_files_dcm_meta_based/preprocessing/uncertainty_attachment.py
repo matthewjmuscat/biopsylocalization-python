@@ -29,6 +29,61 @@ class uncertainty_data:
         self.uncertainty_data_rotations_sigma_arr = sigmas_arr_rotations
 
 
+def attach_patient_uncertainty_data_from_dataframe(*,
+                                                   patient_uid,
+                                                   pydicom_item,
+                                                   read_uncertainties_dataframe,
+                                                   uncertainty_data_cls):
+    patient_uncertainties_dataframe = read_uncertainties_dataframe[
+        read_uncertainties_dataframe["Patient UID"] == patient_uid
+    ]
+
+    attached_uncertainty_count = 0
+
+    for _, row in patient_uncertainties_dataframe.iterrows():
+        structure_type = row["Structure type"]
+        structure_ROI = row["Structure ID"]
+        structure_ref_num = row["Structure dicom ref num"]
+        master_ref_dict_specific_structure_index = row["Structure index"]
+        frame_of_reference = row["Frame of reference"]
+
+        means_arr = np.array([row["mu (X)"],
+                              row["mu (Y)"],
+                              row["mu (Z)"]], dtype=float)
+        sigmas_arr = np.array([row["sigma (X)"],
+                               row["sigma (Y)"],
+                               row["sigma (Z)"]], dtype=float)
+        means_arr_dilations = np.array([row["Dilations mu (XY)"],
+                                        row["Dilations mu (Z)"]], dtype=float)
+        sigmas_arr_dilations = np.array([row["Dilations sigma (XY)"],
+                                         row["Dilations sigma (Z)"]], dtype=float)
+        means_arr_rotations = np.array([row["Rotations mu (X)"],
+                                        row["Rotations mu (Y)"],
+                                        row["Rotations mu (Z)"]], dtype=float)
+        sigmas_arr_rotations = np.array([row["Rotations sigma (X)"],
+                                         row["Rotations sigma (Y)"],
+                                         row["Rotations sigma (Z)"]], dtype=float)
+
+        uncertainty_data_obj = uncertainty_data_cls(patient_uid,
+                                                    structure_type,
+                                                    structure_ROI,
+                                                    structure_ref_num,
+                                                    master_ref_dict_specific_structure_index,
+                                                    frame_of_reference)
+
+        uncertainty_data_obj.fill_means_and_sigmas(means_arr,
+                                                   sigmas_arr,
+                                                   means_arr_dilations,
+                                                   sigmas_arr_dilations,
+                                                   means_arr_rotations,
+                                                   sigmas_arr_rotations)
+
+        pydicom_item[structure_type][master_ref_dict_specific_structure_index]["Uncertainty data"] = uncertainty_data_obj
+        attached_uncertainty_count += 1
+
+    return attached_uncertainty_count
+
+
 def attach_uncertainty_data_from_dataframe(master_structure_reference_dict,
                                            read_uncertainties_dataframe,
                                            uncertainty_data_cls

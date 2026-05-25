@@ -43,7 +43,7 @@ def generate_transformations(master_structure_reference_dict,
                 specific_structure_index = generated_shifts_info_list[1]
                 specific_structure_structure_uniform_dist_shift_samples_arr = generated_shifts_info_list[2]
                 pydicom_item[structure_type][specific_structure_index]["MC data: Generated uniform dist (biopsy needle compartment) random distance (z_needle) samples arr"] = specific_structure_structure_uniform_dist_shift_samples_arr
-        
+
         sp_structure_normal_dist_shift_samples_and_structure_reference_list = cupy_functions.MC_simulator_shift_all_structures_generator_cupy(pydicom_item, structs_referenced_list, num_generated_transform_samples, rng=rng)
         # update the patient dictionary
         for generated_shifts_info_list in sp_structure_normal_dist_shift_samples_and_structure_reference_list:
@@ -51,7 +51,7 @@ def generate_transformations(master_structure_reference_dict,
             specific_structure_index = generated_shifts_info_list[1]
             specific_structure_structure_normal_dist_shift_samples_arr = generated_shifts_info_list[2]
             pydicom_item[structure_type][specific_structure_index]["MC data: Generated normal dist random samples arr"] = cp.asnumpy(specific_structure_structure_normal_dist_shift_samples_arr)
-        
+
         #MC_simulator_shift_all_structures_generator_parallel(parallel_pool, pydicom_item, structs_referenced_list, max_simulations)
         #master_structure_reference_dict[patientUID] = patient_dict_updated_with_all_structs_generated_norm_dist_translation_samples
 

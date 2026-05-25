@@ -160,6 +160,13 @@ def _classify_patient_batch_artifact(path: Path) -> dict[str, Any]:
     }
 
 
+def _relative_to_root_or_empty(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return ""
+
+
 def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) -> pd.DataFrame:
     """Build a lightweight inventory from the artifacts written by a batch run."""
     registry = OutputSchemaRegistry()
@@ -181,6 +188,7 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
                 "batch_output_root": batch_result.output_root.as_posix(),
                 "artifact_order": artifact_order,
                 "artifact_path": path.as_posix(),
+                "batch_relative_path": _relative_to_root_or_empty(path, batch_result.output_root),
                 "file_name": path.name,
                 "file_extension": path.suffix.lower(),
                 "file_size_bytes": int(path.stat().st_size) if path.exists() else 0,
@@ -197,6 +205,7 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
                 "batch_output_root",
                 "artifact_order",
                 "artifact_path",
+                "batch_relative_path",
                 "relative_path",
                 "file_name",
                 "file_extension",
@@ -221,6 +230,42 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
         "legacy_dataframe_name",
     ]
     return inventory_df
+
+
+def _cohort_sort_columns(pair: ShadowStitchPair) -> tuple[str, ...]:
+    if pair.row_order_columns:
+        return pair.row_order_columns
+    spec = OutputSchemaRegistry().match_spec(
+        pair.final_table_name,
+        "Output CSVs/Cohort",
+        pair.file_extension,
+    )
+    return spec.canonical_primary_key if spec is not None else ()
+
+
+def _sort_dataframe_by_columns(dataframe: pd.DataFrame, sort_columns: Sequence[str]) -> pd.DataFrame:
+    present_columns = [column for column in sort_columns if column in dataframe.columns]
+    if not present_columns:
+        return dataframe.reset_index(drop=True)
+
+    sortable_df = dataframe.copy()
+    helper_columns: list[str] = []
+    for column_index, column in enumerate(present_columns):
+        text_values = sortable_df[column].astype("string").fillna("")
+        numeric_values = pd.to_numeric(text_values, errors="coerce")
+        is_text_helper = f"__canonical_sort_is_text_{column_index}"
+        numeric_helper = f"__canonical_sort_numeric_{column_index}"
+        text_helper = f"__canonical_sort_text_{column_index}"
+        sortable_df[is_text_helper] = numeric_values.isna()
+        sortable_df[numeric_helper] = numeric_values.fillna(0)
+        sortable_df[text_helper] = text_values
+        helper_columns.extend([is_text_helper, numeric_helper, text_helper])
+
+    return (
+        sortable_df.sort_values(helper_columns, kind="mergesort")
+        .drop(columns=helper_columns)
+        .reset_index(drop=True)
+    )
 
 
 def _normalize_multiindex_columns(columns: pd.MultiIndex) -> pd.MultiIndex:
@@ -294,7 +339,10 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             )
             for source_row in source_rows.to_dict("records")
         ]
-        assembled_df = pd.concat(source_dataframes, ignore_index=True)
+        assembled_df = _sort_dataframe_by_columns(
+            pd.concat(source_dataframes, ignore_index=True),
+            _cohort_sort_columns(pair),
+        )
         assembled_tables[pair.final_table_name] = assembled_df
         row["assembled_rows"] = int(len(assembled_df))
         row["assembled_columns"] = int(len(assembled_df.columns))

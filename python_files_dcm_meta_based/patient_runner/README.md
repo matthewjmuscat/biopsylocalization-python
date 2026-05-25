@@ -143,13 +143,33 @@ Scientific modularization rule:
 - scientific behavior changes require a separate deliberate change with focused
   validation and review.
 
+Current implementation guardrail:
+
+- keep the validated legacy/semi-modular cohort path as the oracle,
+- build patient scientific modules in their owning scientific packages; see
+  `../../docs/architecture/PATIENT_MODULE_TREE_GUIDE.md`,
+- prefer explicit patient entrypoints in the stage file or a family-local
+  `per_patient/` subpackage over a parallel top-level `../patient_stages/`
+  tree,
+- do not recreate a top-level `../patient_stages/` tree,
+- for high-risk MC simulation work, prefer copy-assisted patient-module
+  extraction over in-place cleanup of `MC_simulator_convex.py`,
+- do not rewire frozen cohort/oracle wrappers to call new patient modules during
+  additive extraction; call those modules from the patient runner once that path
+  is ready for comparison,
+- keep scientific patient modules sequential by default; batch/process
+  parallelism can be added after patient-local inputs are stable,
+- do not create module-local `ALL_CAPS` constants for legacy dictionary keys when
+  the value should come from `LegacyRuntimeKeys`, a typed accessor, or another
+  adapter contract.
+
 Near-term non-goals:
 
 - no changes to scientific algorithms,
 - no output schema churn,
-- no broad cleanup inside `MC_simulator_convex.py`,
+- no broad cleanup inside `MC_simulator_convex.py` or other legacy oracle files,
 - no replacement of the legacy dictionaries as the validation backing store.
 
-The next integration step is to finish main-facing preprocessing modularization
-as exact wrapper extraction, then wire the pre-MC patient stage tranche behind
-the validation gate.
+The next integration step is to validate the current semi-modular main path,
+then wire the remaining pre-MC patient stage tranche and begin separate
+patient-facing MC module extraction.

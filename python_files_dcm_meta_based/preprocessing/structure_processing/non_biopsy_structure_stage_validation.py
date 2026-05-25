@@ -1,7 +1,6 @@
 import copy
 
 from preprocessing.structure_processing.non_biopsy_structure_loop import build_standard_non_biopsy_structure_family_configs
-from preprocessing.structure_processing.non_biopsy_structure_loop import process_standard_non_biopsy_structure_preprocessing_stage
 from preprocessing.structure_processing.validation import append_non_biopsy_structure_validation_result
 from preprocessing.structure_processing.validation import capture_non_biopsy_structure_processing_snapshot
 from preprocessing.structure_processing.validation import compare_non_biopsy_structure_processing_snapshots
@@ -75,25 +74,14 @@ def capture_standard_non_biopsy_stage_processing_snapshots(
     return snapshots
 
 
-def prepare_standard_non_biopsy_structure_stage_legacy_validation(
+def begin_standard_non_biopsy_structure_stage_legacy_validation(
         *,
         oar_ref,
         rectum_ref_key,
         urethra_ref_key,
         dil_ref,
         master_structure_reference_dict,
-        master_structure_info_dict,
-        structs_referenced_dict,
-        config,
-        parallel_pool,
-        layout_groups,
-        patients_progress,
-        structures_progress,
-        completed_progress,
-        indeterminate_progress_sub,
-        important_info,
-        live_display,
-        runtime_logger):
+        config):
     family_configs = build_standard_non_biopsy_structure_family_configs(
         oar_ref=oar_ref,
         rectum_ref_key=rectum_ref_key,
@@ -105,45 +93,47 @@ def prepare_standard_non_biopsy_structure_stage_legacy_validation(
         family_configs=family_configs,
         all_ref_key=config.all_ref_key,
     )
-    live_display = process_standard_non_biopsy_structure_preprocessing_stage(
-        oar_ref=oar_ref,
-        rectum_ref_key=rectum_ref_key,
-        urethra_ref_key=urethra_ref_key,
-        dil_ref=dil_ref,
-        master_structure_reference_dict=master_structure_reference_dict,
-        master_structure_info_dict=master_structure_info_dict,
-        structs_referenced_dict=structs_referenced_dict,
-        config=config,
-        parallel_pool=parallel_pool,
-        layout_groups=layout_groups,
-        patients_progress=patients_progress,
-        structures_progress=structures_progress,
-        completed_progress=completed_progress,
-        indeterminate_progress_sub=indeterminate_progress_sub,
-        important_info=important_info,
-        live_display=live_display,
-        runtime_logger=runtime_logger,
-    )
+    return {
+        "family_configs": family_configs,
+        "pre_modular_live_state": pre_modular_live_state,
+    }
+
+
+def prepare_standard_non_biopsy_structure_stage_legacy_validation(
+        *,
+        master_structure_reference_dict,
+        all_ref_key,
+        validation_context,
+        live_display,
+        runtime_logger=None):
+    if validation_context is None:
+        return live_display, None
+
+    family_configs = validation_context["family_configs"]
     modular_validation_snapshots = capture_standard_non_biopsy_stage_processing_snapshots(
         master_structure_reference_dict=master_structure_reference_dict,
         family_configs=family_configs,
-        all_ref_key=config.all_ref_key,
+        all_ref_key=all_ref_key,
     )
     modular_live_state = capture_standard_non_biopsy_stage_live_state(
         master_structure_reference_dict=master_structure_reference_dict,
         family_configs=family_configs,
-        all_ref_key=config.all_ref_key,
+        all_ref_key=all_ref_key,
     )
+    validation_context["modular_validation_snapshots"] = modular_validation_snapshots
+    validation_context["modular_live_state"] = modular_live_state
     restore_standard_non_biopsy_stage_live_state(
         master_structure_reference_dict=master_structure_reference_dict,
-        all_ref_key=config.all_ref_key,
-        saved_state=pre_modular_live_state,
+        all_ref_key=all_ref_key,
+        saved_state=validation_context["pre_modular_live_state"],
     )
-    return live_display, {
-        "family_configs": family_configs,
-        "modular_validation_snapshots": modular_validation_snapshots,
-        "modular_live_state": modular_live_state,
-    }
+    if runtime_logger is not None:
+        runtime_logger.checkpoint(
+            "preprocessing.structure.validation.prepare",
+            "Captured modular non-biopsy stage output and restored pre-stage state for legacy sidecar validation.",
+            details={"structure_family_count": len(family_configs)},
+        )
+    return live_display, validation_context
 
 
 def finalize_standard_non_biopsy_structure_stage_legacy_validation(

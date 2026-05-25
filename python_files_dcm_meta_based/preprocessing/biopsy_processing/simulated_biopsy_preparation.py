@@ -361,8 +361,8 @@ def assign_simulated_biopsy_targets(master_structure_reference_dict,
 					if target_structure_refnum is not None:
 						target_structure_type = dil_ref
 						target_structure_index, target_structure = _find_structure_info_from_refnum(pydicom_item,
-																	 dil_ref,
-																	 target_structure_refnum)
+													 dil_ref,
+													 target_structure_refnum)
 						if target_structure is not None:
 							target_determined = True
 							target_source = "Nearest DIL by centroid"
@@ -386,8 +386,8 @@ def assign_simulated_biopsy_targets(master_structure_reference_dict,
 
 			if relative_structure_type == dil_ref and relative_structure_refnum is not None:
 				target_structure_index, target_structure = _find_structure_info_from_refnum(pydicom_item,
-																 relative_structure_type,
-																 relative_structure_refnum)
+													 relative_structure_type,
+													 relative_structure_refnum)
 				if target_structure is not None:
 					target_determined = True
 					target_source = "Relative structure"

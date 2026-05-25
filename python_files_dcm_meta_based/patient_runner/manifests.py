@@ -35,6 +35,16 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _relative_paths(paths: tuple[Path, ...], root: Path) -> list[str]:
+    relative_paths: list[str] = []
+    for path in paths:
+        try:
+            relative_paths.append(path.relative_to(root).as_posix())
+        except ValueError:
+            relative_paths.append("")
+    return relative_paths
+
+
 def _stage_result_manifest(stage_result: PatientStageResult) -> dict[str, Any]:
     return {
         "stage_name": stage_result.stage_name,
@@ -66,6 +76,7 @@ def patient_run_result_manifest(patient_result: PatientRunResult) -> dict[str, A
         "failed_stage_count": len(patient_result.failed_stage_results),
         "artifact_count": len(patient_result.artifact_paths),
         "artifact_paths": [path.as_posix() for path in patient_result.artifact_paths],
+        "artifact_paths_relative_to_output_root": _relative_paths(patient_result.artifact_paths, patient_result.output_root),
         "metadata": _json_safe(patient_result.metadata),
         "stages": [_stage_result_manifest(stage_result) for stage_result in patient_result.stage_results],
     }
@@ -84,6 +95,7 @@ def patient_batch_run_result_manifest(batch_result: PatientBatchRunResult) -> di
         "failed_patient_count": len(batch_result.failed_patient_results),
         "artifact_count": len(batch_result.artifact_paths),
         "artifact_paths": [path.as_posix() for path in batch_result.artifact_paths],
+        "artifact_paths_relative_to_output_root": _relative_paths(batch_result.artifact_paths, batch_result.output_root),
         "metadata": _json_safe(batch_result.metadata),
         "patients": [
             {
@@ -92,6 +104,10 @@ def patient_batch_run_result_manifest(batch_result: PatientBatchRunResult) -> di
                 "status": patient_result.status.value,
                 "succeeded": patient_result.succeeded,
                 "output_root": patient_result.output_root.as_posix(),
+                "output_root_relative_to_batch_root": _relative_paths(
+                    (patient_result.output_root,),
+                    batch_result.output_root,
+                )[0],
                 "elapsed_seconds": patient_result.elapsed_seconds,
                 "stage_count": len(patient_result.stage_results),
                 "failed_stage_count": len(patient_result.failed_stage_results),

@@ -1,6 +1,6 @@
 # Patient Runner Upgrade Roadmap
 
-Last updated: 2026-05-20
+Last updated: 2026-05-23
 
 This document is the durable, public planning surface for the migration from the
 legacy all-patient monolith toward a validated per-patient runner. It should hold
@@ -50,6 +50,55 @@ architecture. New work should move toward:
 - downstream analysis joins outside the main algorithm,
 - no hidden all-patient runtime dependencies inside the patient runner.
 
+## Current Architecture Decision: Oracle Separate From Runner
+
+Accepted direction as of 2026-05-22: do not keep mutating the legacy cohort path
+into the per-patient path. The validated main/cohort path should remain the
+oracle, while new patient-facing scientific modules are built as a separate
+runner path and compared against that oracle.
+
+Canonical placement for those patient-facing scientific modules now lives in
+`../architecture/PATIENT_MODULE_TREE_GUIDE.md`.
+
+Keep three layers distinct:
+
+- Legacy oracle path: current main plus existing cohort modules. This path stays
+  runnable and trusted after validation. Avoid in-place MC simulator cleanup here
+  unless a focused bug fix is explicitly approved.
+- Patient scientific modules: one-patient functions that preserve the same
+  scientific operations, dictionary writebacks, array shapes, and ordering as the
+  oracle for that stage. These may initially copy known-good legacy scientific
+  blocks into new patient modules instead of refactoring the legacy file. Prefer
+  stage-local patient modules inside the existing scientific package tree, with a
+  family-local `per_patient/` subpackage when a family grows. Do not introduce a
+  top-level `python_files_dcm_meta_based/patient_stages/` tree.
+- Runner and assembly layer: selects patients, calls patient stages, writes
+  patient artifacts, assembles cohort tables, and compares against the oracle.
+
+For high-risk scientific blocks, especially MC simulation, copy-assisted
+extraction is preferred over clever refactoring. A safe pattern is to create a
+small patient-module skeleton with explicit inputs/config/output notes, then
+paste the relevant legacy scientific loop body into the patient function with
+minimal mechanical edits. Validate that patient module, then compose it into the
+runner. This keeps the legacy oracle untouched and reduces accidental algorithm
+drift.
+
+Validation should be staged but not endless:
+
+- validate the current semi-modular main path as the checkpoint oracle,
+- validate each newly copied/extracted patient submodule with focused comparisons,
+- validate the assembled per-patient outputs against the oracle at integration
+  gates,
+- avoid maintaining permanent duplicate sidecars after a stage has a stable
+  patient module and final assembly comparison.
+
+Batch parallelism is not a first-order requirement for the scientific runner.
+The reference runner should be sequential and deterministic first. Any existing
+`starmap`-style helper needed inside a patient stage can be represented as a
+plain loop in the patient module or through a sequential execution context. Batch
+parallelism, process workers, and memory-aware scheduling come later after the
+patient-local data contract is stable.
+
 ## Legacy Datatype Boundary Direction
 
 The runner should not become permanently coupled to `master_structure_reference_dict`,
@@ -65,6 +114,21 @@ Near-term rule:
 - write the same legacy keys during the validation period,
 - keep typed runner contracts and artifact manifests independent of the legacy
   dictionary shape.
+
+Datatype direction for new patient surfaces:
+
+- use dataclasses for stable patient identity, configuration, stage results,
+  and patient-state boundaries,
+- keep legacy dictionaries as adapter/output forms while oracle parity is still
+  being tested,
+- avoid converting every nested structure record to a dataclass in the same pass
+  unless the fields and mutability rules are stable,
+- prefer explicit conversion methods such as `to_legacy_dict()` and
+  `from_legacy_dict(...)` over scattering ad hoc dictionary construction through
+  runner code,
+- allow shallow `dict(...)` copies at adapter boundaries for metadata and legacy
+  compatibility, but do not treat those copies as the final scientific data
+  model.
 
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
@@ -100,10 +164,14 @@ requires them.
 
 ## Pipeline Boundary Map
 
+The detailed stage-by-stage readiness checklist lives in
+`PATIENT_RUNNER_MODULE_READINESS.md`. Use that document for implementation
+tracking; keep this section as the higher-level boundary map.
+
 Use these labels when documenting, extracting, or removing blocks from
 `biopsy_localization_convex_main.py`. The labels are intentionally short so the
 whole pipeline can be reviewed at a high level before individual functions are
-rewired.
+extracted.
 
 | Block | Scope | Patient-runner status | Notes |
 | --- | --- | --- | --- |
@@ -113,7 +181,7 @@ rewired.
 | Optimization | patient | modularize for patient execution | Optimizer v1/v2 should operate on one patient case plus shared config. |
 | Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores and validates planned-vs-realized per-biopsy geometry. |
 | Sampling/classification | patient | modularize for patient execution | Sampled biopsy processing, target audit annotation, and double-sextant classification. |
-| MC simulation | patient | modularize for patient execution | Transform generation, containment, dose, and MR simulation for one patient. |
+| MC simulation | patient | build separate patient modules | Transform generation, containment, dose, and MR simulation for one patient. Leave the existing cohort MC simulator callable as the oracle. |
 | Patient artifact writing | patient | core patient-runner output | Writes stable base artifacts with canonical keys. |
 | Cohort assembly | cohort/downstream | not per patient | Concatenates patient artifacts and builds required cohort outputs. |
 | Migration validation | cohort/downstream | not per patient | Compares assembled patient outputs against the legacy cohort oracle. |
@@ -472,6 +540,10 @@ stronger convention:
 - no hidden mutation of global state,
 - no bare string stage names spread across modules; centralize constants or
   enums,
+- do not define module-local `ALL_CAPS` constants for legacy dictionary or
+  dataframe keys when the value should come from the active key policy, typed
+  accessor, or adapter contract; `ALL_CAPS` is acceptable for true constants
+  such as schema versions and filenames,
 - no block-quoted dead code or large commented-out implementation alternatives,
 - timing through a shared timing/logging helper rather than ad hoc stopwatch
   snippets,
@@ -496,6 +568,18 @@ rather than rewrite it. Refactors should be contract-preserving until assembled
 patient outputs match the legacy cohort oracle. Cleanup passes, especially in
 `MC_simulator_convex.py`, should be separate from patient-runner scaffolding
 unless the cleanup is required to expose a patient-local boundary.
+
+For MC simulation, prefer separate patient modules over in-place legacy-module
+cleanup. The current cohort MC files are the oracle. New patient modules may
+copy the relevant scientific body and adapt only the outer function signature,
+patient-local inputs, progress/log hooks, and return/writeback boundary. If a
+cohort wrapper is needed during transition, it should be a transparent loop over
+the patient module and should preserve the existing stage order.
+
+Avoid designing scientific stage contracts around `starmap` or other batch
+parallel APIs. A patient-local module should be runnable with a plain loop. A
+future execution context can supply process or thread mapping only after the
+stage contract is serializable and validated.
 
 ### master_structure_info_dict
 
@@ -702,7 +786,9 @@ Expected next steps:
 1. add cohort assembly/stitch validation for artifacts produced by
   `PatientBatchRunResult`,
 2. migrate one scientific stage behind a typed patient-local interface,
-3. add process-isolated patient execution only after the stage input contract is
+3. keep the migrated runner stages sequential until patient-local inputs and
+  outputs are stable,
+4. add process-isolated patient execution only after the stage input contract is
   serializable and memory requirements are measured.
 
 ### Phase D: Cohort Assembly
@@ -739,6 +825,28 @@ time. Phase E eventually covers every scientific module required for per-patient
 execution, but it should not be one giant rewrite. Each stage migration needs a
 typed contract, a legacy adapter, validation against the monolith, and patient
 run logging.
+
+Phase E should not keep blending two concepts: the legacy cohort oracle and the
+new patient-runner pathway. Legacy cohort code remains the comparator. New
+patient-facing modules are the implementation path. Additive extraction should
+not rewire the frozen cohort/oracle path to call new patient modules. Separate
+validation utilities can iterate over patient modules when the patient-runner
+path is ready to compare against the oracle.
+
+For MC simulation, prefer this extraction order:
+
+1. transform sample generation and MC prep,
+2. biopsy-only transforms,
+3. biopsy-to-relative-structure transforms,
+4. nominal containment,
+5. MC containment and distance calculations,
+6. dose localization and dose result compilation,
+7. DVH/statistical summaries,
+8. MR ADC MC localization.
+
+Each item should first produce a patient-level function. If a main-facing cohort
+wrapper is needed, it should call the same patient function in a simple loop and
+preserve the current cohort-stage ordering for validation.
 
 Required instrumentation for migrated patient stages:
 
@@ -791,6 +899,10 @@ Current Phase E preprocessing status:
 
 - non-biopsy structure preprocessing has an extracted modular surface and uses
   that modular path by default,
+- selected-structure selection has an extracted modular surface and a legacy
+  sidecar comparison,
+- MR ADC input checking/series normalization has a patient-level helper and a
+  cohort wrapper,
 - prostate-only MR ADC post-processing is already behind a preprocessing helper,
 - dose-grid runtime-object construction lives behind
   `preprocessing/dose_grid_processing.py`, with the same legacy dictionary
@@ -821,17 +933,21 @@ Current Phase E preprocessing status:
 - the next repository-maintenance pass should organize root planning markdowns
   into a tracked docs area and archive completed private planning notes under a
   private completed folder,
-- unique-structure selection is the next nearby preprocessing block worth
-  extracting into a similarly thin wrapper.
+- the next nearby work should validate the current semi-modular main checkpoint,
+  then build patient-runner stages for the remaining pre-MC path and begin the
+  separate MC patient-module extraction described above.
 
 Validation cadence:
 
 - avoid a full validation run after every tiny helper extraction,
-- validate in tranches: initial shadow-output gate, then pre-MC patient stages
-  after preprocessing/optimizer/simulated-biopsy/sampling/guidance wrappers are
-  wired, then MC as its own heavier tranche,
+- validate in tranches: current semi-modular main checkpoint, then focused
+  patient-submodule checks, then pre-MC patient-runner assembly, then MC as its
+  own heavier tranche,
 - final-output validation is intentionally indirect; it checks durable output
-  contracts and uses manifests/stage artifacts to localize mismatches.
+  contracts and uses manifests/stage artifacts to localize mismatches,
+- once a stage has passed focused patient-module validation, avoid adding
+  permanent duplicate sidecar logic unless it is needed to diagnose a known
+  mismatch.
 
 ### Phase F: Contract/Object Cleanup
 

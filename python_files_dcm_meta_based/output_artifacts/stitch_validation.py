@@ -21,6 +21,7 @@ class ShadowStitchPair:
     source_output_section: str
     file_extension: str = ".csv"
     stitch_method: str = "concat_patient_fragments"
+    row_order_columns: tuple[str, ...] = ()
 
 
 SHADOW_STITCH_PAIRS = (
@@ -83,6 +84,15 @@ SHADOW_STITCH_PAIRS = (
         "Cohort: Per voxel prostate double sextant classification",
         "Per voxel prostate double sextant classification",
         "Output CSVs/Preprocessing",
+        row_order_columns=(
+            "Patient ID",
+            "Bx ID",
+            "Bx index",
+            "Voxel index",
+            "Simulated type",
+            "Simulated bool",
+            "Bx refnum",
+        ),
     ),
     ShadowStitchPair(
         "Cohort: Simulated biopsy planned vs realized centroid variation validation",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Legacy MR ADC grid preprocessing adapters.
+"""MR ADC grid preprocessing adapters.
 
 These wrappers preserve the current ADC lattice reconstruction and point-cloud
 side effects while making MR mapping independently callable from dose mapping.
@@ -16,7 +16,7 @@ import plotting_funcs
 
 
 @dataclass(frozen=True)
-class LegacyMRADCGridProcessingConfig:
+class MRADCGridProcessingConfig:
     mr_adc_ref: str
     color_flattening_deg_mr: Any
     lower_bound_mr_adc_value: Any
@@ -26,7 +26,7 @@ class LegacyMRADCGridProcessingConfig:
 
 
 @dataclass(frozen=True)
-class LegacyMRADCGridProcessingResult:
+class MRADCGridProcessingResult:
     no_cohort_mr_adc_flag: bool
 
 
@@ -47,7 +47,7 @@ def build_mr_adc_grid_runtime_objects_for_patient(
     processing_patients_adc_mr_task_completed,
     stopwatch,
 ):
-    """Build and store the legacy MR ADC grid point-cloud runtime objects.
+    """Build and store MR ADC grid point-cloud runtime objects.
 
     This wrapper intentionally preserves the current ADC lattice reconstruction
     call, including `filter_out_negatives=True`.
@@ -97,7 +97,7 @@ def build_mr_adc_grid_runtime_objects_for_patient(
     mr_adc_subdict["MR ADC grid point cloud thresholded"] = thresholded_mr_adc_point_cloud
 
 
-def build_legacy_mr_adc_grids_for_cohort(
+def build_mr_adc_grids_for_cohort(
     master_structure_reference_dict,
     master_structure_info_dict,
     config,
@@ -105,7 +105,7 @@ def build_legacy_mr_adc_grids_for_cohort(
     completed_progress,
     stopwatch,
 ):
-    """Run the legacy main-facing ADC MR grid preprocessing block."""
+    """Run the main-facing ADC MR grid preprocessing block."""
     no_cohort_mr_adc_flag = not _cohort_has_mr_adc(
         master_structure_reference_dict,
         config.mr_adc_ref,
@@ -144,6 +144,6 @@ def build_legacy_mr_adc_grids_for_cohort(
     patients_progress.update(processing_patients_adc_mr_task, visible=False)
     completed_progress.update(processing_patients_adc_mr_task_completed, visible=True)
 
-    return LegacyMRADCGridProcessingResult(
+    return MRADCGridProcessingResult(
         no_cohort_mr_adc_flag=no_cohort_mr_adc_flag,
     )

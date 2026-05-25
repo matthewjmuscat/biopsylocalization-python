@@ -226,6 +226,39 @@ class RandomSeedConfig:
 
 
 @dataclass(frozen=True)
+class ValidationSidecarConfig:
+    selected_structures_against_legacy: bool = False
+    non_biopsy_structures_against_legacy: bool = False
+    prostate_only_mr_adc_against_legacy: bool = False
+
+    def active_validation_labels(self) -> tuple[str, ...]:
+        labels = []
+        if self.selected_structures_against_legacy:
+            labels.append("selected-structures-legacy")
+        if self.non_biopsy_structures_against_legacy:
+            labels.append("non-biopsy-structures-legacy")
+        if self.prostate_only_mr_adc_against_legacy:
+            labels.append("prostate-only-mr-adc-legacy")
+        return tuple(labels)
+
+    def validation_run_type_string(self) -> str:
+        active_labels = self.active_validation_labels()
+        if len(active_labels) == 0:
+            return "standard-run"
+        return "validation-" + "_".join(active_labels)
+
+    def build_run_folder_suffix(self, input_data_counts: Optional[dict[str, int]] = None) -> str:
+        suffix_parts = [self.validation_run_type_string()]
+        if input_data_counts:
+            count_parts = [
+                f"{count_name}-{input_data_counts[count_name]}"
+                for count_name in sorted(input_data_counts)
+            ]
+            suffix_parts.append("inputs-" + "_".join(count_parts))
+        return " - ".join(suffix_parts)
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     ui: RuntimeUIConfig
     artifacts: ArtifactConfig
@@ -234,3 +267,4 @@ class PipelineConfig:
     guidance_maps: GuidanceMapConfig
     optimizer: OptimizerRuntimeConfig
     random_seeds: RandomSeedConfig
+    validation_sidecars: ValidationSidecarConfig = field(default_factory=ValidationSidecarConfig)
