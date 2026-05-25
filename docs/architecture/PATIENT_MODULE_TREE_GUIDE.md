@@ -179,8 +179,9 @@ Current repository placement after the 2026-05-24 additive patient-module passes
 | MC transform-bank generation | `python_files_dcm_meta_based/mc/prep/per_patient/transform_generation.py` |
 | MC BX-only transform application | `python_files_dcm_meta_based/mc/prep/per_patient/biopsy_self_transforms.py` |
 | MC relative-structure transform application | `python_files_dcm_meta_based/mc/prep/per_patient/relative_structure_transforms.py` |
-| Structure reference/bootstrap dictionaries | `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py` |
+| Structure reference/bootstrap dictionaries and typed patient reference boundary | `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py` |
 | Optimizer-v1 singleton validation adapter | `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` |
+| Guidance-map firing-depth precompute | `python_files_dcm_meta_based/guidance_maps/planning.py` |
 
 Do not recreate these same entrypoints under a top-level
 `python_files_dcm_meta_based/patient_stages/` tree.

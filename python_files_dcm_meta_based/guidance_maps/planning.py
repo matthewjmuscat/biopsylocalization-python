@@ -19,6 +19,15 @@ COHORT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY = (
 
 
 @dataclass(frozen=True)
+class GuidanceMapPatientPrecomputeResult:
+    patient_uid: str
+    patient_dataframe_key: str
+    patient_row_count: int
+    dataframe: pandas.DataFrame
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True)
 class GuidanceMapPlanningResult:
     patient_dataframe_key: str
     cohort_dataframe_key: str
@@ -61,6 +70,68 @@ def _log_patient_result(runtime_logger: Any,
     )
 
 
+def precompute_guidance_map_firing_depth_recommendations_for_patient(
+    *,
+    patient_uid: str,
+    pydicom_item: dict[str, Any],
+    dil_ref: str,
+    all_ref_key: str,
+    oar_ref: str,
+    rectum_ref: str,
+    biopsy_fire_travel_distances,
+    biopsy_needle_compartment_length: float,
+    interp_inter_slice_dist: float,
+    interp_intra_slice_dist: float,
+    radius_for_normals_estimation: float,
+    max_nn_for_normals_estimation: int,
+    biopsy_needle_tip_length: float,
+    planning_config: GuidanceMapPlanningConfig | None = None,
+    runtime_logger: Any = None,
+) -> GuidanceMapPatientPrecomputeResult:
+    """Precompute the guidance-map firing-depth table for one patient."""
+    if planning_config is None:
+        planning_config = GuidanceMapPlanningConfig()
+
+    import advanced_guidance_map_creator
+
+    patient_start_time = time.perf_counter()
+    patient_dataframe = advanced_guidance_map_creator.precompute_guidance_map_firing_depths_for_patient(
+        patientUID=patient_uid,
+        pydicom_item=pydicom_item,
+        dil_ref=dil_ref,
+        all_ref_key=all_ref_key,
+        oar_ref=oar_ref,
+        rectum_ref=rectum_ref,
+        biopsy_fire_travel_distances=biopsy_fire_travel_distances,
+        biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+        interp_inter_slice_dist=interp_inter_slice_dist,
+        interp_intra_slice_dist=interp_intra_slice_dist,
+        radius_for_normals_estimation=radius_for_normals_estimation,
+        max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+        biopsy_needle_tip_length=biopsy_needle_tip_length,
+        candidate_holes_k=planning_config.candidate_holes_k,
+        candidate_axis_line_length_mm=planning_config.candidate_axis_line_length_mm,
+    )
+    patient_dataframe = _downcast_guidance_dataframe(
+        patient_dataframe,
+        threshold=planning_config.downcast_threshold,
+    )
+    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
+        PATIENT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY
+    ] = patient_dataframe
+
+    elapsed_seconds = time.perf_counter() - patient_start_time
+    row_count = int(len(patient_dataframe))
+    _log_patient_result(runtime_logger, patient_uid, row_count, elapsed_seconds)
+    return GuidanceMapPatientPrecomputeResult(
+        patient_uid=str(patient_uid),
+        patient_dataframe_key=PATIENT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY,
+        patient_row_count=row_count,
+        dataframe=patient_dataframe,
+        elapsed_seconds=elapsed_seconds,
+    )
+
+
 def precompute_guidance_map_firing_depth_recommendations_for_run(
     *,
     master_structure_reference_dict: dict[str, Any],
@@ -88,7 +159,6 @@ def precompute_guidance_map_firing_depth_recommendations_for_run(
     if planning_config is None:
         planning_config = GuidanceMapPlanningConfig()
 
-    import advanced_guidance_map_creator
     import dataframe_builders
 
     start_time = time.perf_counter()
@@ -108,9 +178,8 @@ def precompute_guidance_map_firing_depth_recommendations_for_run(
         )
 
     for patient_uid, pydicom_item in master_structure_reference_dict.items():
-        patient_start_time = time.perf_counter()
-        patient_dataframe = advanced_guidance_map_creator.precompute_guidance_map_firing_depths_for_patient(
-            patientUID=patient_uid,
+        patient_result = precompute_guidance_map_firing_depth_recommendations_for_patient(
+            patient_uid=patient_uid,
             pydicom_item=pydicom_item,
             dil_ref=dil_ref,
             all_ref_key=all_ref_key,
@@ -123,28 +192,13 @@ def precompute_guidance_map_firing_depth_recommendations_for_run(
             radius_for_normals_estimation=radius_for_normals_estimation,
             max_nn_for_normals_estimation=max_nn_for_normals_estimation,
             biopsy_needle_tip_length=biopsy_needle_tip_length,
-            candidate_holes_k=planning_config.candidate_holes_k,
-            candidate_axis_line_length_mm=planning_config.candidate_axis_line_length_mm,
+            planning_config=planning_config,
+            runtime_logger=runtime_logger,
         )
-
-        patient_dataframe = _downcast_guidance_dataframe(
-            patient_dataframe,
-            threshold=planning_config.downcast_threshold,
-        )
-        pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
-            PATIENT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY
-        ] = patient_dataframe
-
-        row_count = int(len(patient_dataframe))
+        row_count = patient_result.patient_row_count
         if row_count > 0:
             patient_dataframe_count += 1
             patient_row_count += row_count
-        _log_patient_result(
-            runtime_logger,
-            patient_uid,
-            row_count,
-            time.perf_counter() - patient_start_time,
-        )
 
     cohort_dataframe = dataframe_builders.cohort_guidance_map_firing_depth_recommendations_dataframe_builder(
         master_structure_reference_dict,

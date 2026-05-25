@@ -24,18 +24,206 @@ from presentation import ProgressSink
 from presentation import coerce_progress_sink
 
 
+StructureRecord = dict[str, Any]
+StructureInfoRecord = dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStructureReferenceKeys:
+    """Legacy key names used by the patient structure reference boundary."""
+
+    biopsy_ref: str
+    oar_ref: str
+    dil_ref: str
+    rectum_ref: str
+    urethra_ref: str
+    all_ref_key: str
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "biopsy_ref",
+            "oar_ref",
+            "dil_ref",
+            "rectum_ref",
+            "urethra_ref",
+            "all_ref_key",
+        ):
+            field_value = str(getattr(self, field_name)).strip()
+            if field_value == "":
+                raise ValueError(f"{field_name} cannot be empty")
+            object.__setattr__(self, field_name, field_value)
+
+    @classmethod
+    def from_legacy_refs(cls,
+                         *,
+                         st_ref_list: Sequence[str],
+                         all_ref_key: str) -> "PatientStructureReferenceKeys":
+        if len(st_ref_list) < 5:
+            raise ValueError("st_ref_list must include biopsy, OAR, DIL, rectum, and urethra refs")
+        return cls(
+            biopsy_ref=st_ref_list[0],
+            oar_ref=st_ref_list[1],
+            dil_ref=st_ref_list[2],
+            rectum_ref=st_ref_list[3],
+            urethra_ref=st_ref_list[4],
+            all_ref_key=all_ref_key,
+        )
+
+    def as_legacy_st_ref_list(self) -> list[str]:
+        return [
+            self.biopsy_ref,
+            self.oar_ref,
+            self.dil_ref,
+            self.rectum_ref,
+            self.urethra_ref,
+        ]
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStructureReferenceState:
+    """Typed patient-local boundary around the legacy structure dictionary."""
+
+    keys: PatientStructureReferenceKeys
+    patient_uid: str
+    patient_id_from_dicom: str
+    patient_name: str
+    fraction_number: Any
+    biopsies: Sequence[StructureRecord]
+    oars: Sequence[StructureRecord]
+    dils: Sequence[StructureRecord]
+    rectums: Sequence[StructureRecord]
+    urethras: Sequence[StructureRecord]
+    all_reference: Mapping[str, Any]
+    ready_to_plot_data: Any = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.keys, PatientStructureReferenceKeys):
+            raise TypeError("keys must be a PatientStructureReferenceKeys instance")
+        object.__setattr__(self, "patient_uid", str(self.patient_uid))
+        object.__setattr__(self, "patient_id_from_dicom", str(self.patient_id_from_dicom))
+        object.__setattr__(self, "patient_name", str(self.patient_name))
+        object.__setattr__(self, "biopsies", list(self.biopsies))
+        object.__setattr__(self, "oars", list(self.oars))
+        object.__setattr__(self, "dils", list(self.dils))
+        object.__setattr__(self, "rectums", list(self.rectums))
+        object.__setattr__(self, "urethras", list(self.urethras))
+        object.__setattr__(self, "all_reference", dict(self.all_reference))
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        return {
+            "Patient UID (generated)": self.patient_uid,
+            "Patient ID (from dicom)": self.patient_id_from_dicom,
+            "Patient Name": self.patient_name,
+            "Fraction number": self.fraction_number,
+            self.keys.biopsy_ref: list(self.biopsies),
+            self.keys.oar_ref: list(self.oars),
+            self.keys.dil_ref: list(self.dils),
+            self.keys.rectum_ref: list(self.rectums),
+            self.keys.urethra_ref: list(self.urethras),
+            self.keys.all_ref_key: dict(self.all_reference),
+            "Ready to plot data list": self.ready_to_plot_data,
+        }
+
+    @classmethod
+    def from_legacy_dict(cls,
+                         patient_reference_dict: Mapping[str, Any],
+                         *,
+                         keys: PatientStructureReferenceKeys) -> "PatientStructureReferenceState":
+        return cls(
+            keys=keys,
+            patient_uid=patient_reference_dict["Patient UID (generated)"],
+            patient_id_from_dicom=patient_reference_dict["Patient ID (from dicom)"],
+            patient_name=patient_reference_dict["Patient Name"],
+            fraction_number=patient_reference_dict["Fraction number"],
+            biopsies=patient_reference_dict.get(keys.biopsy_ref, ()),
+            oars=patient_reference_dict.get(keys.oar_ref, ()),
+            dils=patient_reference_dict.get(keys.dil_ref, ()),
+            rectums=patient_reference_dict.get(keys.rectum_ref, ()),
+            urethras=patient_reference_dict.get(keys.urethra_ref, ()),
+            all_reference=patient_reference_dict.get(keys.all_ref_key, {}),
+            ready_to_plot_data=patient_reference_dict.get("Ready to plot data list"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStructureInfoState:
+    """Typed patient-local boundary around one patient's structure counts."""
+
+    keys: PatientStructureReferenceKeys
+    patient_uid: str
+    patient_id_from_dicom: str
+    patient_name: str
+    fraction_number: Any
+    biopsy_info: StructureInfoRecord
+    oar_info: StructureInfoRecord
+    dil_info: StructureInfoRecord
+    rectum_info: StructureInfoRecord
+    urethra_info: StructureInfoRecord
+    all_structures_info: StructureInfoRecord
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.keys, PatientStructureReferenceKeys):
+            raise TypeError("keys must be a PatientStructureReferenceKeys instance")
+        object.__setattr__(self, "patient_uid", str(self.patient_uid))
+        object.__setattr__(self, "patient_id_from_dicom", str(self.patient_id_from_dicom))
+        object.__setattr__(self, "patient_name", str(self.patient_name))
+        object.__setattr__(self, "biopsy_info", dict(self.biopsy_info))
+        object.__setattr__(self, "oar_info", dict(self.oar_info))
+        object.__setattr__(self, "dil_info", dict(self.dil_info))
+        object.__setattr__(self, "rectum_info", dict(self.rectum_info))
+        object.__setattr__(self, "urethra_info", dict(self.urethra_info))
+        object.__setattr__(self, "all_structures_info", dict(self.all_structures_info))
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        return {
+            "Patient UID (generated)": self.patient_uid,
+            "Patient ID (from dicom)": self.patient_id_from_dicom,
+            "Patient Name": self.patient_name,
+            "Fraction number": self.fraction_number,
+            self.keys.biopsy_ref: dict(self.biopsy_info),
+            self.keys.oar_ref: dict(self.oar_info),
+            self.keys.dil_ref: dict(self.dil_info),
+            self.keys.rectum_ref: dict(self.rectum_info),
+            self.keys.urethra_ref: dict(self.urethra_info),
+            self.keys.all_ref_key: dict(self.all_structures_info),
+        }
+
+    @classmethod
+    def from_legacy_dict(cls,
+                         patient_info_dict: Mapping[str, Any],
+                         *,
+                         keys: PatientStructureReferenceKeys) -> "PatientStructureInfoState":
+        return cls(
+            keys=keys,
+            patient_uid=patient_info_dict["Patient UID (generated)"],
+            patient_id_from_dicom=patient_info_dict["Patient ID (from dicom)"],
+            patient_name=patient_info_dict["Patient Name"],
+            fraction_number=patient_info_dict["Fraction number"],
+            biopsy_info=patient_info_dict.get(keys.biopsy_ref, {}),
+            oar_info=patient_info_dict.get(keys.oar_ref, {}),
+            dil_info=patient_info_dict.get(keys.dil_ref, {}),
+            rectum_info=patient_info_dict.get(keys.rectum_ref, {}),
+            urethra_info=patient_info_dict.get(keys.urethra_ref, {}),
+            all_structures_info=patient_info_dict.get(keys.all_ref_key, {}),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class PatientStructureReferenceBootstrapFragment:
-    """One patient's legacy-shaped reference and info dictionaries."""
+    """One patient's typed bootstrap state plus legacy-shaped dictionaries."""
 
     patient_uid: str
     patient_reference_dict: dict[str, Any]
     patient_info_dict: dict[str, Any]
+    patient_structure_reference: PatientStructureReferenceState | None = None
+    patient_structure_info: PatientStructureInfoState | None = None
     messages: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "patient_uid", str(self.patient_uid))
+        object.__setattr__(self, "patient_reference_dict", dict(self.patient_reference_dict))
+        object.__setattr__(self, "patient_info_dict", dict(self.patient_info_dict))
         object.__setattr__(self, "messages", tuple(str(message) for message in self.messages))
         object.__setattr__(self, "metadata", dict(self.metadata or {}))
 
@@ -463,31 +651,38 @@ def build_patient_structure_reference_bootstrap_fragment(
     )
     all_structs_info = {"Total num structs": patient_total_num_structs}
 
-    patient_reference_dict = {
-        "Patient UID (generated)": patient_uid,
-        "Patient ID (from dicom)": patient_id_from_dicom,
-        "Patient Name": patient_name_from_dicom,
-        "Fraction number": patient_fraction_number,
-        st_ref_list[0]: biopsy_ref,
-        st_ref_list[1]: oar_ref,
-        st_ref_list[2]: dil_ref,
-        st_ref_list[3]: rectum_ref,
-        st_ref_list[4]: urethra_ref,
-        all_ref_key: all_ref,
-        "Ready to plot data list": None,
-    }
-    patient_info_dict = {
-        "Patient UID (generated)": patient_uid,
-        "Patient ID (from dicom)": patient_id_from_dicom,
-        "Patient Name": patient_name_from_dicom,
-        "Fraction number": patient_fraction_number,
-        st_ref_list[0]: biopsy_info,
-        st_ref_list[1]: oar_info,
-        st_ref_list[2]: dil_info,
-        st_ref_list[3]: rectum_info,
-        st_ref_list[4]: urethra_info,
-        all_ref_key: all_structs_info,
-    }
+    reference_keys = PatientStructureReferenceKeys.from_legacy_refs(
+        st_ref_list=st_ref_list,
+        all_ref_key=all_ref_key,
+    )
+    patient_structure_reference = PatientStructureReferenceState(
+        keys=reference_keys,
+        patient_uid=patient_uid,
+        patient_id_from_dicom=patient_id_from_dicom,
+        patient_name=patient_name_from_dicom,
+        fraction_number=patient_fraction_number,
+        biopsies=biopsy_ref,
+        oars=oar_ref,
+        dils=dil_ref,
+        rectums=rectum_ref,
+        urethras=urethra_ref,
+        all_reference=all_ref,
+    )
+    patient_structure_info = PatientStructureInfoState(
+        keys=reference_keys,
+        patient_uid=patient_uid,
+        patient_id_from_dicom=patient_id_from_dicom,
+        patient_name=patient_name_from_dicom,
+        fraction_number=patient_fraction_number,
+        biopsy_info=biopsy_info,
+        oar_info=oar_info,
+        dil_info=dil_info,
+        rectum_info=rectum_info,
+        urethra_info=urethra_info,
+        all_structures_info=all_structs_info,
+    )
+    patient_reference_dict = patient_structure_reference.to_legacy_dict()
+    patient_info_dict = patient_structure_info.to_legacy_dict()
 
     emitted_events = tuple(getattr(progress_sink, "emitted_events", ()))
     new_events = emitted_events[len(messages_before):]
@@ -496,6 +691,8 @@ def build_patient_structure_reference_bootstrap_fragment(
         patient_uid=patient_uid,
         patient_reference_dict=patient_reference_dict,
         patient_info_dict=patient_info_dict,
+        patient_structure_reference=patient_structure_reference,
+        patient_structure_info=patient_structure_info,
         messages=messages,
         metadata={
             "num_real_biopsies": biopsy_info["Num real structs"],
@@ -662,6 +859,36 @@ def assemble_master_structure_reference_from_patient_fragments(
         fragment.patient_uid: fragment.patient_reference_dict
         for fragment in fragments
     }
+
+
+def assemble_patient_structure_reference_state_registry(
+    fragments: Sequence[PatientStructureReferenceBootstrapFragment],
+) -> dict[str, PatientStructureReferenceState]:
+    """Assemble the typed patient-reference registry for future runner use."""
+    registry: dict[str, PatientStructureReferenceState] = {}
+    for fragment in fragments:
+        if fragment.patient_structure_reference is None:
+            raise ValueError(
+                "fragment is missing patient_structure_reference: "
+                f"{fragment.patient_uid}"
+            )
+        registry[fragment.patient_uid] = fragment.patient_structure_reference
+    return registry
+
+
+def assemble_patient_structure_info_state_registry(
+    fragments: Sequence[PatientStructureReferenceBootstrapFragment],
+) -> dict[str, PatientStructureInfoState]:
+    """Assemble the typed patient-info registry for future runner use."""
+    registry: dict[str, PatientStructureInfoState] = {}
+    for fragment in fragments:
+        if fragment.patient_structure_info is None:
+            raise ValueError(
+                "fragment is missing patient_structure_info: "
+                f"{fragment.patient_uid}"
+            )
+        registry[fragment.patient_uid] = fragment.patient_structure_info
+    return registry
 
 
 def assemble_structure_reference_info_for_run(
