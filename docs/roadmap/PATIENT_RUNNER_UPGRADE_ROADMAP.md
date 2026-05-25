@@ -143,10 +143,11 @@ Datatype direction for new patient surfaces:
 For MC containment specifically, extract the setup and computation in small
 validated slices. The patient-local relative-structure inventory should remain a
 neutral module, while containment owns the dilation bank, per-biopsy input prep,
-core containment helper calls, and statistics/writeback logic. The raw CUDA
-containment and nearest-neighbour kernels should remain untouched; patient
-modules should call the same kernel helper APIs as the oracle until parity is
-proven.
+core containment helper calls, and statistics/writeback logic. These additive
+helpers exist, but the frozen oracle path should remain the live route until a
+patient-level parity harness proves row/key equivalence. The raw CUDA containment
+and nearest-neighbour kernels should remain untouched; patient modules should
+call the same kernel helper APIs as the oracle until parity is proven.
 
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
