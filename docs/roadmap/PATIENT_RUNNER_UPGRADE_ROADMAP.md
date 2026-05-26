@@ -92,6 +92,23 @@ Validation should be staged but not endless:
 - avoid maintaining permanent duplicate sidecars after a stage has a stable
   patient module and final assembly comparison.
 
+Parity validation should be wired as a post-run saved-state comparison, not as an
+inline fork inside the scientific path. The legacy cohort path should run end to
+end and persist its oracle state/artifacts. The patient runner should then run
+end to end in its own output root and persist patient artifacts plus assembled
+cohort tables. A reusable comparator layer should load both completed surfaces,
+compare registered keys, arrays, dataframe schemas/row grains, sorted or stable
+row values, numeric tolerances, and performed flags, then write durable validation
+reports. This keeps both execution paths uninterrupted and prevents validation
+code from becoming hidden scientific routing.
+
+The full configuration overhaul remains intentionally after first patient-runner
+validation. Until then, patient stages should use explicit transitional config
+contracts and adapter mapping from the current main settings. After the runner is
+validated, the config layer can be redesigned for GUI/UI compatibility, run
+plans, patient selection, stage toggles, and richer validation modes, followed by
+another validation pass against the same oracle outputs.
+
 Batch parallelism is not a first-order requirement for the scientific runner.
 The reference runner should be sequential and deterministic first. Any existing
 `starmap`-style helper needed inside a patient stage can be represented as a
