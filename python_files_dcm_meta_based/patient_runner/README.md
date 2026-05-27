@@ -133,6 +133,17 @@ Main-facing validation gate:
 - this first gate validates the artifact/export/assembly layer, not independent
   scientific recomputation.
 
+Post-run parity surface:
+
+- `patient_runner.parity.run_patient_runner_post_run_parity(...)` compares two
+  completed output surfaces after both runs finish,
+- the default surface compares legacy final cohort CSVs with patient-runner
+  assembled cohort tables using the existing stitch-pair registry,
+- optional recursive CSV comparison reuses the existing validation comparator
+  and is intended for roots that deliberately use path-compatible layouts,
+- future stage-state comparisons should be added as durable manifests beside
+  patient artifacts, not by inspecting live master dictionaries during a run.
+
 Scientific modularization rule:
 
 - when moving remaining main-facing scientific blocks into modules, first move
@@ -151,6 +162,10 @@ Current implementation guardrail:
 - keep Rich/UI objects out of runner-facing patient calls; if an older helper
   still needs a legacy presentation-shaped object, adapt it inside the owning
   scientific package boundary rather than in `patient_runner/`,
+- do not create a module-local `_presentation.py` by default; use one only when
+  a package must quarantine old presentation-shaped helper arguments. Clean
+  scientific stages should either reject presentation options or use shared
+  `presentation/` adapters at the outer UI boundary,
 - prefer explicit patient entrypoints in the stage file or a family-local
   `per_patient/` subpackage over a parallel top-level `../patient_stages/`
   tree,

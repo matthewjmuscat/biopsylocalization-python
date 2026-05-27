@@ -52,6 +52,20 @@ from .main_validation import PatientRunnerMainValidationSkippedResult
 from .main_validation import run_patient_runner_main_validation
 from .main_validation import summarize_patient_runner_main_validation
 from .main_validation import write_patient_runner_main_validation_summary
+from .parity import DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME
+from .parity import PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION
+from .parity import PatientRunnerParitySurface
+from .parity import PatientRunnerParitySurfaceResult
+from .parity import PatientRunnerPostRunParityConfig
+from .parity import PatientRunnerPostRunParityResult
+from .parity import compare_patient_runner_assembled_cohort_tables
+from .parity import compare_patient_runner_recursive_csvs
+from .parity import default_patient_runner_post_run_parity_output_dir
+from .parity import format_patient_runner_post_run_parity_summary
+from .parity import run_patient_runner_post_run_parity
+from .parity import summarize_patient_runner_parity_surface
+from .parity import summarize_patient_runner_post_run_parity
+from .parity import summarize_patient_runner_post_run_parity_surfaces
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
@@ -73,13 +87,19 @@ __all__ = [
     "PatientRunConfig",
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
+    "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
+    "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
     "PatientRunResult",
     "PatientRunnerMainValidationConfig",
     "PatientRunnerMainValidationMode",
     "PatientRunnerMainValidationResult",
     "PatientRunnerMainValidationSkippedResult",
+    "PatientRunnerParitySurface",
+    "PatientRunnerParitySurfaceResult",
+    "PatientRunnerPostRunParityConfig",
+    "PatientRunnerPostRunParityResult",
     "PatientStage",
     "PatientStageName",
     "PatientStageResult",
@@ -91,7 +111,11 @@ __all__ = [
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
+    "compare_patient_runner_assembled_cohort_tables",
+    "compare_patient_runner_recursive_csvs",
     "default_patient_stages",
+    "default_patient_runner_post_run_parity_output_dir",
+    "format_patient_runner_post_run_parity_summary",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
     "resolve_legacy_patient_uids",
@@ -100,9 +124,13 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
     "run_patient_stages",
     "summarize_patient_runner_main_validation",
+    "summarize_patient_runner_parity_surface",
+    "summarize_patient_runner_post_run_parity",
+    "summarize_patient_runner_post_run_parity_surfaces",
     "summarize_patient_batch_cohort_assembly",
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",

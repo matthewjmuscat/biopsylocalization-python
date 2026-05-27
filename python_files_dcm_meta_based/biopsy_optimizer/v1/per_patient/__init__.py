@@ -6,12 +6,16 @@ from .legacy_adapter import build_patient_info_from_reference
 from .legacy_adapter import build_single_patient_master_structure_info
 from .legacy_adapter import collect_optimizer_v1_patient_outputs
 from .legacy_adapter import run_patient_optimizer_v1_legacy_adapter
+from .patient_stage import OptimizerV1PatientStageResult
+from .patient_stage import run_patient_optimizer_v1_stage
 
 __all__ = [
     "OptimizerV1LegacyConfig",
+    "OptimizerV1PatientStageResult",
     "OptimizerV1PatientRunResult",
     "build_patient_info_from_reference",
     "build_single_patient_master_structure_info",
     "collect_optimizer_v1_patient_outputs",
     "run_patient_optimizer_v1_legacy_adapter",
+    "run_patient_optimizer_v1_stage",
 ]
