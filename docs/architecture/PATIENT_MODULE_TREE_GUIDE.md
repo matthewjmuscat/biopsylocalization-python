@@ -181,7 +181,7 @@ Current repository placement after the 2026-05-24 additive patient-module passes
 | MC transform-bank generation | `python_files_dcm_meta_based/mc/prep/per_patient/transform_generation.py` |
 | MC BX-only transform application | `python_files_dcm_meta_based/mc/prep/per_patient/biopsy_self_transforms.py` |
 | MC relative-structure transform application | `python_files_dcm_meta_based/mc/prep/per_patient/relative_structure_transforms.py` |
-| MC convex simulation contracts/key registry/output collectors/singleton adapter and MC MR ADC patient stage | `python_files_dcm_meta_based/mc/simulation/per_patient/` |
+| MC convex containment/dose stage, MC MR ADC patient stage, contracts/key registry/output collectors, and singleton oracle adapters | `python_files_dcm_meta_based/mc/simulation/per_patient/` |
 | Structure reference/bootstrap dictionaries and typed patient reference boundary | `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py` |
 | Optimizer-v1 patient scientific stage and singleton validation adapter | `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/patient_stage.py`; `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` |
 | Optimizer-v2 patient-local target-DIL stage and singleton live-integration adapter | `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/target_dil_stage.py`; `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/live_adapter.py` |

@@ -54,6 +54,10 @@ from .convex_legacy_adapter import (
     collect_mc_patient_outputs,
     run_patient_mc_convex_legacy_adapter,
 )
+from .convex_stage import (
+    PatientMCConvexStageResult,
+    run_patient_mc_convex_stage,
+)
 from .dose import (
     MC_DOSE_BIOPSY_OUTPUT_KEYS,
     MC_DOSE_GRADIENT_VALUE_COLUMN,
@@ -177,6 +181,7 @@ __all__ = [
     "PatientDoseLatticeContext",
     "PatientDoseLocalizationOutputs",
     "PatientDoseOutputs",
+    "PatientMCConvexStageResult",
     "PatientMRBiopsyContext",
     "PatientMRLatticeContext",
     "PatientMRLocalizationOutputs",
@@ -232,6 +237,7 @@ __all__ = [
     "resolve_patient_target_prescription_dose",
     "resolve_patient_info",
     "run_patient_mr_adc_localization_stage",
+    "run_patient_mc_convex_stage",
     "run_patient_dose_localization_for_biopsy",
     "run_patient_dose_nearest_neighbour_localization",
     "run_patient_mr_localization_for_biopsy",
