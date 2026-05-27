@@ -4,6 +4,8 @@ from preprocessing.biopsy_processing.simulated_biopsy_planner import _apply_simu
 from preprocessing.biopsy_processing.simulated_biopsy_planner import build_simulated_biopsy_planning_state
 from preprocessing.biopsy_processing.simulated_biopsy_planner import get_planned_simulated_biopsy_model_dict
 
+from ._presentation import resolve_patient_biopsy_presentation_boundary
+
 
 def plan_patient_simulated_biopsies(*,
                                     patient_uid,
@@ -11,14 +13,25 @@ def plan_patient_simulated_biopsies(*,
                                     bx_ref,
                                     bx_sample_pts_lattice_spacing,
                                     parallel_pool,
-                                    structures_progress,
-                                    processing_structures_task,
                                     centroid_line_vec_sim_list,
                                     centroid_first_pos_sim_list,
                                     num_centroids_for_sim_bxs,
                                     simulated_bx_rad,
-                                    plot_simulated_cores_immediately):
+                                    plot_simulated_cores_immediately,
+                                    structures_progress=None,
+                                    processing_structures_task=None):
     """Build planned simulated-biopsy geometry and samples for one patient."""
+    boundary = resolve_patient_biopsy_presentation_boundary(
+        structures_progress=structures_progress,
+        processing_structures_task=processing_structures_task,
+        task_description="Planning simulated biopsy structures [{}]".format(patient_uid),
+        task_total=sum(
+            1 for specific_structure in pydicom_item.get(bx_ref, ())
+            if bool(specific_structure.get("Simulated bool"))
+        ),
+    )
+    structures_progress = boundary.structures_progress
+    processing_structures_task = boundary.processing_structures_task
     planning_sample_targets = []
     planning_sample_args_list = []
 

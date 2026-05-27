@@ -174,13 +174,14 @@ own raw CSV dumps, plotting, Rich progress, or live routing through the frozen
 oracle. Legacy inactive dose-statistics and voxelization blocks should only be
 extracted if downstream parity checks prove those outputs are still required.
 
-For MC MR specifically, the additive patient module now owns filtered MR ADC
-lattice reconstruction, KD-tree context construction, per-biopsy
-nearest-neighbour localization through the existing `mr_localizers` helper,
-point-by-trial array compilation, output collection, and legacy biopsy-record
-writeback. It deliberately does not own raw CSV dumps, plotting, Rich progress,
-or live routing through `MC_simulator_MR.py`. A singleton MR oracle adapter exists
-for validation runs, but the MR simulator itself remains frozen until a
+For MC MR specifically, the additive patient module now owns the one-patient MR
+ADC localization stage: filtered MR ADC lattice reconstruction, KD-tree context
+construction, per-biopsy nearest-neighbour localization through the existing
+`mr_localizers` helper, point-by-trial array compilation, output collection,
+legacy biopsy-record writeback, and the legacy MR performed flag. It deliberately
+does not own raw CSV dumps, plotting, Rich progress, or live routing through
+`MC_simulator_MR.py`. A singleton MR oracle adapter remains available for
+validation/debug runs, but the MR simulator itself remains frozen until a
 patient-level parity harness proves row/key equivalence.
 
 For downstream MC outputs specifically, the additive patient module now owns
@@ -241,7 +242,7 @@ extracted.
 | Optimization | patient | modularize for patient execution | Optimizer v1/v2 should operate on one patient case plus shared config. |
 | Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores and validates planned-vs-realized per-biopsy geometry. |
 | Sampling/classification | patient | modularize for patient execution | Sampled biopsy processing, target audit annotation, and double-sextant classification. |
-| MC simulation | patient | build separate patient modules | Transform generation, containment, dose, and MR simulation for one patient. Leave the existing cohort MC simulator callable as the oracle. |
+| MC simulation | patient | build separate patient modules | Transform generation and MR ADC localization now have patient stages; containment and dose still need full patient-stage orchestration. Leave the existing cohort MC simulator callable as the oracle. |
 | Patient artifact writing | patient | core patient-runner output | Writes stable base artifacts with canonical keys. |
 | Cohort assembly | cohort/downstream | not per patient | Concatenates patient artifacts and builds required cohort outputs. |
 | Migration validation | cohort/downstream | not per patient | Compares assembled patient outputs against the legacy cohort oracle. |
@@ -902,7 +903,7 @@ For MC simulation, prefer this extraction order:
 5. MC containment and distance calculations,
 6. dose localization and dose result compilation,
 7. DVH/statistical summaries,
-8. MR ADC MC localization.
+8. MR ADC MC localization. This now has `run_patient_mr_adc_localization_stage(...)`; keep parity validation before routing.
 
 Each item should first produce a patient-level function. If a main-facing cohort
 wrapper is needed, it should call the same patient function in a simple loop and

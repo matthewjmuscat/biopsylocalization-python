@@ -148,6 +148,9 @@ Current implementation guardrail:
 - keep the validated legacy/semi-modular cohort path as the oracle,
 - build patient scientific modules in their owning scientific packages; see
   `../../docs/architecture/PATIENT_MODULE_TREE_GUIDE.md`,
+- keep Rich/UI objects out of runner-facing patient calls; if an older helper
+  still needs a legacy presentation-shaped object, adapt it inside the owning
+  scientific package boundary rather than in `patient_runner/`,
 - prefer explicit patient entrypoints in the stage file or a family-local
   `per_patient/` subpackage over a parallel top-level `../patient_stages/`
   tree,

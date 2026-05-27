@@ -2,11 +2,16 @@ import cupy as cp
 import numpy as np
 
 import pca
-import plotting_funcs
-import point_containment_tools
 from MC_prepper_funcs import biopsy_dilator_step_1
 from MC_prepper_funcs import biopsy_rotator_step_2_vectorized_version
 from MC_prepper_funcs import biopsy_translator_step_3
+
+
+def _load_plotting_helpers():
+    import plotting_funcs
+    import point_containment_tools
+
+    return plotting_funcs, point_containment_tools
 
 
 def apply_patient_biopsy_self_transforms(*,
@@ -43,6 +48,7 @@ def apply_patient_biopsy_self_transforms(*,
         )
 
         if inspect_self_biopsy_dilate_bool == True:
+            plotting_funcs, point_containment_tools = _load_plotting_helpers()
             for trial_index in np.arange(max_simulations):
                 nominal_bx_pcd_color = np.array([1, 0, 1])
                 nominal_bx_pcd = point_containment_tools.create_point_cloud(randomly_sampled_bx_pts_arr, nominal_bx_pcd_color)
@@ -64,6 +70,7 @@ def apply_patient_biopsy_self_transforms(*,
         )
 
         if inspect_self_biopsy_dilate_and_rotate_bool == True:
+            plotting_funcs, point_containment_tools = _load_plotting_helpers()
             for trial_index in np.arange(max_simulations):
                 nominal_bx_pcd_color = np.array([1, 0, 1])
                 nominal_bx_pcd = point_containment_tools.create_point_cloud(randomly_sampled_bx_pts_arr, nominal_bx_pcd_color)
@@ -110,6 +117,7 @@ def apply_patient_biopsy_self_transforms(*,
             bx_only_shifted_randomly_sampled_bx_pts_3Darr = biopsy_translator_step_3(randomly_sampled_bx_pts_cp_arr_dilated_and_rotated_max_simulations, cp.array(bx_total_only_translation_arr))
 
         if inspect_self_biopsy_dilate_and_rotate_and_translate_bool == True:
+            plotting_funcs, point_containment_tools = _load_plotting_helpers()
             for trial_index in np.arange(max_simulations):
                 nominal_bx_pcd_color = np.array([1, 0, 1])
                 nominal_bx_pcd = point_containment_tools.create_point_cloud(randomly_sampled_bx_pts_arr, nominal_bx_pcd_color)

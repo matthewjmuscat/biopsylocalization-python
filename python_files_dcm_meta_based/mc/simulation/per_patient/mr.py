@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import copy
 from typing import Any, Mapping
 
 from legacy_data_keys import legacy_data_keys
@@ -78,6 +79,28 @@ class PatientMROutputs:
             "patient_uid": self.patient_uid,
             "biopsy_outputs": self.biopsy_outputs,
         }
+
+
+@dataclass(slots=True)
+class PatientMRStageResult:
+    """Output bundle from running patient-local MR ADC localization."""
+
+    patient_uid: str
+    patient_reference_dict: dict[str, Any]
+    master_structure_reference_dict: dict[str, dict[str, Any]]
+    master_structure_info_dict: dict[str, Any]
+    mr_outputs: PatientMROutputs
+    mr_reference_available: bool
+    biopsy_count: int
+    performed_flags: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.patient_uid = str(self.patient_uid)
+        self.biopsy_count = int(self.biopsy_count)
+        self.mr_reference_available = bool(self.mr_reference_available)
+        self.performed_flags = dict(self.performed_flags or {})
+        self.metadata = dict(self.metadata or {})
 
 
 def _as_numpy_array(array_like: Any) -> Any:
@@ -251,6 +274,142 @@ def write_patient_mr_localization_outputs_to_legacy_record(
     """Write one MR ADC localization result array to a legacy biopsy dictionary."""
     biopsy_structure.update(localization_outputs.legacy_biopsy_updates())
     return biopsy_structure
+
+
+def _reject_patient_mr_stage_side_effect_options(mr_config: MCMRSimulationConfig) -> None:
+    unsupported_options = []
+    if mr_config.raw_data_mc_mr_dump_bool:
+        unsupported_options.append("raw_data_mc_mr_dump_bool")
+    if mr_config.show_NN_mr_adc_demonstration_plots:
+        unsupported_options.append("show_NN_mr_adc_demonstration_plots")
+    if mr_config.show_NN_mr_adc_demonstration_plots_all_trials_at_once:
+        unsupported_options.append("show_NN_mr_adc_demonstration_plots_all_trials_at_once")
+    if unsupported_options:
+        raise ValueError(
+            "Patient MR ADC localization stage does not perform raw CSV dumps or plotting; "
+            "use the MR legacy adapter for those validation/debug surfaces. Unsupported options: "
+            + ", ".join(unsupported_options)
+        )
+
+
+def _resolve_num_mc_mr_simulations(master_structure_info_dict: Mapping[str, Any]) -> int:
+    master_keys = legacy_mc_keys.master_info
+    try:
+        num_mc_mr_simulations = master_structure_info_dict[master_keys.global_key][
+            master_keys.mc_info_key
+        ][master_keys.num_mr_simulations_key]
+    except KeyError as exc:
+        raise KeyError(
+            "master_structure_info_dict['Global']['MC info']['Num MC MR simulations'] "
+            "is required for patient MR ADC localization"
+        ) from exc
+    return int(num_mc_mr_simulations)
+
+
+def _set_patient_mr_performed_flag(master_structure_info_dict: dict[str, Any], performed_flag: Any) -> dict[str, Any]:
+    master_keys = legacy_mc_keys.master_info
+    global_info = master_structure_info_dict.setdefault(master_keys.global_key, {})
+    mc_info = global_info.setdefault(master_keys.mc_info_key, {})
+    mc_info[master_keys.mr_performed_key] = bool(performed_flag)
+    return {master_keys.mr_performed_key: mc_info[master_keys.mr_performed_key]}
+
+
+def run_patient_mr_adc_localization_stage(
+    *,
+    patient_uid: str,
+    patient_reference_dict: dict[str, Any],
+    patient_info_dict: Mapping[str, Any] | None,
+    bx_ref: str,
+    mr_adc_ref: str,
+    config: MCMRSimulationConfig,
+    global_info: Mapping[str, Any] | None = None,
+    mutate_input: bool = True,
+) -> PatientMRStageResult:
+    """Run MR ADC localization for one patient without oracle UI or file-writing side effects."""
+    from .convex_legacy_adapter import build_single_patient_mc_master_info
+
+    _reject_patient_mr_stage_side_effect_options(config)
+    patient_uid = str(patient_uid)
+    working_patient_reference_dict = patient_reference_dict if mutate_input else copy.deepcopy(patient_reference_dict)
+    master_structure_reference_dict = {patient_uid: working_patient_reference_dict}
+    master_structure_info_dict = build_single_patient_mc_master_info(
+        patient_uid,
+        patient_info_dict,
+        global_info=global_info,
+    )
+    performed_flags = _set_patient_mr_performed_flag(
+        master_structure_info_dict,
+        config.perform_mc_mr_sim,
+    )
+    mr_reference_available = patient_has_mr_adc_reference(
+        working_patient_reference_dict,
+        mr_adc_ref=mr_adc_ref,
+    )
+    if not mr_reference_available:
+        mr_outputs = collect_patient_mr_outputs(
+            patient_uid,
+            working_patient_reference_dict,
+            bx_ref=bx_ref,
+        )
+        return PatientMRStageResult(
+            patient_uid=patient_uid,
+            patient_reference_dict=working_patient_reference_dict,
+            master_structure_reference_dict=master_structure_reference_dict,
+            master_structure_info_dict=master_structure_info_dict,
+            mr_outputs=mr_outputs,
+            mr_reference_available=False,
+            biopsy_count=0,
+            performed_flags=performed_flags,
+            metadata={"mutated_input": bool(mutate_input), "skip_reason": "patient_missing_mr_adc_reference"},
+        )
+
+    num_mc_mr_simulations = _resolve_num_mc_mr_simulations(master_structure_info_dict)
+    lattice_context = build_patient_mr_lattice_context(
+        patient_uid,
+        working_patient_reference_dict,
+        mr_adc_ref=mr_adc_ref,
+        filter_out_negatives=True,
+        mutate_reference=True,
+    )
+    biopsy_count = 0
+    for biopsy_index, biopsy_structure in enumerate(working_patient_reference_dict.get(bx_ref, ())):
+        biopsy_context = build_patient_mr_biopsy_context(
+            patient_uid,
+            biopsy_index,
+            biopsy_structure,
+            num_mc_mr_simulations=num_mc_mr_simulations,
+        )
+        localization_outputs = run_patient_mr_localization_for_biopsy(
+            biopsy_context,
+            lattice_context,
+            mr_config=config,
+            num_mc_mr_simulations=num_mc_mr_simulations,
+        )
+        write_patient_mr_localization_outputs_to_legacy_record(
+            biopsy_structure,
+            localization_outputs,
+        )
+        biopsy_count += 1
+
+    mr_outputs = collect_patient_mr_outputs(
+        patient_uid,
+        working_patient_reference_dict,
+        bx_ref=bx_ref,
+    )
+    return PatientMRStageResult(
+        patient_uid=patient_uid,
+        patient_reference_dict=working_patient_reference_dict,
+        master_structure_reference_dict=master_structure_reference_dict,
+        master_structure_info_dict=master_structure_info_dict,
+        mr_outputs=mr_outputs,
+        mr_reference_available=True,
+        biopsy_count=biopsy_count,
+        performed_flags=performed_flags,
+        metadata={
+            "mutated_input": bool(mutate_input),
+            "num_mc_mr_simulations": num_mc_mr_simulations,
+        },
+    )
 
 
 def collect_patient_mr_outputs(patient_uid: str,

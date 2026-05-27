@@ -1,6 +1,6 @@
 # Patient Runner Module Readiness
 
-Last updated: 2026-05-24
+Last updated: 2026-05-27
 
 This is the working checklist for moving the full `biopsy_localization_convex_main.py`
 pipeline toward patient-local execution while preserving the validated cohort path
@@ -39,18 +39,19 @@ If you want the shortest answer to "what is still missing for a per-patient
 runner?", it is this:
 
 - several preprocessing stages are already patient-ready,
-- the remaining missing or partial stages are now mostly adapter/parity decisions
-  for optimizer bridges and runner orchestration rather than missing scientific
-  loop-body modules,
+- the remaining missing or partial stages are optimizer-v1 and the full convex MC
+  containment/dose simulation stage orchestration; MR ADC MC localization now has
+  a true patient-local stage,
 - a thin runner/validation scaffold can exist while modules are still being
   extracted, but the complete patient runner should come after the remaining
   patient-stage modules have stable contracts,
 - convex/MR MC simulation now has typed patient contracts, containment/dose/MR
   output collectors, singleton legacy adapters, containment helper slices, additive
   dose/dose-gradient localization plus DVH helper slices, and additive MR ADC
-  localization helpers, plus downstream MC annotation/output table wrappers;
-  remaining MC work is parity validation and inactive legacy dose statistics only
-  if parity proves them required.
+  localization helpers plus a patient-local MR ADC stage, plus downstream MC
+  annotation/output table wrappers; remaining MC work is full containment/dose
+  patient-stage orchestration, parity validation, and inactive legacy dose
+  statistics only if parity proves them required.
 
 ## Presentation/Rich Decoupling Policy
 
@@ -74,6 +75,20 @@ all of that debt upfront. Also do not route frozen legacy cohort wrappers throug
 new patient functions only to clean up Rich; preserve the oracle path until a
 deliberate validation pass is ready.
 
+Current boundary cleanup status:
+
+- biopsy-processing patient modules now resolve missing progress/layout/live
+  objects through `preprocessing/biopsy_processing/per_patient/_presentation.py`,
+  so future runner calls can omit Rich/UI objects while legacy wrappers may still
+  pass their existing presentation state,
+- MC prep patient modules lazily import plotting helpers only behind existing
+  diagnostic plot flags,
+- optimizer-v2 and MC MR ADC scientific patient stages reject render/raw-dump
+  side effects and keep those surfaces on their legacy adapters,
+- older shared geometry helpers still accept legacy presentation-shaped objects;
+  those should be refactored after patient-runner parity is stable, not during
+  the current extraction pass.
+
 ### Already Has A Real Patient Stage
 
 - MR ADC input normalization
@@ -96,10 +111,20 @@ deliberate validation pass is ready.
 - Transform generation/prep
 - BX-only transform application
 - Relative-structure transform application
+- MC MR ADC localization
+- Optimizer-v2 target-DIL localization
 
 ### Has Patient Helpers But Still Missing The Full Patient Stage
 
-None currently identified in this pass.
+- MC containment simulation: relative-structure inventory, dilation-bank setup,
+  containment inputs, kernel/core wrappers, and per-biopsy statistics/writeback
+  helpers exist, but the full patient stage that orchestrates the active convex
+  simulator containment loop is still not assembled.
+- MC dose/dose-gradient simulation: lattice context, per-biopsy localization,
+  array writeback, and DVH helpers exist, but the full patient stage that
+  orchestrates the active convex simulator dose loop is still not assembled.
+- Optimizer v1: singleton oracle adapter exists, but the actual patient-local
+  loop-body extraction from `biopsy_optimizer_module_v1(...)` is still pending.
 
 ### Runner-Relevant But Intentionally Run Scoped
 
@@ -130,10 +155,12 @@ bodies that currently live inside those oracle functions.
   loop bodies inside `MC_simulator_convex.simulator_parallel(...)`
   purpose: reproduce one patient's active containment and dose simulation path
   while keeping the current oracle file frozen.
-- Patient MR localization/simulation modules extracted from the patient-facing
-  loop bodies inside `MC_simulator_MR.simulator_parallel(...)`
+- Patient MR localization/simulation module extracted from the patient-facing
+  loop body inside `MC_simulator_MR.simulator_parallel(...)`
   purpose: reproduce one patient's MR ADC localization/simulation path after
-  biopsy MC transforms already exist.
+  biopsy MC transforms already exist. `run_patient_mr_adc_localization_stage(...)`
+  now provides this additive stage without raw CSV dumping, plotting, or Rich
+  progress dependencies.
 - Downstream patient MC annotation/output wrappers after patient-local sampling
   and MC outputs exist
   purpose: expose current downstream MC dataframe-fragment builders and optimizer
@@ -160,7 +187,7 @@ Future MC simulation module home:
 
 ## Current Pass Summary
 
-Completed through the 2026-05-24 pass:
+Completed through the 2026-05-27 pass:
 
 - The initial additive patient wrappers were moved out of the temporary top-level
   `patient_stages` area and into family-local `per_patient/` homes inside the
@@ -173,12 +200,13 @@ Completed through the 2026-05-24 pass:
 - `plan_patient_simulated_biopsies(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_planning.py` for future runner use; the cohort wrapper remains on its frozen body.
 - `process_patient_simulated_biopsies(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/simulated_biopsy_processing.py` for future runner use; the cohort wrapper remains on its frozen body.
 - `determine_patient_realized_biopsy_targeting(...)` lives in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` for future runner use; the cohort wrapper remains on its frozen body.
+- `preprocessing/biopsy_processing/per_patient/_presentation.py` owns the null/legacy presentation boundary for biopsy patient modules that still call older geometry helpers. Runner-facing calls should omit Rich/UI objects; legacy wrappers can still pass them during oracle validation.
 - `attach_patient_uncertainty_data_from_dataframe(...)` lives in `python_files_dcm_meta_based/preprocessing/uncertainty_attachment.py` for future runner use with a resolved patient uncertainty dataframe fragment; template generation, file workflow, and cohort bookkeeping remain on the frozen run-scoped path.
 - `process_patient_sampled_biopsies(...)` plus the patient-local sampling-arg, sampled-result storage, and biopsy-coordinate helpers live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/sampled_biopsy_processing.py`; the cohort wrapper remains on its frozen body.
 - `build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)` and `assemble_simulated_biopsy_centroid_variation_validation_fragments(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` for future runner use; the cohort validation wrapper remains on its frozen body.
 - `build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `assemble_biopsy_double_sextant_classification_fragments(...)`, and `store_patient_biopsy_double_sextant_voxel_fragment(...)` live in `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` for future runner use; the cohort wrapper remains on its frozen body. The per-voxel table remains assembled from patient sample-point fragments to preserve legacy aggregation and random-tie behavior.
 - `generate_transformations_for_patient(...)`, `apply_patient_biopsy_self_transforms(...)`, and `apply_patient_relative_structure_transforms(...)` live in `python_files_dcm_meta_based/mc/prep/per_patient/` as additive patient-local MC prep surfaces; the frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies.
-- `MCReferenceKeys`, `MCContainmentSimulationConfig`, `MCDoseSimulationConfig`, `MCMRSimulationConfig`, `LegacyMCKeyBundle`, containment/dose/MR output collectors, a neutral patient relative-structure inventory module, containment biopsy/input/dilation-bank helpers, containment core wrappers around the existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, downstream MC output table/annotation wrappers, `run_patient_mc_convex_legacy_adapter(...)`, and `run_patient_mc_mr_legacy_adapter(...)` live in `python_files_dcm_meta_based/mc/simulation/per_patient/` as the additive patient-local MC simulation landing zone; `MC_simulator_convex.simulator_parallel(...)` and `MC_simulator_MR.simulator_parallel(...)` remain untouched as the oracles.
+- `MCReferenceKeys`, `MCContainmentSimulationConfig`, `MCDoseSimulationConfig`, `MCMRSimulationConfig`, `LegacyMCKeyBundle`, containment/dose/MR output collectors, a neutral patient relative-structure inventory module, containment biopsy/input/dilation-bank helpers, containment core wrappers around the existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, `run_patient_mr_adc_localization_stage(...)`, downstream MC output table/annotation wrappers, `run_patient_mc_convex_legacy_adapter(...)`, and `run_patient_mc_mr_legacy_adapter(...)` live in `python_files_dcm_meta_based/mc/simulation/per_patient/` as the additive patient-local MC simulation landing zone; `MC_simulator_convex.simulator_parallel(...)` and `MC_simulator_MR.simulator_parallel(...)` remain untouched as the oracles.
 - `ProgressEvent`, `ProgressSink`, null legacy shims, and `RichProgressSink` live in `python_files_dcm_meta_based/presentation/` as a presentation-neutral adapter surface for future patient modules.
 - `build_patient_structure_reference_bootstrap_fragment(...)`, `PatientStructureReferenceState`, `PatientStructureInfoState`, typed registries, run-level assembly, and dose/plan/MR attachment helpers live in `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py`; the frozen `structure_referencer(...)` oracle remains untouched.
 - `python_files_dcm_meta_based/legacy_data_keys.py` owns generic legacy master-info, patient-reference, structure-record, structure-metadata, structure-geometry, biopsy runtime/sample, nested dataframe-store, and artifact sentinel spellings for additive adapters; older live mutation wrappers remain deferred until they cross a patient/runner/artifact boundary.
@@ -204,23 +232,23 @@ Completed through the 2026-05-24 pass:
 | 12 | Standard non-biopsy structure preprocessing | `process_patient_standard_non_biopsy_structure_families(...)`, `preprocess_non_biopsy_structure(...)`, `process_standard_non_biopsy_structure_preprocessing_stage(...)` | Complete | Additive patient family-stage entrypoint now exists in the owning structure-processing module. Keep the frozen cohort wrapper and existing sidecar as the oracle path. |
 | 13 | Non-biopsy legacy validation sidecar | `begin/prepare/finalize_standard_non_biopsy_structure_stage_legacy_validation(...)` | Assembly | Keep validation-only. Remove or disable after patient module validation is stable. |
 | 14 | Prostate-only MR ADC summary | `process_patient_prostate_only_mr_adc(...)`, `prostate_only_mr_adc_processer(...)` | Complete | Patient function and legacy comparison surface exist. |
-| 15 | Real biopsy preprocessing | `preprocessing.biopsy_processing.per_patient.real_biopsy_processing.process_patient_real_biopsies(...)`, `real_biopsy_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future typed wrapper should isolate geometry config and progress adapters. |
+| 15 | Real biopsy preprocessing | `preprocessing.biopsy_processing.per_patient.real_biopsy_processing.process_patient_real_biopsies(...)`, `real_biopsy_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Runner-facing calls no longer require layout/progress/live-display objects; a null presentation boundary adapts older geometry helpers internally. Current cohort wrapper remains frozen. |
 | 16 | Simulated biopsy preparation: target assignment | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.assign_patient_simulated_biopsy_targets(...)`, `assign_simulated_biopsy_targets(...)` | Complete | Additive patient target-assignment module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen. |
 | 17 | Simulated biopsy preparation: multiplicity expansion | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.expand_patient_simulated_biopsy_multiplicity(...)`, `expand_simulated_biopsy_multiplicity(...)` | Complete | Additive patient multiplicity expansion exists. Keep the legacy cohort-wide biopsy-count refresh in the frozen cohort wrapper or later assembly layer. |
 | 18 | Simulated biopsy preparation: length policy | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.determine_patient_simulated_biopsy_lengths(...)`, `determine_simulated_biopsy_lengths(...)` | Complete | Additive patient-level length determination exists and stays on patient-local data only; cohort-derived fallback methods remain excluded. |
 | 19 | Simulated biopsy preparation dataframe | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation.build_patient_simulated_biopsy_preparation_dataframe(...)`, `simulated_biopsy_preparation_dataframe_builder(...)` | Complete | Additive patient preparation-fragment builder exists. Future cohort output assembly can concatenate patient fragments after row-order validation. |
-| 20 | Simulated biopsy planning | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
+| 20 | Simulated biopsy planning | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_planning.plan_patient_simulated_biopsies(...)`, `simulated_biopsy_planner_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Runner-facing calls no longer require progress objects. Current cohort wrapper remains frozen; future runner may replace `parallel_pool` with a sequential patient execution context. |
 | 21 | Uncertainty generation and attachment | `preprocessing.uncertainty_attachment.attach_patient_uncertainty_data_from_dataframe(...)`, `prepare_and_attach_uncertainty_data(...)`, `attach_uncertainty_data_from_dataframe(...)` | Complete | Additive patient-level attachment from a resolved uncertainty dataframe fragment exists. Keep template generation, file prompts, and run-level dataframe bookkeeping on the frozen run-scoped path. |
 | 22 | Transform generation/prep | `mc.prep.per_patient.transform_generation.generate_transformations_for_patient(...)`, `mc.prep.per_patient.biopsy_self_transforms.apply_patient_biopsy_self_transforms(...)`, `mc.prep.per_patient.relative_structure_transforms.apply_patient_relative_structure_transforms(...)`, `MC_prepper_funcs.generate_transformations(...)`, `MC_prepper_funcs.biopsy_only_transformer(...)`, `MC_prepper_funcs.biopsy_transformer_to_relative_structures(...)` | Complete | Additive patient-level MC prep surfaces now exist in the dedicated MC prep scientific package. Frozen cohort wrappers in `MC_prepper_funcs.py` remain on their original bodies and are not routed through the patient entrypoints. |
 | 23 | Optimizer v1 | `biopsy_optimizer.v1.per_patient.legacy_adapter.run_patient_optimizer_v1_legacy_adapter(...)`, `biopsy_optimizer_module_v1(...)` | Partial | Additive singleton-patient oracle adapter exists, but v1 still needs a true patient-local loop-body extraction before full patient-runner validation if v1 remains in the runner scope. The safe boundary is copy-assisted extraction of the patient loop, per-DIL lattice containment/scoring, and patient output assembly from `biopsy_optimizer_module_v1(...)` into the v1 per-patient package, with plotting kept outside the scientific stage. |
 | 24 | Optimizer v2 live integration | `biopsy_optimizer.v2.per_patient.target_dil_stage.run_patient_target_dil_optimizer_v2_stage(...)`, `biopsy_optimizer.v2.per_patient.live_adapter.run_patient_target_dil_optimizer_v2_live_adapter(...)`, `run_target_dil_optimizer_v2_for_live_simulated_family(...)` | Complete | Additive patient-local optimizer-v2 scientific stage now calls the existing candidate-pool, scoring, staged-runner, and output modules for one patient. The live adapter remains available as the singleton oracle bridge; render/UI review stays out of the scientific patient stage. |
-| 25 | Simulated biopsy finalization | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_processing.process_patient_simulated_biopsies(...)`, `simulated_biopsy_processer(...)` | Complete | Additive patient finalization module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen and is not routed through the patient module. |
+| 25 | Simulated biopsy finalization | `preprocessing.biopsy_processing.per_patient.simulated_biopsy_processing.process_patient_simulated_biopsies(...)`, `simulated_biopsy_processer(...)` | Complete | Additive patient finalization module exists in the owning biopsy-processing family. Runner-facing calls no longer require layout/progress/live-display objects; a null presentation boundary adapts older geometry helpers internally. Current cohort wrapper remains frozen and is not routed through the patient module. |
 | 26 | Planned-vs-realized centroid validation | `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.build_patient_simulated_biopsy_centroid_variation_validation_fragment(...)`, `preprocessing.biopsy_processing.per_patient.centroid_variation_validation.assemble_simulated_biopsy_centroid_variation_validation_fragments(...)`, `validate_simulated_biopsy_planned_vs_realized_centroid_variation(...)` | Complete | Additive patient fragment builder plus run-level summarizer exist. Current cohort validation wrapper remains frozen and is not routed through the patient module. |
-| 27 | Realized biopsy targeting | `preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting.determine_patient_realized_biopsy_targeting(...)`, `realized_biopsy_targeting_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Current cohort wrapper remains frozen. |
+| 27 | Realized biopsy targeting | `preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting.determine_patient_realized_biopsy_targeting(...)`, `realized_biopsy_targeting_processer(...)` | Complete | Additive patient module exists in the owning biopsy-processing family. Runner-facing calls no longer require progress objects. Current cohort wrapper remains frozen. |
 | 28 | Pickled preprocessed bundle export/load | `export_preprocessed_pickle_bundle(...)`, `load_selected_pickle_bundle_run(...)` | Assembly | Keep run-scoped. Future patient runner can consume patient case fragments from bundles. |
 | 29 | Sampled biopsy processing | `preprocessing.biopsy_processing.sampled_biopsy_processing.process_patient_sampled_biopsies(...)`, `sampled_biopsy_processing_processer(...)` | Complete | Additive patient stage now exists in the owning biopsy-processing module and preserves the current per-patient sampling order by composing patient-local sampling-arg, sampled-result storage, and biopsy-coordinate helpers. Current cohort wrapper remains frozen. |
 | 30 | Prostate double-sextant classification | `preprocessing.biopsy_processing.per_patient.double_sextant_classification.build_patient_biopsy_double_sextant_sample_point_fragment(...)`, `preprocessing.biopsy_processing.per_patient.double_sextant_classification.assemble_biopsy_double_sextant_classification_fragments(...)`, `biopsy_double_sextant_processer(...)` | Complete | Additive patient sample-point fragment builder plus run-level per-voxel summarizer exist. Per-voxel aggregation stays run-level to preserve legacy random-tie behavior. Current cohort wrapper remains frozen. |
-| 31 | MC simulation | `mc.simulation.per_patient.run_patient_mc_convex_legacy_adapter(...)`, `mc.simulation.per_patient.run_patient_mc_mr_legacy_adapter(...)`, `MC_simulator_convex.simulator_parallel(...)`, `MC_simulator_MR.simulator_parallel(...)` | Partial | Typed MC simulation contracts, package-local legacy key contracts, containment/dose/MR output collectors, a neutral relative-structure inventory module, containment setup/input builders, containment core wrappers around existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, MR ADC localization helpers, downstream MC output table/annotation wrappers, and singleton convex/MR oracle adapters now exist. Keep all additive helpers unrouted until parity checks; extract inactive/legacy dose statistics or voxelization only if downstream parity requires them. |
+| 31 | MC simulation | `mc.simulation.per_patient.run_patient_mr_adc_localization_stage(...)`, `mc.simulation.per_patient.run_patient_mc_convex_legacy_adapter(...)`, `mc.simulation.per_patient.run_patient_mc_mr_legacy_adapter(...)`, `MC_simulator_convex.simulator_parallel(...)`, `MC_simulator_MR.simulator_parallel(...)` | Partial | MR ADC localization now has a true additive patient-local stage. Typed MC simulation contracts, package-local legacy key contracts, containment/dose/MR output collectors, a neutral relative-structure inventory module, containment setup/input builders, containment core wrappers around existing helper/kernel APIs, per-biopsy containment statistics/writeback helpers, dose/dose-gradient localization helpers, DVH compile/writeback helpers, downstream MC output table/annotation wrappers, and singleton convex/MR oracle adapters also exist. Remaining MC blocker is full containment/dose patient-stage orchestration from the active convex simulator loop; extract inactive/legacy dose statistics or voxelization only if downstream parity requires them. |
 | 32 | Cohort simulated-biopsy preparation table | `dataframe_builders.cohort_simulated_biopsy_preparation_dataframe_builder(...)` | Assembly | Replace with concatenation of patient preparation fragments after row-order validation. Patient fragment building now exists in the owning biopsy-processing family. |
 | 33 | Guidance map precompute/render | `precompute_guidance_map_firing_depth_recommendations_for_patient(...)`, `precompute_guidance_map_firing_depth_recommendations_for_run(...)`, `render_guidance_maps_for_run(...)` | Complete | Additive patient precompute entrypoint exists and the run wrapper calls it. Keep rendering run/UI scoped unless a future product surface needs a dedicated adapter. |
 | 34 | Optimizer-v2 downstream annotations | `mc.simulation.per_patient.annotate_patient_optimizer_v2_outputs_with_downstream_mc_scores(...)`, `annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores(...)`, `annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(...)` | Complete | MC-score annotation has a singleton-patient wrapper. Biopsy-sampling audit annotation is already downstream of patient sampled-biopsy fragments and can remain with the optimizer-v2 adapter until runner wiring decides where to call it. |
@@ -245,9 +273,10 @@ Recommended order of operations from this point:
   `mc/simulation/per_patient/dose.py`. The lattice-context, per-biopsy
   localization, array writeback, and DVH helpers now exist; route through them
   only after parity validation against the oracle.
-4. Keep MR ADC helpers behind `mc/simulation/per_patient/mr.py`. The lattice
-  context, per-biopsy localization, array writeback, and collector helpers now
-  exist; route through them only after parity validation against the oracle.
+4. Keep MR ADC localization behind `mc/simulation/per_patient/mr.py`.
+  `run_patient_mr_adc_localization_stage(...)` now owns the one-patient MR ADC
+  localization loop while leaving raw dumps, plotting, and the singleton oracle
+  adapter separate.
 5. Validate the additive MC containment/dose/MR/output wrappers against the
   frozen cohort oracle before live routing.
 6. Build out the complete patient runner after the scientific patient-stage
