@@ -129,15 +129,19 @@ Scientific stage config boundary:
   and stage-group configs for preprocessing, MC prep, MC simulation,
   optimization, and guidance-map precompute,
 - preprocessing is represented explicitly through currently patient-local slices
-  such as uncertainty attachment, simulated-biopsy preparation, realized
-  targeting, and sampled-biopsy processing; heavier geometry preprocessing can
-  be added to the same boundary as those signatures are cleaned,
+  such as real-biopsy geometry processing, simulated-biopsy preparation,
+  simulated-biopsy planning, uncertainty attachment, realized targeting, and
+  sampled-biopsy processing; heavier non-biopsy structure preprocessing can be
+  added to the same boundary as those signatures are cleaned,
 - `scientific_stages.py` contains thin runner adapters that translate
   `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
   existing patient scientific modules,
 - `build_patient_scientific_stages(...)` is opt-in and does not change
   `default_patient_stages()`, which remains artifact-only for the current
   shadow-output validation path.
+- simulated-biopsy finalization is intentionally not folded into the early
+  preprocessing adapter because the legacy path runs it after optimizer-v2; it
+  should become a separate opt-in stage before scientific shadow routing.
 
 Main-facing validation gate:
 

@@ -44,6 +44,133 @@ class PatientSimulatedBiopsyPreparationStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientRealBiopsyProcessingStageConfig:
+    """Config for patient-local real-biopsy geometry finalization."""
+
+    structs_referenced_dict: Mapping[str, Any]
+    interp_inter_slice_dist: float
+    interp_intra_slice_dist: float
+    interp_dist_caps: float
+    biopsy_radius: float
+    display_pca_fit_variation_for_biopsies_bool: bool
+    voxel_size_for_structure_volume_calc_non_bx: float
+    factor_for_voxel_size: float
+    cupy_array_upper_limit_nxn_size_input: Any
+    nearest_zslice_vals_and_indices_cupy_generic_max_size: Any
+    generate_cuda_log_files_volume_calculation: bool
+    constant_z_slice_polygons_handler_option: Any
+    remove_consecutive_duplicate_points_in_polygons: bool
+    include_edges_in_log_files: bool
+    custom_cuda_kernel_type: Any
+    demonstrate_volume_calculation_correctness_bool_1: bool
+    plot_volume_calculation_containment_result_bool_1_old: bool
+    plot_binary_mask_bool: bool
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "structs_referenced_dict", dict(self.structs_referenced_dict))
+        for field_name in (
+            "interp_inter_slice_dist",
+            "interp_intra_slice_dist",
+            "interp_dist_caps",
+            "biopsy_radius",
+            "voxel_size_for_structure_volume_calc_non_bx",
+            "factor_for_voxel_size",
+        ):
+            object.__setattr__(self, field_name, _positive_float(getattr(self, field_name), field_name))
+        for field_name in (
+            "display_pca_fit_variation_for_biopsies_bool",
+            "generate_cuda_log_files_volume_calculation",
+            "remove_consecutive_duplicate_points_in_polygons",
+            "include_edges_in_log_files",
+            "demonstrate_volume_calculation_correctness_bool_1",
+            "plot_volume_calculation_containment_result_bool_1_old",
+            "plot_binary_mask_bool",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @classmethod
+    def from_preprocessing_config(
+        cls,
+        preprocessing_config: Any,
+        *,
+        structs_referenced_dict: Mapping[str, Any],
+        biopsy_radius: float,
+        display_pca_fit_variation_for_biopsies_bool: bool = False,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "PatientRealBiopsyProcessingStageConfig":
+        """Build the real-biopsy adapter config from the existing pipeline config slice."""
+        return cls(
+            structs_referenced_dict=structs_referenced_dict,
+            interp_inter_slice_dist=preprocessing_config.interp_inter_slice_dist,
+            interp_intra_slice_dist=preprocessing_config.interp_intra_slice_dist,
+            interp_dist_caps=preprocessing_config.interp_dist_caps,
+            biopsy_radius=biopsy_radius,
+            display_pca_fit_variation_for_biopsies_bool=display_pca_fit_variation_for_biopsies_bool,
+            voxel_size_for_structure_volume_calc_non_bx=(
+                preprocessing_config.voxel_size_for_structure_volume_calc_non_bx
+            ),
+            factor_for_voxel_size=preprocessing_config.factor_for_voxel_size,
+            cupy_array_upper_limit_nxn_size_input=preprocessing_config.cupy_array_upper_limit_nxn_size_input,
+            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                preprocessing_config.nearest_zslice_vals_and_indices_cupy_generic_max_size
+            ),
+            generate_cuda_log_files_volume_calculation=(
+                preprocessing_config.generate_cuda_log_files_volume_calculation
+            ),
+            constant_z_slice_polygons_handler_option=preprocessing_config.constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                preprocessing_config.remove_consecutive_duplicate_points_in_polygons
+            ),
+            include_edges_in_log_files=preprocessing_config.include_edges_in_log_files,
+            custom_cuda_kernel_type=preprocessing_config.custom_cuda_kernel_type,
+            demonstrate_volume_calculation_correctness_bool_1=(
+                preprocessing_config.demonstrate_volume_calculation_correctness_bool_1
+            ),
+            plot_volume_calculation_containment_result_bool_1_old=(
+                preprocessing_config.plot_volume_calculation_containment_result_bool_1_old
+            ),
+            plot_binary_mask_bool=preprocessing_config.plot_binary_mask_bool,
+            metadata=dict(metadata or {}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PatientSimulatedBiopsyPlanningStageConfig:
+    """Config for patient-local simulated-biopsy planning and planning samples."""
+
+    bx_sample_pts_lattice_spacing: float
+    simulated_bx_rad: float
+    centroid_line_vec_sim_list: Sequence[float] = (0.0, 0.0, 1.0)
+    centroid_first_pos_sim_list: Sequence[float] = (0.0, 0.0, 0.0)
+    num_centroids_for_sim_bxs: int = 10
+    plot_simulated_cores_immediately: bool = False
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "bx_sample_pts_lattice_spacing",
+            _positive_float(self.bx_sample_pts_lattice_spacing, "bx_sample_pts_lattice_spacing"),
+        )
+        object.__setattr__(self, "simulated_bx_rad", _positive_float(self.simulated_bx_rad, "simulated_bx_rad"))
+        object.__setattr__(
+            self,
+            "centroid_line_vec_sim_list",
+            _three_float_tuple(self.centroid_line_vec_sim_list, "centroid_line_vec_sim_list"),
+        )
+        object.__setattr__(
+            self,
+            "centroid_first_pos_sim_list",
+            _three_float_tuple(self.centroid_first_pos_sim_list, "centroid_first_pos_sim_list"),
+        )
+        object.__setattr__(self, "num_centroids_for_sim_bxs", _positive_int(self.num_centroids_for_sim_bxs, "num_centroids_for_sim_bxs"))
+        object.__setattr__(self, "plot_simulated_cores_immediately", bool(self.plot_simulated_cores_immediately))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
 class PatientRealizedBiopsyTargetingStageConfig:
     """Config for patient-local realized biopsy target annotation."""
 
@@ -83,7 +210,9 @@ class PatientUncertaintyAttachmentStageConfig:
 class PatientPreprocessingScientificConfig:
     """Opt-in preprocessing slices that already have patient-local entrypoints."""
 
+    real_biopsy_processing: PatientRealBiopsyProcessingStageConfig | None = None
     simulated_biopsy_preparation: PatientSimulatedBiopsyPreparationStageConfig | None = None
+    simulated_biopsy_planning: PatientSimulatedBiopsyPlanningStageConfig | None = None
     realized_biopsy_targeting: PatientRealizedBiopsyTargetingStageConfig | None = None
     sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
     uncertainty_attachment: PatientUncertaintyAttachmentStageConfig | None = None
@@ -97,8 +226,10 @@ class PatientPreprocessingScientificConfig:
         return any(
             step is not None
             for step in (
+                self.real_biopsy_processing,
                 self.uncertainty_attachment,
                 self.simulated_biopsy_preparation,
+                self.simulated_biopsy_planning,
                 self.realized_biopsy_targeting,
                 self.sampled_biopsy_processing,
             )
@@ -304,3 +435,17 @@ def _positive_int(value: Any, field_name: str) -> int:
     if resolved_value < 1:
         raise ValueError(f"{field_name} must be at least 1")
     return resolved_value
+
+
+def _positive_float(value: Any, field_name: str) -> float:
+    resolved_value = float(value)
+    if resolved_value <= 0:
+        raise ValueError(f"{field_name} must be positive")
+    return resolved_value
+
+
+def _three_float_tuple(values: Sequence[Any], field_name: str) -> tuple[float, float, float]:
+    resolved_values = tuple(float(value) for value in values)
+    if len(resolved_values) != 3:
+        raise ValueError(f"{field_name} must contain exactly three values")
+    return resolved_values

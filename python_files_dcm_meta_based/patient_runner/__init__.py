@@ -76,10 +76,12 @@ from .scientific_config import PatientMCPrepScientificConfig
 from .scientific_config import PatientMCSimulationScientificConfig
 from .scientific_config import PatientOptimizationScientificConfig
 from .scientific_config import PatientPreprocessingScientificConfig
+from .scientific_config import PatientRealBiopsyProcessingStageConfig
 from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
 from .scientific_config import PatientRunnerScientificConfig
 from .scientific_config import PatientSampledBiopsyProcessingStageConfig
 from .scientific_config import PatientScientificStageResources
+from .scientific_config import PatientSimulatedBiopsyPlanningStageConfig
 from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
@@ -115,6 +117,7 @@ __all__ = [
     "PatientMCSimulationScientificConfig",
     "PatientOptimizationScientificConfig",
     "PatientPreprocessingScientificConfig",
+    "PatientRealBiopsyProcessingStageConfig",
     "PatientRealizedBiopsyTargetingStageConfig",
     "PatientRunResult",
     "PatientRunnerMainValidationConfig",
@@ -133,6 +136,7 @@ __all__ = [
     "PatientStageResult",
     "PatientStageRunner",
     "PatientStageStatus",
+    "PatientSimulatedBiopsyPlanningStageConfig",
     "PatientSimulatedBiopsyPreparationStageConfig",
     "PatientUncertaintyAttachmentStageConfig",
     "assemble_patient_batch_cohort_tables",

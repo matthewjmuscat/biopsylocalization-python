@@ -69,22 +69,55 @@ def run_patient_preprocessing_scientific_stage(
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     pydicom_item = runtime_state.pydicom_item
 
-    if stage_config.uncertainty_attachment is not None:
-        from preprocessing.uncertainty_attachment import attach_patient_uncertainty_data_from_dataframe
+    if stage_config.real_biopsy_processing is not None:
+        from preprocessing.biopsy_processing.per_patient import process_patient_real_biopsies
 
-        count = attach_patient_uncertainty_data_from_dataframe(
+        real_biopsy_config = stage_config.real_biopsy_processing
+        real_biopsy_count = _count_biopsies_by_simulated_flag(pydicom_item, runtime_state.bx_ref, simulated=False)
+        process_patient_real_biopsies(
             patient_uid=runtime_state.patient_uid,
             pydicom_item=pydicom_item,
-            read_uncertainties_dataframe=stage_config.uncertainty_attachment.read_uncertainties_dataframe,
-            uncertainty_data_cls=stage_config.uncertainty_attachment.uncertainty_data_cls,
+            master_structure_reference_dict=runtime_state.master_structure_reference_dict,
+            structs_referenced_dict=real_biopsy_config.structs_referenced_dict,
+            bx_ref=runtime_state.bx_ref,
+            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.PREPROCESSING),
+            interp_inter_slice_dist=real_biopsy_config.interp_inter_slice_dist,
+            interp_intra_slice_dist=real_biopsy_config.interp_intra_slice_dist,
+            interp_dist_caps=real_biopsy_config.interp_dist_caps,
+            biopsy_radius=real_biopsy_config.biopsy_radius,
+            display_pca_fit_variation_for_biopsies_bool=(
+                real_biopsy_config.display_pca_fit_variation_for_biopsies_bool
+            ),
+            voxel_size_for_structure_volume_calc_non_bx=(
+                real_biopsy_config.voxel_size_for_structure_volume_calc_non_bx
+            ),
+            factor_for_voxel_size=real_biopsy_config.factor_for_voxel_size,
+            cupy_array_upper_limit_NxN_size_input=real_biopsy_config.cupy_array_upper_limit_nxn_size_input,
+            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                real_biopsy_config.nearest_zslice_vals_and_indices_cupy_generic_max_size
+            ),
+            generate_cuda_log_files_volume_calculation=(
+                real_biopsy_config.generate_cuda_log_files_volume_calculation
+            ),
+            constant_z_slice_polygons_handler_option=real_biopsy_config.constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                real_biopsy_config.remove_consecutive_duplicate_points_in_polygons
+            ),
+            include_edges_in_log_files=real_biopsy_config.include_edges_in_log_files,
+            custom_cuda_kernel_type=real_biopsy_config.custom_cuda_kernel_type,
+            demonstrate_volume_calculation_correctness_bool_1=(
+                real_biopsy_config.demonstrate_volume_calculation_correctness_bool_1
+            ),
+            plot_volume_calculation_containment_result_bool_1_old=(
+                real_biopsy_config.plot_volume_calculation_containment_result_bool_1_old
+            ),
+            plot_binary_mask_bool=real_biopsy_config.plot_binary_mask_bool,
         )
-        metadata["steps"].append("uncertainty_attachment")
-        metadata["uncertainty_attached_count"] = int(count)
+        metadata["steps"].append("real_biopsy_processing")
+        metadata["real_biopsy_count"] = int(real_biopsy_count)
 
     if stage_config.simulated_biopsy_preparation is not None:
-        from preprocessing.biopsy_processing.per_patient.simulated_biopsy_preparation import (
-            prepare_patient_simulated_biopsies,
-        )
+        from preprocessing.biopsy_processing.per_patient import prepare_patient_simulated_biopsies
 
         preparation_config = stage_config.simulated_biopsy_preparation
         length_results, preparation_dataframe = prepare_patient_simulated_biopsies(
@@ -100,6 +133,38 @@ def run_patient_preprocessing_scientific_stage(
         metadata["steps"].append("simulated_biopsy_preparation")
         metadata["simulated_biopsy_preparation_rows"] = int(len(preparation_dataframe))
         metadata["simulated_biopsy_length_result_count"] = len(length_results or {})
+
+    if stage_config.simulated_biopsy_planning is not None:
+        from preprocessing.biopsy_processing.per_patient import plan_patient_simulated_biopsies
+
+        planning_config = stage_config.simulated_biopsy_planning
+        simulated_biopsy_count = _count_biopsies_by_simulated_flag(pydicom_item, runtime_state.bx_ref, simulated=True)
+        plan_patient_simulated_biopsies(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=pydicom_item,
+            bx_ref=runtime_state.bx_ref,
+            bx_sample_pts_lattice_spacing=planning_config.bx_sample_pts_lattice_spacing,
+            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.PREPROCESSING),
+            centroid_line_vec_sim_list=planning_config.centroid_line_vec_sim_list,
+            centroid_first_pos_sim_list=planning_config.centroid_first_pos_sim_list,
+            num_centroids_for_sim_bxs=planning_config.num_centroids_for_sim_bxs,
+            simulated_bx_rad=planning_config.simulated_bx_rad,
+            plot_simulated_cores_immediately=planning_config.plot_simulated_cores_immediately,
+        )
+        metadata["steps"].append("simulated_biopsy_planning")
+        metadata["simulated_biopsy_planning_count"] = int(simulated_biopsy_count)
+
+    if stage_config.uncertainty_attachment is not None:
+        from preprocessing.uncertainty_attachment import attach_patient_uncertainty_data_from_dataframe
+
+        count = attach_patient_uncertainty_data_from_dataframe(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=pydicom_item,
+            read_uncertainties_dataframe=stage_config.uncertainty_attachment.read_uncertainties_dataframe,
+            uncertainty_data_cls=stage_config.uncertainty_attachment.uncertainty_data_cls,
+        )
+        metadata["steps"].append("uncertainty_attachment")
+        metadata["uncertainty_attached_count"] = int(count)
 
     if stage_config.realized_biopsy_targeting is not None:
         from preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting import (
@@ -440,6 +505,17 @@ def _stage_name_value(stage_name: PatientStageName | str) -> str:
     if isinstance(stage_name, PatientStageName):
         return stage_name.value
     return str(stage_name)
+
+
+def _count_biopsies_by_simulated_flag(pydicom_item: Mapping[str, Any],
+                                      bx_ref: str,
+                                      *,
+                                      simulated: bool) -> int:
+    return sum(
+        1
+        for specific_structure in pydicom_item.get(bx_ref, ())
+        if bool(specific_structure.get("Simulated bool")) is simulated
+    )
 
 
 def _require_parallel_pool(scientific_config: PatientRunnerScientificConfig,

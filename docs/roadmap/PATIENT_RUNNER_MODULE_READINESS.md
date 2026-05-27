@@ -261,9 +261,13 @@ Recommended order of operations from this point:
 2. Use the opt-in adapters in `patient_runner/scientific_stages.py` to build a
   staged patient scientific sequence without changing `default_patient_stages()`
   or the frozen legacy oracle path.
-3. Fill the remaining preprocessing adapter slices in the same boundary as the
-  heavier non-biopsy/biopsy geometry signatures are made runner-neutral; current
-  adapters cover the lower-risk patient-local preprocessing slices first.
+3. Fill the remaining preprocessing and post-preprocessing adapter slices in the
+  same boundary as their legacy ordering becomes explicit. Current adapters cover
+  real-biopsy processing, simulated-biopsy preparation, simulated-biopsy
+  planning, uncertainty attachment, realized targeting, sampled-biopsy
+  processing, MC prep, MC simulation, optimizer, and guidance. Simulated-biopsy
+  finalization should be wired as its own opt-in stage because the legacy path
+  runs it after optimizer-v2, not inside early preprocessing.
 4. Add a separate scientific shadow-validation mode after the adapter sequence
   is configured from main. Keep `SHADOW_OUTPUT` as artifact/export/assembly
   validation from completed legacy state.
