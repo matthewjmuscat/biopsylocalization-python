@@ -255,27 +255,23 @@ Completed through the 2026-05-27 pass:
 
 Recommended order of operations from this point:
 
-1. Extract optimizer-v1 into a true patient-local stage if optimizer-v1 remains
-  in the per-patient runner scope. The current v1 surface is still an oracle
-  adapter, while optimizer-v2 now has a proper patient-local stage.
-2. Keep containment behind the additive patient-local helpers in
-  `mc/simulation/per_patient/containment.py`. The neutral relative-structure
-  inventory, dilation-bank setup, per-biopsy/relative-structure input prep, core
-  helper/kernel API wrappers, and per-biopsy statistics/writeback helpers now
-  exist; route through them only after parity validation against the oracle.
-3. Keep dose/dose-gradient helpers behind
-  `mc/simulation/per_patient/dose.py`. The lattice-context, per-biopsy
-  localization, array writeback, and DVH helpers now exist; route through them
-  only after parity validation against the oracle.
-4. Keep MR ADC localization behind `mc/simulation/per_patient/mr.py`.
-  `run_patient_mr_adc_localization_stage(...)` now owns the one-patient MR ADC
-  localization loop while leaving raw dumps, plotting, and the singleton oracle
-  adapter separate.
-5. Validate the additive MC containment/dose/MR/output wrappers against the
-  frozen cohort oracle before live routing.
-6. Build out the complete patient runner after the scientific patient-stage
-  modules above have stable contracts. Earlier runner work should stay limited
-  to scaffolding, manifests, adapters, and shadow-validation harnesses.
+1. Use the runner scientific config boundary in `patient_runner/scientific_config.py`
+  to map legacy main config values into explicit preprocessing, MC prep, MC
+  simulation, optimizer, and guidance stage-group configs.
+2. Use the opt-in adapters in `patient_runner/scientific_stages.py` to build a
+  staged patient scientific sequence without changing `default_patient_stages()`
+  or the frozen legacy oracle path.
+3. Fill the remaining preprocessing adapter slices in the same boundary as the
+  heavier non-biopsy/biopsy geometry signatures are made runner-neutral; current
+  adapters cover the lower-risk patient-local preprocessing slices first.
+4. Add a separate scientific shadow-validation mode after the adapter sequence
+  is configured from main. Keep `SHADOW_OUTPUT` as artifact/export/assembly
+  validation from completed legacy state.
+5. Add durable stage-state parity manifests beside patient artifacts: performed
+  flags, skip reasons, output keys present, counts, dataframe shapes, and hashes
+  where useful.
+6. Compare independently run patient-stage outputs against the frozen cohort
+  oracle through post-run parity surfaces before live routing.
 7. After patient-runner validation against the legacy cohort oracle, remove
-    remaining Rich dependencies from patient scientific functions and keep Rich
-    only in legacy/main/frontend wrappers.
+  remaining Rich dependencies from patient scientific functions and keep Rich
+  only in legacy/main/frontend wrappers.

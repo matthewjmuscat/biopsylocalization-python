@@ -123,6 +123,22 @@ Current manifest surface:
   so stage timing/status/artifact metadata is recorded through the same typed
   result contracts consumed by validation and assembly.
 
+Scientific stage config boundary:
+
+- `scientific_config.py` owns the opt-in `PatientRunnerScientificConfig` bundle
+  and stage-group configs for preprocessing, MC prep, MC simulation,
+  optimization, and guidance-map precompute,
+- preprocessing is represented explicitly through currently patient-local slices
+  such as uncertainty attachment, simulated-biopsy preparation, realized
+  targeting, and sampled-biopsy processing; heavier geometry preprocessing can
+  be added to the same boundary as those signatures are cleaned,
+- `scientific_stages.py` contains thin runner adapters that translate
+  `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
+  existing patient scientific modules,
+- `build_patient_scientific_stages(...)` is opt-in and does not change
+  `default_patient_stages()`, which remains artifact-only for the current
+  shadow-output validation path.
+
 Main-facing validation gate:
 
 - `biopsy_localization_convex_main.py` keeps the legacy path as the oracle and

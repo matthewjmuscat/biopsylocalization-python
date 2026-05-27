@@ -21,8 +21,10 @@ class PatientStageName(str, Enum):
     OPTIMIZATION = "optimization"
     SIMULATED_BIOPSY_FINALIZATION = "simulated_biopsy_finalization"
     SAMPLING_CLASSIFICATION = "sampling_classification"
+    MC_PREP = "mc_prep"
     MC_SIMULATION = "mc_simulation"
     PATIENT_ARTIFACT_WRITING = "patient_artifact_writing"
+    GUIDANCE = "guidance"
 
 
 class PatientStageStatus(str, Enum):

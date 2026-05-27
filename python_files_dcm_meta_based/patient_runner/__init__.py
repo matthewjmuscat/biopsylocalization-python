@@ -71,6 +71,24 @@ from .runner import PatientStageRunner
 from .runner import default_patient_stages
 from .runner import run_patient_case
 from .runner import run_patient_stages
+from .scientific_config import PatientGuidanceScientificConfig
+from .scientific_config import PatientMCPrepScientificConfig
+from .scientific_config import PatientMCSimulationScientificConfig
+from .scientific_config import PatientOptimizationScientificConfig
+from .scientific_config import PatientPreprocessingScientificConfig
+from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
+from .scientific_config import PatientRunnerScientificConfig
+from .scientific_config import PatientSampledBiopsyProcessingStageConfig
+from .scientific_config import PatientScientificStageResources
+from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
+from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
+from .scientific_stages import build_patient_scientific_stages
+from .scientific_stages import run_patient_guidance_scientific_stage
+from .scientific_stages import run_patient_mc_prep_scientific_stage
+from .scientific_stages import run_patient_mc_simulation_scientific_stage
+from .scientific_stages import run_patient_optimization_scientific_stage
+from .scientific_stages import run_patient_preprocessing_scientific_stage
 from .stages import write_patient_artifacts_stage
 
 __all__ = [
@@ -91,6 +109,13 @@ __all__ = [
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_SCIENTIFIC_STAGE_ORDER",
+    "PatientGuidanceScientificConfig",
+    "PatientMCPrepScientificConfig",
+    "PatientMCSimulationScientificConfig",
+    "PatientOptimizationScientificConfig",
+    "PatientPreprocessingScientificConfig",
+    "PatientRealizedBiopsyTargetingStageConfig",
     "PatientRunResult",
     "PatientRunnerMainValidationConfig",
     "PatientRunnerMainValidationMode",
@@ -100,14 +125,20 @@ __all__ = [
     "PatientRunnerParitySurfaceResult",
     "PatientRunnerPostRunParityConfig",
     "PatientRunnerPostRunParityResult",
+    "PatientRunnerScientificConfig",
+    "PatientSampledBiopsyProcessingStageConfig",
+    "PatientScientificStageResources",
     "PatientStage",
     "PatientStageName",
     "PatientStageResult",
     "PatientStageRunner",
     "PatientStageStatus",
+    "PatientSimulatedBiopsyPreparationStageConfig",
+    "PatientUncertaintyAttachmentStageConfig",
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
+    "build_patient_scientific_stages",
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
@@ -124,6 +155,11 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_guidance_scientific_stage",
+    "run_patient_mc_prep_scientific_stage",
+    "run_patient_mc_simulation_scientific_stage",
+    "run_patient_optimization_scientific_stage",
+    "run_patient_preprocessing_scientific_stage",
     "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
     "run_patient_stages",
