@@ -33,6 +33,13 @@ Keep three layers distinct:
   artifact writing, assembly, validation harnesses, startup, runtime logging,
   UI, and other workflow control code.
 
+Patient-runner tranches belong to the orchestration layer. A tranche recipe may
+sequence standalone patient scientific modules in legacy-compatible order, but it
+should not become a scientific implementation and should not absorb patient
+discovery. DICOM discovery, modality routing, patient selection, prompts, and
+input manifests remain run-scoped input/startup work; tranche recipes consume the
+resolved patient case inputs.
+
 ## Presentation And Rich Boundary
 
 Rich is a presentation adapter, not a scientific dependency. Keep it available
@@ -147,6 +154,7 @@ Scientific packages should own:
 Orchestration/product packages should own:
 
 - patient runner contracts and stage sequencing,
+- tranche recipes that order standalone patient scientific modules,
 - artifact writing, manifests, and cohort assembly,
 - runtime logging, retries, worker policy, and startup/bootstrap,
 - UI and product-specific interaction surfaces,
@@ -218,6 +226,9 @@ Before adding or moving a patient-facing module, check:
 7. Does the new patient entrypoint require Rich, `live_display`, or
   `important_info`? If yes, move that dependency to a wrapper or adapter before
   treating the interface as clean.
+8. Is a runner tranche starting to scan inputs, choose modalities, or perform
+   patient discovery? If yes, move that work back to input/startup/run-scoped
+   discovery and pass resolved patient cases into the tranche.
 
 If the answer would create a parallel tree, stop and update the plan before
 editing code.
