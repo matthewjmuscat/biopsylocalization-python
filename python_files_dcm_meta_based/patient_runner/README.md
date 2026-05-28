@@ -202,6 +202,15 @@ Main-facing validation gate:
   assembles cohort tables, and compares them with the legacy final dataframes,
 - this first gate validates the artifact/export/assembly layer, not independent
   scientific recomputation.
+- `PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW` is a separate mode for
+  independently running a named patient scientific pathway into an explicit
+  evidence root; the first scaffold requires an explicit
+  `PatientScientificShadowConfig` and defaults to deep-copying each carved
+  patient state before scientific stages run so the legacy oracle dictionaries
+  are not mutated.
+- scientific-shadow manifests record stage status, skip/error state, metadata
+  keys, output paths, and optional dataframe snapshots/shapes as validation
+  evidence rather than production output artifacts.
 
 Post-run parity surface:
 

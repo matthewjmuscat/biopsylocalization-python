@@ -152,10 +152,10 @@ from output_artifacts import PHASE3C_OUTPUT_DIR_NAME
 from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
 from output_artifacts import write_phase3c_output_surface
-from patient_runner import DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME
 from patient_runner import LegacyRuntimeKeys
 from patient_runner import PatientRunnerMainValidationConfig
 from patient_runner import PatientRunnerMainValidationMode
+from patient_runner import default_patient_runner_main_validation_output_dir
 from patient_runner import run_patient_runner_main_validation
 from patient_runner import summarize_patient_runner_main_validation
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
@@ -5338,17 +5338,21 @@ def main():
                         },
                     )
 
-            if PatientRunnerMainValidationMode(patient_runner_validation_mode) != PatientRunnerMainValidationMode.DISABLED:
-                patient_runner_validation_output_dir = specific_output_dir.joinpath(
-                    "validation",
-                    DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME,
+            patient_runner_validation_resolved_mode = PatientRunnerMainValidationMode(patient_runner_validation_mode)
+            if patient_runner_validation_resolved_mode != PatientRunnerMainValidationMode.DISABLED:
+                patient_runner_validation_output_dir = default_patient_runner_main_validation_output_dir(
+                    specific_output_dir,
+                    patient_runner_validation_resolved_mode,
+                )
+                patient_runner_validation_phase_name = (
+                    f"patient_runner.{patient_runner_validation_resolved_mode.value}_validation"
                 )
                 if runtime_logger is not None:
                     runtime_logger.phase_start(
-                        "patient_runner.shadow_output_validation",
-                        "Starting patient-runner shadow output validation.",
+                        patient_runner_validation_phase_name,
+                        f"Starting patient-runner {patient_runner_validation_resolved_mode.value} validation.",
                         details={
-                            "mode": patient_runner_validation_mode,
+                            "mode": patient_runner_validation_resolved_mode.value,
                             "output_dir": patient_runner_validation_output_dir,
                         },
                     )
@@ -5381,19 +5385,33 @@ def main():
                     "validation_summary",
                     {},
                 ) or {}
-                important_info.add_text_line(
-                    "Patient-runner shadow output validation: {} matches, {} mismatches, {} missing assembled tables, {} missing final dataframes.".format(
-                        patient_runner_cohort_validation_summary.get("matched_count", 0),
-                        patient_runner_cohort_validation_summary.get("mismatch_count", 0),
-                        patient_runner_cohort_validation_summary.get("missing_assembled_table_count", 0),
-                        patient_runner_cohort_validation_summary.get("missing_final_dataframe_count", 0),
-                    ),
-                    live_display,
-                )
+                if patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SHADOW_OUTPUT:
+                    important_info.add_text_line(
+                        "Patient-runner shadow output validation: {} matches, {} mismatches, {} missing assembled tables, {} missing final dataframes.".format(
+                            patient_runner_cohort_validation_summary.get("matched_count", 0),
+                            patient_runner_cohort_validation_summary.get("mismatch_count", 0),
+                            patient_runner_cohort_validation_summary.get("missing_assembled_table_count", 0),
+                            patient_runner_cohort_validation_summary.get("missing_final_dataframe_count", 0),
+                        ),
+                        live_display,
+                    )
+                elif patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
+                    patient_runner_scientific_shadow_summary = patient_runner_validation_summary.get(
+                        "scientific_shadow_summary",
+                        {},
+                    ) or {}
+                    important_info.add_text_line(
+                        "Patient-runner scientific shadow validation: {} patients, {} failed patients, status {}.".format(
+                            patient_runner_scientific_shadow_summary.get("patient_count", 0),
+                            patient_runner_scientific_shadow_summary.get("failed_patient_count", 0),
+                            patient_runner_scientific_shadow_summary.get("status", "unknown"),
+                        ),
+                        live_display,
+                    )
                 if runtime_logger is not None:
                     runtime_logger.phase_end(
-                        "patient_runner.shadow_output_validation",
-                        "Completed patient-runner shadow output validation.",
+                        patient_runner_validation_phase_name,
+                        f"Completed patient-runner {patient_runner_validation_resolved_mode.value} validation.",
                         details=patient_runner_validation_summary,
                     )
 

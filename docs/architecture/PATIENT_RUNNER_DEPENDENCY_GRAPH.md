@@ -191,5 +191,11 @@ kept only as manifest labels.
 6. Keep simulated-biopsy finalization tied to a producer contract; the current
    pathway uses optimization as that producer, while later centroid/manual
    pathways should register their own producer choice.
-7. Add later internal sampling/classification slices, especially double-sextant
+7. Run named pathways through an explicit scientific-shadow validation mode that
+   writes evidence under its own root and defaults to deep-copying carved
+   patient state before mutating scientific stages execute.
+8. Add durable stage-state evidence manifests, including performed/skipped/error
+   status, metadata keys, output paths, and dataframe snapshots or shapes where
+   useful.
+9. Add later internal sampling/classification slices, especially double-sextant
    fragments, behind the existing sampling/classification stage boundary.

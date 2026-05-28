@@ -365,14 +365,16 @@ Recommended order of operations from this point:
   simulated-biopsy planning, uncertainty attachment, realized targeting,
   transform generation, simulated-biopsy finalization, sampled-biopsy
   processing, MC prep, MC simulation, optimizer, and guidance.
-6. Add a separate scientific shadow-validation mode after the graph/pathway
-  sequence is configured from main. Keep `SHADOW_OUTPUT` as
+6. Continue wiring the separate scientific shadow-validation mode after the
+  graph/pathway sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.
-7. Add durable stage-state parity manifests beside patient artifacts: performed
-  flags, skip reasons, output keys present, counts, dataframe shapes or
-  dataframe snapshots where useful, and stable hashes where available.
-8. Compare independently run patient-stage outputs against the frozen cohort
+7. Extend durable stage-state parity manifests beside patient artifacts:
+  performed flags, skip reasons, output keys present, counts, dataframe shapes
+  or dataframe snapshots where useful, and stable hashes where available.
+8. Map legacy main config values into `PatientRunnerScientificConfig` for the
+  first `current_dosimetry_shadow` run without changing live legacy routing.
+9. Compare independently run patient-stage outputs against the frozen cohort
   oracle through post-run parity surfaces before live routing.
-9. After patient-runner validation against the legacy cohort oracle, remove
+10. After patient-runner validation against the legacy cohort oracle, remove
   remaining Rich dependencies from patient scientific functions and keep Rich
   only in legacy/main/frontend wrappers.

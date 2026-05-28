@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 import json
@@ -25,6 +25,11 @@ from .contracts import PatientBatchRunConfig
 from .contracts import PatientBatchRunResult
 from .contracts import PatientRunConfig
 from .contracts import validate_patient_uids
+from .scientific_shadow import DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME
+from .scientific_shadow import PatientScientificShadowConfig
+from .scientific_shadow import PatientScientificShadowRunResult
+from .scientific_shadow import run_patient_scientific_shadow
+from .scientific_shadow import summarize_patient_scientific_shadow_run
 
 
 PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION = "patient_runner_main_validation_v1"
@@ -36,6 +41,7 @@ class PatientRunnerMainValidationMode(str, Enum):
 
     DISABLED = "disabled"
     SHADOW_OUTPUT = "shadow_output"
+    SCIENTIFIC_SHADOW = "scientific_shadow"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +58,7 @@ class PatientRunnerMainValidationConfig:
     patient_uids: Sequence[str] = ()
     final_table_names: Sequence[str] = ()
     source_table_names: Sequence[str] = ()
+    scientific_shadow_config: PatientScientificShadowConfig | None = None
     output_dir: Path | None = None
     write_outputs: bool = True
     write_assembled_tables: bool = True
@@ -65,6 +72,11 @@ class PatientRunnerMainValidationConfig:
         object.__setattr__(self, "patient_uids", validate_patient_uids(self.patient_uids, "patient_uids"))
         object.__setattr__(self, "final_table_names", _validate_name_filter(self.final_table_names, "final_table_names"))
         object.__setattr__(self, "source_table_names", _validate_name_filter(self.source_table_names, "source_table_names"))
+        if self.scientific_shadow_config is not None and not isinstance(
+            self.scientific_shadow_config,
+            PatientScientificShadowConfig,
+        ):
+            raise TypeError("scientific_shadow_config must be a PatientScientificShadowConfig instance")
         if self.output_dir is not None:
             object.__setattr__(self, "output_dir", Path(self.output_dir))
         object.__setattr__(self, "write_outputs", bool(self.write_outputs))
@@ -98,6 +110,24 @@ class PatientRunnerMainValidationResult:
         object.__setattr__(self, "mode", PatientRunnerMainValidationMode(self.mode))
         object.__setattr__(self, "output_dir", Path(self.output_dir))
         object.__setattr__(self, "written_paths", tuple(Path(path) for path in self.written_paths))
+        if self.summary_path is not None:
+            object.__setattr__(self, "summary_path", Path(self.summary_path))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientRunnerMainScientificShadowValidationResult:
+    """Result bundle from a main-facing scientific shadow validation run."""
+
+    mode: PatientRunnerMainValidationMode
+    output_dir: Path
+    scientific_shadow_result: PatientScientificShadowRunResult
+    summary_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", PatientRunnerMainValidationMode(self.mode))
+        object.__setattr__(self, "output_dir", Path(self.output_dir))
+        if not isinstance(self.scientific_shadow_result, PatientScientificShadowRunResult):
+            raise TypeError("scientific_shadow_result must be a PatientScientificShadowRunResult instance")
         if self.summary_path is not None:
             object.__setattr__(self, "summary_path", Path(self.summary_path))
 
@@ -154,7 +184,32 @@ def _config_or_default(config: PatientRunnerMainValidationConfig | None) -> Pati
 def _resolve_output_dir(config: PatientRunnerMainValidationConfig, fallback_output_root: Path) -> Path:
     if config.output_dir is not None:
         return config.output_dir
-    return Path(fallback_output_root).joinpath("validation", DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME)
+    return default_patient_runner_main_validation_output_dir(fallback_output_root, config.mode)
+
+
+def default_patient_runner_main_validation_output_dir(
+    fallback_output_root: Path,
+    mode: PatientRunnerMainValidationMode | str,
+) -> Path:
+    """Return the default output/evidence root for one main validation mode."""
+    resolved_mode = PatientRunnerMainValidationMode(mode)
+    if resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
+        dir_name = DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME
+    else:
+        dir_name = DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME
+    return Path(fallback_output_root).joinpath("validation", dir_name)
+
+
+def _scientific_shadow_config_for_main(config: PatientRunnerMainValidationConfig) -> PatientScientificShadowConfig:
+    if config.scientific_shadow_config is None:
+        raise ValueError("scientific_shadow_config is required for SCIENTIFIC_SHADOW validation mode")
+    shadow_config = config.scientific_shadow_config
+    if config.patient_uids:
+        if shadow_config.patient_uids and shadow_config.patient_uids != config.patient_uids:
+            raise ValueError("patient_uids cannot differ between main validation config and scientific_shadow_config")
+        if not shadow_config.patient_uids:
+            shadow_config = replace(shadow_config, patient_uids=config.patient_uids)
+    return shadow_config
 
 
 def _cohort_dataframes(master_cohort_patient_data_and_dataframes: Mapping[str, Any]) -> dict[str, pd.DataFrame]:
@@ -174,7 +229,7 @@ def run_patient_runner_main_validation(
     legacy_keys: LegacyRuntimeKeys,
     output_root: Path,
     config: PatientRunnerMainValidationConfig | None = None,
-) -> PatientRunnerMainValidationResult | PatientRunnerMainValidationSkippedResult:
+) -> PatientRunnerMainValidationResult | PatientRunnerMainScientificShadowValidationResult | PatientRunnerMainValidationSkippedResult:
     """Run the gated patient-runner validation hook from legacy main.
 
     The initial `SHADOW_OUTPUT` mode does not recompute scientific stages. It
@@ -190,9 +245,6 @@ def run_patient_runner_main_validation(
             mode=PatientRunnerMainValidationMode.DISABLED,
             output_dir=resolved_output_dir,
         )
-    if resolved_config.mode != PatientRunnerMainValidationMode.SHADOW_OUTPUT:
-        raise ValueError(f"Unsupported patient-runner main validation mode: {resolved_config.mode}")
-
     metadata = dict(resolved_config.metadata)
     metadata.update({"validation_mode": resolved_config.mode.value})
     legacy_cohort_state = LegacyCohortRuntimeState(
@@ -206,6 +258,25 @@ def run_patient_runner_main_validation(
         legacy_keys=legacy_keys,
         run_id=resolved_config.run_id,
     )
+    if resolved_config.mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
+        scientific_shadow_result = run_patient_scientific_shadow(
+            legacy_cohort_state,
+            patient_config,
+            _scientific_shadow_config_for_main(resolved_config),
+        )
+        summary_path = resolved_output_dir.joinpath("patient_runner_main_validation_summary.json")
+        result = PatientRunnerMainScientificShadowValidationResult(
+            mode=resolved_config.mode,
+            output_dir=resolved_output_dir,
+            scientific_shadow_result=scientific_shadow_result,
+            summary_path=summary_path,
+        )
+        write_patient_runner_main_validation_summary(result, output_path=summary_path)
+        return result
+
+    if resolved_config.mode != PatientRunnerMainValidationMode.SHADOW_OUTPUT:
+        raise ValueError(f"Unsupported patient-runner main validation mode: {resolved_config.mode}")
+
     batch_config = PatientBatchRunConfig(
         patient_config=patient_config,
         patient_uids=resolved_config.patient_uids,
@@ -245,7 +316,7 @@ def run_patient_runner_main_validation(
 
 
 def summarize_patient_runner_main_validation(
-    result: PatientRunnerMainValidationResult | PatientRunnerMainValidationSkippedResult,
+    result: PatientRunnerMainValidationResult | PatientRunnerMainScientificShadowValidationResult | PatientRunnerMainValidationSkippedResult,
 ) -> dict[str, Any]:
     """Return a JSON-ready summary for the main-facing validation result."""
     if isinstance(result, PatientRunnerMainValidationSkippedResult):
@@ -256,6 +327,22 @@ def summarize_patient_runner_main_validation(
             "status": "skipped",
             "output_dir": result.output_dir.as_posix() if result.output_dir is not None else "",
         }
+
+    if isinstance(result, PatientRunnerMainScientificShadowValidationResult):
+        scientific_shadow_summary = summarize_patient_scientific_shadow_run(result.scientific_shadow_result)
+        summary = {
+            "schema_version": PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION,
+            "generated_utc": _utc_now_iso(),
+            "mode": result.mode.value,
+            "status": scientific_shadow_summary["status"],
+            "output_dir": result.output_dir.as_posix(),
+            "scientific_shadow_summary": scientific_shadow_summary,
+            "validation_summary": None,
+            "written_path_count": len(result.scientific_shadow_result.written_paths) + (1 if result.summary_path else 0),
+            "written_paths": [path.as_posix() for path in result.scientific_shadow_result.written_paths]
+            + ([result.summary_path.as_posix()] if result.summary_path is not None else []),
+        }
+        return _json_safe(summary)
 
     validation_summary = None
     if result.validation_df is not None:
@@ -281,7 +368,7 @@ def summarize_patient_runner_main_validation(
 
 
 def write_patient_runner_main_validation_summary(
-    result: PatientRunnerMainValidationResult | PatientRunnerMainValidationSkippedResult,
+    result: PatientRunnerMainValidationResult | PatientRunnerMainScientificShadowValidationResult | PatientRunnerMainValidationSkippedResult,
     output_path: Path | None = None,
 ) -> Path:
     """Write the main-facing patient-runner validation summary JSON."""
