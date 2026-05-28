@@ -96,7 +96,16 @@ DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES = (
     PatientScientificStageDependency(
         stage_name=PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
         required_stage_names=(PatientStageName.OPTIMIZATION,),
-        summary="Finalizes optimized simulated biopsy geometry after optimizer stages.",
+        summary=(
+            "Finalizes simulated-biopsy geometry from the current legacy-shadow "
+            "producer; the current encoded producer is optimization."
+        ),
+        metadata={
+            "dependency_scope": "current_legacy_shadow_pathway",
+            "producer_contract": "simulated_biopsy_source",
+            "current_producer_stage": PatientStageName.OPTIMIZATION.value,
+            "future_producers": ("optimizer_v1", "optimizer_v2", "centroid", "manual_or_configured"),
+        },
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.SAMPLING_CLASSIFICATION,
@@ -149,7 +158,16 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES = (
     PatientScientificStageDependency(
         stage_name=PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
         required_stage_names=(PatientStageName.OPTIMIZATION,),
-        summary="Finalizes optimized simulated biopsy geometry after optimizer stages.",
+        summary=(
+            "Finalizes simulated-biopsy geometry from the current legacy-shadow "
+            "producer; the current encoded producer is optimization."
+        ),
+        metadata={
+            "dependency_scope": "current_legacy_shadow_pathway",
+            "producer_contract": "simulated_biopsy_source",
+            "current_producer_stage": PatientStageName.OPTIMIZATION.value,
+            "future_producers": ("optimizer_v1", "optimizer_v2", "centroid", "manual_or_configured"),
+        },
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.SAMPLING_CLASSIFICATION,

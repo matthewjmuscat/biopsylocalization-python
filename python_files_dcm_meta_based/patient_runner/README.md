@@ -158,9 +158,10 @@ Scientific stage config boundary:
   preprocessed/debug state.
 - transform generation is now its own executable adapter before optimization
   and MC prep,
-- simulated-biopsy finalization is now a separate executable adapter after
-  optimization because the legacy path runs it after optimizer-v2, not inside
-  early preprocessing,
+- simulated-biopsy finalization is now a separate executable adapter after the
+  current legacy-shadow simulated-biopsy producer; that producer is optimization
+  today because the legacy path runs finalization after optimizer-v2, but later
+  centroid/manual producers should satisfy the same producer contract,
 - sampling/classification is now a separate executable adapter after
   simulated-biopsy finalization; it currently wraps sampled-biopsy processing,
   with later classification fragments to add inside the same stage boundary.
@@ -185,10 +186,10 @@ Scientific tranche direction:
   plus later patient-local lattice/grid/KD-tree artifacts, while anatomical
   preprocessing owns the current raw-contour, selected/unique structure,
   standard non-biopsy structure, and prostate-only MR ADC adapters,
-- biopsy preprocessing, pre-optimizer transforms/optimizers, post-optimizer
-  biopsy realization, sampling/classification, MC prep/simulation, and
+- biopsy preprocessing, pre-optimizer transforms/optimizers, simulated-biopsy
+  realization/finalization, sampling/classification, MC prep/simulation, and
   output/guidance/assembly/parity should remain separate tranche recipes so the
-  legacy ordering is visible and testable.
+  legacy ordering and producer choice are visible and testable.
 - the dependency/pathway terminology and current conservative graph are tracked
   in `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`.
 

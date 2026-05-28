@@ -195,7 +195,9 @@ Recommended tranche structure for patient-runner shadow work:
    - Transform-bank generation when required by optimizer/search behavior.
    - Optimizer-v1 and optimizer-v2 patient-local stages.
 6. Post-optimizer biopsy realization tranche
-   - Simulated-biopsy finalization, which the legacy path runs after optimizer-v2.
+  - Simulated-biopsy finalization, which the current legacy path runs after
+    optimizer-v2; later optimizer-v1, centroid, or manual/configured producers
+    should satisfy the same simulated-biopsy source contract.
    - Planned-vs-realized centroid validation and post-optimizer biopsy
      annotations that depend on finalized simulated biopsy geometry.
    - Realized targeting if parity shows it belongs after finalization for the
@@ -367,8 +369,8 @@ Recommended order of operations from this point:
   sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.
 7. Add durable stage-state parity manifests beside patient artifacts: performed
-  flags, skip reasons, output keys present, counts, dataframe shapes, and hashes
-  where useful.
+  flags, skip reasons, output keys present, counts, dataframe shapes or
+  dataframe snapshots where useful, and stable hashes where available.
 8. Compare independently run patient-stage outputs against the frozen cohort
   oracle through post-run parity surfaces before live routing.
 9. After patient-runner validation against the legacy cohort oracle, remove
