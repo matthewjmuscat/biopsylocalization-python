@@ -120,13 +120,13 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.PRE_OPTIMIZER_TRANSFORM_AND_OPTIMIZATION,
         display_name="Pre-Optimizer Transform And Optimization",
-        summary="Runs transform-bank generation and patient optimizer stages once split adapters are available.",
+        summary="Runs transform-bank generation and patient optimizer stages.",
         planned_surfaces=(
             "transform-bank generation",
             "optimizer-v1",
             "optimizer-v2",
         ),
-        implemented_stage_names=(PatientStageName.OPTIMIZATION,),
+        implemented_stage_names=(PatientStageName.TRANSFORM_GENERATION, PatientStageName.OPTIMIZATION),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.POST_OPTIMIZER_BIOPSY_REALIZATION,

@@ -156,9 +156,9 @@ Scientific stage config boundary:
   named pathway builds require the pathway's enabled stage configs unless the
   caller explicitly marks upstream stages as already satisfied for a controlled
   preprocessed/debug state.
-- the full graph now names transform generation, simulated-biopsy finalization,
-  and sampling/classification separately; the executable adapter slice remains
-  coarser until those missing stage adapters are split out,
+- transform generation is now its own executable adapter before optimization
+  and MC prep; simulated-biopsy finalization and sampling/classification remain
+  named graph nodes that still need separate adapters,
 - simulated-biopsy finalization is intentionally not folded into the early
   preprocessing adapter because the legacy path runs it after optimizer-v2; it
   should become a separate opt-in stage before scientific shadow routing.

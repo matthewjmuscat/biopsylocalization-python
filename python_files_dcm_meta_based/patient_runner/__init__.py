@@ -120,6 +120,7 @@ from .scientific_stages import run_patient_mc_prep_scientific_stage
 from .scientific_stages import run_patient_mc_simulation_scientific_stage
 from .scientific_stages import run_patient_optimization_scientific_stage
 from .scientific_stages import run_patient_preprocessing_scientific_stage
+from .scientific_stages import run_patient_transform_generation_scientific_stage
 from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER
 from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHES
 from .scientific_tranches import PatientScientificTranche
@@ -237,6 +238,7 @@ __all__ = [
     "run_patient_mc_simulation_scientific_stage",
     "run_patient_optimization_scientific_stage",
     "run_patient_preprocessing_scientific_stage",
+    "run_patient_transform_generation_scientific_stage",
     "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
     "run_patient_stages",

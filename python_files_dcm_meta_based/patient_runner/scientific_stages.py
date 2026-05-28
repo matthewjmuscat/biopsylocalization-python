@@ -41,6 +41,7 @@ def build_patient_scientific_stages(
         PatientStageName.GRID_PREPROCESSING.value: _grid_preprocessing_stage(scientific_config),
         PatientStageName.ANATOMICAL_PREPROCESSING.value: _anatomical_preprocessing_stage(scientific_config),
         PatientStageName.PREPROCESSING.value: _preprocessing_stage(scientific_config),
+        PatientStageName.TRANSFORM_GENERATION.value: _transform_generation_stage(scientific_config),
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
@@ -454,6 +455,49 @@ def run_patient_preprocessing_scientific_stage(
     return PatientStageResult.success(PatientStageName.PREPROCESSING, metadata=metadata)
 
 
+def run_patient_transform_generation_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run patient-local transform-bank generation before optimizer/MC consumers."""
+    del config
+    stage_config = scientific_config.mc_prep
+    if stage_config is None or not stage_config.transform_generation_enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.TRANSFORM_GENERATION,
+            reason="transform_generation_not_configured",
+        )
+
+    from mc.prep.per_patient import generate_transformations_for_patient
+
+    num_generated_transform_samples = _resolve_transform_generation_sample_count(
+        runtime_state.master_structure_info_dict,
+        stage_config,
+    )
+    generate_transformations_for_patient(
+        patient_uid=runtime_state.patient_uid,
+        pydicom_item=runtime_state.pydicom_item,
+        simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
+            stage_config.simulate_uniform_bx_shifts_due_to_bx_needle_compartment
+        ),
+        bx_ref=runtime_state.bx_ref,
+        biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
+        num_generated_transform_samples=num_generated_transform_samples,
+        structs_referenced_list=stage_config.structs_referenced_list,
+        rng=scientific_config.resources.rng,
+    )
+    return PatientStageResult.success(
+        PatientStageName.TRANSFORM_GENERATION,
+        metadata={
+            "patient_uid": runtime_state.patient_uid,
+            "steps": ("transform_generation",),
+            "num_generated_transform_samples": int(num_generated_transform_samples),
+        },
+    )
+
+
 def run_patient_mc_prep_scientific_stage(
     runtime_state: LegacyPatientRuntimeState,
     config: PatientRunConfig,
@@ -463,18 +507,14 @@ def run_patient_mc_prep_scientific_stage(
     """Run configured patient-local MC prep transform stages."""
     del config
     stage_config = scientific_config.mc_prep
-    if stage_config is None or not stage_config.enabled:
+    if stage_config is None or not stage_config.transform_application_enabled:
         return PatientStageResult.skipped(PatientStageName.MC_PREP, reason="mc_prep_not_configured")
 
     from mc.prep.per_patient import apply_patient_biopsy_self_transforms
     from mc.prep.per_patient import apply_patient_relative_structure_transforms
-    from mc.prep.per_patient import generate_transformations_for_patient
 
     pydicom_item = runtime_state.pydicom_item
     max_simulations = _resolve_mc_prep_max_simulations(runtime_state.master_structure_info_dict, stage_config)
-    num_generated_transform_samples = stage_config.num_generated_transform_samples
-    if stage_config.run_transform_generation and num_generated_transform_samples is None:
-        num_generated_transform_samples = max_simulations
     num_mc_containment_simulations = None
     if stage_config.run_relative_structure_transforms:
         num_mc_containment_simulations = _resolve_optional_mc_info_int(
@@ -486,27 +526,10 @@ def run_patient_mc_prep_scientific_stage(
         "patient_uid": runtime_state.patient_uid,
         "steps": [],
     }
-    if num_generated_transform_samples is not None:
-        metadata["num_generated_transform_samples"] = int(num_generated_transform_samples)
     if max_simulations is not None:
         metadata["max_simulations"] = int(max_simulations)
     if num_mc_containment_simulations is not None:
         metadata["num_mc_containment_simulations"] = int(num_mc_containment_simulations)
-
-    if stage_config.run_transform_generation:
-        generate_transformations_for_patient(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
-                stage_config.simulate_uniform_bx_shifts_due_to_bx_needle_compartment
-            ),
-            bx_ref=runtime_state.bx_ref,
-            biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
-            num_generated_transform_samples=num_generated_transform_samples,
-            structs_referenced_list=stage_config.structs_referenced_list,
-            rng=scientific_config.resources.rng,
-        )
-        metadata["steps"].append("transform_generation")
 
     if stage_config.run_biopsy_self_transforms:
         if max_simulations is None:
@@ -734,8 +757,17 @@ def _anatomical_preprocessing_stage(scientific_config: PatientRunnerScientificCo
     )
 
 
+def _transform_generation_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.mc_prep is None or not scientific_config.mc_prep.transform_generation_enabled:
+        return None
+    return PatientStage(
+        PatientStageName.TRANSFORM_GENERATION,
+        partial(run_patient_transform_generation_scientific_stage, scientific_config=scientific_config),
+    )
+
+
 def _mc_prep_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
-    if scientific_config.mc_prep is None or not scientific_config.mc_prep.enabled:
+    if scientific_config.mc_prep is None or not scientific_config.mc_prep.transform_application_enabled:
         return None
     return PatientStage(
         PatientStageName.MC_PREP,
@@ -829,13 +861,18 @@ def _resolve_optional_mc_info_int(master_structure_info_dict: Mapping[str, Any],
         ) from exc
 
 
+def _resolve_transform_generation_sample_count(master_structure_info_dict: Mapping[str, Any],
+                                               stage_config: Any) -> int:
+    if stage_config.num_generated_transform_samples is not None:
+        return int(stage_config.num_generated_transform_samples)
+    return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
+
+
 def _resolve_mc_prep_max_simulations(master_structure_info_dict: Mapping[str, Any],
                                      stage_config: Any) -> int | None:
     if stage_config.max_simulations is not None:
         return int(stage_config.max_simulations)
     if stage_config.run_biopsy_self_transforms:
-        return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
-    if stage_config.run_transform_generation and stage_config.num_generated_transform_samples is None:
         return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
     return None
 

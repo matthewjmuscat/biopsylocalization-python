@@ -469,9 +469,16 @@ class PatientMCPrepScientificConfig:
 
     @property
     def enabled(self) -> bool:
+        return self.transform_generation_enabled or self.transform_application_enabled
+
+    @property
+    def transform_generation_enabled(self) -> bool:
+        return self.run_transform_generation
+
+    @property
+    def transform_application_enabled(self) -> bool:
         return any(
             (
-                self.run_transform_generation,
                 self.run_biopsy_self_transforms,
                 self.run_relative_structure_transforms,
             )

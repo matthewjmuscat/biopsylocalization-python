@@ -356,12 +356,12 @@ Recommended order of operations from this point:
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-5. Add the missing adapters that let the executable pathway view converge toward
-  the full graph view, especially transform generation, simulated-biopsy
-  finalization, and sampling/classification. Current adapters cover grid
-  preprocessing, anatomical preprocessing, real-biopsy processing,
-  simulated-biopsy preparation, simulated-biopsy planning, uncertainty
-  attachment, realized targeting, sampled-biopsy processing, MC prep, MC
+5. Add the remaining adapters that let the executable pathway view converge
+  toward the full graph view, especially simulated-biopsy finalization and
+  sampling/classification. Current adapters cover grid preprocessing,
+  anatomical preprocessing, real-biopsy processing, simulated-biopsy
+  preparation, simulated-biopsy planning, uncertainty attachment, realized
+  targeting, sampled-biopsy processing, transform generation, MC prep, MC
   simulation, optimizer, and guidance.
 6. Wire simulated-biopsy finalization as a separate post-optimizer stage because
   the legacy path runs it after optimizer-v2, not inside early preprocessing.
