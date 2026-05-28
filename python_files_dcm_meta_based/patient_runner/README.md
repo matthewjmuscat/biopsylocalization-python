@@ -157,11 +157,12 @@ Scientific stage config boundary:
   caller explicitly marks upstream stages as already satisfied for a controlled
   preprocessed/debug state.
 - transform generation is now its own executable adapter before optimization
-  and MC prep; simulated-biopsy finalization and sampling/classification remain
-  named graph nodes that still need separate adapters,
-- simulated-biopsy finalization is intentionally not folded into the early
-  preprocessing adapter because the legacy path runs it after optimizer-v2; it
-  should become a separate opt-in stage before scientific shadow routing.
+  and MC prep,
+- simulated-biopsy finalization is now a separate executable adapter after
+  optimization because the legacy path runs it after optimizer-v2, not inside
+  early preprocessing,
+- sampling/classification remains a named graph node that still needs a separate
+  adapter split.
 
 Scientific tranche direction:
 

@@ -45,6 +45,7 @@ def build_patient_scientific_stages(
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value: _simulated_biopsy_finalization_stage(scientific_config),
         PatientStageName.GUIDANCE.value: _guidance_stage(scientific_config),
     }
 
@@ -498,6 +499,63 @@ def run_patient_transform_generation_scientific_stage(
     )
 
 
+def run_patient_simulated_biopsy_finalization_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run post-optimizer simulated-biopsy geometry finalization."""
+    del config
+    stage_config = scientific_config.simulated_biopsy_finalization
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+            reason="simulated_biopsy_finalization_not_configured",
+        )
+
+    from preprocessing.biopsy_processing.per_patient import process_patient_simulated_biopsies
+
+    pydicom_item = runtime_state.pydicom_item
+    simulated_biopsy_count = _count_biopsies_by_simulated_flag(pydicom_item, runtime_state.bx_ref, simulated=True)
+    process_patient_simulated_biopsies(
+        patient_uid=runtime_state.patient_uid,
+        pydicom_item=pydicom_item,
+        master_structure_reference_dict=runtime_state.master_structure_reference_dict,
+        structs_referenced_dict=stage_config.structs_referenced_dict,
+        bx_ref=runtime_state.bx_ref,
+        parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.SIMULATED_BIOPSY_FINALIZATION),
+        interp_inter_slice_dist=stage_config.interp_inter_slice_dist,
+        interp_intra_slice_dist=stage_config.interp_intra_slice_dist,
+        interp_dist_caps=stage_config.interp_dist_caps,
+        biopsy_radius=stage_config.biopsy_radius,
+        voxel_size_for_structure_volume_calc_non_bx=stage_config.voxel_size_for_structure_volume_calc_non_bx,
+        factor_for_voxel_size=stage_config.factor_for_voxel_size,
+        cupy_array_upper_limit_NxN_size_input=stage_config.cupy_array_upper_limit_nxn_size_input,
+        nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+            stage_config.nearest_zslice_vals_and_indices_cupy_generic_max_size
+        ),
+        generate_cuda_log_files_volume_calculation=stage_config.generate_cuda_log_files_volume_calculation,
+        constant_z_slice_polygons_handler_option=stage_config.constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=stage_config.remove_consecutive_duplicate_points_in_polygons,
+        include_edges_in_log_files=stage_config.include_edges_in_log_files,
+        custom_cuda_kernel_type=stage_config.custom_cuda_kernel_type,
+        demonstrate_volume_calculation_correctness_bool_1=stage_config.demonstrate_volume_calculation_correctness_bool_1,
+        plot_volume_calculation_containment_result_bool_1_old=(
+            stage_config.plot_volume_calculation_containment_result_bool_1_old
+        ),
+        plot_binary_mask_bool=stage_config.plot_binary_mask_bool,
+    )
+    return PatientStageResult.success(
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        metadata={
+            "patient_uid": runtime_state.patient_uid,
+            "steps": ("simulated_biopsy_finalization",),
+            "simulated_biopsy_count": int(simulated_biopsy_count),
+        },
+    )
+
+
 def run_patient_mc_prep_scientific_stage(
     runtime_state: LegacyPatientRuntimeState,
     config: PatientRunConfig,
@@ -790,6 +848,18 @@ def _optimization_stage(scientific_config: PatientRunnerScientificConfig) -> Pat
     return PatientStage(
         PatientStageName.OPTIMIZATION,
         partial(run_patient_optimization_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _simulated_biopsy_finalization_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if (
+        scientific_config.simulated_biopsy_finalization is None
+        or not scientific_config.simulated_biopsy_finalization.enabled
+    ):
+        return None
+    return PatientStage(
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        partial(run_patient_simulated_biopsy_finalization_scientific_stage, scientific_config=scientific_config),
     )
 
 

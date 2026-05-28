@@ -356,15 +356,15 @@ Recommended order of operations from this point:
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-5. Add the remaining adapters that let the executable pathway view converge
-  toward the full graph view, especially simulated-biopsy finalization and
-  sampling/classification. Current adapters cover grid preprocessing,
-  anatomical preprocessing, real-biopsy processing, simulated-biopsy
-  preparation, simulated-biopsy planning, uncertainty attachment, realized
-  targeting, sampled-biopsy processing, transform generation, MC prep, MC
-  simulation, optimizer, and guidance.
-6. Wire simulated-biopsy finalization as a separate post-optimizer stage because
-  the legacy path runs it after optimizer-v2, not inside early preprocessing.
+5. Add the remaining adapter that lets the executable pathway view converge
+  toward the full graph view, especially sampling/classification. Current
+  adapters cover grid preprocessing, anatomical preprocessing, real-biopsy
+  processing, simulated-biopsy preparation, simulated-biopsy planning,
+  uncertainty attachment, realized targeting, sampled-biopsy processing,
+  transform generation, simulated-biopsy finalization, MC prep, MC simulation,
+  optimizer, and guidance.
+6. Split sampling/classification out of the coarse preprocessing adapter so MC
+  prep can depend on finalized and sampled biopsy state explicitly.
 7. Add a separate scientific shadow-validation mode after the graph/pathway
   sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.

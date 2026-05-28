@@ -137,6 +137,7 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
             "planned-vs-realized centroid validation",
             "post-optimizer biopsy annotations",
         ),
+        implemented_stage_names=(PatientStageName.SIMULATED_BIOPSY_FINALIZATION,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.SAMPLING_CLASSIFICATION,

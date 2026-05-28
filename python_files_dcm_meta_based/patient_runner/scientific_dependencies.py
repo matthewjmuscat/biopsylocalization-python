@@ -60,6 +60,7 @@ DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER = (
     PatientStageName.PREPROCESSING,
     PatientStageName.TRANSFORM_GENERATION,
     PatientStageName.OPTIMIZATION,
+    PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
     PatientStageName.MC_PREP,
     PatientStageName.MC_SIMULATION,
     PatientStageName.GUIDANCE,
@@ -92,9 +93,14 @@ DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES = (
         summary="Runs optimizer stages after transform samples are available for search behavior.",
     ),
     PatientScientificStageDependency(
+        stage_name=PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        required_stage_names=(PatientStageName.OPTIMIZATION,),
+        summary="Finalizes optimized simulated biopsy geometry after optimizer stages.",
+    ),
+    PatientScientificStageDependency(
         stage_name=PatientStageName.MC_PREP,
-        required_stage_names=(PatientStageName.TRANSFORM_GENERATION,),
-        summary="Applies MC transform state after transform-bank generation.",
+        required_stage_names=(PatientStageName.SIMULATED_BIOPSY_FINALIZATION,),
+        summary="Applies MC transform state after finalized simulated biopsy geometry.",
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.MC_SIMULATION,
@@ -138,7 +144,6 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES = (
         stage_name=PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
         required_stage_names=(PatientStageName.OPTIMIZATION,),
         summary="Finalizes optimized simulated biopsy geometry after optimizer stages.",
-        metadata={"adapter_status": "planned"},
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.SAMPLING_CLASSIFICATION,
@@ -187,6 +192,7 @@ DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS = {
         PatientStageName.PREPROCESSING,
         PatientStageName.TRANSFORM_GENERATION,
         PatientStageName.OPTIMIZATION,
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
         PatientStageName.MC_PREP,
         PatientStageName.MC_SIMULATION,
     ),

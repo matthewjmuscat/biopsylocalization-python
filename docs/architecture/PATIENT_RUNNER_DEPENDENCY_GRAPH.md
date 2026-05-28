@@ -118,20 +118,21 @@ patient-runner adapters.
 | guidance/output/parity | mixed patient and run/cohort | selected pathway products | guidance-map recommendations, patient artifacts, cohort assembly, post-run parity |
 
 The dependency module encodes this split graph while still exposing a separate
-currently executable adapter order. Transform generation now has its own
-patient-runner adapter. Biopsy preprocessing still contains work that the graph
-wants to split into independent nodes, such as sampled-biopsy processing. MC prep
-now covers MC transform application after transform generation. The remaining
-coarse adapter boundaries are migration debt, not the desired final graph shape.
+currently executable adapter order. Transform generation and simulated-biopsy
+finalization now have patient-runner adapters. Biopsy preprocessing still
+contains work that the graph wants to split into independent nodes, such as
+sampled-biopsy processing. MC prep now covers MC transform application after
+post-optimizer biopsy finalization. The remaining coarse adapter boundaries are
+migration debt, not the desired final graph shape.
 
 ## Candidate Pathway Presets
 
 The implementation supports named pathway presets rather than forcing callers to
 manually list every stage. Each pathway has a full graph-node slice and a current
 executable adapter slice; the latter stays coarse until the missing adapters are
-split out. The executable slice currently includes the transform-generation
-adapter, but not yet the simulated-biopsy finalization or sampling/classification
-adapters.
+split out. The executable slice currently includes the transform-generation and
+simulated-biopsy finalization adapters, but not yet the sampling/classification
+adapter.
 
 | Pathway | Intended use | Required graph slice |
 | --- | --- | --- |
@@ -176,6 +177,5 @@ kept only as manifest labels.
 4. Treat tranches as optional labels that must resolve to valid graph slices.
 5. Support an explicit already-satisfied prerequisite set for loaded
    preprocessed bundles and other controlled validation states.
-6. Add the remaining adapter splits that let the executable view converge toward
-   the full graph view, especially simulated-biopsy finalization and
-   sampling/classification.
+6. Add the remaining adapter split that lets the executable view converge toward
+   the full graph view, especially sampling/classification.
