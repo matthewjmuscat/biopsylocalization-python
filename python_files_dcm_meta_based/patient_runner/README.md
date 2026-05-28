@@ -123,6 +123,58 @@ Current manifest surface:
   so stage timing/status/artifact metadata is recorded through the same typed
   result contracts consumed by validation and assembly.
 
+Scientific stage config boundary:
+
+- `scientific_config.py` owns the opt-in `PatientRunnerScientificConfig` bundle
+  and stage-group configs for grid preprocessing, anatomical preprocessing,
+  preprocessing, MC prep, MC simulation, optimization, and guidance-map
+  precompute,
+- grid preprocessing is represented as its own opt-in stage before anatomical
+  preprocessing; it currently wraps patient-local dose-grid runtime object
+  construction, MR ADC input normalization, and MR ADC grid runtime object
+  construction with render side effects disabled at the runner boundary,
+- anatomical preprocessing is represented as its own opt-in stage before
+  biopsy-facing preprocessing; it currently wraps raw contour pulling, selected
+  structure selection, standard non-biopsy structure processing, and
+  prostate-only MR ADC summary finalization with legacy presentation objects
+  adapted to null/headless shims,
+- preprocessing is represented explicitly through currently patient-local slices
+  such as real-biopsy geometry processing, simulated-biopsy preparation,
+  simulated-biopsy planning, uncertainty attachment, realized targeting, and
+  sampled-biopsy processing; heavier non-biopsy structure preprocessing can be
+  added to the same boundary as those signatures are cleaned,
+- `scientific_stages.py` contains thin runner adapters that translate
+  `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
+  existing patient scientific modules,
+- `build_patient_scientific_stages(...)` is opt-in and does not change
+  `default_patient_stages()`, which remains artifact-only for the current
+  shadow-output validation path.
+- simulated-biopsy finalization is intentionally not folded into the early
+  preprocessing adapter because the legacy path runs it after optimizer-v2; it
+  should become a separate opt-in stage before scientific shadow routing.
+
+Scientific tranche direction:
+
+- patient scientific modules stay standalone in their owning scientific package;
+  `scientific_tranches.py` defines ordered tranche recipes in `patient_runner`,
+  but those recipes are orchestration only,
+- patient discovery is not a tranche: DICOM discovery, modality routing, patient
+  selection, prompts, and input manifests remain run-scoped discovery/bootstrap
+  work outside scientific stage recipes,
+- tranche recipes may start from discovered patient cases plus carved or built
+  one-patient runtime/reference/info state,
+- grid preprocessing and anatomical preprocessing are separate tranches, with
+  grid preprocessing ordered first because some structure processing consumes
+  grid/lattice information that must already be available; grid preprocessing
+  owns the current dose-grid, MR ADC normalization, and MR ADC grid adapters
+  plus later patient-local lattice/grid/KD-tree artifacts, while anatomical
+  preprocessing owns the current raw-contour, selected/unique structure,
+  standard non-biopsy structure, and prostate-only MR ADC adapters,
+- biopsy preprocessing, pre-optimizer transforms/optimizers, post-optimizer
+  biopsy realization, sampling/classification, MC prep/simulation, and
+  output/guidance/assembly/parity should remain separate tranche recipes so the
+  legacy ordering is visible and testable.
+
 Main-facing validation gate:
 
 - `biopsy_localization_convex_main.py` keeps the legacy path as the oracle and
@@ -132,6 +184,17 @@ Main-facing validation gate:
   assembles cohort tables, and compares them with the legacy final dataframes,
 - this first gate validates the artifact/export/assembly layer, not independent
   scientific recomputation.
+
+Post-run parity surface:
+
+- `patient_runner.parity.run_patient_runner_post_run_parity(...)` compares two
+  completed output surfaces after both runs finish,
+- the default surface compares legacy final cohort CSVs with patient-runner
+  assembled cohort tables using the existing stitch-pair registry,
+- optional recursive CSV comparison reuses the existing validation comparator
+  and is intended for roots that deliberately use path-compatible layouts,
+- future stage-state comparisons should be added as durable manifests beside
+  patient artifacts, not by inspecting live master dictionaries during a run.
 
 Scientific modularization rule:
 
@@ -148,6 +211,13 @@ Current implementation guardrail:
 - keep the validated legacy/semi-modular cohort path as the oracle,
 - build patient scientific modules in their owning scientific packages; see
   `../../docs/architecture/PATIENT_MODULE_TREE_GUIDE.md`,
+- keep Rich/UI objects out of runner-facing patient calls; if an older helper
+  still needs a legacy presentation-shaped object, adapt it inside the owning
+  scientific package boundary rather than in `patient_runner/`,
+- do not create a module-local `_presentation.py` by default; use one only when
+  a package must quarantine old presentation-shaped helper arguments. Clean
+  scientific stages should either reject presentation options or use shared
+  `presentation/` adapters at the outer UI boundary,
 - prefer explicit patient entrypoints in the stage file or a family-local
   `per_patient/` subpackage over a parallel top-level `../patient_stages/`
   tree,

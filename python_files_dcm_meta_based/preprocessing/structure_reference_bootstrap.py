@@ -19,6 +19,7 @@ from biopsy_optimizer.v2.live_integration import (
     TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
     TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
 )
+from legacy_data_keys import legacy_data_keys
 from presentation import ProgressEvent
 from presentation import ProgressSink
 from presentation import coerce_progress_sink
@@ -26,6 +27,12 @@ from presentation import coerce_progress_sink
 
 StructureRecord = dict[str, Any]
 StructureInfoRecord = dict[str, Any]
+LEGACY_MASTER_INFO_KEYS = legacy_data_keys.master_info
+LEGACY_PATIENT_REFERENCE_KEYS = legacy_data_keys.patient_reference
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
+LEGACY_STRUCTURE_INFO_KEYS = legacy_data_keys.structure_info
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
+LEGACY_BIOPSY_RUNTIME_KEYS = legacy_data_keys.biopsy_runtime
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,17 +118,17 @@ class PatientStructureReferenceState:
 
     def to_legacy_dict(self) -> dict[str, Any]:
         return {
-            "Patient UID (generated)": self.patient_uid,
-            "Patient ID (from dicom)": self.patient_id_from_dicom,
-            "Patient Name": self.patient_name,
-            "Fraction number": self.fraction_number,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_uid_generated_key: self.patient_uid,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key: self.patient_id_from_dicom,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key: self.patient_name,
+            LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key: self.fraction_number,
             self.keys.biopsy_ref: list(self.biopsies),
             self.keys.oar_ref: list(self.oars),
             self.keys.dil_ref: list(self.dils),
             self.keys.rectum_ref: list(self.rectums),
             self.keys.urethra_ref: list(self.urethras),
             self.keys.all_ref_key: dict(self.all_reference),
-            "Ready to plot data list": self.ready_to_plot_data,
+            LEGACY_PATIENT_REFERENCE_KEYS.ready_to_plot_data_list_key: self.ready_to_plot_data,
         }
 
     @classmethod
@@ -131,17 +138,19 @@ class PatientStructureReferenceState:
                          keys: PatientStructureReferenceKeys) -> "PatientStructureReferenceState":
         return cls(
             keys=keys,
-            patient_uid=patient_reference_dict["Patient UID (generated)"],
-            patient_id_from_dicom=patient_reference_dict["Patient ID (from dicom)"],
-            patient_name=patient_reference_dict["Patient Name"],
-            fraction_number=patient_reference_dict["Fraction number"],
+            patient_uid=patient_reference_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_uid_generated_key],
+            patient_id_from_dicom=patient_reference_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key],
+            patient_name=patient_reference_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key],
+            fraction_number=patient_reference_dict[LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key],
             biopsies=patient_reference_dict.get(keys.biopsy_ref, ()),
             oars=patient_reference_dict.get(keys.oar_ref, ()),
             dils=patient_reference_dict.get(keys.dil_ref, ()),
             rectums=patient_reference_dict.get(keys.rectum_ref, ()),
             urethras=patient_reference_dict.get(keys.urethra_ref, ()),
             all_reference=patient_reference_dict.get(keys.all_ref_key, {}),
-            ready_to_plot_data=patient_reference_dict.get("Ready to plot data list"),
+            ready_to_plot_data=patient_reference_dict.get(
+                LEGACY_PATIENT_REFERENCE_KEYS.ready_to_plot_data_list_key
+            ),
         )
 
 
@@ -176,10 +185,10 @@ class PatientStructureInfoState:
 
     def to_legacy_dict(self) -> dict[str, Any]:
         return {
-            "Patient UID (generated)": self.patient_uid,
-            "Patient ID (from dicom)": self.patient_id_from_dicom,
-            "Patient Name": self.patient_name,
-            "Fraction number": self.fraction_number,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_uid_generated_key: self.patient_uid,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key: self.patient_id_from_dicom,
+            LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key: self.patient_name,
+            LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key: self.fraction_number,
             self.keys.biopsy_ref: dict(self.biopsy_info),
             self.keys.oar_ref: dict(self.oar_info),
             self.keys.dil_ref: dict(self.dil_info),
@@ -195,10 +204,10 @@ class PatientStructureInfoState:
                          keys: PatientStructureReferenceKeys) -> "PatientStructureInfoState":
         return cls(
             keys=keys,
-            patient_uid=patient_info_dict["Patient UID (generated)"],
-            patient_id_from_dicom=patient_info_dict["Patient ID (from dicom)"],
-            patient_name=patient_info_dict["Patient Name"],
-            fraction_number=patient_info_dict["Fraction number"],
+            patient_uid=patient_info_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_uid_generated_key],
+            patient_id_from_dicom=patient_info_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_id_from_dicom_key],
+            patient_name=patient_info_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key],
+            fraction_number=patient_info_dict[LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key],
             biopsy_info=patient_info_dict.get(keys.biopsy_ref, {}),
             oar_info=patient_info_dict.get(keys.oar_ref, {}),
             dil_info=patient_info_dict.get(keys.dil_ref, {}),
@@ -284,9 +293,9 @@ def _build_non_biopsy_structure_record(roi: Any,
                                        index_number: int,
                                        struct_type: str) -> dict[str, Any]:
     return {
-        "ROI": roi.ROIName,
-        "Ref #": roi.ROINumber,
-        "Index number": index_number,
+    LEGACY_STRUCTURE_RECORD_KEYS.roi_key: roi.ROIName,
+    LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key: roi.ROINumber,
+    LEGACY_STRUCTURE_RECORD_KEYS.index_number_key: index_number,
         "Struct type": struct_type,
         "Raw contour pts zslice list": None,
         "Raw contour pts": None,
@@ -322,12 +331,12 @@ def _build_biopsy_structure_record(roi_name: str,
                                    simulated_type: str,
                                    simulated_metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
     record = {
-        "ROI": roi_name,
-        "Ref #": ref_number,
-        "Index number": index_number,
+        LEGACY_STRUCTURE_RECORD_KEYS.roi_key: roi_name,
+        LEGACY_STRUCTURE_RECORD_KEYS.ref_number_key: ref_number,
+        LEGACY_STRUCTURE_RECORD_KEYS.index_number_key: index_number,
         "Struct type": struct_type,
-        "Simulated bool": bool(simulated_bool),
-        "Simulated type": simulated_type,
+        LEGACY_STRUCTURE_RECORD_KEYS.simulated_bool_key: bool(simulated_bool),
+        LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key: simulated_type,
     }
     if simulated_metadata:
         record.update(dict(simulated_metadata))
@@ -400,8 +409,8 @@ def _build_biopsy_structure_record(roi_name: str,
         }
     )
     if simulated_bool:
-        record["Simulated biopsy transport request dict"] = None
-        record["Output data frames"] = {
+        record[LEGACY_BIOPSY_RUNTIME_KEYS.simulated_biopsy_transport_request_key] = None
+        record[LEGACY_BIOPSY_RUNTIME_KEYS.output_dataframes_key] = {
             "Dose output Z and radius": None,
             "Dose output voxelized": None,
             "Point-wise dose output by MC trial number": None,
@@ -409,7 +418,7 @@ def _build_biopsy_structure_record(roi_name: str,
             "Differential DVH by MC trial": None,
         }
     else:
-        record["Output data frames"] = {
+        record[LEGACY_BIOPSY_RUNTIME_KEYS.output_dataframes_key] = {
             "Dose output Z and radius": None,
             "Dose output voxelized": None,
             "Point-wise dose output by MC trial number": None,
@@ -423,10 +432,10 @@ def _build_biopsy_structure_record(roi_name: str,
 def _build_all_ref_dict(mr_global_multi_structure_output_dataframe_str: str,
                         mr_global_by_voxel_multi_structure_output_dataframe_str: str) -> dict[str, Any]:
     return {
-        "Multi-structure information dict (not for csv output)": {
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.multi_structure_information_key: {
             "Biopsy optimization: Optimal biopsy location (entire cubic lattice) dataframe": None,
         },
-        "Multi-structure pre-processing output dataframes dict": {
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key: {
             "Selected structures": None,
             "Biopsy basic spatial features dataframe": None,
             "Simulated biopsy preparation dataframe": None,
@@ -445,7 +454,7 @@ def _build_all_ref_dict(mr_global_multi_structure_output_dataframe_str: str,
             "Prostate only points MR ADC dataframe (temporary for pre-processing)": None,
             "MR - ADC - summary statistics by structure dataframe": None,
         },
-        "Multi-structure MC simulation output dataframes dict": {
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.mc_output_dataframes_key: {
             "All MC structure transformation values": None,
             "Tissue class - Global tissue class statistics": None,
             "Tissue class - Global tissue by structure statistics": None,
@@ -629,27 +638,32 @@ def build_patient_structure_reference_bootstrap_fragment(
     )
 
     biopsy_type_counts = {
-        item["Simulated type"]: sum(1 for record in biopsy_ref if record["Simulated type"] == item["Simulated type"])
+        item[LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key]: sum(
+            1
+            for record in biopsy_ref
+            if record[LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key]
+            == item[LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key]
+        )
         for item in biopsy_ref
     }
     biopsy_info = {
-        "Num structs": len(biopsy_ref),
-        "Num sim structs": len(simulated_biopsy_refs_total),
-        "Num real structs": len(biopsy_ref) - len(simulated_biopsy_refs_total),
-        "Biopsy type counts": biopsy_type_counts,
+        LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(biopsy_ref),
+        LEGACY_STRUCTURE_INFO_KEYS.num_sim_structs_key: len(simulated_biopsy_refs_total),
+        LEGACY_STRUCTURE_INFO_KEYS.num_real_structs_key: len(biopsy_ref) - len(simulated_biopsy_refs_total),
+        LEGACY_STRUCTURE_INFO_KEYS.biopsy_type_counts_key: biopsy_type_counts,
     }
-    oar_info = {"Num structs": len(oar_ref)}
-    dil_info = {"Num structs": len(dil_ref)}
-    rectum_info = {"Num structs": len(rectum_ref)}
-    urethra_info = {"Num structs": len(urethra_ref)}
+    oar_info = {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(oar_ref)}
+    dil_info = {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(dil_ref)}
+    rectum_info = {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(rectum_ref)}
+    urethra_info = {LEGACY_STRUCTURE_INFO_KEYS.num_structs_key: len(urethra_ref)}
     patient_total_num_structs = (
-        biopsy_info["Num structs"]
-        + oar_info["Num structs"]
-        + dil_info["Num structs"]
-        + rectum_info["Num structs"]
-        + urethra_info["Num structs"]
+        biopsy_info[LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        + oar_info[LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        + dil_info[LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        + rectum_info[LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        + urethra_info[LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
     )
-    all_structs_info = {"Total num structs": patient_total_num_structs}
+    all_structs_info = {LEGACY_STRUCTURE_INFO_KEYS.total_num_structs_key: patient_total_num_structs}
 
     reference_keys = PatientStructureReferenceKeys.from_legacy_refs(
         st_ref_list=st_ref_list,
@@ -695,8 +709,8 @@ def build_patient_structure_reference_bootstrap_fragment(
         patient_structure_info=patient_structure_info,
         messages=messages,
         metadata={
-            "num_real_biopsies": biopsy_info["Num real structs"],
-            "num_simulated_biopsies": biopsy_info["Num sim structs"],
+            "num_real_biopsies": biopsy_info[LEGACY_STRUCTURE_INFO_KEYS.num_real_structs_key],
+            "num_simulated_biopsies": biopsy_info[LEGACY_STRUCTURE_INFO_KEYS.num_sim_structs_key],
             "num_total_structures": patient_total_num_structs,
         },
     )
@@ -723,7 +737,7 @@ def attach_patient_dose_reference_from_path(patient_reference_dict: dict[str, An
                                             dose_item_path: str | Path,
                                             ds_ref: str) -> bool:
     """Attach the legacy-shaped dose dictionary for one patient when applicable."""
-    if patient_reference_dict["Fraction number"] == 1:
+    if patient_reference_dict[LEGACY_PATIENT_REFERENCE_KEYS.fraction_number_key] == 1:
         return False
     with pydicom.dcmread(dose_item_path, defer_size="2 MB") as dose_item:
         dose_id = str(patient_uid) + dose_item.StudyDate
@@ -908,15 +922,27 @@ def assemble_structure_reference_info_for_run(
     global_num_cases = len(fragments)
     global_unique_patient_names = []
     for fragment in fragments:
-        patient_name = str(fragment.patient_info_dict["Patient Name"])
+        patient_name = str(fragment.patient_info_dict[LEGACY_PATIENT_REFERENCE_KEYS.patient_name_key])
         if patient_name not in global_unique_patient_names:
             global_unique_patient_names.append(patient_name)
-    global_num_biopsies = sum(info[st_ref_list[0]]["Num structs"] for info in by_patient_info.values())
-    global_num_oar = sum(info[st_ref_list[1]]["Num structs"] for info in by_patient_info.values())
-    global_num_dil = sum(info[st_ref_list[2]]["Num structs"] for info in by_patient_info.values())
-    global_total_num_structs = sum(info[all_ref_key]["Total num structs"] for info in by_patient_info.values())
+    global_num_biopsies = sum(
+        info[st_ref_list[0]][LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        for info in by_patient_info.values()
+    )
+    global_num_oar = sum(
+        info[st_ref_list[1]][LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        for info in by_patient_info.values()
+    )
+    global_num_dil = sum(
+        info[st_ref_list[2]][LEGACY_STRUCTURE_INFO_KEYS.num_structs_key]
+        for info in by_patient_info.values()
+    )
+    global_total_num_structs = sum(
+        info[all_ref_key][LEGACY_STRUCTURE_INFO_KEYS.total_num_structs_key]
+        for info in by_patient_info.values()
+    )
     biopsy_type_counts_by_patient = [
-        info[st_ref_list[0]]["Biopsy type counts"]
+        info[st_ref_list[0]][LEGACY_STRUCTURE_INFO_KEYS.biopsy_type_counts_key]
         for info in by_patient_info.values()
     ]
     global_num_biopsies_by_type = {
@@ -955,20 +981,20 @@ def assemble_structure_reference_info_for_run(
         "Optimizer v1 random seed": None,
     }
     return {
-        "Global": {
-            "Num cases": global_num_cases,
-            "Num unique patient names": len(global_unique_patient_names),
-            "Num structures": global_total_num_structs,
-            "Num biopsies": global_num_biopsies,
-            "Num biopsies by bx type dict": global_num_biopsies_by_type,
-            "Num DILs": global_num_dil,
-            "Bx types list": bx_types_list,
-            "Preprocessing info": preprocessing_info,
-            "MC info": mc_info,
+        LEGACY_MASTER_INFO_KEYS.global_key: {
+            LEGACY_MASTER_INFO_KEYS.num_cases_key: global_num_cases,
+            LEGACY_MASTER_INFO_KEYS.num_unique_patient_names_key: len(global_unique_patient_names),
+            LEGACY_MASTER_INFO_KEYS.num_structures_key: global_total_num_structs,
+            LEGACY_MASTER_INFO_KEYS.num_biopsies_key: global_num_biopsies,
+            LEGACY_MASTER_INFO_KEYS.num_biopsies_by_type_key: global_num_biopsies_by_type,
+            LEGACY_MASTER_INFO_KEYS.num_dils_key: global_num_dil,
+            LEGACY_MASTER_INFO_KEYS.bx_types_list_key: bx_types_list,
+            LEGACY_MASTER_INFO_KEYS.preprocessing_info_key: preprocessing_info,
+            LEGACY_MASTER_INFO_KEYS.mc_info_key: mc_info,
             "Random info": random_info,
             "Patient specific guidance map figures directory dict": None,
             "Guidance map figures dir": None,
-            "Specific output dir": None,
+            LEGACY_MASTER_INFO_KEYS.specific_output_dir_key: None,
         },
-        "By patient": by_patient_info,
+        LEGACY_MASTER_INFO_KEYS.by_patient_key: by_patient_info,
     }

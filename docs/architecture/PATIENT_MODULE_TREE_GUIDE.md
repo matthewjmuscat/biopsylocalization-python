@@ -1,6 +1,6 @@
 # Patient Module Tree Guide
 
-Last updated: 2026-05-24
+Last updated: 2026-05-27
 
 This document is the source of truth for where new patient-level modules belong
 and which existing module locations are temporary migration debt. Use it before
@@ -32,6 +32,13 @@ Keep three layers distinct:
 - Orchestration, assembly, and product surfaces: runner contracts, manifests,
   artifact writing, assembly, validation harnesses, startup, runtime logging,
   UI, and other workflow control code.
+
+Patient-runner tranches belong to the orchestration layer. A tranche recipe may
+sequence standalone patient scientific modules in legacy-compatible order, but it
+should not become a scientific implementation and should not absorb patient
+discovery. DICOM discovery, modality routing, patient selection, prompts, and
+input manifests remain run-scoped input/startup work; tranche recipes consume the
+resolved patient case inputs.
 
 ## Presentation And Rich Boundary
 
@@ -76,10 +83,11 @@ the product surface, and a null/log-only adapter for headless validation.
 | --- | --- | --- | --- |
 | `python_files_dcm_meta_based/biopsy_localization_convex_main.py` | Legacy oracle orchestration | preserving the validated all-patient call graph or adding a tightly scoped approved bug fix | new patient scientific modules, broad cleanup, new runner logic |
 | `python_files_dcm_meta_based/preprocessing/` | Pre-MC scientific stages | adding or extracting patient-level science for preprocessing, structure work, biopsy work, uncertainty attachment, dose, or MR stages | batch orchestration, manifests, output assembly, GUI/startup policy |
+| `python_files_dcm_meta_based/legacy_data_keys.py` | Shared legacy dictionary key contracts | generic legacy master-info, patient-reference, structure-record, nested dataframe-store, and artifact sentinel key spellings used by additive adapters | stage-specific scientific output names that already have family-local contracts, broad legacy-oracle cleanup |
 | `python_files_dcm_meta_based/preprocessing/structure_processing/` | Structure-science family | raw contour pulling, non-biopsy preprocessing, selected-structure logic, prostate-only MR ADC structure summaries | patient-runner stage lists, assembly outputs, cross-run logging policy |
 | `python_files_dcm_meta_based/preprocessing/biopsy_processing/` | Biopsy-science family | real/simulated biopsy preparation, planning, finalization, targeting, sampled-biopsy preprocessing, biopsy QA helpers | batch execution backend policy, artifact manifests, UI workflow code |
 | `python_files_dcm_meta_based/mc/prep/` | MC-preparation science | patient-local transform-bank generation, biopsy self-transforms, and relative-structure transforms | patient-runner orchestration, GUI/startup policy, artifact assembly, MC simulation loop bodies |
-| `python_files_dcm_meta_based/mc/simulation/` | Future MC simulation science | later patient-local containment/dose/MR simulation loop-body extractions from the current simulator oracle files | MC prep transforms, patient-runner orchestration, GUI/startup policy, artifact assembly |
+| `python_files_dcm_meta_based/mc/simulation/` | Future MC simulation science | patient-local relative-structure inventory, containment/dose/MR simulation setup, contracts, and loop-body extractions from the current simulator oracle files | MC prep transforms, patient-runner orchestration, GUI/startup policy, artifact assembly |
 | `python_files_dcm_meta_based/biopsy_optimizer/` | Optimization science | optimizer wrappers, patient-local optimization adapters, target-ranking science | patient batch orchestration, shadow-output assembly |
 | `python_files_dcm_meta_based/guidance_maps/` | Guidance-map science | patient-local guidance-map precompute/planning logic and domain-specific helpers | generic runner contracts, runtime logging, GUI bootstrapping |
 | `python_files_dcm_meta_based/output_artifacts/` | Artifact contracts and assembly | dataframe export surfaces, schema contracts, cohort assembly, shadow stitching, output inventory | new scientific geometry, targeting, or MC algorithms |
@@ -146,6 +154,7 @@ Scientific packages should own:
 Orchestration/product packages should own:
 
 - patient runner contracts and stage sequencing,
+- tranche recipes that order standalone patient scientific modules,
 - artifact writing, manifests, and cohort assembly,
 - runtime logging, retries, worker policy, and startup/bootstrap,
 - UI and product-specific interaction surfaces,
@@ -176,13 +185,14 @@ Current repository placement after the 2026-05-24 additive patient-module passes
 | Realized biopsy targeting | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/realized_biopsy_targeting.py` |
 | Simulated biopsy planned-vs-realized centroid validation | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/centroid_variation_validation.py` |
 | Prostate double-sextant biopsy classification | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/double_sextant_classification.py` |
+| Biopsy patient presentation boundary | `python_files_dcm_meta_based/preprocessing/biopsy_processing/per_patient/_presentation.py` |
 | MC transform-bank generation | `python_files_dcm_meta_based/mc/prep/per_patient/transform_generation.py` |
 | MC BX-only transform application | `python_files_dcm_meta_based/mc/prep/per_patient/biopsy_self_transforms.py` |
 | MC relative-structure transform application | `python_files_dcm_meta_based/mc/prep/per_patient/relative_structure_transforms.py` |
-| MC convex simulation contracts/output collectors/singleton adapter | `python_files_dcm_meta_based/mc/simulation/per_patient/` |
+| MC convex containment/dose stage, MC MR ADC patient stage, contracts/key registry/output collectors, and singleton oracle adapters | `python_files_dcm_meta_based/mc/simulation/per_patient/` |
 | Structure reference/bootstrap dictionaries and typed patient reference boundary | `python_files_dcm_meta_based/preprocessing/structure_reference_bootstrap.py` |
-| Optimizer-v1 singleton validation adapter | `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` |
-| Optimizer-v2 singleton live-integration adapter | `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/live_adapter.py` |
+| Optimizer-v1 patient scientific stage and singleton validation adapter | `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/patient_stage.py`; `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/legacy_adapter.py` |
+| Optimizer-v2 patient-local target-DIL stage and singleton live-integration adapter | `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/target_dil_stage.py`; `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/live_adapter.py` |
 | Guidance-map firing-depth precompute | `python_files_dcm_meta_based/guidance_maps/planning.py` |
 
 Do not recreate these same entrypoints under a top-level
@@ -216,6 +226,9 @@ Before adding or moving a patient-facing module, check:
 7. Does the new patient entrypoint require Rich, `live_display`, or
   `important_info`? If yes, move that dependency to a wrapper or adapter before
   treating the interface as clean.
+8. Is a runner tranche starting to scan inputs, choose modalities, or perform
+   patient discovery? If yes, move that work back to input/startup/run-scoped
+   discovery and pass resolved patient cases into the tranche.
 
 If the answer would create a parallel tree, stop and update the plan before
 editing code.

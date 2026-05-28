@@ -6,8 +6,13 @@ from typing import Iterator
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 
 PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION = "phase3b_dataframe_export_v1"
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
+LEGACY_BIOPSY_RUNTIME_KEYS = legacy_data_keys.biopsy_runtime
 
 MC_MULTI_STRUCTURE_PARQUET_TABLE_NAMES = {
     "Tissue class - containment and distances (light) results",
@@ -121,7 +126,9 @@ def _cohort_relative_path(dataframe_name: str) -> Path:
 def iter_patient_preprocessing_artifacts(master_structure_reference_dict: dict,
                                          all_ref_key: str) -> Iterator[DataframeArtifact]:
     for patient_uid, pydicom_item in master_structure_reference_dict.items():
-        dataframe_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+        dataframe_dict = pydicom_item[all_ref_key][
+            LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key
+        ]
         for dataframe_name, dataframe in dataframe_dict.items():
             if _is_dataframe(dataframe):
                 yield DataframeArtifact(
@@ -136,7 +143,9 @@ def iter_patient_preprocessing_artifacts(master_structure_reference_dict: dict,
 def iter_patient_mc_artifacts(master_structure_reference_dict: dict,
                               all_ref_key: str) -> Iterator[DataframeArtifact]:
     for patient_uid, pydicom_item in master_structure_reference_dict.items():
-        dataframe_dict = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]
+        dataframe_dict = pydicom_item[all_ref_key][
+            LEGACY_PATIENT_ALL_REFERENCE_KEYS.mc_output_dataframes_key
+        ]
         for dataframe_name, dataframe in dataframe_dict.items():
             if _is_dataframe(dataframe):
                 file_extension = ".parquet" if dataframe_name in MC_MULTI_STRUCTURE_PARQUET_TABLE_NAMES else ".csv"
@@ -154,10 +163,10 @@ def iter_biopsy_mc_artifacts(master_structure_reference_dict: dict,
                              bx_ref: str) -> Iterator[DataframeArtifact]:
     for patient_uid, pydicom_item in master_structure_reference_dict.items():
         for specific_bx_structure in pydicom_item[bx_ref]:
-            biopsy_name = specific_bx_structure["ROI"]
-            biopsy_type = specific_bx_structure["Simulated type"]
-            biopsy_index = specific_bx_structure["Index number"]
-            for dataframe_name, dataframe in specific_bx_structure["Output data frames"].items():
+            biopsy_name = specific_bx_structure[LEGACY_STRUCTURE_RECORD_KEYS.roi_key]
+            biopsy_type = specific_bx_structure[LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key]
+            biopsy_index = specific_bx_structure[LEGACY_STRUCTURE_RECORD_KEYS.index_number_key]
+            for dataframe_name, dataframe in specific_bx_structure[LEGACY_BIOPSY_RUNTIME_KEYS.output_dataframes_key].items():
                 if _is_dataframe(dataframe):
                     file_extension = ".parquet" if dataframe_name in BIOPSY_PARQUET_TABLE_NAMES else ".csv"
                     yield DataframeArtifact(

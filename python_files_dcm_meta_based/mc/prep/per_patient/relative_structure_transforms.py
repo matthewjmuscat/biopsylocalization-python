@@ -1,10 +1,15 @@
 import cupy as cp
 import numpy as np
 
-import plotting_funcs
-import point_containment_tools
 from MC_prepper_funcs import rotate_biopsy_to_relative_structure_points_vectorized
 from MC_prepper_funcs import translate_biopsy_to_relative_structure_points
+
+
+def _load_plotting_helpers():
+    import plotting_funcs
+    import point_containment_tools
+
+    return plotting_funcs, point_containment_tools
 
 
 def _create_patient_specific_structure_dict_for_data(pydicom_item,
@@ -41,6 +46,8 @@ def apply_patient_relative_structure_transforms(*,
 
     for specific_bx_structure_index, specific_bx_structure in enumerate(pydicom_item[bx_ref]):
         structure_shifted_bx_data_dict = structure_organized_for_bx_data_blank_dict.copy()
+        if inspect_relative_structure_rotate_and_shift_number:
+            plotting_funcs, point_containment_tools = _load_plotting_helpers()
 
         bx_global_centroid = specific_bx_structure["Structure global centroid"].reshape((1, 3))
         randomly_sampled_bx_pts_arr = specific_bx_structure["Random uniformly sampled volume pts arr"]

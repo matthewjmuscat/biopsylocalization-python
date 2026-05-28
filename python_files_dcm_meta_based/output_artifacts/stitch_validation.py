@@ -8,10 +8,14 @@ from typing import Any
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 from .contracts import normalize_legacy_table_name
 
 
 SHADOW_STITCH_VALIDATION_SCHEMA_VERSION = "phase3a_shadow_stitch_validation_v1"
+LEGACY_ARTIFACT_KEYS = legacy_data_keys.artifacts
+LEGACY_STRUCTURE_RECORD_KEYS = legacy_data_keys.structure_record
 
 
 @dataclass(frozen=True)
@@ -89,8 +93,8 @@ SHADOW_STITCH_PAIRS = (
             "Bx ID",
             "Bx index",
             "Voxel index",
-            "Simulated type",
-            "Simulated bool",
+            LEGACY_STRUCTURE_RECORD_KEYS.simulated_type_key,
+            LEGACY_STRUCTURE_RECORD_KEYS.simulated_bool_key,
             "Bx refnum",
         ),
     ),
@@ -274,7 +278,7 @@ def run_shadow_stitch_validation(inventory_df: pd.DataFrame,
             & inventory_df["output_section"].eq(pair.source_output_section)
             & inventory_df["normalized_table_name"].eq(pair.source_table_name)
             & inventory_df["file_extension"].eq(pair.file_extension)
-            & inventory_df["patient_uid"].ne("Global")
+            & inventory_df["patient_uid"].ne(LEGACY_ARTIFACT_KEYS.global_patient_uid)
             & inventory_df["patient_uid"].ne("")
         ].sort_values("relative_path")
 

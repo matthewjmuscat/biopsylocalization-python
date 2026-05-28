@@ -29,9 +29,9 @@ For each route:
 1. Identify the legacy dataframe builder or final dataframe construction block.
 2. Extract or wrap a patient-level builder function when the current code only builds the final cohort table.
 3. Store the patient-level dataframe under a clear key in the appropriate existing dictionary:
-   - preprocessing patient tables: `pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]`,
-   - MC patient tables: `pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]`,
-   - per-biopsy MC tables: `sp_bx["Output data frames"]`.
+   - preprocessing patient tables: `pydicom_item[all_ref_key][legacy_data_keys.patient_all_reference.preprocessing_output_dataframes_key]`,
+   - MC patient tables: `pydicom_item[all_ref_key][legacy_data_keys.patient_all_reference.mc_output_dataframes_key]`,
+   - per-biopsy MC tables: `sp_bx[legacy_data_keys.biopsy_runtime.output_dataframes_key]`.
 4. Use a stable key that corresponds to the registry `source_fragment_table_id` and still maps clearly to the legacy table name.
 5. Add or update the Phase 3B/3C exporter iterator only if the dataframe is not already picked up by the generic dictionary traversal.
 6. Stitch the patient fragments by the registry `stitch_method`.

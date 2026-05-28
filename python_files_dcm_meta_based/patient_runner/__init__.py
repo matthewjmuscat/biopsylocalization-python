@@ -52,11 +52,65 @@ from .main_validation import PatientRunnerMainValidationSkippedResult
 from .main_validation import run_patient_runner_main_validation
 from .main_validation import summarize_patient_runner_main_validation
 from .main_validation import write_patient_runner_main_validation_summary
+from .parity import DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME
+from .parity import PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION
+from .parity import PatientRunnerParitySurface
+from .parity import PatientRunnerParitySurfaceResult
+from .parity import PatientRunnerPostRunParityConfig
+from .parity import PatientRunnerPostRunParityResult
+from .parity import compare_patient_runner_assembled_cohort_tables
+from .parity import compare_patient_runner_recursive_csvs
+from .parity import default_patient_runner_post_run_parity_output_dir
+from .parity import format_patient_runner_post_run_parity_summary
+from .parity import run_patient_runner_post_run_parity
+from .parity import summarize_patient_runner_parity_surface
+from .parity import summarize_patient_runner_post_run_parity
+from .parity import summarize_patient_runner_post_run_parity_surfaces
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
 from .runner import run_patient_case
 from .runner import run_patient_stages
+from .scientific_config import PatientAnatomicalPreprocessingScientificConfig
+from .scientific_config import PatientGridPreprocessingScientificConfig
+from .scientific_config import PatientGuidanceScientificConfig
+from .scientific_config import PatientMCPrepScientificConfig
+from .scientific_config import PatientMCSimulationScientificConfig
+from .scientific_config import PatientMRADCInputNormalizationStageConfig
+from .scientific_config import PatientOptimizationScientificConfig
+from .scientific_config import PatientPreprocessingScientificConfig
+from .scientific_config import PatientProstateOnlyMRADCStageConfig
+from .scientific_config import PatientRawContourPullingStageConfig
+from .scientific_config import PatientRealBiopsyProcessingStageConfig
+from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
+from .scientific_config import PatientRunnerScientificConfig
+from .scientific_config import PatientSampledBiopsyProcessingStageConfig
+from .scientific_config import PatientScientificStageResources
+from .scientific_config import PatientSimulatedBiopsyPlanningStageConfig
+from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
+from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
+from .scientific_config import PatientStructureSelectionStageConfig
+from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
+from .scientific_stages import build_patient_scientific_stages
+from .scientific_stages import run_patient_anatomical_preprocessing_scientific_stage
+from .scientific_stages import run_patient_grid_preprocessing_scientific_stage
+from .scientific_stages import run_patient_guidance_scientific_stage
+from .scientific_stages import run_patient_mc_prep_scientific_stage
+from .scientific_stages import run_patient_mc_simulation_scientific_stage
+from .scientific_stages import run_patient_optimization_scientific_stage
+from .scientific_stages import run_patient_preprocessing_scientific_stage
+from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER
+from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHES
+from .scientific_tranches import PatientScientificTranche
+from .scientific_tranches import PatientScientificTrancheName
+from .scientific_tranches import build_patient_scientific_stages_for_tranches
+from .scientific_tranches import default_patient_scientific_tranches
+from .scientific_tranches import get_patient_scientific_tranche
+from .scientific_tranches import iter_patient_scientific_tranches
+from .scientific_tranches import patient_scientific_tranche_stage_names
+from .scientific_tranches import resolve_patient_scientific_tranche_names
+from .scientific_tranches import summarize_patient_scientific_tranches
 from .stages import write_patient_artifacts_stage
 
 __all__ = [
@@ -73,36 +127,90 @@ __all__ = [
     "PatientRunConfig",
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
+    "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
+    "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
+    "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
+    "DEFAULT_SCIENTIFIC_STAGE_ORDER",
+    "PatientAnatomicalPreprocessingScientificConfig",
+    "PatientGridPreprocessingScientificConfig",
+    "PatientGuidanceScientificConfig",
+    "PatientMCPrepScientificConfig",
+    "PatientMCSimulationScientificConfig",
+    "PatientMRADCInputNormalizationStageConfig",
+    "PatientOptimizationScientificConfig",
+    "PatientPreprocessingScientificConfig",
+    "PatientProstateOnlyMRADCStageConfig",
+    "PatientRawContourPullingStageConfig",
+    "PatientRealBiopsyProcessingStageConfig",
+    "PatientRealizedBiopsyTargetingStageConfig",
     "PatientRunResult",
     "PatientRunnerMainValidationConfig",
     "PatientRunnerMainValidationMode",
     "PatientRunnerMainValidationResult",
     "PatientRunnerMainValidationSkippedResult",
+    "PatientRunnerParitySurface",
+    "PatientRunnerParitySurfaceResult",
+    "PatientRunnerPostRunParityConfig",
+    "PatientRunnerPostRunParityResult",
+    "PatientRunnerScientificConfig",
+    "PatientSampledBiopsyProcessingStageConfig",
+    "PatientScientificTranche",
+    "PatientScientificTrancheName",
+    "PatientScientificStageResources",
     "PatientStage",
     "PatientStageName",
     "PatientStageResult",
     "PatientStageRunner",
     "PatientStageStatus",
+    "PatientSimulatedBiopsyPlanningStageConfig",
+    "PatientSimulatedBiopsyPreparationStageConfig",
+    "PatientStandardNonBiopsyStructureProcessingStageConfig",
+    "PatientStructureSelectionStageConfig",
+    "PatientUncertaintyAttachmentStageConfig",
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
+    "build_patient_scientific_stages",
+    "build_patient_scientific_stages_for_tranches",
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
+    "compare_patient_runner_assembled_cohort_tables",
+    "compare_patient_runner_recursive_csvs",
     "default_patient_stages",
+    "default_patient_scientific_tranches",
+    "default_patient_runner_post_run_parity_output_dir",
+    "format_patient_runner_post_run_parity_summary",
+    "get_patient_scientific_tranche",
+    "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
+    "patient_scientific_tranche_stage_names",
     "resolve_legacy_patient_uids",
+    "resolve_patient_scientific_tranche_names",
     "resolve_patient_uids",
     "run_patient_batch",
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_anatomical_preprocessing_scientific_stage",
+    "run_patient_grid_preprocessing_scientific_stage",
+    "run_patient_guidance_scientific_stage",
+    "run_patient_mc_prep_scientific_stage",
+    "run_patient_mc_simulation_scientific_stage",
+    "run_patient_optimization_scientific_stage",
+    "run_patient_preprocessing_scientific_stage",
+    "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
     "run_patient_stages",
     "summarize_patient_runner_main_validation",
+    "summarize_patient_runner_parity_surface",
+    "summarize_patient_runner_post_run_parity",
+    "summarize_patient_runner_post_run_parity_surfaces",
+    "summarize_patient_scientific_tranches",
     "summarize_patient_batch_cohort_assembly",
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",

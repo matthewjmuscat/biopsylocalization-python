@@ -15,6 +15,7 @@ from presentation import LegacyNullProgress, LegacyPresentationContext
 from .containment import PatientContainmentOutputs, collect_patient_containment_outputs
 from .contracts import MCConvexPatientRunResult, MCConvexSimulationConfig
 from .dose import PatientDoseOutputs, collect_patient_dose_outputs
+from .legacy_keys import legacy_mc_keys
 
 
 class NullStopwatch:
@@ -51,19 +52,24 @@ def build_single_patient_mc_master_info(patient_uid: str,
                                         global_info: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Build the legacy master-info shape for one MC patient."""
     patient_uid = str(patient_uid)
-    if patient_info_dict is not None and "Global" in patient_info_dict and "By patient" in patient_info_dict:
+    master_keys = legacy_mc_keys.master_info
+    if (
+        patient_info_dict is not None
+        and master_keys.global_key in patient_info_dict
+        and master_keys.by_patient_key in patient_info_dict
+    ):
         master_info = copy.deepcopy(dict(patient_info_dict))
-        by_patient = copy.deepcopy(dict(master_info.get("By patient", {})))
+        by_patient = copy.deepcopy(dict(master_info.get(master_keys.by_patient_key, {})))
         if patient_uid in by_patient:
-            master_info["By patient"] = {patient_uid: by_patient[patient_uid]}
-        master_info.setdefault("Global", {})["Num cases"] = 1
+            master_info[master_keys.by_patient_key] = {patient_uid: by_patient[patient_uid]}
+        master_info.setdefault(master_keys.global_key, {})[master_keys.num_cases_key] = 1
         return master_info
 
     resolved_global_info = copy.deepcopy(dict(global_info or {}))
-    resolved_global_info["Num cases"] = 1
+    resolved_global_info[master_keys.num_cases_key] = 1
     return {
-        "Global": resolved_global_info,
-        "By patient": {
+        master_keys.global_key: resolved_global_info,
+        master_keys.by_patient_key: {
             patient_uid: copy.deepcopy(dict(patient_info_dict or {})),
         },
     }
@@ -188,7 +194,8 @@ def run_patient_mc_convex_legacy_adapter(
         working_patient_reference_dict,
         bx_ref=keys.bx_ref,
     )
-    mc_info = master_structure_info_dict.get("Global", {}).get("MC info", {})
+    master_keys = legacy_mc_keys.master_info
+    mc_info = master_structure_info_dict.get(master_keys.global_key, {}).get(master_keys.mc_info_key, {})
     return MCConvexPatientRunResult(
         patient_uid=patient_uid,
         patient_reference_dict=working_patient_reference_dict,
@@ -199,9 +206,9 @@ def run_patient_mc_convex_legacy_adapter(
         presentation_context=context,
         live_display=live_display,
         performed_flags={
-            "MC containment sim performed": mc_info.get("MC containment sim performed"),
-            "MC dose sim performed": mc_info.get("MC dose sim performed"),
-            "MC sim performed": mc_info.get("MC sim performed"),
+            master_keys.containment_performed_key: mc_info.get(master_keys.containment_performed_key),
+            master_keys.dose_performed_key: mc_info.get(master_keys.dose_performed_key),
+            master_keys.sim_performed_key: mc_info.get(master_keys.sim_performed_key),
         },
         metadata={"mutated_input": bool(mutate_input)},
     )

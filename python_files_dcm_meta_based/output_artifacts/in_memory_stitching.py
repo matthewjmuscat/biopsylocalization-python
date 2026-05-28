@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from legacy_data_keys import legacy_data_keys
+
 from .exporters import write_dataframe_artifact
 from .schema_registry import OutputSchemaRegistry
 from .stitch_validation import SHADOW_STITCH_PAIRS
@@ -15,6 +17,8 @@ from .stitch_validation import ShadowStitchPair
 
 
 IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION = "phase3b_in_memory_stitch_validation_v1"
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
+LEGACY_BIOPSY_RUNTIME_KEYS = legacy_data_keys.biopsy_runtime
 
 
 def _utc_now_iso() -> str:
@@ -125,7 +129,9 @@ def _compare_dataframes(recreated_df: pd.DataFrame, final_df: pd.DataFrame) -> d
 def _preprocessing_fragment(pydicom_item: dict,
                             all_ref_key: str,
                             source_table_name: str) -> pd.DataFrame | None:
-    dataframe_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+    dataframe_dict = pydicom_item[all_ref_key][
+        LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key
+    ]
     dataframe = dataframe_dict.get(source_table_name)
     return dataframe if _is_dataframe(dataframe) else None
 
@@ -133,7 +139,7 @@ def _preprocessing_fragment(pydicom_item: dict,
 def _mc_multi_structure_fragment(pydicom_item: dict,
                                  all_ref_key: str,
                                  source_table_name: str) -> pd.DataFrame | None:
-    dataframe_dict = pydicom_item[all_ref_key]["Multi-structure MC simulation output dataframes dict"]
+    dataframe_dict = pydicom_item[all_ref_key][LEGACY_PATIENT_ALL_REFERENCE_KEYS.mc_output_dataframes_key]
     dataframe = dataframe_dict.get(source_table_name)
     return dataframe if _is_dataframe(dataframe) else None
 
@@ -143,7 +149,7 @@ def _biopsy_output_fragments(pydicom_item: dict,
                              source_table_name: str) -> list[pd.DataFrame]:
     dataframes: list[pd.DataFrame] = []
     for specific_bx_structure in pydicom_item.get(bx_ref, []):
-        dataframe = specific_bx_structure.get("Output data frames", {}).get(source_table_name)
+        dataframe = specific_bx_structure.get(LEGACY_BIOPSY_RUNTIME_KEYS.output_dataframes_key, {}).get(source_table_name)
         if _is_dataframe(dataframe):
             dataframes.append(dataframe)
     return dataframes

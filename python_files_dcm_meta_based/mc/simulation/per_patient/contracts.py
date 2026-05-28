@@ -140,6 +140,22 @@ class MCDoseSimulationConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MCMRSimulationConfig:
+    """Configuration for patient-local MR ADC localization."""
+
+    num_mr_calc_NN: int
+    mr_views_jsons_paths_list: Sequence[Any]
+    show_NN_mr_adc_demonstration_plots: bool
+    show_NN_mr_adc_demonstration_plots_all_trials_at_once: bool
+    perform_mc_mr_sim: bool
+    idw_power: float
+    raw_data_mc_mr_dump_bool: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mr_views_jsons_paths_list", tuple(self.mr_views_jsons_paths_list))
+
+
+@dataclass(frozen=True, slots=True)
 class MCConvexSimulationConfig:
     """Complete typed boundary for the current convex MC simulator oracle."""
 
@@ -159,6 +175,26 @@ class MCConvexPatientRunResult:
     master_structure_info_dict: dict[str, Any]
     containment_outputs: Any
     dose_outputs: Any
+    presentation_context: LegacyPresentationContext
+    live_display: Any = None
+    performed_flags: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.patient_uid = str(self.patient_uid)
+        self.performed_flags = dict(self.performed_flags or {})
+        self.metadata = dict(self.metadata or {})
+
+
+@dataclass(slots=True)
+class MCMRPatientRunResult:
+    """Output bundle from running the MR MC oracle against one patient."""
+
+    patient_uid: str
+    patient_reference_dict: dict[str, Any]
+    master_structure_reference_dict: dict[str, dict[str, Any]]
+    master_structure_info_dict: dict[str, Any]
+    mr_outputs: Any
     presentation_context: LegacyPresentationContext
     live_display: Any = None
     performed_flags: Mapping[str, Any] = field(default_factory=dict)

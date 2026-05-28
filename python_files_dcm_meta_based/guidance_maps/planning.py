@@ -8,8 +8,10 @@ import numpy as np
 import pandas
 
 from guidance_maps.config import GuidanceMapPlanningConfig
+from legacy_data_keys import legacy_data_keys
 
 
+LEGACY_PATIENT_ALL_REFERENCE_KEYS = legacy_data_keys.patient_all_reference
 PATIENT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY = (
     "Biopsy optimization - Guidance-map firing depth recommendations dataframe"
 )
@@ -116,7 +118,7 @@ def precompute_guidance_map_firing_depth_recommendations_for_patient(
         patient_dataframe,
         threshold=planning_config.downcast_threshold,
     )
-    pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"][
+    pydicom_item[all_ref_key][LEGACY_PATIENT_ALL_REFERENCE_KEYS.preprocessing_output_dataframes_key][
         PATIENT_GUIDANCE_MAP_FIRING_DEPTH_DF_KEY
     ] = patient_dataframe
 

@@ -92,6 +92,23 @@ Validation should be staged but not endless:
 - avoid maintaining permanent duplicate sidecars after a stage has a stable
   patient module and final assembly comparison.
 
+Parity validation should be wired as a post-run saved-state comparison, not as an
+inline fork inside the scientific path. The legacy cohort path should run end to
+end and persist its oracle state/artifacts. The patient runner should then run
+end to end in its own output root and persist patient artifacts plus assembled
+cohort tables. A reusable comparator layer should load both completed surfaces,
+compare registered keys, arrays, dataframe schemas/row grains, sorted or stable
+row values, numeric tolerances, and performed flags, then write durable validation
+reports. This keeps both execution paths uninterrupted and prevents validation
+code from becoming hidden scientific routing.
+
+The full configuration overhaul remains intentionally after first patient-runner
+validation. Until then, patient stages should use explicit transitional config
+contracts and adapter mapping from the current main settings. After the runner is
+validated, the config layer can be redesigned for GUI/UI compatibility, run
+plans, patient selection, stage toggles, and richer validation modes, followed by
+another validation pass against the same oracle outputs.
+
 Batch parallelism is not a first-order requirement for the scientific runner.
 The reference runner should be sequential and deterministic first. Any existing
 `starmap`-style helper needed inside a patient stage can be represented as a
@@ -126,9 +143,53 @@ Datatype direction for new patient surfaces:
 - prefer explicit conversion methods such as `to_legacy_dict()` and
   `from_legacy_dict(...)` over scattering ad hoc dictionary construction through
   runner code,
+- keep generic legacy dictionary spellings in
+  `python_files_dcm_meta_based/legacy_data_keys.py` and package/family-specific
+  spellings in local key contract modules when a stage still writes old
+  dictionaries; do not duplicate `Global`, `By patient`, `MC info`, `Ref #`,
+  generic structure metadata/geometry/sample keys, or `MC data: ...` strings
+  across adapters and collectors,
+- do not broad-refactor raw legacy key literals in the frozen oracle or older
+  mutable preprocessing wrappers just to satisfy style; move those call sites to
+  contracts only when they cross into additive patient, runner, artifact, or
+  validation boundaries,
 - allow shallow `dict(...)` copies at adapter boundaries for metadata and legacy
   compatibility, but do not treat those copies as the final scientific data
   model.
+
+For MC containment specifically, extract the setup and computation in small
+validated slices. The patient-local relative-structure inventory should remain a
+neutral module, while containment owns the dilation bank, per-biopsy input prep,
+core containment helper calls, and statistics/writeback logic. These additive
+helpers exist, but the frozen oracle path should remain the live route until a
+patient-level parity harness proves row/key equivalence. The raw CUDA containment
+and nearest-neighbour kernels should remain untouched; patient modules should
+call the same kernel helper APIs as the oracle until parity is proven.
+
+For MC dose specifically, the additive patient module now owns dose and
+dose-gradient lattice context construction, per-biopsy nearest-neighbour
+localization through the existing `dosimetric_localizer` helper, point-by-trial
+array compilation, and DVH compile/writeback helpers. It deliberately does not
+own raw CSV dumps, plotting, Rich progress, or live routing through the frozen
+oracle. Legacy inactive dose-statistics and voxelization blocks should only be
+extracted if downstream parity checks prove those outputs are still required.
+
+For MC MR specifically, the additive patient module now owns the one-patient MR
+ADC localization stage: filtered MR ADC lattice reconstruction, KD-tree context
+construction, per-biopsy nearest-neighbour localization through the existing
+`mr_localizers` helper, point-by-trial array compilation, output collection,
+legacy biopsy-record writeback, and the legacy MR performed flag. It deliberately
+does not own raw CSV dumps, plotting, Rich progress, or live routing through
+`MC_simulator_MR.py`. A singleton MR oracle adapter remains available for
+validation/debug runs, but the MR simulator itself remains frozen until a
+patient-level parity harness proves row/key equivalence.
+
+For downstream MC outputs specifically, the additive patient module now owns
+singleton wrappers around the existing MC transform, tissue/containment,
+dosimetry/DVH, MR ADC dataframe-fragment builders, and the optimizer-v2
+downstream MC-score annotation call. These wrappers build the same legacy
+patient and biopsy dataframe stores for one patient, but they do not write CSVs,
+perform cohort stitching, or route the frozen main/oracle path.
 
 This makes each stage replaceable in two steps: first the old code is moved
 behind a named boundary with identical behavior, then a typed data model can be
@@ -181,7 +242,7 @@ extracted.
 | Optimization | patient | modularize for patient execution | Optimizer v1/v2 should operate on one patient case plus shared config. |
 | Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores and validates planned-vs-realized per-biopsy geometry. |
 | Sampling/classification | patient | modularize for patient execution | Sampled biopsy processing, target audit annotation, and double-sextant classification. |
-| MC simulation | patient | build separate patient modules | Transform generation, containment, dose, and MR simulation for one patient. Leave the existing cohort MC simulator callable as the oracle. |
+| MC simulation | patient | build separate patient modules | Transform generation and MR ADC localization now have patient stages; containment and dose still need full patient-stage orchestration. Leave the existing cohort MC simulator callable as the oracle. |
 | Patient artifact writing | patient | core patient-runner output | Writes stable base artifacts with canonical keys. |
 | Cohort assembly | cohort/downstream | not per patient | Concatenates patient artifacts and builds required cohort outputs. |
 | Migration validation | cohort/downstream | not per patient | Compares assembled patient outputs against the legacy cohort oracle. |
@@ -842,7 +903,7 @@ For MC simulation, prefer this extraction order:
 5. MC containment and distance calculations,
 6. dose localization and dose result compilation,
 7. DVH/statistical summaries,
-8. MR ADC MC localization.
+8. MR ADC MC localization. This now has `run_patient_mr_adc_localization_stage(...)`; keep parity validation before routing.
 
 Each item should first produce a patient-level function. If a main-facing cohort
 wrapper is needed, it should call the same patient function in a simple loop and
@@ -941,8 +1002,9 @@ Validation cadence:
 
 - avoid a full validation run after every tiny helper extraction,
 - validate in tranches: current semi-modular main checkpoint, then focused
-  patient-submodule checks, then pre-MC patient-runner assembly, then MC as its
-  own heavier tranche,
+  patient-submodule checks, then patient-runner assembly in explicit grid
+  preprocessing, anatomical preprocessing, biopsy preprocessing, optimizer,
+  post-optimizer biopsy realization, sampling/classification, and MC tranches,
 - final-output validation is intentionally indirect; it checks durable output
   contracts and uses manifests/stage artifacts to localize mismatches,
 - once a stage has passed focused patient-module validation, avoid adding
