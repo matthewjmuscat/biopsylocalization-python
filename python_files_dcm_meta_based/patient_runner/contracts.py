@@ -18,6 +18,7 @@ class PatientStageName(str, Enum):
 
     LEGACY_BRIDGE = "legacy_bridge"
     GRID_PREPROCESSING = "grid_preprocessing"
+    ANATOMICAL_PREPROCESSING = "anatomical_preprocessing"
     PREPROCESSING = "preprocessing"
     OPTIMIZATION = "optimization"
     SIMULATED_BIOPSY_FINALIZATION = "simulated_biopsy_finalization"

@@ -126,12 +126,18 @@ Current manifest surface:
 Scientific stage config boundary:
 
 - `scientific_config.py` owns the opt-in `PatientRunnerScientificConfig` bundle
-  and stage-group configs for grid preprocessing, preprocessing, MC prep, MC
-  simulation, optimization, and guidance-map precompute,
+  and stage-group configs for grid preprocessing, anatomical preprocessing,
+  preprocessing, MC prep, MC simulation, optimization, and guidance-map
+  precompute,
 - grid preprocessing is represented as its own opt-in stage before anatomical
   preprocessing; it currently wraps patient-local dose-grid runtime object
   construction, MR ADC input normalization, and MR ADC grid runtime object
   construction with render side effects disabled at the runner boundary,
+- anatomical preprocessing is represented as its own opt-in stage before
+  biopsy-facing preprocessing; it currently wraps raw contour pulling, selected
+  structure selection, standard non-biopsy structure processing, and
+  prostate-only MR ADC summary finalization with legacy presentation objects
+  adapted to null/headless shims,
 - preprocessing is represented explicitly through currently patient-local slices
   such as real-biopsy geometry processing, simulated-biopsy preparation,
   simulated-biopsy planning, uncertainty attachment, realized targeting, and
@@ -162,8 +168,8 @@ Scientific tranche direction:
   grid/lattice information that must already be available; grid preprocessing
   owns the current dose-grid, MR ADC normalization, and MR ADC grid adapters
   plus later patient-local lattice/grid/KD-tree artifacts, while anatomical
-  preprocessing owns raw contours, selected/unique structures, OAR, rectum,
-  urethra, DIL, and prostate-only MR ADC structure summaries,
+  preprocessing owns the current raw-contour, selected/unique structure,
+  standard non-biopsy structure, and prostate-only MR ADC adapters,
 - biopsy preprocessing, pre-optimizer transforms/optimizers, post-optimizer
   biopsy realization, sampling/classification, MC prep/simulation, and
   output/guidance/assembly/parity should remain separate tranche recipes so the

@@ -71,6 +71,7 @@ from .runner import PatientStageRunner
 from .runner import default_patient_stages
 from .runner import run_patient_case
 from .runner import run_patient_stages
+from .scientific_config import PatientAnatomicalPreprocessingScientificConfig
 from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
@@ -78,6 +79,8 @@ from .scientific_config import PatientMCSimulationScientificConfig
 from .scientific_config import PatientMRADCInputNormalizationStageConfig
 from .scientific_config import PatientOptimizationScientificConfig
 from .scientific_config import PatientPreprocessingScientificConfig
+from .scientific_config import PatientProstateOnlyMRADCStageConfig
+from .scientific_config import PatientRawContourPullingStageConfig
 from .scientific_config import PatientRealBiopsyProcessingStageConfig
 from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
 from .scientific_config import PatientRunnerScientificConfig
@@ -85,9 +88,12 @@ from .scientific_config import PatientSampledBiopsyProcessingStageConfig
 from .scientific_config import PatientScientificStageResources
 from .scientific_config import PatientSimulatedBiopsyPlanningStageConfig
 from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
+from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
+from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
+from .scientific_stages import run_patient_anatomical_preprocessing_scientific_stage
 from .scientific_stages import run_patient_grid_preprocessing_scientific_stage
 from .scientific_stages import run_patient_guidance_scientific_stage
 from .scientific_stages import run_patient_mc_prep_scientific_stage
@@ -128,6 +134,7 @@ __all__ = [
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
     "DEFAULT_SCIENTIFIC_STAGE_ORDER",
+    "PatientAnatomicalPreprocessingScientificConfig",
     "PatientGridPreprocessingScientificConfig",
     "PatientGuidanceScientificConfig",
     "PatientMCPrepScientificConfig",
@@ -135,6 +142,8 @@ __all__ = [
     "PatientMRADCInputNormalizationStageConfig",
     "PatientOptimizationScientificConfig",
     "PatientPreprocessingScientificConfig",
+    "PatientProstateOnlyMRADCStageConfig",
+    "PatientRawContourPullingStageConfig",
     "PatientRealBiopsyProcessingStageConfig",
     "PatientRealizedBiopsyTargetingStageConfig",
     "PatientRunResult",
@@ -158,6 +167,8 @@ __all__ = [
     "PatientStageStatus",
     "PatientSimulatedBiopsyPlanningStageConfig",
     "PatientSimulatedBiopsyPreparationStageConfig",
+    "PatientStandardNonBiopsyStructureProcessingStageConfig",
+    "PatientStructureSelectionStageConfig",
     "PatientUncertaintyAttachmentStageConfig",
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
@@ -185,6 +196,7 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_anatomical_preprocessing_scientific_stage",
     "run_patient_grid_preprocessing_scientific_stage",
     "run_patient_guidance_scientific_stage",
     "run_patient_mc_prep_scientific_stage",

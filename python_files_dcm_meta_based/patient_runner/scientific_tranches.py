@@ -102,6 +102,7 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
             "OAR/prostate, rectum, urethra, and DIL preprocessing",
             "prostate-only MR ADC structure summary",
         ),
+        implemented_stage_names=(PatientStageName.ANATOMICAL_PREPROCESSING,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.BIOPSY_PREPROCESSING,

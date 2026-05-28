@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig
     from preprocessing.dose_grid_processing import DoseGridProcessingConfig
     from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
+    from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,137 @@ class PatientGridPreprocessingScientificConfig:
                 self.dose_grid_config,
                 self.mr_adc_input_normalization,
                 self.mr_adc_grid_config,
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PatientRawContourPullingStageConfig:
+    """Config for patient-local RTSTRUCT raw contour pulling."""
+
+    rtstruct_dicom_paths_by_patient_uid: Mapping[str, Any]
+    structs_referenced_list_generalized: Sequence[str]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        rtstruct_paths = dict(self.rtstruct_dicom_paths_by_patient_uid)
+        if not rtstruct_paths:
+            raise ValueError("rtstruct_dicom_paths_by_patient_uid cannot be empty")
+        object.__setattr__(self, "rtstruct_dicom_paths_by_patient_uid", rtstruct_paths)
+        object.__setattr__(
+            self,
+            "structs_referenced_list_generalized",
+            _non_empty_string_tuple(
+                self.structs_referenced_list_generalized,
+                "structs_referenced_list_generalized",
+            ),
+        )
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStructureSelectionStageConfig:
+    """Config for patient-local selected/unique anatomical structure selection."""
+
+    structs_referenced_dict: Mapping[str, Any]
+    structs_referenced_list_generalized: Sequence[str]
+    structs_referenced_list_generalized_unique_structs: Sequence[str]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "structs_referenced_dict", dict(self.structs_referenced_dict))
+        object.__setattr__(
+            self,
+            "structs_referenced_list_generalized",
+            _non_empty_string_tuple(
+                self.structs_referenced_list_generalized,
+                "structs_referenced_list_generalized",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "structs_referenced_list_generalized_unique_structs",
+            _non_empty_string_tuple(
+                self.structs_referenced_list_generalized_unique_structs,
+                "structs_referenced_list_generalized_unique_structs",
+            ),
+        )
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientStandardNonBiopsyStructureProcessingStageConfig:
+    """Config for patient-local prostate/rectum/urethra/DIL preprocessing."""
+
+    oar_ref: str
+    rectum_ref_key: str
+    urethra_ref_key: str
+    dil_ref: str
+    structs_referenced_dict: Mapping[str, Any]
+    preprocessing_config: NonBiopsyStructurePreprocessingConfig
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for field_name in ("oar_ref", "rectum_ref_key", "urethra_ref_key", "dil_ref"):
+            object.__setattr__(self, field_name, _non_empty_string(getattr(self, field_name), field_name))
+        object.__setattr__(self, "structs_referenced_dict", dict(self.structs_referenced_dict))
+        _reject_anatomical_presentation_options(self.preprocessing_config)
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def structure_ref_types(self) -> tuple[str, str, str, str]:
+        return (self.oar_ref, self.rectum_ref_key, self.urethra_ref_key, self.dil_ref)
+
+
+@dataclass(frozen=True, slots=True)
+class PatientProstateOnlyMRADCStageConfig:
+    """Config for patient-local prostate-only MR ADC summary finalization."""
+
+    dil_ref: str
+    mr_adc_ref: str
+    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool: bool = False
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "dil_ref", _non_empty_string(self.dil_ref, "dil_ref"))
+        object.__setattr__(self, "mr_adc_ref", _non_empty_string(self.mr_adc_ref, "mr_adc_ref"))
+        demonstrate_flag = bool(
+            self.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
+        )
+        if demonstrate_flag:
+            raise ValueError(
+                "patient-runner anatomical preprocessing does not support prostate-only MR ADC plot side effects"
+            )
+        object.__setattr__(
+            self,
+            "demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool",
+            demonstrate_flag,
+        )
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientAnatomicalPreprocessingScientificConfig:
+    """Opt-in anatomical preprocessing slices that run after grid preprocessing."""
+
+    raw_contour_pulling: PatientRawContourPullingStageConfig | None = None
+    structure_selection: PatientStructureSelectionStageConfig | None = None
+    standard_non_biopsy_structure_processing: PatientStandardNonBiopsyStructureProcessingStageConfig | None = None
+    prostate_only_mr_adc: PatientProstateOnlyMRADCStageConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return any(
+            step is not None
+            for step in (
+                self.raw_contour_pulling,
+                self.structure_selection,
+                self.standard_non_biopsy_structure_processing,
+                self.prostate_only_mr_adc,
             )
         )
 
@@ -438,6 +570,7 @@ class PatientRunnerScientificConfig:
 
     resources: PatientScientificStageResources = field(default_factory=PatientScientificStageResources)
     grid_preprocessing: PatientGridPreprocessingScientificConfig | None = None
+    anatomical_preprocessing: PatientAnatomicalPreprocessingScientificConfig | None = None
     preprocessing: PatientPreprocessingScientificConfig | None = None
     mc_prep: PatientMCPrepScientificConfig | None = None
     mc_simulation: PatientMCSimulationScientificConfig | None = None
@@ -455,6 +588,7 @@ class PatientRunnerScientificConfig:
         enabled_names = []
         for name, stage_config in (
             ("grid_preprocessing", self.grid_preprocessing),
+            ("anatomical_preprocessing", self.anatomical_preprocessing),
             ("preprocessing", self.preprocessing),
             ("mc_prep", self.mc_prep),
             ("mc_simulation", self.mc_simulation),
@@ -471,6 +605,15 @@ def _non_empty_string(value: Any, field_name: str) -> str:
     if resolved_value == "":
         raise ValueError(f"{field_name} cannot be empty")
     return resolved_value
+
+
+def _non_empty_string_tuple(values: Sequence[Any], field_name: str) -> tuple[str, ...]:
+    if isinstance(values, str):
+        raise TypeError(f"{field_name} must be a sequence of strings, not a string")
+    resolved_values = tuple(_non_empty_string(value, f"{field_name} item") for value in values)
+    if not resolved_values:
+        raise ValueError(f"{field_name} cannot be empty")
+    return resolved_values
 
 
 def _positive_int(value: Any, field_name: str) -> int:
@@ -497,6 +640,29 @@ def _reject_grid_render_options(config: Any) -> None:
     if enabled_fields:
         raise ValueError(
             "patient-runner grid preprocessing does not support render side effects: "
+            + ", ".join(enabled_fields)
+        )
+
+
+def _reject_anatomical_presentation_options(config: Any) -> None:
+    presentation_fields = (
+        "demonstrate_volume_calculation_correctness_bool_1",
+        "plot_volume_calculation_containment_result_bool_1_old",
+        "plot_binary_mask_bool",
+        "demonstrate_structure_dimension_calculation_correctness_bool_1",
+        "demonstrate_structure_dimension_calculation_correctness_bool_1_old",
+        "demonstrate_mr_adc_pcd_containment_correctness_bool",
+        "display_structure_surface_mesh_bool",
+        "show_equivalent_ellipsoid_from_pca_bool",
+    )
+    enabled_fields = tuple(
+        field_name
+        for field_name in presentation_fields
+        if bool(getattr(config, field_name, False))
+    )
+    if enabled_fields:
+        raise ValueError(
+            "patient-runner anatomical preprocessing does not support presentation/debug side effects: "
             + ", ".join(enabled_fields)
         )
 
