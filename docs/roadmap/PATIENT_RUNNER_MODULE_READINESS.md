@@ -356,22 +356,20 @@ Recommended order of operations from this point:
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-5. Add the remaining adapter that lets the executable pathway view converge
-  toward the full graph view, especially sampling/classification. Current
-  adapters cover grid preprocessing, anatomical preprocessing, real-biopsy
-  processing, simulated-biopsy preparation, simulated-biopsy planning,
-  uncertainty attachment, realized targeting, sampled-biopsy processing,
-  transform generation, simulated-biopsy finalization, MC prep, MC simulation,
-  optimizer, and guidance.
-6. Split sampling/classification out of the coarse preprocessing adapter so MC
-  prep can depend on finalized and sampled biopsy state explicitly.
-7. Add a separate scientific shadow-validation mode after the graph/pathway
+5. Extend the sampling/classification stage boundary with later internal slices,
+  especially double-sextant fragments and optimizer-v2 sampling audit
+  annotations. Current adapters cover grid preprocessing, anatomical
+  preprocessing, real-biopsy processing, simulated-biopsy preparation,
+  simulated-biopsy planning, uncertainty attachment, realized targeting,
+  transform generation, simulated-biopsy finalization, sampled-biopsy
+  processing, MC prep, MC simulation, optimizer, and guidance.
+6. Add a separate scientific shadow-validation mode after the graph/pathway
   sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.
-8. Add durable stage-state parity manifests beside patient artifacts: performed
+7. Add durable stage-state parity manifests beside patient artifacts: performed
   flags, skip reasons, output keys present, counts, dataframe shapes, and hashes
   where useful.
-9. Compare independently run patient-stage outputs against the frozen cohort
+8. Compare independently run patient-stage outputs against the frozen cohort
   oracle through post-run parity surfaces before live routing.
 9. After patient-runner validation against the legacy cohort oracle, remove
   remaining Rich dependencies from patient scientific functions and keep Rich

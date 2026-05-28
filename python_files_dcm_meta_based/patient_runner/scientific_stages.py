@@ -46,6 +46,7 @@ def build_patient_scientific_stages(
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value: _simulated_biopsy_finalization_stage(scientific_config),
+        PatientStageName.SAMPLING_CLASSIFICATION.value: _sampling_classification_stage(scientific_config),
         PatientStageName.GUIDANCE.value: _guidance_stage(scientific_config),
     }
 
@@ -436,23 +437,6 @@ def run_patient_preprocessing_scientific_stage(
         metadata["steps"].append("realized_biopsy_targeting")
         metadata["realized_biopsy_count"] = len(pydicom_item.get(runtime_state.bx_ref, ()))
 
-    if stage_config.sampled_biopsy_processing is not None:
-        from preprocessing.biopsy_processing.sampled_biopsy_processing import process_patient_sampled_biopsies
-
-        sampled_config = stage_config.sampled_biopsy_processing
-        sampled_result = process_patient_sampled_biopsies(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            bx_ref=runtime_state.bx_ref,
-            bx_sample_pts_lattice_spacing=sampled_config.bx_sample_pts_lattice_spacing,
-            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.PREPROCESSING),
-            show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot=(
-                sampled_config.show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot
-            ),
-        )
-        metadata["steps"].append("sampled_biopsy_processing")
-        metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
-
     return PatientStageResult.success(PatientStageName.PREPROCESSING, metadata=metadata)
 
 
@@ -554,6 +538,42 @@ def run_patient_simulated_biopsy_finalization_scientific_stage(
             "simulated_biopsy_count": int(simulated_biopsy_count),
         },
     )
+
+
+def run_patient_sampling_classification_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run sampled-biopsy storage and classification-adjacent patient slices."""
+    del config
+    stage_config = scientific_config.sampling_classification
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.SAMPLING_CLASSIFICATION,
+            reason="sampling_classification_not_configured",
+        )
+
+    metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
+    if stage_config.sampled_biopsy_processing is not None:
+        from preprocessing.biopsy_processing.sampled_biopsy_processing import process_patient_sampled_biopsies
+
+        sampled_config = stage_config.sampled_biopsy_processing
+        sampled_result = process_patient_sampled_biopsies(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=runtime_state.pydicom_item,
+            bx_ref=runtime_state.bx_ref,
+            bx_sample_pts_lattice_spacing=sampled_config.bx_sample_pts_lattice_spacing,
+            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.SAMPLING_CLASSIFICATION),
+            show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot=(
+                sampled_config.show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot
+            ),
+        )
+        metadata["steps"].append("sampled_biopsy_processing")
+        metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
+
+    return PatientStageResult.success(PatientStageName.SAMPLING_CLASSIFICATION, metadata=metadata)
 
 
 def run_patient_mc_prep_scientific_stage(
@@ -860,6 +880,15 @@ def _simulated_biopsy_finalization_stage(scientific_config: PatientRunnerScienti
     return PatientStage(
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
         partial(run_patient_simulated_biopsy_finalization_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _sampling_classification_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.sampling_classification is None or not scientific_config.sampling_classification.enabled:
+        return None
+    return PatientStage(
+        PatientStageName.SAMPLING_CLASSIFICATION,
+        partial(run_patient_sampling_classification_scientific_stage, scientific_config=scientific_config),
     )
 
 

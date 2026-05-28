@@ -61,6 +61,7 @@ DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER = (
     PatientStageName.TRANSFORM_GENERATION,
     PatientStageName.OPTIMIZATION,
     PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+    PatientStageName.SAMPLING_CLASSIFICATION,
     PatientStageName.MC_PREP,
     PatientStageName.MC_SIMULATION,
     PatientStageName.GUIDANCE,
@@ -98,9 +99,14 @@ DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES = (
         summary="Finalizes optimized simulated biopsy geometry after optimizer stages.",
     ),
     PatientScientificStageDependency(
-        stage_name=PatientStageName.MC_PREP,
+        stage_name=PatientStageName.SAMPLING_CLASSIFICATION,
         required_stage_names=(PatientStageName.SIMULATED_BIOPSY_FINALIZATION,),
-        summary="Applies MC transform state after finalized simulated biopsy geometry.",
+        summary="Stores sampled-biopsy products and classification fragments after finalized biopsy geometry.",
+    ),
+    PatientScientificStageDependency(
+        stage_name=PatientStageName.MC_PREP,
+        required_stage_names=(PatientStageName.SAMPLING_CLASSIFICATION,),
+        summary="Applies MC transform state after finalized and sampled biopsy geometry.",
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.MC_SIMULATION,
@@ -149,7 +155,6 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES = (
         stage_name=PatientStageName.SAMPLING_CLASSIFICATION,
         required_stage_names=(PatientStageName.SIMULATED_BIOPSY_FINALIZATION,),
         summary="Stores sampled-biopsy products and classification fragments after finalized biopsy geometry.",
-        metadata={"adapter_status": "planned_split_from_preprocessing"},
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.MC_PREP,
@@ -193,6 +198,7 @@ DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS = {
         PatientStageName.TRANSFORM_GENERATION,
         PatientStageName.OPTIMIZATION,
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        PatientStageName.SAMPLING_CLASSIFICATION,
         PatientStageName.MC_PREP,
         PatientStageName.MC_SIMULATION,
     ),

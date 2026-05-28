@@ -473,6 +473,21 @@ class PatientUncertaintyAttachmentStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientSamplingClassificationScientificConfig:
+    """Opt-in sampling/classification slices after simulated-biopsy finalization."""
+
+    sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return self.sampled_biopsy_processing is not None
+
+
+@dataclass(frozen=True, slots=True)
 class PatientPreprocessingScientificConfig:
     """Opt-in preprocessing slices that already have patient-local entrypoints."""
 
@@ -480,7 +495,6 @@ class PatientPreprocessingScientificConfig:
     simulated_biopsy_preparation: PatientSimulatedBiopsyPreparationStageConfig | None = None
     simulated_biopsy_planning: PatientSimulatedBiopsyPlanningStageConfig | None = None
     realized_biopsy_targeting: PatientRealizedBiopsyTargetingStageConfig | None = None
-    sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
     uncertainty_attachment: PatientUncertaintyAttachmentStageConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -497,7 +511,6 @@ class PatientPreprocessingScientificConfig:
                 self.simulated_biopsy_preparation,
                 self.simulated_biopsy_planning,
                 self.realized_biopsy_targeting,
-                self.sampled_biopsy_processing,
             )
         )
 
@@ -676,6 +689,7 @@ class PatientRunnerScientificConfig:
     mc_simulation: PatientMCSimulationScientificConfig | None = None
     optimization: PatientOptimizationScientificConfig | None = None
     simulated_biopsy_finalization: PatientSimulatedBiopsyFinalizationStageConfig | None = None
+    sampling_classification: PatientSamplingClassificationScientificConfig | None = None
     guidance: PatientGuidanceScientificConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -695,6 +709,7 @@ class PatientRunnerScientificConfig:
             ("mc_simulation", self.mc_simulation),
             ("optimization", self.optimization),
             ("simulated_biopsy_finalization", self.simulated_biopsy_finalization),
+            ("sampling_classification", self.sampling_classification),
             ("guidance", self.guidance),
         ):
             if stage_config is not None and stage_config.enabled:

@@ -85,6 +85,7 @@ from .scientific_config import PatientRealBiopsyProcessingStageConfig
 from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
 from .scientific_config import PatientRunnerScientificConfig
 from .scientific_config import PatientSampledBiopsyProcessingStageConfig
+from .scientific_config import PatientSamplingClassificationScientificConfig
 from .scientific_config import PatientScientificStageResources
 from .scientific_config import PatientSimulatedBiopsyFinalizationStageConfig
 from .scientific_config import PatientSimulatedBiopsyPlanningStageConfig
@@ -121,6 +122,7 @@ from .scientific_stages import run_patient_mc_prep_scientific_stage
 from .scientific_stages import run_patient_mc_simulation_scientific_stage
 from .scientific_stages import run_patient_optimization_scientific_stage
 from .scientific_stages import run_patient_preprocessing_scientific_stage
+from .scientific_stages import run_patient_sampling_classification_scientific_stage
 from .scientific_stages import run_patient_simulated_biopsy_finalization_scientific_stage
 from .scientific_stages import run_patient_transform_generation_scientific_stage
 from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER
@@ -186,6 +188,7 @@ __all__ = [
     "PatientRunnerPostRunParityResult",
     "PatientRunnerScientificConfig",
     "PatientSampledBiopsyProcessingStageConfig",
+    "PatientSamplingClassificationScientificConfig",
     "PatientScientificPathwayName",
     "PatientScientificStageDependency",
     "PatientScientificTranche",
@@ -241,6 +244,7 @@ __all__ = [
     "run_patient_mc_simulation_scientific_stage",
     "run_patient_optimization_scientific_stage",
     "run_patient_preprocessing_scientific_stage",
+    "run_patient_sampling_classification_scientific_stage",
     "run_patient_simulated_biopsy_finalization_scientific_stage",
     "run_patient_transform_generation_scientific_stage",
     "run_patient_runner_post_run_parity",

@@ -142,13 +142,14 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.SAMPLING_CLASSIFICATION,
         display_name="Sampling And Classification",
-        summary="Stores sampled-biopsy outputs and classification fragments before MC simulation.",
+        summary="Stores sampled-biopsy outputs and classification-adjacent fragments before MC simulation.",
         planned_surfaces=(
             "sampled-biopsy processing",
             "optimizer-v2 sampling audit annotation",
             "double-sextant sample-point fragments",
             "run-level per-voxel double-sextant assembly",
         ),
+        implemented_stage_names=(PatientStageName.SAMPLING_CLASSIFICATION,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.MC_PREP_AND_SIMULATION,
