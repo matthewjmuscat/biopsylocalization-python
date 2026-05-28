@@ -11,7 +11,7 @@ from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .runner import PatientStage
 from .scientific_config import PatientRunnerScientificConfig
-from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
 from .scientific_dependencies import PatientScientificPathwayName
 from .scientific_dependencies import executable_patient_scientific_pathway_stage_names
 from .scientific_dependencies import patient_scientific_pathway_stage_names
@@ -19,7 +19,7 @@ from .scientific_dependencies import validate_patient_scientific_stage_dependenc
 from .stages import write_patient_artifacts_stage
 
 
-DEFAULT_SCIENTIFIC_STAGE_ORDER = DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
+DEFAULT_SCIENTIFIC_STAGE_ORDER = DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
 
 
 def build_patient_scientific_stages(

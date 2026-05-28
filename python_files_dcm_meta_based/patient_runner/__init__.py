@@ -91,18 +91,24 @@ from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES
 from .scientific_dependencies import PatientScientificPathwayName
 from .scientific_dependencies import PatientScientificStageDependency
 from .scientific_dependencies import executable_patient_scientific_pathway_stage_names
+from .scientific_dependencies import patient_scientific_pathway_graph_stage_names
 from .scientific_dependencies import patient_scientific_pathway_stage_names
 from .scientific_dependencies import resolve_patient_scientific_pathway_name
 from .scientific_dependencies import resolve_patient_scientific_stage_names
 from .scientific_dependencies import summarize_patient_scientific_dependency_graph
 from .scientific_dependencies import summarize_patient_scientific_pathways
+from .scientific_dependencies import validate_patient_scientific_graph_dependencies
 from .scientific_dependencies import validate_patient_scientific_pathway_dependencies
+from .scientific_dependencies import validate_patient_scientific_pathway_graph_dependencies
 from .scientific_dependencies import validate_patient_scientific_stage_dependencies
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
@@ -145,7 +151,10 @@ __all__ = [
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER",
+    "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS",
+    "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES",
     "DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS",
     "DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES",
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
@@ -209,6 +218,7 @@ __all__ = [
     "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
+    "patient_scientific_pathway_graph_stage_names",
     "patient_scientific_pathway_stage_names",
     "patient_scientific_tranche_stage_names",
     "resolve_legacy_patient_uids",
@@ -241,7 +251,9 @@ __all__ = [
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",
     "validate_patient_batch_cohort_assembly",
+    "validate_patient_scientific_graph_dependencies",
     "validate_patient_scientific_pathway_dependencies",
+    "validate_patient_scientific_pathway_graph_dependencies",
     "validate_patient_scientific_stage_dependencies",
     "write_patient_batch_run_manifest",
     "write_patient_batch_cohort_assembly_outputs",

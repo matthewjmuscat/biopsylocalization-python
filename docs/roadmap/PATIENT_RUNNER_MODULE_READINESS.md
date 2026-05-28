@@ -150,8 +150,8 @@ Dependency edges and pathway selection should be the scientific runner source of
 truth. Tranches remain useful as debug/documentation blocks and manifest labels,
 but they should be easy to remove and must not bypass graph validation. The
 current dependency vocabulary and conservative hard-edge map live in
-`docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the executable graph,
-pathway presets, and validation helpers live in
+`docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the full graph-node view,
+current executable adapter view, pathway presets, and validation helpers live in
 `python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`.
 
 Recommended tranche structure for patient-runner shadow work:
@@ -356,13 +356,13 @@ Recommended order of operations from this point:
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-5. Continue splitting later preprocessing graph nodes that still need distinct
-  stage timing, especially simulated-biopsy finalization and
-  sampling/classification. Current adapters cover grid preprocessing,
-  anatomical preprocessing, real-biopsy processing, simulated-biopsy
-  preparation, simulated-biopsy planning, uncertainty attachment, realized
-  targeting, sampled-biopsy processing, MC prep, MC simulation, optimizer, and
-  guidance.
+5. Add the missing adapters that let the executable pathway view converge toward
+  the full graph view, especially transform generation, simulated-biopsy
+  finalization, and sampling/classification. Current adapters cover grid
+  preprocessing, anatomical preprocessing, real-biopsy processing,
+  simulated-biopsy preparation, simulated-biopsy planning, uncertainty
+  attachment, realized targeting, sampled-biopsy processing, MC prep, MC
+  simulation, optimizer, and guidance.
 6. Wire simulated-biopsy finalization as a separate post-optimizer stage because
   the legacy path runs it after optimizer-v2, not inside early preprocessing.
 7. Add a separate scientific shadow-validation mode after the graph/pathway

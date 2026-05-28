@@ -43,8 +43,8 @@ resolved patient case inputs.
 The dependency graph should be treated as the scientific runner source of truth.
 Tranches are removable debug/documentation groupings over graph nodes. For the
 current dependency vocabulary, pathway semantics, and conservative hard-edge map,
-see `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the executable
-subset is encoded in
+see `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the full graph-node
+view and current executable adapter view are encoded in
 `python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`.
 
 ## Presentation And Rich Boundary

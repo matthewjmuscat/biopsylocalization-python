@@ -3,18 +3,20 @@
 Last updated: 2026-05-27
 
 This document describes the intended dependency model for patient-runner
-scientific orchestration. The executable subset currently lives in
+scientific orchestration. The executable code lives in
 `python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`, which
-defines the current stage graph, named pathway presets, and dependency
-validators. This note remains the conceptual guide for graph changes as coarse
-stages are split further.
+now carries two views: the full scientific graph slice and the currently
+executable adapter slice. This note remains the conceptual guide for graph
+changes as coarse stages are split further.
 
 ## Core Position
 
 The dependency graph should be the source of truth for scientific runner
 assembly.
 
-- A stage is an executable patient-runner node.
+- A graph node is one scientific dependency unit.
+- A patient stage adapter is the currently executable runner surface for one or
+   more graph nodes while migration is still coarse.
 - A dependency is a required predecessor relationship between nodes.
 - A pathway is a user-configured scientific workflow through the graph.
 - A tranche is a removable debug/documentation grouping over nodes.
@@ -115,15 +117,18 @@ patient-runner adapters.
 | MC simulation / current dosimetry | patient | MC prep; anatomical structures; biopsy state; dose grid for dose simulation; MR ADC grid for MR simulation | containment, dose, dose-gradient, DVH, and MR ADC localization outputs |
 | guidance/output/parity | mixed patient and run/cohort | selected pathway products | guidance-map recommendations, patient artifacts, cohort assembly, post-run parity |
 
-The current runner still has some coarse stages. In particular, biopsy
-preprocessing currently includes work that the dependency model wants to split
-later, such as sampled-biopsy processing. That is migration debt, not the desired
-final graph shape.
+The dependency module encodes this split graph while still exposing a separate
+currently executable adapter order. In particular, biopsy preprocessing and MC
+prep still contain work that the graph wants to split into independent nodes,
+such as sampled-biopsy processing and transform generation. That is migration
+debt, not the desired final graph shape.
 
 ## Candidate Pathway Presets
 
-The first implementation of dependency validation should support named pathway
-presets rather than forcing callers to manually list every stage.
+The implementation supports named pathway presets rather than forcing callers to
+manually list every stage. Each pathway has a full graph-node slice and a current
+executable adapter slice; the latter stays coarse until the missing adapters are
+split out.
 
 | Pathway | Intended use | Required graph slice |
 | --- | --- | --- |
@@ -160,13 +165,14 @@ kept only as manifest labels.
 
 ## Near-Term Implementation Plan
 
-1. Keep the executable stage dependency graph in the patient-runner dependency
-   module.
-2. Keep pathway presets as explicit named graph slices that expand to stage
-   nodes.
+1. Keep the full graph-node view and current executable adapter view in the
+   patient-runner dependency module.
+2. Keep pathway presets as explicit named graph slices that expand to graph
+   nodes and current adapter slices.
 3. Validate requested stage/pathway selections before building `PatientStage`s.
 4. Treat tranches as optional labels that must resolve to valid graph slices.
 5. Support an explicit already-satisfied prerequisite set for loaded
    preprocessed bundles and other controlled validation states.
-6. Split current coarse stages where dependency edges need more precision,
-   especially simulated-biopsy finalization and sampling/classification.
+6. Add the missing adapter splits that let the executable view converge toward
+   the full graph view, especially transform generation, simulated-biopsy
+   finalization, and sampling/classification.

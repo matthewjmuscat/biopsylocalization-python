@@ -146,9 +146,9 @@ Scientific stage config boundary:
 - `scientific_stages.py` contains thin runner adapters that translate
   `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
   existing patient scientific modules,
-- `scientific_dependencies.py` owns the current executable stage graph, named
-  pathway presets such as `current_dosimetry_shadow`, and dependency validation
-  before `PatientStage` objects are built,
+- `scientific_dependencies.py` owns both the full scientific graph-node view and
+  the current executable adapter view, plus named pathway presets such as
+  `current_dosimetry_shadow`,
 - `build_patient_scientific_stages(...)` is opt-in and does not change
   `default_patient_stages()`, which remains artifact-only for the current
   shadow-output validation path.
@@ -156,6 +156,9 @@ Scientific stage config boundary:
   named pathway builds require the pathway's enabled stage configs unless the
   caller explicitly marks upstream stages as already satisfied for a controlled
   preprocessed/debug state.
+- the full graph now names transform generation, simulated-biopsy finalization,
+  and sampling/classification separately; the executable adapter slice remains
+  coarser until those missing stage adapters are split out,
 - simulated-biopsy finalization is intentionally not folded into the early
   preprocessing adapter because the legacy path runs it after optimizer-v2; it
   should become a separate opt-in stage before scientific shadow routing.
