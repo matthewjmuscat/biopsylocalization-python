@@ -163,6 +163,9 @@ Recommended tranche structure for patient-runner shadow work:
    - This tranche intentionally precedes anatomical preprocessing because some
      structure processing consumes grid/lattice information that must already be
      available.
+   - The current opt-in runner stage covers dose-grid runtime objects, MR ADC
+     input normalization, and MR ADC grid runtime objects with render side
+     effects rejected at the runner boundary.
 3. Anatomical preprocessing tranche
    - Raw contour pulling and selected/unique structure setup.
    - OAR/prostate, rectum, urethra, and DIL non-biopsy structure preprocessing.
@@ -274,6 +277,7 @@ Completed through the 2026-05-27 pass:
 - `run_patient_optimizer_v1_stage(...)` lives in `python_files_dcm_meta_based/biopsy_optimizer/v1/per_patient/patient_stage.py` as the additive patient-local scientific stage copied from the optimizer-v1 patient loop. `run_patient_optimizer_v1_legacy_adapter(...)` remains a singleton-patient validation bridge around the legacy optimizer-v1 oracle.
 - `run_patient_target_dil_optimizer_v2_live_adapter(...)` lives in `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/live_adapter.py` as a singleton-patient oracle bridge around the current optimizer-v2 live integration surface. `run_patient_target_dil_optimizer_v2_stage(...)` lives in `python_files_dcm_meta_based/biopsy_optimizer/v2/per_patient/target_dil_stage.py` as the additive patient-local scientific stage built from the existing optimizer-v2 candidate-pool, scoring, staged-runner, and output modules; render/UI review remains outside that scientific surface.
 - `precompute_guidance_map_firing_depth_recommendations_for_patient(...)` lives in `python_files_dcm_meta_based/guidance_maps/planning.py`; the run wrapper now loops over this patient entrypoint and keeps rendering run/UI scoped.
+- `patient_runner/scientific_config.py` and `patient_runner/scientific_stages.py` now expose an opt-in grid-preprocessing runner boundary for dose-grid runtime object construction, MR ADC input normalization, and MR ADC grid runtime object construction before anatomical preprocessing.
 
 ## Main Pipeline Readiness Checklist
 
@@ -334,11 +338,11 @@ Recommended order of operations from this point:
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-4. Fill the grid preprocessing and anatomical preprocessing adapters before
-  calling the current biopsy-focused adapter set complete. Current adapters cover
-  real-biopsy processing, simulated-biopsy preparation, simulated-biopsy
-  planning, uncertainty attachment, realized targeting, sampled-biopsy
-  processing, MC prep, MC simulation, optimizer, and guidance.
+4. Fill the remaining anatomical preprocessing adapters before calling the
+  current preprocessing adapter set complete. Current adapters cover grid
+  preprocessing, real-biopsy processing, simulated-biopsy preparation,
+  simulated-biopsy planning, uncertainty attachment, realized targeting,
+  sampled-biopsy processing, MC prep, MC simulation, optimizer, and guidance.
 5. Wire simulated-biopsy finalization as a separate post-optimizer stage because
   the legacy path runs it after optimizer-v2, not inside early preprocessing.
 6. Add a separate scientific shadow-validation mode after the tranche sequence is

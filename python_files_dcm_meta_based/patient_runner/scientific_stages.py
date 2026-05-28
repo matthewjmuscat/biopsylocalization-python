@@ -15,6 +15,7 @@ from .stages import write_patient_artifacts_stage
 
 
 DEFAULT_SCIENTIFIC_STAGE_ORDER = (
+    PatientStageName.GRID_PREPROCESSING,
     PatientStageName.PREPROCESSING,
     PatientStageName.MC_PREP,
     PatientStageName.MC_SIMULATION,
@@ -34,6 +35,7 @@ def build_patient_scientific_stages(
         raise TypeError("scientific_config must be a PatientRunnerScientificConfig instance")
 
     stage_builders = {
+        PatientStageName.GRID_PREPROCESSING.value: _grid_preprocessing_stage(scientific_config),
         PatientStageName.PREPROCESSING.value: _preprocessing_stage(scientific_config),
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
@@ -52,6 +54,86 @@ def build_patient_scientific_stages(
     if include_artifact_writing:
         stages.append(PatientStage(PatientStageName.PATIENT_ARTIFACT_WRITING, write_patient_artifacts_stage))
     return tuple(stages)
+
+
+def run_patient_grid_preprocessing_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run configured patient-local grid preprocessing slices."""
+    del config
+    stage_config = scientific_config.grid_preprocessing
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(PatientStageName.GRID_PREPROCESSING, reason="grid_preprocessing_not_configured")
+
+    metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
+    pydicom_item = runtime_state.pydicom_item
+
+    if stage_config.dose_grid_config is not None:
+        from preprocessing.dose_grid_processing import build_dose_grid_runtime_objects_for_patient
+
+        dose_config = stage_config.dose_grid_config
+        dose_ref = str(dose_config.dose_ref)
+        metadata["dose_reference_available"] = dose_ref in pydicom_item
+        if dose_ref in pydicom_item:
+            lower_bound_dose_value = build_dose_grid_runtime_objects_for_patient(
+                pydicom_item,
+                dose_config,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            metadata["steps"].append("dose_grid_runtime_objects")
+            metadata["lower_bound_dose_value"] = lower_bound_dose_value
+
+    if stage_config.mr_adc_input_normalization is not None:
+        from preprocessing.mr_adc_input_checking import normalize_patient_mr_adc_input
+
+        normalization_config = stage_config.mr_adc_input_normalization
+        mr_input_result = normalize_patient_mr_adc_input(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=pydicom_item,
+            mr_adc_ref=normalization_config.mr_adc_ref,
+            previous_mr_adc_units=normalization_config.previous_mr_adc_units,
+            important_info=_NullImportantInfo(),
+            live_display=None,
+        )
+        metadata["steps"].append("mr_adc_input_normalization")
+        metadata.update(
+            {
+                "mr_adc_input_has_mr_adc": mr_input_result.has_mr_adc,
+                "mr_adc_input_selected_series_uid": mr_input_result.selected_series_uid,
+                "mr_adc_input_selected_units": mr_input_result.selected_units,
+                "mr_adc_input_num_series": mr_input_result.num_mr_adc_series,
+                "mr_adc_input_multiple_series_found": mr_input_result.multiple_series_found,
+                "mr_adc_input_units_match_previous": mr_input_result.units_match_previous,
+            }
+        )
+
+    if stage_config.mr_adc_grid_config is not None:
+        from preprocessing.mr_adc_grid_processing import build_mr_adc_grid_runtime_objects_for_patient
+
+        mr_grid_config = stage_config.mr_adc_grid_config
+        mr_adc_ref = str(mr_grid_config.mr_adc_ref)
+        metadata["mr_adc_reference_available"] = mr_adc_ref in pydicom_item
+        if mr_adc_ref in pydicom_item:
+            build_mr_adc_grid_runtime_objects_for_patient(
+                runtime_state.patient_uid,
+                pydicom_item,
+                mr_grid_config,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            metadata["steps"].append("mr_adc_grid_runtime_objects")
+
+    return PatientStageResult.success(PatientStageName.GRID_PREPROCESSING, metadata=metadata)
 
 
 def run_patient_preprocessing_scientific_stage(
@@ -465,6 +547,15 @@ def _preprocessing_stage(scientific_config: PatientRunnerScientificConfig) -> Pa
     )
 
 
+def _grid_preprocessing_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.grid_preprocessing is None or not scientific_config.grid_preprocessing.enabled:
+        return None
+    return PatientStage(
+        PatientStageName.GRID_PREPROCESSING,
+        partial(run_patient_grid_preprocessing_scientific_stage, scientific_config=scientific_config),
+    )
+
+
 def _mc_prep_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
     if scientific_config.mc_prep is None or not scientific_config.mc_prep.enabled:
         return None
@@ -573,3 +664,8 @@ def _prefix_mapping(values: Mapping[str, Any], prefix: str) -> dict[str, Any]:
 
 def _json_safe_scalar(value: Any) -> bool:
     return isinstance(value, (str, int, float, bool)) or value is None
+
+
+class _NullImportantInfo:
+    def add_text_line(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs

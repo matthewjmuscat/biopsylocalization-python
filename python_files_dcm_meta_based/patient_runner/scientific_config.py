@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from biopsy_optimizer.v2.per_patient import OptimizerV2LiveConfig
     from guidance_maps.config import GuidanceMapPlanningConfig
     from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig
+    from preprocessing.dose_grid_processing import DoseGridProcessingConfig
+    from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +25,45 @@ class PatientScientificStageResources:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientMRADCInputNormalizationStageConfig:
+    """Config for patient-local MR ADC input series normalization."""
+
+    mr_adc_ref: str
+    previous_mr_adc_units: Any = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mr_adc_ref", _non_empty_string(self.mr_adc_ref, "mr_adc_ref"))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class PatientGridPreprocessingScientificConfig:
+    """Opt-in grid preprocessing slices that run before anatomical preprocessing."""
+
+    dose_grid_config: DoseGridProcessingConfig | None = None
+    mr_adc_input_normalization: PatientMRADCInputNormalizationStageConfig | None = None
+    mr_adc_grid_config: MRADCGridProcessingConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _reject_grid_render_options(self.dose_grid_config)
+        _reject_grid_render_options(self.mr_adc_grid_config)
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return any(
+            step is not None
+            for step in (
+                self.dose_grid_config,
+                self.mr_adc_input_normalization,
+                self.mr_adc_grid_config,
+            )
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +437,7 @@ class PatientRunnerScientificConfig:
     """Top-level opt-in scientific stage config for patient-runner execution."""
 
     resources: PatientScientificStageResources = field(default_factory=PatientScientificStageResources)
+    grid_preprocessing: PatientGridPreprocessingScientificConfig | None = None
     preprocessing: PatientPreprocessingScientificConfig | None = None
     mc_prep: PatientMCPrepScientificConfig | None = None
     mc_simulation: PatientMCSimulationScientificConfig | None = None
@@ -412,6 +454,7 @@ class PatientRunnerScientificConfig:
     def enabled_stage_names(self) -> tuple[str, ...]:
         enabled_names = []
         for name, stage_config in (
+            ("grid_preprocessing", self.grid_preprocessing),
             ("preprocessing", self.preprocessing),
             ("mc_prep", self.mc_prep),
             ("mc_simulation", self.mc_simulation),
@@ -435,6 +478,27 @@ def _positive_int(value: Any, field_name: str) -> int:
     if resolved_value < 1:
         raise ValueError(f"{field_name} must be at least 1")
     return resolved_value
+
+
+def _reject_grid_render_options(config: Any) -> None:
+    if config is None:
+        return
+    render_fields = (
+        "show_3d_dose_renderings",
+        "show_3d_dose_renderings_thresholded",
+        "show_3d_mr_adc_renderings",
+        "show_3d_mr_adc_renderings_thresholded",
+    )
+    enabled_fields = tuple(
+        field_name
+        for field_name in render_fields
+        if bool(getattr(config, field_name, False))
+    )
+    if enabled_fields:
+        raise ValueError(
+            "patient-runner grid preprocessing does not support render side effects: "
+            + ", ".join(enabled_fields)
+        )
 
 
 def _positive_float(value: Any, field_name: str) -> float:

@@ -71,9 +71,11 @@ from .runner import PatientStageRunner
 from .runner import default_patient_stages
 from .runner import run_patient_case
 from .runner import run_patient_stages
+from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
 from .scientific_config import PatientMCSimulationScientificConfig
+from .scientific_config import PatientMRADCInputNormalizationStageConfig
 from .scientific_config import PatientOptimizationScientificConfig
 from .scientific_config import PatientPreprocessingScientificConfig
 from .scientific_config import PatientRealBiopsyProcessingStageConfig
@@ -86,6 +88,7 @@ from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
+from .scientific_stages import run_patient_grid_preprocessing_scientific_stage
 from .scientific_stages import run_patient_guidance_scientific_stage
 from .scientific_stages import run_patient_mc_prep_scientific_stage
 from .scientific_stages import run_patient_mc_simulation_scientific_stage
@@ -125,9 +128,11 @@ __all__ = [
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
     "DEFAULT_SCIENTIFIC_STAGE_ORDER",
+    "PatientGridPreprocessingScientificConfig",
     "PatientGuidanceScientificConfig",
     "PatientMCPrepScientificConfig",
     "PatientMCSimulationScientificConfig",
+    "PatientMRADCInputNormalizationStageConfig",
     "PatientOptimizationScientificConfig",
     "PatientPreprocessingScientificConfig",
     "PatientRealBiopsyProcessingStageConfig",
@@ -180,6 +185,7 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_grid_preprocessing_scientific_stage",
     "run_patient_guidance_scientific_stage",
     "run_patient_mc_prep_scientific_stage",
     "run_patient_mc_simulation_scientific_stage",

@@ -90,6 +90,7 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
             "MR ADC grid runtime objects",
             "patient-local lattice/grid/KD-tree artifacts",
         ),
+        implemented_stage_names=(PatientStageName.GRID_PREPROCESSING,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.ANATOMICAL_PREPROCESSING,
