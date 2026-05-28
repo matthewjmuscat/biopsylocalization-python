@@ -235,6 +235,8 @@ def build_patient_scientific_stages_for_tranches(
     *,
     tranche_names: Sequence[PatientScientificTrancheName | str] = DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER,
     include_artifact_writing: bool = True,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
 ) -> tuple[PatientStage, ...]:
     """Build currently implemented patient stages from selected tranche recipes."""
     stage_order = patient_scientific_tranche_stage_names(tranche_names)
@@ -242,6 +244,8 @@ def build_patient_scientific_stages_for_tranches(
         scientific_config,
         include_artifact_writing=include_artifact_writing,
         stage_order=stage_order,
+        satisfied_stage_names=satisfied_stage_names,
+        validate_dependencies=validate_dependencies,
     )
 
 

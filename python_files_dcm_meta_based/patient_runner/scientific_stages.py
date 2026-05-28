@@ -11,29 +11,31 @@ from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .runner import PatientStage
 from .scientific_config import PatientRunnerScientificConfig
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
+from .scientific_dependencies import PatientScientificPathwayName
+from .scientific_dependencies import executable_patient_scientific_pathway_stage_names
+from .scientific_dependencies import patient_scientific_pathway_stage_names
+from .scientific_dependencies import validate_patient_scientific_stage_dependencies
 from .stages import write_patient_artifacts_stage
 
 
-DEFAULT_SCIENTIFIC_STAGE_ORDER = (
-    PatientStageName.GRID_PREPROCESSING,
-    PatientStageName.ANATOMICAL_PREPROCESSING,
-    PatientStageName.PREPROCESSING,
-    PatientStageName.MC_PREP,
-    PatientStageName.MC_SIMULATION,
-    PatientStageName.OPTIMIZATION,
-    PatientStageName.GUIDANCE,
-)
+DEFAULT_SCIENTIFIC_STAGE_ORDER = DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
 
 
 def build_patient_scientific_stages(
     scientific_config: PatientRunnerScientificConfig,
     *,
     include_artifact_writing: bool = True,
-    stage_order: Sequence[PatientStageName | str] = DEFAULT_SCIENTIFIC_STAGE_ORDER,
+    stage_order: Sequence[PatientStageName | str] | None = None,
+    pathway_name: PatientScientificPathwayName | str | None = None,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
 ) -> tuple[PatientStage, ...]:
     """Build an opt-in stage sequence for independently run patient science."""
     if not isinstance(scientific_config, PatientRunnerScientificConfig):
         raise TypeError("scientific_config must be a PatientRunnerScientificConfig instance")
+    if pathway_name is not None and stage_order is not None:
+        raise ValueError("stage_order and pathway_name cannot both be provided")
 
     stage_builders = {
         PatientStageName.GRID_PREPROCESSING.value: _grid_preprocessing_stage(scientific_config),
@@ -44,6 +46,23 @@ def build_patient_scientific_stages(
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
         PatientStageName.GUIDANCE.value: _guidance_stage(scientific_config),
     }
+
+    if pathway_name is not None:
+        pathway_stage_names = patient_scientific_pathway_stage_names(pathway_name)
+        if validate_dependencies:
+            validate_patient_scientific_stage_dependencies(
+                pathway_stage_names,
+                satisfied_stage_names=satisfied_stage_names,
+            )
+        stage_order = executable_patient_scientific_pathway_stage_names(
+            pathway_name,
+            satisfied_stage_names=satisfied_stage_names,
+        )
+        require_requested_stages = True
+    else:
+        stage_order = DEFAULT_SCIENTIFIC_STAGE_ORDER if stage_order is None else tuple(stage_order)
+        require_requested_stages = False
+
     stages: list[PatientStage] = []
     for stage_name in stage_order:
         resolved_stage_name = _stage_name_value(stage_name)
@@ -52,10 +71,39 @@ def build_patient_scientific_stages(
         stage = stage_builders[resolved_stage_name]
         if stage is not None:
             stages.append(stage)
+        elif require_requested_stages:
+            raise ValueError(
+                "patient scientific pathway requires an enabled stage config for: "
+                + resolved_stage_name
+            )
+
+    if validate_dependencies:
+        validate_patient_scientific_stage_dependencies(
+            tuple(stage.stage_name for stage in stages),
+            satisfied_stage_names=satisfied_stage_names,
+        )
 
     if include_artifact_writing:
         stages.append(PatientStage(PatientStageName.PATIENT_ARTIFACT_WRITING, write_patient_artifacts_stage))
     return tuple(stages)
+
+
+def build_patient_scientific_stages_for_pathway(
+    scientific_config: PatientRunnerScientificConfig,
+    pathway_name: PatientScientificPathwayName | str,
+    *,
+    include_artifact_writing: bool = True,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
+) -> tuple[PatientStage, ...]:
+    """Build patient stages for one intentional scientific pathway preset."""
+    return build_patient_scientific_stages(
+        scientific_config,
+        include_artifact_writing=include_artifact_writing,
+        pathway_name=pathway_name,
+        satisfied_stage_names=satisfied_stage_names,
+        validate_dependencies=validate_dependencies,
+    )
 
 
 def run_patient_grid_preprocessing_scientific_stage(

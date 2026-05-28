@@ -3,9 +3,11 @@
 Last updated: 2026-05-27
 
 This document describes the intended dependency model for patient-runner
-scientific orchestration. It is an architecture note, not yet executable
-validation code. The purpose is to disambiguate stages, pathways, and tranches
-before adding more runner wiring.
+scientific orchestration. The executable subset currently lives in
+`python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`, which
+defines the current stage graph, named pathway presets, and dependency
+validators. This note remains the conceptual guide for graph changes as coarse
+stages are split further.
 
 ## Core Position
 
@@ -158,8 +160,10 @@ kept only as manifest labels.
 
 ## Near-Term Implementation Plan
 
-1. Encode the stage dependency graph in a small patient-runner dependency module.
-2. Add pathway presets that expand to stage nodes.
+1. Keep the executable stage dependency graph in the patient-runner dependency
+   module.
+2. Keep pathway presets as explicit named graph slices that expand to stage
+   nodes.
 3. Validate requested stage/pathway selections before building `PatientStage`s.
 4. Treat tranches as optional labels that must resolve to valid graph slices.
 5. Support an explicit already-satisfied prerequisite set for loaded

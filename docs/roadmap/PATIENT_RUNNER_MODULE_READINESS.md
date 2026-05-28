@@ -150,7 +150,9 @@ Dependency edges and pathway selection should be the scientific runner source of
 truth. Tranches remain useful as debug/documentation blocks and manifest labels,
 but they should be easy to remove and must not bypass graph validation. The
 current dependency vocabulary and conservative hard-edge map live in
-`docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`.
+`docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the executable graph,
+pathway presets, and validation helpers live in
+`python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`.
 
 Recommended tranche structure for patient-runner shadow work:
 
@@ -341,10 +343,10 @@ Recommended order of operations from this point:
   Pathways may consume discovered patient cases, manifests, legacy key names,
   and carved runtime state; they must not own DICOM discovery, modality routing,
   prompts, or cohort case selection.
-2. Encode the patient-runner scientific dependency graph and named pathway
-  presets before adding more stage adapters. Pathways should express intentional
-  scientific workflows such as anatomical QA, optimization shadow, current
-  dosimetry shadow, or full current pipeline shadow.
+2. Maintain the patient-runner scientific dependency graph and named pathway
+  presets as the gate for more stage adapters. Pathways should express
+  intentional scientific workflows such as anatomical QA, optimization shadow,
+  current dosimetry shadow, or full current pipeline shadow.
 3. Keep tranches as removable debug/documentation groupings over graph nodes.
   Tranches may consume discovered patient cases, manifests, legacy key names,
   and carved runtime state; they must not own DICOM discovery, modality routing,
