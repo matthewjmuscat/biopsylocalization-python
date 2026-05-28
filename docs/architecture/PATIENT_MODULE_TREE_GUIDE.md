@@ -40,6 +40,11 @@ discovery. DICOM discovery, modality routing, patient selection, prompts, and
 input manifests remain run-scoped input/startup work; tranche recipes consume the
 resolved patient case inputs.
 
+The dependency graph should be treated as the scientific runner source of truth.
+Tranches are removable debug/documentation groupings over graph nodes. For the
+current dependency vocabulary, pathway semantics, and conservative hard-edge map,
+see `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`.
+
 ## Presentation And Rich Boundary
 
 Rich is a presentation adapter, not a scientific dependency. Keep it available

@@ -158,6 +158,9 @@ Scientific tranche direction:
 - patient scientific modules stay standalone in their owning scientific package;
   `scientific_tranches.py` defines ordered tranche recipes in `patient_runner`,
   but those recipes are orchestration only,
+- dependency edges and pathway selection should be treated as the execution
+  source of truth; tranches are removable debug/documentation groupings over
+  graph nodes, not the dependency model itself,
 - patient discovery is not a tranche: DICOM discovery, modality routing, patient
   selection, prompts, and input manifests remain run-scoped discovery/bootstrap
   work outside scientific stage recipes,
@@ -174,6 +177,8 @@ Scientific tranche direction:
   biopsy realization, sampling/classification, MC prep/simulation, and
   output/guidance/assembly/parity should remain separate tranche recipes so the
   legacy ordering is visible and testable.
+- the dependency/pathway terminology and current conservative graph are tracked
+  in `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`.
 
 Main-facing validation gate:
 
