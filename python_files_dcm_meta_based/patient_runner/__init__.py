@@ -91,6 +91,17 @@ from .scientific_stages import run_patient_mc_prep_scientific_stage
 from .scientific_stages import run_patient_mc_simulation_scientific_stage
 from .scientific_stages import run_patient_optimization_scientific_stage
 from .scientific_stages import run_patient_preprocessing_scientific_stage
+from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER
+from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHES
+from .scientific_tranches import PatientScientificTranche
+from .scientific_tranches import PatientScientificTrancheName
+from .scientific_tranches import build_patient_scientific_stages_for_tranches
+from .scientific_tranches import default_patient_scientific_tranches
+from .scientific_tranches import get_patient_scientific_tranche
+from .scientific_tranches import iter_patient_scientific_tranches
+from .scientific_tranches import patient_scientific_tranche_stage_names
+from .scientific_tranches import resolve_patient_scientific_tranche_names
+from .scientific_tranches import summarize_patient_scientific_tranches
 from .stages import write_patient_artifacts_stage
 
 __all__ = [
@@ -111,6 +122,8 @@ __all__ = [
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
+    "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
     "DEFAULT_SCIENTIFIC_STAGE_ORDER",
     "PatientGuidanceScientificConfig",
     "PatientMCPrepScientificConfig",
@@ -130,6 +143,8 @@ __all__ = [
     "PatientRunnerPostRunParityResult",
     "PatientRunnerScientificConfig",
     "PatientSampledBiopsyProcessingStageConfig",
+    "PatientScientificTranche",
+    "PatientScientificTrancheName",
     "PatientScientificStageResources",
     "PatientStage",
     "PatientStageName",
@@ -143,17 +158,23 @@ __all__ = [
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
     "build_patient_scientific_stages",
+    "build_patient_scientific_stages_for_tranches",
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
     "collect_patient_dataframe_artifacts",
     "compare_patient_runner_assembled_cohort_tables",
     "compare_patient_runner_recursive_csvs",
     "default_patient_stages",
+    "default_patient_scientific_tranches",
     "default_patient_runner_post_run_parity_output_dir",
     "format_patient_runner_post_run_parity_summary",
+    "get_patient_scientific_tranche",
+    "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
+    "patient_scientific_tranche_stage_names",
     "resolve_legacy_patient_uids",
+    "resolve_patient_scientific_tranche_names",
     "resolve_patient_uids",
     "run_patient_batch",
     "run_patient_batch_cohort_assembly",
@@ -171,6 +192,7 @@ __all__ = [
     "summarize_patient_runner_parity_surface",
     "summarize_patient_runner_post_run_parity",
     "summarize_patient_runner_post_run_parity_surfaces",
+    "summarize_patient_scientific_tranches",
     "summarize_patient_batch_cohort_assembly",
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",

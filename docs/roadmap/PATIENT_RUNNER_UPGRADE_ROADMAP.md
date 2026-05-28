@@ -1002,8 +1002,8 @@ Validation cadence:
 
 - avoid a full validation run after every tiny helper extraction,
 - validate in tranches: current semi-modular main checkpoint, then focused
-  patient-submodule checks, then patient-runner assembly in explicit anatomical
-  preprocessing, grid preprocessing, biopsy preprocessing, optimizer,
+  patient-submodule checks, then patient-runner assembly in explicit grid
+  preprocessing, anatomical preprocessing, biopsy preprocessing, optimizer,
   post-optimizer biopsy realization, sampling/classification, and MC tranches,
 - final-output validation is intentionally indirect; it checks durable output
   contracts and uses manifests/stage artifacts to localize mismatches,

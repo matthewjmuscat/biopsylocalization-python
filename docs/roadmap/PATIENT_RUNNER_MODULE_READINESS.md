@@ -155,18 +155,21 @@ Recommended tranche structure for patient-runner shadow work:
      patient stages.
    - Does not scan input directories, choose modalities, prompt users, or own
      cohort discovery policy.
-2. Anatomical preprocessing tranche
+2. Grid preprocessing tranche
+   - Dose-grid runtime object construction.
+   - MR ADC input normalization and MR ADC grid runtime object construction.
+   - Any patient-local lattice/KD-tree/grid artifacts that are inputs to later
+     anatomical, biopsy, optimizer, MC, or guidance stages.
+   - This tranche intentionally precedes anatomical preprocessing because some
+     structure processing consumes grid/lattice information that must already be
+     available.
+3. Anatomical preprocessing tranche
    - Raw contour pulling and selected/unique structure setup.
    - OAR/prostate, rectum, urethra, and DIL non-biopsy structure preprocessing.
    - Prostate-only MR ADC structure summary after the relevant anatomical
      structures exist.
    - Stage-local validation sidecars remain validation/oracle scoped, not normal
      runner steps.
-3. Grid preprocessing tranche
-   - Dose-grid runtime object construction.
-   - MR ADC input normalization and MR ADC grid runtime object construction.
-   - Any patient-local lattice/KD-tree/grid artifacts that are inputs to later
-     biopsy, optimizer, MC, or guidance stages.
 4. Biopsy preprocessing tranche
    - Real-biopsy geometry processing.
    - Simulated-biopsy target assignment, multiplicity expansion, length policy,
@@ -328,10 +331,10 @@ Recommended order of operations from this point:
   cohort case selection.
 3. Extend the runner scientific config boundary in
   `patient_runner/scientific_config.py` so it can map legacy main config values
-  into separate anatomical preprocessing, grid preprocessing, biopsy
+  into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-4. Fill the anatomical preprocessing and grid preprocessing adapters before
+4. Fill the grid preprocessing and anatomical preprocessing adapters before
   calling the current biopsy-focused adapter set complete. Current adapters cover
   real-biopsy processing, simulated-biopsy preparation, simulated-biopsy
   planning, uncertainty attachment, realized targeting, sampled-biopsy

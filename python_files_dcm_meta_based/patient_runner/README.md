@@ -146,18 +146,20 @@ Scientific stage config boundary:
 Scientific tranche direction:
 
 - patient scientific modules stay standalone in their owning scientific package;
-  `patient_runner` may define ordered tranche recipes, but those recipes are
-  orchestration only,
+  `scientific_tranches.py` defines ordered tranche recipes in `patient_runner`,
+  but those recipes are orchestration only,
 - patient discovery is not a tranche: DICOM discovery, modality routing, patient
   selection, prompts, and input manifests remain run-scoped discovery/bootstrap
   work outside scientific stage recipes,
 - tranche recipes may start from discovered patient cases plus carved or built
   one-patient runtime/reference/info state,
-- anatomical preprocessing and grid preprocessing are separate tranches:
-  anatomical preprocessing owns raw contours, selected/unique structures, OAR,
-  rectum, urethra, DIL, and prostate-only MR ADC structure summaries, while grid
-  preprocessing owns dose grids, MR ADC normalization, MR ADC grids, and later
-  patient-local lattice/grid/KD-tree artifacts,
+- grid preprocessing and anatomical preprocessing are separate tranches, with
+  grid preprocessing ordered first because some structure processing consumes
+  grid/lattice information that must already be available; grid preprocessing
+  owns dose grids, MR ADC normalization, MR ADC grids, and later patient-local
+  lattice/grid/KD-tree artifacts, while anatomical preprocessing owns raw
+  contours, selected/unique structures, OAR, rectum, urethra, DIL, and
+  prostate-only MR ADC structure summaries,
 - biopsy preprocessing, pre-optimizer transforms/optimizers, post-optimizer
   biopsy realization, sampling/classification, MC prep/simulation, and
   output/guidance/assembly/parity should remain separate tranche recipes so the
