@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-05-23
+Last updated: 2026-06-01
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -33,6 +33,9 @@ Current durable docs:
   discovery.
 - `architecture/CONFIG_LAYER_REWRITE_PLAN.md` - future configuration-layer
   direction.
+- `architecture/PATIENT_RUNNER_CONFIG_PATHWAYS.md` - current config-pathway
+  inventory and debug-subgroup rewrite map for patient-runner/scientific-shadow
+  config work.
 - `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
   plan.
 - `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
@@ -91,6 +94,7 @@ docs/
   architecture/
     CONFIG_LAYER_REWRITE_PLAN.md
     GUI_AND_STARTUP_ARCHITECTURE_PLAN.md
+    PATIENT_RUNNER_CONFIG_PATHWAYS.md
     PATIENT_MODULE_TREE_GUIDE.md
   boundaries/
     PICKLE_EXPORT_BOUNDARIES.md
