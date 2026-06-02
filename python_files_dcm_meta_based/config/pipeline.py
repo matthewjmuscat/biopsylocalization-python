@@ -544,8 +544,6 @@ class MCPrepConfig:
             "simulate_uniform_bx_shifts_due_to_bx_needle_compartment",
             bool(self.simulate_uniform_bx_shifts_due_to_bx_needle_compartment),
         )
-        object.__setattr__(self, "biopsy_needle_compartment_length", float(self.biopsy_needle_compartment_length))
-        object.__setattr__(self, "bx_sample_pts_lattice_spacing", float(self.bx_sample_pts_lattice_spacing))
         for field_name in (
             "run_transform_generation",
             "run_biopsy_self_transforms",
@@ -574,30 +572,17 @@ class MCSimulationCoreConfig:
     nn_search_end_cap_grid_factor: float = 0.1
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "biopsy_z_voxel_length", float(self.biopsy_z_voxel_length))
-        object.__setattr__(self, "num_dose_calc_nn", int(self.num_dose_calc_nn))
-        object.__setattr__(self, "num_mr_calc_nn", int(self.num_mr_calc_nn))
-        object.__setattr__(self, "idw_power", float(self.idw_power))
         object.__setattr__(
             self,
             "tissue_length_above_probability_threshold_list",
-            tuple(float(value) for value in self.tissue_length_above_probability_threshold_list),
+            tuple(self.tissue_length_above_probability_threshold_list),
         )
-        object.__setattr__(
-            self,
-            "n_bootstraps_for_tissue_length_above_threshold",
-            int(self.n_bootstraps_for_tissue_length_above_threshold),
-        )
-        object.__setattr__(self, "differential_dvh_resolution", int(self.differential_dvh_resolution))
-        object.__setattr__(self, "cumulative_dvh_resolution", int(self.cumulative_dvh_resolution))
-        object.__setattr__(self, "v_percent_dvh_to_calc_list", tuple(float(value) for value in self.v_percent_dvh_to_calc_list))
+        object.__setattr__(self, "v_percent_dvh_to_calc_list", tuple(self.v_percent_dvh_to_calc_list))
         object.__setattr__(
             self,
             "volume_dvh_quantiles_to_calculate",
-            tuple(float(value) for value in self.volume_dvh_quantiles_to_calculate),
+            tuple(self.volume_dvh_quantiles_to_calculate),
         )
-        object.__setattr__(self, "cuml_nn_algo", str(self.cuml_nn_algo))
-        object.__setattr__(self, "nn_search_end_cap_grid_factor", float(self.nn_search_end_cap_grid_factor))
 
 
 @dataclass(frozen=True)

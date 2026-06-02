@@ -137,6 +137,17 @@ from biopsy_optimizer.v2.live_integration import (
 )
 from config import ArtifactConfig
 from config import GuidanceMapConfig
+from config import MCCountsConfig
+from config import MCDebugConfig
+from config import MCOutputDumpConfig
+from config import MCPrepConfig
+from config import MCSimulationCoreConfig
+from config import MonteCarloConfig
+from config import OptimizerV2CapacityConfig
+from config import OptimizerV2DiagnosticsConfig
+from config import OptimizerV2PlotlyExportConfig
+from config import OptimizerV2RenderConfig
+from config import OptimizerV2RuntimeConfig
 from config import OptimizerRuntimeConfig
 from config import PipelineConfig
 from config import PreprocessingConfig
@@ -1113,10 +1124,129 @@ def main():
             num_stochastic_targeting_transform_samples_input=(
                 num_stochastic_targeting_transform_samples_input
             ),
+            optimizer_v2=OptimizerV2RuntimeConfig(
+                search_config=optimizer_v2_search_config,
+                capacity=OptimizerV2CapacityConfig(
+                    max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
+                    max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
+                    fallback_max_test_structures_per_call=optimizer_v2_fallback_max_test_structures_per_call,
+                    auto_calibrate_max_test_structures_per_call=(
+                        optimizer_v2_auto_calibrate_max_test_structures_per_call
+                    ),
+                    verify_calibrated_max_test_structures_per_call=(
+                        optimizer_v2_verify_calibrated_max_test_structures_per_call
+                    ),
+                ),
+                diagnostics=OptimizerV2DiagnosticsConfig(
+                    validate_nearest_z_helper_against_ver5=(
+                        optimizer_v2_validate_nearest_z_helper_against_ver5_bool
+                    ),
+                    benchmark_isolated_winner_validation_bool=(
+                        optimizer_v2_benchmark_isolated_winner_validation_bool
+                    ),
+                ),
+                rendering=OptimizerV2RenderConfig(
+                    render_stage_boundary_candidate_clouds_bool=(
+                        optimizer_v2_render_stage_boundary_candidate_clouds_bool
+                    ),
+                    render_stage_names_to_render=optimizer_v2_render_stage_names,
+                    render_backend=optimizer_v2_render_backend,
+                    render_layer_style_by_name=optimizer_v2_render_layer_style_by_name,
+                    plotly_export=OptimizerV2PlotlyExportConfig(
+                        enabled=optimizer_v2_render_plotly_export_bool,
+                        formats=optimizer_v2_render_plotly_export_formats,
+                        width=optimizer_v2_render_plotly_export_width,
+                        height=optimizer_v2_render_plotly_export_height,
+                        scale=optimizer_v2_render_plotly_export_scale,
+                        camera_eye=optimizer_v2_render_plotly_export_camera_eye,
+                        camera_center=optimizer_v2_render_plotly_export_camera_center,
+                        camera_up=optimizer_v2_render_plotly_export_camera_up,
+                    ),
+                    render_dialog_timeout_seconds=optimizer_v2_render_dialog_timeout_seconds,
+                    render_dialog_timeout_extend_seconds=optimizer_v2_render_dialog_timeout_extend_seconds,
+                    render_winner_containment_debug_bool=optimizer_v2_render_winner_containment_debug_bool,
+                    render_winner_containment_backend=optimizer_v2_render_winner_containment_backend,
+                    render_include_target_points_bool=optimizer_v2_render_include_target_points_bool,
+                    render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,
+                    render_patient_whitelist=optimizer_v2_render_patient_whitelist,
+                    render_roi_whitelist=optimizer_v2_render_roi_whitelist,
+                ),
+                num_stochastic_targeting_transform_samples_input=(
+                    num_stochastic_targeting_transform_samples_input
+                ),
+            ),
         ),
         random_seeds=RandomSeedConfig(
             transform_generation_random_seed=transform_generation_random_seed,
             optimizer_v1_random_seed=optimizer_v1_random_seed,
+        ),
+        mc=MonteCarloConfig(
+            counts=MCCountsConfig(
+                num_mc_containment_simulations_input=num_MC_containment_simulations_input,
+                num_mc_dose_simulations_input=num_MC_dose_simulations_input,
+                num_mc_mr_simulations_input=num_MC_MR_simulations_input,
+            ),
+            prep=MCPrepConfig(
+                simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
+                    simulate_uniform_bx_shifts_due_to_bx_needle_compartment
+                ),
+                biopsy_needle_compartment_length=biopsy_needle_compartment_length,
+                bx_sample_pts_lattice_spacing=bx_sample_pts_lattice_spacing,
+            ),
+            simulation=MCSimulationCoreConfig(
+                biopsy_z_voxel_length=biopsy_z_voxel_length,
+                num_dose_calc_nn=num_dose_calc_NN,
+                num_mr_calc_nn=num_mr_calc_NN,
+                idw_power=idw_power,
+                tissue_length_above_probability_threshold_list=tissue_length_above_probability_threshold_list,
+                n_bootstraps_for_tissue_length_above_threshold=(
+                    n_bootstraps_for_tissue_length_above_threshold
+                ),
+                differential_dvh_resolution=differential_dvh_resolution,
+                cumulative_dvh_resolution=cumulative_dvh_resolution,
+                v_percent_dvh_to_calc_list=v_percent_DVH_to_calc_list,
+                volume_dvh_quantiles_to_calculate=volume_DVH_quantiles_to_calculate,
+                cuml_nn_algo=cuml_NN_algo,
+                nn_search_end_cap_grid_factor=nn_search_end_cap_grid_factor,
+            ),
+            debug=MCDebugConfig(
+                inspect_self_biopsy_dilate_bool=inspect_self_biopsy_dilate_bool,
+                inspect_self_biopsy_dilate_and_rotate_bool=inspect_self_biopsy_dilate_and_rotate_bool,
+                inspect_self_biopsy_dilate_and_rotate_and_translate_bool=(
+                    inspect_self_biopsy_dilate_and_rotate_and_translate_bool
+                ),
+                inspect_relative_structure_rotate_and_shift_number=(
+                    inspect_relative_structure_rotate_and_shift_number
+                ),
+                plot_uniform_shifts_to_check_plotly=plot_uniform_shifts_to_check_plotly,
+                plot_translation_vectors_pointclouds=plot_translation_vectors_pointclouds,
+                plot_shifted_biopsies=plot_shifted_biopsies,
+                show_nn_dose_demonstration_plots=show_NN_dose_demonstration_plots,
+                show_nn_dose_demonstration_plots_all_trials_at_once=(
+                    show_NN_dose_demonstration_plots_all_trials_at_once
+                ),
+                show_num_containment_demonstration_plots=show_num_containment_demonstration_plots,
+                plot_cupy_containment_distribution_results=plot_cupy_containment_distribution_results,
+                show_num_nearest_neighbour_surface_boundary_demonstration=(
+                    show_num_nearest_neighbour_surface_boundary_demonstration
+                ),
+                show_num_relative_structure_centroid_demonstration=(
+                    show_num_relative_structure_centroid_demonstration
+                ),
+                show_nn_mr_adc_demonstration_plots=show_NN_mr_adc_demonstration_plots,
+                show_nn_mr_adc_demonstration_plots_all_trials_at_once=(
+                    show_NN_mr_adc_demonstration_plots_all_trials_at_once
+                ),
+                generate_cuda_log_files_mc_containment_sim=generate_cuda_log_files_MC_containment_sim,
+            ),
+            output_dumps=MCOutputDumpConfig(
+                raw_data_mc_dosimetry_dump_bool=raw_data_mc_dosimetry_dump_bool,
+                raw_data_mc_containment_dump_bool=raw_data_mc_containment_dump_bool,
+                raw_data_mc_mr_dump_bool=raw_data_mc_MR_dump_bool,
+                keep_light_containment_and_distances_to_relative_structures_dataframe_bool=(
+                    keep_light_containment_and_distances_to_relative_structures_dataframe_bool
+                ),
+            ),
         ),
         validation_sidecars=ValidationSidecarConfig(
             selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
@@ -1124,15 +1254,145 @@ def main():
             prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
         ),
     )
+
+    # Transitional bridge: legacy code below still consumes flat locals, but those
+    # locals now come from PipelineConfig so file/GUI config can enter at one boundary.
+    optimizer_v2_runtime_config = pipeline_config.optimizer.optimizer_v2
+    optimizer_v2_capacity_config = optimizer_v2_runtime_config.capacity
+    optimizer_v2_diagnostics_config = optimizer_v2_runtime_config.diagnostics
+    optimizer_v2_render_config = optimizer_v2_runtime_config.rendering
+    optimizer_v2_plotly_export_config = optimizer_v2_render_config.plotly_export
+
+    optimizer_v2_search_config = optimizer_v2_runtime_config.search_config
+    num_stochastic_targeting_transform_samples_input = (
+        optimizer_v2_runtime_config.num_stochastic_targeting_transform_samples_input
+    )
+    optimizer_v2_max_candidates_per_chunk = optimizer_v2_capacity_config.max_candidates_per_chunk
+    optimizer_v2_max_test_structures_per_call = optimizer_v2_capacity_config.max_test_structures_per_call
+    optimizer_v2_fallback_max_test_structures_per_call = (
+        optimizer_v2_capacity_config.fallback_max_test_structures_per_call
+    )
+    optimizer_v2_auto_calibrate_max_test_structures_per_call = (
+        optimizer_v2_capacity_config.auto_calibrate_max_test_structures_per_call
+    )
+    optimizer_v2_verify_calibrated_max_test_structures_per_call = (
+        optimizer_v2_capacity_config.verify_calibrated_max_test_structures_per_call
+    )
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = (
+        optimizer_v2_diagnostics_config.validate_nearest_z_helper_against_ver5
+    )
+    optimizer_v2_benchmark_isolated_winner_validation_bool = (
+        optimizer_v2_diagnostics_config.benchmark_isolated_winner_validation_bool
+    )
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = (
+        optimizer_v2_render_config.render_stage_boundary_candidate_clouds_bool
+    )
+    optimizer_v2_render_stage_names = optimizer_v2_render_config.render_stage_names_to_render
+    optimizer_v2_render_backend = optimizer_v2_render_config.render_backend
+    optimizer_v2_render_layer_style_by_name = optimizer_v2_render_config.render_layer_style_by_name
+    optimizer_v2_render_plotly_export_bool = optimizer_v2_plotly_export_config.enabled
+    optimizer_v2_render_plotly_export_formats = optimizer_v2_plotly_export_config.formats
+    optimizer_v2_render_plotly_export_width = optimizer_v2_plotly_export_config.width
+    optimizer_v2_render_plotly_export_height = optimizer_v2_plotly_export_config.height
+    optimizer_v2_render_plotly_export_scale = optimizer_v2_plotly_export_config.scale
+    optimizer_v2_render_plotly_export_camera_eye = optimizer_v2_plotly_export_config.camera_eye
+    optimizer_v2_render_plotly_export_camera_center = optimizer_v2_plotly_export_config.camera_center
+    optimizer_v2_render_plotly_export_camera_up = optimizer_v2_plotly_export_config.camera_up
+    optimizer_v2_render_dialog_timeout_seconds = optimizer_v2_render_config.render_dialog_timeout_seconds
+    optimizer_v2_render_dialog_timeout_extend_seconds = (
+        optimizer_v2_render_config.render_dialog_timeout_extend_seconds
+    )
+    optimizer_v2_render_winner_containment_debug_bool = (
+        optimizer_v2_render_config.render_winner_containment_debug_bool
+    )
+    optimizer_v2_render_winner_containment_backend = (
+        optimizer_v2_render_config.render_winner_containment_backend
+    )
+    optimizer_v2_render_include_target_points_bool = (
+        optimizer_v2_render_config.render_include_target_points_bool
+    )
+    optimizer_v2_render_include_target_surface_bool = (
+        optimizer_v2_render_config.render_include_target_surface_bool
+    )
+    optimizer_v2_render_patient_whitelist = optimizer_v2_render_config.render_patient_whitelist
+    optimizer_v2_render_roi_whitelist = optimizer_v2_render_config.render_roi_whitelist
+
+    mc_counts_config = pipeline_config.mc.counts
+    mc_prep_config = pipeline_config.mc.prep
+    mc_simulation_config = pipeline_config.mc.simulation
+    mc_debug_config = pipeline_config.mc.debug
+    mc_output_dump_config = pipeline_config.mc.output_dumps
+
+    num_MC_containment_simulations_input = mc_counts_config.num_mc_containment_simulations_input
+    num_MC_dose_simulations_input = mc_counts_config.num_mc_dose_simulations_input
+    num_MC_MR_simulations_input = mc_counts_config.num_mc_mr_simulations_input
+    simulate_uniform_bx_shifts_due_to_bx_needle_compartment = (
+        mc_prep_config.simulate_uniform_bx_shifts_due_to_bx_needle_compartment
+    )
+    biopsy_needle_compartment_length = mc_prep_config.biopsy_needle_compartment_length
+    bx_sample_pts_lattice_spacing = mc_prep_config.bx_sample_pts_lattice_spacing
+    biopsy_z_voxel_length = mc_simulation_config.biopsy_z_voxel_length
+    num_dose_calc_NN = mc_simulation_config.num_dose_calc_nn
+    num_mr_calc_NN = mc_simulation_config.num_mr_calc_nn
+    idw_power = mc_simulation_config.idw_power
+    tissue_length_above_probability_threshold_list = list(
+        mc_simulation_config.tissue_length_above_probability_threshold_list
+    )
+    n_bootstraps_for_tissue_length_above_threshold = (
+        mc_simulation_config.n_bootstraps_for_tissue_length_above_threshold
+    )
+    differential_dvh_resolution = mc_simulation_config.differential_dvh_resolution
+    cumulative_dvh_resolution = mc_simulation_config.cumulative_dvh_resolution
+    v_percent_DVH_to_calc_list = list(mc_simulation_config.v_percent_dvh_to_calc_list)
+    volume_DVH_quantiles_to_calculate = list(mc_simulation_config.volume_dvh_quantiles_to_calculate)
+    cuml_NN_algo = mc_simulation_config.cuml_nn_algo
+    nn_search_end_cap_grid_factor = mc_simulation_config.nn_search_end_cap_grid_factor
+    raw_data_mc_dosimetry_dump_bool = mc_output_dump_config.raw_data_mc_dosimetry_dump_bool
+    raw_data_mc_containment_dump_bool = mc_output_dump_config.raw_data_mc_containment_dump_bool
+    raw_data_mc_MR_dump_bool = mc_output_dump_config.raw_data_mc_mr_dump_bool
+    keep_light_containment_and_distances_to_relative_structures_dataframe_bool = (
+        mc_output_dump_config.keep_light_containment_and_distances_to_relative_structures_dataframe_bool
+    )
+    inspect_self_biopsy_dilate_bool = mc_debug_config.inspect_self_biopsy_dilate_bool
+    inspect_self_biopsy_dilate_and_rotate_bool = mc_debug_config.inspect_self_biopsy_dilate_and_rotate_bool
+    inspect_self_biopsy_dilate_and_rotate_and_translate_bool = (
+        mc_debug_config.inspect_self_biopsy_dilate_and_rotate_and_translate_bool
+    )
+    inspect_relative_structure_rotate_and_shift_number = (
+        mc_debug_config.inspect_relative_structure_rotate_and_shift_number
+    )
+    plot_uniform_shifts_to_check_plotly = mc_debug_config.plot_uniform_shifts_to_check_plotly
+    plot_translation_vectors_pointclouds = mc_debug_config.plot_translation_vectors_pointclouds
+    plot_shifted_biopsies = mc_debug_config.plot_shifted_biopsies
+    show_NN_dose_demonstration_plots = mc_debug_config.show_nn_dose_demonstration_plots
+    show_NN_dose_demonstration_plots_all_trials_at_once = (
+        mc_debug_config.show_nn_dose_demonstration_plots_all_trials_at_once
+    )
+    show_num_containment_demonstration_plots = mc_debug_config.show_num_containment_demonstration_plots
+    plot_cupy_containment_distribution_results = mc_debug_config.plot_cupy_containment_distribution_results
+    show_num_nearest_neighbour_surface_boundary_demonstration = (
+        mc_debug_config.show_num_nearest_neighbour_surface_boundary_demonstration
+    )
+    show_num_relative_structure_centroid_demonstration = (
+        mc_debug_config.show_num_relative_structure_centroid_demonstration
+    )
+    show_NN_mr_adc_demonstration_plots = mc_debug_config.show_nn_mr_adc_demonstration_plots
+    show_NN_mr_adc_demonstration_plots_all_trials_at_once = (
+        mc_debug_config.show_nn_mr_adc_demonstration_plots_all_trials_at_once
+    )
+    generate_cuda_log_files_MC_containment_sim = (
+        mc_debug_config.generate_cuda_log_files_mc_containment_sim
+    )
+
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
     validation_sidecar_config = pipeline_config.validation_sidecars
     
     # initialize perform mc sim based on other parameters
-    perform_mc_dose_sim = bool(num_MC_dose_simulations_input)
-    perform_mc_containment_sim = bool(num_MC_containment_simulations_input)
-    perform_mc_mr_sim = bool(num_MC_MR_simulations_input)
-    perform_MC_sim = perform_mc_containment_sim or perform_mc_dose_sim or perform_mc_mr_sim
+    perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
+    perform_mc_containment_sim = mc_counts_config.perform_mc_containment_sim
+    perform_mc_mr_sim = mc_counts_config.perform_mc_mr_sim
+    perform_MC_sim = mc_counts_config.perform_mc_sim
 
 
     # create a dict for cohort data and dataframes
