@@ -95,6 +95,9 @@ from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_config_builder import PatientRunnerScientificConfigBuildContext
+from .scientific_config_builder import build_patient_runner_scientific_config
+from .scientific_config_builder import build_patient_scientific_shadow_config
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
 from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS
@@ -202,6 +205,7 @@ __all__ = [
     "PatientRunnerPostRunParityConfig",
     "PatientRunnerPostRunParityResult",
     "PatientRunnerScientificConfig",
+    "PatientRunnerScientificConfigBuildContext",
     "PatientSampledBiopsyProcessingStageConfig",
     "PatientSamplingClassificationScientificConfig",
     "PatientScientificShadowConfig",
@@ -226,6 +230,8 @@ __all__ = [
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
+    "build_patient_runner_scientific_config",
+    "build_patient_scientific_shadow_config",
     "build_patient_scientific_stages",
     "build_patient_scientific_stages_for_pathway",
     "build_patient_scientific_stages_for_tranches",

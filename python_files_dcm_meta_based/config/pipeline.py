@@ -11,10 +11,166 @@ from preprocessing.structure_processing.non_biopsy_structure_processing import (
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 
 
+def _non_empty_string(value: Any, field_name: str) -> str:
+    resolved_value = str(value).strip()
+    if resolved_value == "":
+        raise ValueError(f"{field_name} cannot be empty")
+    return resolved_value
+
+
+def _tuple_from_sequence(values: Sequence[Any], field_name: str) -> tuple[Any, ...]:
+    if isinstance(values, str):
+        raise TypeError(f"{field_name} must be a sequence, not a string")
+    return tuple(values)
+
+
 @dataclass(frozen=True)
 class RuntimeUIConfig:
     spinner_type: str = "moon"
     rich_live_display_bool: bool = True
+
+
+@dataclass(frozen=True)
+class LegacyReferenceConfig:
+    all_ref_key: str = "All ref"
+    bx_ref: str = "Bx ref"
+    by_patient_key: str = "By patient"
+    global_key: str = "Global"
+    global_num_cases_key: str = "Num cases"
+    oar_ref: str = "OAR ref"
+    dil_ref: str = "DIL ref"
+    rectum_ref_key: str = "Rectum ref"
+    urethra_ref_key: str = "Urethra ref"
+    dose_ref: str = "Dose ref"
+    plan_ref: str = "Plan ref"
+    mr_adc_ref: str = "MR ADC ref"
+    mr_t2_ref: str = "MR T2 ref"
+    us_ref: str = "US ref"
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "all_ref_key",
+            "bx_ref",
+            "by_patient_key",
+            "global_key",
+            "global_num_cases_key",
+            "oar_ref",
+            "dil_ref",
+            "rectum_ref_key",
+            "urethra_ref_key",
+            "dose_ref",
+            "plan_ref",
+            "mr_adc_ref",
+            "mr_t2_ref",
+            "us_ref",
+        ):
+            object.__setattr__(self, field_name, _non_empty_string(getattr(self, field_name), field_name))
+
+
+@dataclass(frozen=True)
+class StructureRegistryConfig:
+    structs_referenced_dict: Mapping[str, Any] = field(default_factory=dict)
+    structs_referenced_list: Sequence[str] = ()
+    structs_referenced_list_generalized: Sequence[str] = ()
+    structs_referenced_list_generalized_unique_structs: Sequence[str] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "structs_referenced_dict", dict(self.structs_referenced_dict))
+        for field_name in (
+            "structs_referenced_list",
+            "structs_referenced_list_generalized",
+            "structs_referenced_list_generalized_unique_structs",
+        ):
+            values = _tuple_from_sequence(getattr(self, field_name), field_name)
+            object.__setattr__(self, field_name, tuple(str(value) for value in values))
+
+
+@dataclass(frozen=True)
+class GridPreprocessingConfig:
+    show_3d_dose_renderings: bool = False
+    show_3d_dose_renderings_thresholded: bool = False
+    show_3d_mr_adc_renderings: bool = False
+    show_3d_mr_adc_renderings_thresholded: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "show_3d_dose_renderings",
+            "show_3d_dose_renderings_thresholded",
+            "show_3d_mr_adc_renderings",
+            "show_3d_mr_adc_renderings_thresholded",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+
+
+@dataclass(frozen=True)
+class BiopsyGeometryConfig:
+    biopsy_radius: float = 0.5
+    simulated_biopsy_planning_radius_mm: float = 0.5
+    biopsy_fire_travel_distances: Sequence[float] = (15, 22)
+    biopsy_needle_tip_length: float = 6
+    display_pca_fit_variation_for_biopsies_bool: bool = False
+
+    def __post_init__(self) -> None:
+        if self.biopsy_radius <= 0:
+            raise ValueError("biopsy_radius must be positive")
+        if self.simulated_biopsy_planning_radius_mm <= 0:
+            raise ValueError("simulated_biopsy_planning_radius_mm must be positive")
+        if self.biopsy_needle_tip_length <= 0:
+            raise ValueError("biopsy_needle_tip_length must be positive")
+        object.__setattr__(self, "biopsy_fire_travel_distances", tuple(self.biopsy_fire_travel_distances))
+        object.__setattr__(
+            self,
+            "display_pca_fit_variation_for_biopsies_bool",
+            bool(self.display_pca_fit_variation_for_biopsies_bool),
+        )
+
+
+@dataclass(frozen=True)
+class SimulatedBiopsyConfig:
+    optimizer_simulated_type: str = "Target DIL v2"
+    simulated_biopsy_length_method: str = "match real"
+    centroid_line_vec_sim_list: Sequence[float] = (0, 0, 1)
+    centroid_first_pos_sim_list: Sequence[float] = (0, 0, 0)
+    num_centroids_for_sim_bxs: int = 10
+    plot_simulated_cores_immediately: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "optimizer_simulated_type", _non_empty_string(self.optimizer_simulated_type, "optimizer_simulated_type"))
+        object.__setattr__(
+            self,
+            "simulated_biopsy_length_method",
+            _non_empty_string(self.simulated_biopsy_length_method, "simulated_biopsy_length_method"),
+        )
+        object.__setattr__(self, "centroid_line_vec_sim_list", tuple(self.centroid_line_vec_sim_list))
+        object.__setattr__(self, "centroid_first_pos_sim_list", tuple(self.centroid_first_pos_sim_list))
+        if len(self.centroid_line_vec_sim_list) != 3:
+            raise ValueError("centroid_line_vec_sim_list must contain exactly three values")
+        if len(self.centroid_first_pos_sim_list) != 3:
+            raise ValueError("centroid_first_pos_sim_list must contain exactly three values")
+        num_centroids = int(self.num_centroids_for_sim_bxs)
+        if num_centroids < 1:
+            raise ValueError("num_centroids_for_sim_bxs must be at least 1")
+        object.__setattr__(self, "num_centroids_for_sim_bxs", num_centroids)
+        object.__setattr__(self, "plot_simulated_cores_immediately", bool(self.plot_simulated_cores_immediately))
+
+
+@dataclass(frozen=True)
+class SamplingClassificationConfig:
+    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot",
+            bool(self.show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot),
+        )
+
+
+@dataclass(frozen=True)
+class BiopsyRuntimeConfig:
+    geometry: BiopsyGeometryConfig = field(default_factory=BiopsyGeometryConfig)
+    simulated: SimulatedBiopsyConfig = field(default_factory=SimulatedBiopsyConfig)
+    sampling: SamplingClassificationConfig = field(default_factory=SamplingClassificationConfig)
 
 
 @dataclass(frozen=True)
@@ -150,6 +306,7 @@ class PreprocessingDebugConfig:
     demonstrate_structure_dimension_calculation_correctness_bool_1: bool = False
     demonstrate_structure_dimension_calculation_correctness_bool_1_old: bool = False
     demonstrate_mr_adc_pcd_containment_correctness_bool: bool = False
+    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool: bool = False
     display_structure_surface_mesh_bool: bool = False
     show_equivalent_ellipsoid_from_pca_bool: bool = False
 
@@ -178,6 +335,7 @@ class PreprocessingConfig:
     demonstrate_structure_dimension_calculation_correctness_bool_1: bool
     demonstrate_structure_dimension_calculation_correctness_bool_1_old: bool
     demonstrate_mr_adc_pcd_containment_correctness_bool: bool
+    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool: bool
     display_structure_surface_mesh_bool: bool
     show_equivalent_ellipsoid_from_pca_bool: bool
 
@@ -234,6 +392,9 @@ class PreprocessingConfig:
             ),
             demonstrate_mr_adc_pcd_containment_correctness_bool=(
                 self.demonstrate_mr_adc_pcd_containment_correctness_bool
+            ),
+            demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
+                self.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
             ),
             display_structure_surface_mesh_bool=self.display_structure_surface_mesh_bool,
             show_equivalent_ellipsoid_from_pca_bool=self.show_equivalent_ellipsoid_from_pca_bool,
@@ -458,10 +619,67 @@ class OptimizerV2RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class OptimizerV1RuntimeConfig:
+    voxel_size_for_dil_optimizer_grid: float = 1
+    optimal_normal_dist_option: str = "dil dimension driven"
+    bias_LR_multiplier: float = 1
+    bias_AP_multiplier: float = 1
+    bias_SI_multiplier: float = 1.5
+    num_normal_dist_points_for_biopsy_optimizer: int = 10000
+    normal_dist_sigma_factor_biopsy_optimizer: float = 0.25
+    plot_each_normal_dist_containment_result_bool: bool = False
+    plot_optimization_point_lattice_bool: bool = False
+    show_optimization_point_bool: bool = False
+    cupy_array_upper_limit_nxn_size_input: Any = 1e9
+    numpy_array_upper_limit_nxn_size_input: Any = 1e9
+    nearest_zslice_vals_and_indices_cupy_generic_max_size: Any = 5e7
+    nearest_zslice_vals_and_indices_numpy_generic_max_size: Any = 1e9
+    constant_z_slice_polygons_handler_option: Any = "auto-close-if-open"
+    remove_consecutive_duplicate_points_in_polygons: bool = True
+    include_edges_in_log_files: bool = False
+    custom_cuda_kernel_type: Any = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized"
+    demonstrate_dil_optimization_points_inside_correctness_bool_1: bool = False
+    demonstrate_dil_optimization_points_inside_correctness_bool_2: bool = False
+    demonstrate_dil_optimization_points_inside_correctness_num_3: int = 0
+    generate_cuda_log_files_biopsy_optimizer: bool = False
+    display_optimization_contour_plots_bool: bool = False
+
+    def __post_init__(self) -> None:
+        if self.voxel_size_for_dil_optimizer_grid <= 0:
+            raise ValueError("voxel_size_for_dil_optimizer_grid must be positive")
+        object.__setattr__(
+            self,
+            "optimal_normal_dist_option",
+            _non_empty_string(self.optimal_normal_dist_option, "optimal_normal_dist_option"),
+        )
+        if self.num_normal_dist_points_for_biopsy_optimizer < 1:
+            raise ValueError("num_normal_dist_points_for_biopsy_optimizer must be at least 1")
+        if self.normal_dist_sigma_factor_biopsy_optimizer <= 0:
+            raise ValueError("normal_dist_sigma_factor_biopsy_optimizer must be positive")
+        for field_name in (
+            "plot_each_normal_dist_containment_result_bool",
+            "plot_optimization_point_lattice_bool",
+            "show_optimization_point_bool",
+            "remove_consecutive_duplicate_points_in_polygons",
+            "include_edges_in_log_files",
+            "demonstrate_dil_optimization_points_inside_correctness_bool_1",
+            "demonstrate_dil_optimization_points_inside_correctness_bool_2",
+            "generate_cuda_log_files_biopsy_optimizer",
+            "display_optimization_contour_plots_bool",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        demonstrate_count = int(self.demonstrate_dil_optimization_points_inside_correctness_num_3)
+        if demonstrate_count < 0:
+            raise ValueError("demonstrate_dil_optimization_points_inside_correctness_num_3 cannot be negative")
+        object.__setattr__(self, "demonstrate_dil_optimization_points_inside_correctness_num_3", demonstrate_count)
+
+
+@dataclass(frozen=True)
 class OptimizerRuntimeConfig:
     optimizer_v2_search_config: OptimizerV2SearchConfig
     num_stochastic_targeting_transform_samples_input: int = 0
     optimizer_v2: OptimizerV2RuntimeConfig | None = None
+    optimizer_v1: OptimizerV1RuntimeConfig = field(default_factory=OptimizerV1RuntimeConfig)
 
     def __post_init__(self) -> None:
         if self.num_stochastic_targeting_transform_samples_input < 0:
@@ -650,12 +868,70 @@ class MCOutputDumpConfig:
 
 
 @dataclass(frozen=True)
+class MCTissueClassificationConfig:
+    structure_miss_probability_roi: str = "Prostate"
+    cancer_tissue_label: str = "DIL"
+    default_exterior_tissue: str = "Periprostatic"
+    miss_structure_complement_label: str = "Prostate complement"
+    tissue_volume_operator_dictionary: Mapping[str, Any] = field(
+        default_factory=lambda: {
+            "DIL": "greater",
+            "Prostatic": "greater",
+            "Rectal": "less",
+            "Urethral": "less",
+            "Periprostatic": "less",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "structure_miss_probability_roi",
+            "cancer_tissue_label",
+            "default_exterior_tissue",
+            "miss_structure_complement_label",
+        ):
+            object.__setattr__(self, field_name, _non_empty_string(getattr(self, field_name), field_name))
+        object.__setattr__(self, "tissue_volume_operator_dictionary", dict(self.tissue_volume_operator_dictionary))
+
+
+@dataclass(frozen=True)
+class MCVisualizationConfig:
+    num_dose_nn_to_show_for_animation_plotting: int = 100
+    containment_results_structure_types_to_show_per_trial: Sequence[str] = ("OAR ref", "DIL ref")
+    show_non_bx_relative_structure_z_dilation_bool: bool = False
+    show_non_bx_relative_structure_xy_dilation_bool: bool = False
+    check_if_end_caps_filled_proper_nn_num: int = 0
+
+    def __post_init__(self) -> None:
+        num_dose_nn = int(self.num_dose_nn_to_show_for_animation_plotting)
+        if num_dose_nn < 0:
+            raise ValueError("num_dose_nn_to_show_for_animation_plotting cannot be negative")
+        object.__setattr__(self, "num_dose_nn_to_show_for_animation_plotting", num_dose_nn)
+        object.__setattr__(
+            self,
+            "containment_results_structure_types_to_show_per_trial",
+            tuple(str(value) for value in self.containment_results_structure_types_to_show_per_trial),
+        )
+        for field_name in (
+            "show_non_bx_relative_structure_z_dilation_bool",
+            "show_non_bx_relative_structure_xy_dilation_bool",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        end_cap_count = int(self.check_if_end_caps_filled_proper_nn_num)
+        if end_cap_count < 0:
+            raise ValueError("check_if_end_caps_filled_proper_nn_num cannot be negative")
+        object.__setattr__(self, "check_if_end_caps_filled_proper_nn_num", end_cap_count)
+
+
+@dataclass(frozen=True)
 class MonteCarloConfig:
     counts: MCCountsConfig = field(default_factory=MCCountsConfig)
     prep: MCPrepConfig = field(default_factory=MCPrepConfig)
     simulation: MCSimulationCoreConfig = field(default_factory=MCSimulationCoreConfig)
     debug: MCDebugConfig = field(default_factory=MCDebugConfig)
     output_dumps: MCOutputDumpConfig = field(default_factory=MCOutputDumpConfig)
+    tissue: MCTissueClassificationConfig = field(default_factory=MCTissueClassificationConfig)
+    visualization: MCVisualizationConfig = field(default_factory=MCVisualizationConfig)
 
 
 @dataclass(frozen=True)
@@ -702,3 +978,7 @@ class PipelineConfig:
     random_seeds: RandomSeedConfig
     validation_sidecars: ValidationSidecarConfig = field(default_factory=ValidationSidecarConfig)
     mc: MonteCarloConfig = field(default_factory=MonteCarloConfig)
+    legacy_refs: LegacyReferenceConfig = field(default_factory=LegacyReferenceConfig)
+    structure_registry: StructureRegistryConfig = field(default_factory=StructureRegistryConfig)
+    grid_preprocessing: GridPreprocessingConfig = field(default_factory=GridPreprocessingConfig)
+    biopsy: BiopsyRuntimeConfig = field(default_factory=BiopsyRuntimeConfig)
