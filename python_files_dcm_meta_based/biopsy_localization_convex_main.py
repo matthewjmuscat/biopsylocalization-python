@@ -158,6 +158,10 @@ from config import OptimizerV2RuntimeConfig
 from config import OptimizerRuntimeConfig
 from config import PipelineConfig
 from config import PreprocessingConfig
+from config import PreprocessingDebugConfig
+from config import PreprocessingGeometryConfig
+from config import PreprocessingInterpolationConfig
+from config import PreprocessingKernelExecutionConfig
 from config import RandomSeedConfig
 from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
@@ -1107,49 +1111,57 @@ def main():
             skip_preprocessing=skip_preprocessing,
         ),
         preprocessing=PreprocessingConfig(
-            interp_inter_slice_dist=interp_inter_slice_dist,
-            interp_intra_slice_dist=interp_intra_slice_dist,
-            interp_dist_caps=interp_dist_caps,
-            radius_for_normals_estimation=radius_for_normals_estimation,
-            max_nn_for_normals_estimation=max_nn_for_normals_estimation,
-            voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
-            voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
-            factor_for_voxel_size=factor_for_voxel_size,
-            cupy_array_upper_limit_nxn_size_input=cupy_array_upper_limit_NxN_size_input,
-            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
-                nearest_zslice_vals_and_indices_cupy_generic_max_size
+            interpolation=PreprocessingInterpolationConfig(
+                interp_inter_slice_dist=interp_inter_slice_dist,
+                interp_intra_slice_dist=interp_intra_slice_dist,
+                interp_dist_caps=interp_dist_caps,
             ),
-            generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
-            constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=(
-                remove_consecutive_duplicate_points_in_polygons
+            geometry=PreprocessingGeometryConfig(
+                radius_for_normals_estimation=radius_for_normals_estimation,
+                max_nn_for_normals_estimation=max_nn_for_normals_estimation,
+                voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
+                voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
+                factor_for_voxel_size=factor_for_voxel_size,
             ),
-            include_edges_in_log_files=include_edges_in_log_files,
-            custom_cuda_kernel_type=custom_cuda_kernel_type,
-            demonstrate_volume_calculation_correctness_bool_1=(
-                demonstrate_volume_calculation_correctness_bool_1
+            kernel_execution=PreprocessingKernelExecutionConfig(
+                cupy_array_upper_limit_nxn_size_input=cupy_array_upper_limit_NxN_size_input,
+                nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                    nearest_zslice_vals_and_indices_cupy_generic_max_size
+                ),
+                constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
+                remove_consecutive_duplicate_points_in_polygons=(
+                    remove_consecutive_duplicate_points_in_polygons
+                ),
+                include_edges_in_log_files=include_edges_in_log_files,
+                custom_cuda_kernel_type=custom_cuda_kernel_type,
             ),
-            plot_volume_calculation_containment_result_bool_1_old=(
-                plot_volume_calculation_containment_result_bool_1_old
+            debug=PreprocessingDebugConfig(
+                generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
+                demonstrate_volume_calculation_correctness_bool_1=(
+                    demonstrate_volume_calculation_correctness_bool_1
+                ),
+                plot_volume_calculation_containment_result_bool_1_old=(
+                    plot_volume_calculation_containment_result_bool_1_old
+                ),
+                plot_binary_mask_bool=plot_binary_mask_bool,
+                generate_cuda_log_files_structure_dimension_calculation=(
+                    generate_cuda_log_files_structure_dimension_calculation
+                ),
+                demonstrate_structure_dimension_calculation_correctness_bool_1=(
+                    demonstrate_structure_dimension_calculation_correctness_bool_1
+                ),
+                demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
+                    demonstrate_structure_dimension_calculation_correctness_bool_1_old
+                ),
+                demonstrate_mr_adc_pcd_containment_correctness_bool=(
+                    demonstrate_mr_adc_pcd_containment_correctness_bool
+                ),
+                demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
+                    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
+                ),
+                display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
+                show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
             ),
-            plot_binary_mask_bool=plot_binary_mask_bool,
-            generate_cuda_log_files_structure_dimension_calculation=(
-                generate_cuda_log_files_structure_dimension_calculation
-            ),
-            demonstrate_structure_dimension_calculation_correctness_bool_1=(
-                demonstrate_structure_dimension_calculation_correctness_bool_1
-            ),
-            demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
-                demonstrate_structure_dimension_calculation_correctness_bool_1_old
-            ),
-            demonstrate_mr_adc_pcd_containment_correctness_bool=(
-                demonstrate_mr_adc_pcd_containment_correctness_bool
-            ),
-            demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
-                demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
-            ),
-            display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
-            show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
         ),
         replay=RuntimeReplayConfig(
             lower_bound_dose_value=lower_bound_dose_value,

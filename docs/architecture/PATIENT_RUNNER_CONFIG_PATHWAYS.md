@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 ## Purpose
 
@@ -785,18 +785,38 @@ they are gone.
 Do not make the GUI schema first. Build clean typed Python config first, then add
 GUI/file serialization views over it.
 
-## Immediate Next Code Step
+## Current Cleanup Status And Next Gate
 
-The next implementation slice should be a targeted config-boundary pass:
+The config-boundary pass now has the pieces needed for the first
+scientific-shadow validation gate:
 
-1. Split the existing flat `PreprocessingConfig` debug/render fields into a
-   nested debug subgroup while preserving builder output exactly.
-2. Add optimizer-v2 nested config groups for search, capacity/calibration,
-   validation/benchmarking, and render/export.
-3. Add MC config group shells that mirror the existing per-patient MC contracts
-   without yet changing the legacy main call order.
-4. Add small builder/adapters that can construct current `PatientRunnerScientificConfig`
-   leaves from the typed root config.
+1. `PipelineConfig` owns the current patient-runner-facing root groups for
+  legacy references, structure registry, grid preprocessing, biopsy settings,
+  preprocessing, optimizer-v1/v2, MC, guidance, and validation sidecars.
+2. `PreprocessingConfig` stores interpolation, geometry, kernel-execution, and
+  debug subgroups while preserving the legacy flat attribute names as
+  compatibility properties.
+3. Optimizer-v2 and MC have nested runtime/debug/output group shells that map to
+  the existing patient-runner adapter contracts.
+4. `build_patient_runner_scientific_config(...)` constructs the current
+  `PatientRunnerScientificConfig` tree from `PipelineConfig` plus runtime and
+  discovered resources.
+5. `biopsy_localization_convex_main.py` still re-derives flat locals from
+  `PipelineConfig` for the legacy oracle path, but new patient-runner work
+  should consume the typed config tree instead of those translated locals.
 
-That gives the scientific-shadow bridge a stable source without forcing a full
-config rewrite in one patch.
+Do not migrate main-facing declarations into JSON as the runtime authority before
+this validation gate. The next stable source is the typed Python `PipelineConfig`.
+JSON should be introduced as a serialization or GUI/run-plan view over that root
+config after scientific-shadow parity is credible, not as a parallel config
+language that can drift from the Python contracts.
+
+The next validation sequence is:
+
+1. Run the legacy/default cohort path and compare against the clean May 22 or
+  May 21 baseline to verify the wider config bridge preserved outputs.
+2. Run a small `SCIENTIFIC_SHADOW` patient set through the typed builder and
+  current dosimetry pathway.
+3. Widen scientific-shadow validation only after the small run resolves runtime
+  context gaps such as RTSTRUCT paths, MR ADC unit state, RNG, parallel pool,
+  and view-list availability.

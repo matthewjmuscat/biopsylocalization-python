@@ -313,92 +313,110 @@ class PreprocessingDebugConfig:
 
 @dataclass(frozen=True)
 class PreprocessingConfig:
-    interp_inter_slice_dist: float
-    interp_intra_slice_dist: float
-    interp_dist_caps: float
-    radius_for_normals_estimation: float
-    max_nn_for_normals_estimation: int
-    voxel_size_for_structure_volume_calc_non_bx: float
-    voxel_size_for_structure_dimension_calc: float
-    factor_for_voxel_size: float
-    cupy_array_upper_limit_nxn_size_input: Any
-    nearest_zslice_vals_and_indices_cupy_generic_max_size: Any
-    generate_cuda_log_files_volume_calculation: bool
-    constant_z_slice_polygons_handler_option: Any
-    remove_consecutive_duplicate_points_in_polygons: bool
-    include_edges_in_log_files: bool
-    custom_cuda_kernel_type: Any
-    demonstrate_volume_calculation_correctness_bool_1: bool
-    plot_volume_calculation_containment_result_bool_1_old: bool
-    plot_binary_mask_bool: bool
-    generate_cuda_log_files_structure_dimension_calculation: bool
-    demonstrate_structure_dimension_calculation_correctness_bool_1: bool
-    demonstrate_structure_dimension_calculation_correctness_bool_1_old: bool
-    demonstrate_mr_adc_pcd_containment_correctness_bool: bool
-    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool: bool
-    display_structure_surface_mesh_bool: bool
-    show_equivalent_ellipsoid_from_pca_bool: bool
+    interpolation: PreprocessingInterpolationConfig
+    geometry: PreprocessingGeometryConfig
+    kernel_execution: PreprocessingKernelExecutionConfig
+    debug: PreprocessingDebugConfig = field(default_factory=PreprocessingDebugConfig)
 
     @property
-    def interpolation(self) -> PreprocessingInterpolationConfig:
-        return PreprocessingInterpolationConfig(
-            interp_inter_slice_dist=self.interp_inter_slice_dist,
-            interp_intra_slice_dist=self.interp_intra_slice_dist,
-            interp_dist_caps=self.interp_dist_caps,
-        )
+    def interp_inter_slice_dist(self) -> float:
+        return self.interpolation.interp_inter_slice_dist
 
     @property
-    def geometry(self) -> PreprocessingGeometryConfig:
-        return PreprocessingGeometryConfig(
-            radius_for_normals_estimation=self.radius_for_normals_estimation,
-            max_nn_for_normals_estimation=self.max_nn_for_normals_estimation,
-            voxel_size_for_structure_volume_calc_non_bx=self.voxel_size_for_structure_volume_calc_non_bx,
-            voxel_size_for_structure_dimension_calc=self.voxel_size_for_structure_dimension_calc,
-            factor_for_voxel_size=self.factor_for_voxel_size,
-        )
+    def interp_intra_slice_dist(self) -> float:
+        return self.interpolation.interp_intra_slice_dist
 
     @property
-    def kernel_execution(self) -> PreprocessingKernelExecutionConfig:
-        return PreprocessingKernelExecutionConfig(
-            cupy_array_upper_limit_nxn_size_input=self.cupy_array_upper_limit_nxn_size_input,
-            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
-                self.nearest_zslice_vals_and_indices_cupy_generic_max_size
-            ),
-            constant_z_slice_polygons_handler_option=self.constant_z_slice_polygons_handler_option,
-            remove_consecutive_duplicate_points_in_polygons=self.remove_consecutive_duplicate_points_in_polygons,
-            include_edges_in_log_files=self.include_edges_in_log_files,
-            custom_cuda_kernel_type=self.custom_cuda_kernel_type,
-        )
+    def interp_dist_caps(self) -> float:
+        return self.interpolation.interp_dist_caps
 
     @property
-    def debug(self) -> PreprocessingDebugConfig:
-        return PreprocessingDebugConfig(
-            generate_cuda_log_files_volume_calculation=self.generate_cuda_log_files_volume_calculation,
-            demonstrate_volume_calculation_correctness_bool_1=(
-                self.demonstrate_volume_calculation_correctness_bool_1
-            ),
-            plot_volume_calculation_containment_result_bool_1_old=(
-                self.plot_volume_calculation_containment_result_bool_1_old
-            ),
-            plot_binary_mask_bool=self.plot_binary_mask_bool,
-            generate_cuda_log_files_structure_dimension_calculation=(
-                self.generate_cuda_log_files_structure_dimension_calculation
-            ),
-            demonstrate_structure_dimension_calculation_correctness_bool_1=(
-                self.demonstrate_structure_dimension_calculation_correctness_bool_1
-            ),
-            demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
-                self.demonstrate_structure_dimension_calculation_correctness_bool_1_old
-            ),
-            demonstrate_mr_adc_pcd_containment_correctness_bool=(
-                self.demonstrate_mr_adc_pcd_containment_correctness_bool
-            ),
-            demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
-                self.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
-            ),
-            display_structure_surface_mesh_bool=self.display_structure_surface_mesh_bool,
-            show_equivalent_ellipsoid_from_pca_bool=self.show_equivalent_ellipsoid_from_pca_bool,
-        )
+    def radius_for_normals_estimation(self) -> float:
+        return self.geometry.radius_for_normals_estimation
+
+    @property
+    def max_nn_for_normals_estimation(self) -> int:
+        return self.geometry.max_nn_for_normals_estimation
+
+    @property
+    def voxel_size_for_structure_volume_calc_non_bx(self) -> float:
+        return self.geometry.voxel_size_for_structure_volume_calc_non_bx
+
+    @property
+    def voxel_size_for_structure_dimension_calc(self) -> float:
+        return self.geometry.voxel_size_for_structure_dimension_calc
+
+    @property
+    def factor_for_voxel_size(self) -> float:
+        return self.geometry.factor_for_voxel_size
+
+    @property
+    def cupy_array_upper_limit_nxn_size_input(self) -> Any:
+        return self.kernel_execution.cupy_array_upper_limit_nxn_size_input
+
+    @property
+    def nearest_zslice_vals_and_indices_cupy_generic_max_size(self) -> Any:
+        return self.kernel_execution.nearest_zslice_vals_and_indices_cupy_generic_max_size
+
+    @property
+    def constant_z_slice_polygons_handler_option(self) -> Any:
+        return self.kernel_execution.constant_z_slice_polygons_handler_option
+
+    @property
+    def remove_consecutive_duplicate_points_in_polygons(self) -> bool:
+        return self.kernel_execution.remove_consecutive_duplicate_points_in_polygons
+
+    @property
+    def include_edges_in_log_files(self) -> bool:
+        return self.kernel_execution.include_edges_in_log_files
+
+    @property
+    def custom_cuda_kernel_type(self) -> Any:
+        return self.kernel_execution.custom_cuda_kernel_type
+
+    @property
+    def generate_cuda_log_files_volume_calculation(self) -> bool:
+        return self.debug.generate_cuda_log_files_volume_calculation
+
+    @property
+    def demonstrate_volume_calculation_correctness_bool_1(self) -> bool:
+        return self.debug.demonstrate_volume_calculation_correctness_bool_1
+
+    @property
+    def plot_volume_calculation_containment_result_bool_1_old(self) -> bool:
+        return self.debug.plot_volume_calculation_containment_result_bool_1_old
+
+    @property
+    def plot_binary_mask_bool(self) -> bool:
+        return self.debug.plot_binary_mask_bool
+
+    @property
+    def generate_cuda_log_files_structure_dimension_calculation(self) -> bool:
+        return self.debug.generate_cuda_log_files_structure_dimension_calculation
+
+    @property
+    def demonstrate_structure_dimension_calculation_correctness_bool_1(self) -> bool:
+        return self.debug.demonstrate_structure_dimension_calculation_correctness_bool_1
+
+    @property
+    def demonstrate_structure_dimension_calculation_correctness_bool_1_old(self) -> bool:
+        return self.debug.demonstrate_structure_dimension_calculation_correctness_bool_1_old
+
+    @property
+    def demonstrate_mr_adc_pcd_containment_correctness_bool(self) -> bool:
+        return self.debug.demonstrate_mr_adc_pcd_containment_correctness_bool
+
+    @property
+    def demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool(self) -> bool:
+        return self.debug.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
+
+    @property
+    def display_structure_surface_mesh_bool(self) -> bool:
+        return self.debug.display_structure_surface_mesh_bool
+
+    @property
+    def show_equivalent_ellipsoid_from_pca_bool(self) -> bool:
+        return self.debug.show_equivalent_ellipsoid_from_pca_bool
 
     def build_non_biopsy_structure_preprocessing_config(
         self,

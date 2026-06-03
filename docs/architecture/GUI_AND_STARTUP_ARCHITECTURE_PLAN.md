@@ -100,6 +100,18 @@ deployment, visualization polish, and user interaction. Any business, licensing,
 or patent strategy belongs in private notes and counsel review; the public code
 direction is simply to keep the scientific core UI-neutral and adapter-driven.
 
+The public scientific repository should therefore expose typed Python contracts
+first: `PipelineConfig`, patient-runner configs, input manifests, patient
+artifacts, and validation reports. A private GUI or product repository can later
+own JSON forms, wizard flows, branded defaults, deployment packaging, and user
+experience polish, but those layers should compile down to the public typed
+contracts rather than importing main-local variables or legacy dictionaries.
+
+Until scientific-shadow parity is credible, JSON should be treated as a
+resolved-config snapshot or future adapter view, not as the primary run-config
+authority. This avoids creating a public JSON schema around config groupings that
+are still being validated.
+
 ## Selectable Stage Direction
 
 The GUI-facing architecture should support both a single full workflow and
