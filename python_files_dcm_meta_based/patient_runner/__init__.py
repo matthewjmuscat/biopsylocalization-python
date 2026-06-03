@@ -48,7 +48,9 @@ from .main_validation import PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION
 from .main_validation import PatientRunnerMainValidationConfig
 from .main_validation import PatientRunnerMainValidationMode
 from .main_validation import PatientRunnerMainValidationResult
+from .main_validation import PatientRunnerMainScientificShadowValidationResult
 from .main_validation import PatientRunnerMainValidationSkippedResult
+from .main_validation import default_patient_runner_main_validation_output_dir
 from .main_validation import run_patient_runner_main_validation
 from .main_validation import summarize_patient_runner_main_validation
 from .main_validation import write_patient_runner_main_validation_summary
@@ -85,14 +87,49 @@ from .scientific_config import PatientRealBiopsyProcessingStageConfig
 from .scientific_config import PatientRealizedBiopsyTargetingStageConfig
 from .scientific_config import PatientRunnerScientificConfig
 from .scientific_config import PatientSampledBiopsyProcessingStageConfig
+from .scientific_config import PatientSamplingClassificationScientificConfig
 from .scientific_config import PatientScientificStageResources
+from .scientific_config import PatientSimulatedBiopsyFinalizationStageConfig
 from .scientific_config import PatientSimulatedBiopsyPlanningStageConfig
 from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_config_builder import PatientRunnerScientificConfigBuildContext
+from .scientific_config_builder import build_patient_runner_scientific_config
+from .scientific_config_builder import build_patient_scientific_shadow_config
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES
+from .scientific_dependencies import PatientScientificPathwayName
+from .scientific_dependencies import PatientScientificStageDependency
+from .scientific_dependencies import executable_patient_scientific_pathway_stage_names
+from .scientific_dependencies import patient_scientific_pathway_graph_stage_names
+from .scientific_dependencies import patient_scientific_pathway_stage_names
+from .scientific_dependencies import resolve_patient_scientific_pathway_name
+from .scientific_dependencies import resolve_patient_scientific_stage_names
+from .scientific_dependencies import summarize_patient_scientific_dependency_graph
+from .scientific_dependencies import summarize_patient_scientific_pathways
+from .scientific_dependencies import validate_patient_scientific_graph_dependencies
+from .scientific_dependencies import validate_patient_scientific_pathway_dependencies
+from .scientific_dependencies import validate_patient_scientific_pathway_graph_dependencies
+from .scientific_dependencies import validate_patient_scientific_stage_dependencies
+from .scientific_shadow import DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME
+from .scientific_shadow import PATIENT_SCIENTIFIC_SHADOW_SCHEMA_VERSION
+from .scientific_shadow import PatientScientificShadowConfig
+from .scientific_shadow import PatientScientificShadowRunResult
+from .scientific_shadow import PatientScientificShadowStateIsolation
+from .scientific_shadow import patient_scientific_shadow_stage_state_manifest
+from .scientific_shadow import run_patient_scientific_shadow
+from .scientific_shadow import summarize_patient_scientific_shadow_run
+from .scientific_shadow import write_patient_scientific_shadow_stage_state_manifest
+from .scientific_shadow import write_patient_scientific_shadow_summary
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
+from .scientific_stages import build_patient_scientific_stages_for_pathway
 from .scientific_stages import run_patient_anatomical_preprocessing_scientific_stage
 from .scientific_stages import run_patient_grid_preprocessing_scientific_stage
 from .scientific_stages import run_patient_guidance_scientific_stage
@@ -100,6 +137,9 @@ from .scientific_stages import run_patient_mc_prep_scientific_stage
 from .scientific_stages import run_patient_mc_simulation_scientific_stage
 from .scientific_stages import run_patient_optimization_scientific_stage
 from .scientific_stages import run_patient_preprocessing_scientific_stage
+from .scientific_stages import run_patient_sampling_classification_scientific_stage
+from .scientific_stages import run_patient_simulated_biopsy_finalization_scientific_stage
+from .scientific_stages import run_patient_transform_generation_scientific_stage
 from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER
 from .scientific_tranches import DEFAULT_PATIENT_SCIENTIFIC_TRANCHES
 from .scientific_tranches import PatientScientificTranche
@@ -128,9 +168,17 @@ __all__ = [
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
     "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
+    "PATIENT_SCIENTIFIC_SHADOW_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
+    "DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER",
+    "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER",
+    "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS",
+    "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES",
+    "DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS",
+    "DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES",
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
     "DEFAULT_SCIENTIFIC_STAGE_ORDER",
@@ -150,13 +198,21 @@ __all__ = [
     "PatientRunnerMainValidationConfig",
     "PatientRunnerMainValidationMode",
     "PatientRunnerMainValidationResult",
+    "PatientRunnerMainScientificShadowValidationResult",
     "PatientRunnerMainValidationSkippedResult",
     "PatientRunnerParitySurface",
     "PatientRunnerParitySurfaceResult",
     "PatientRunnerPostRunParityConfig",
     "PatientRunnerPostRunParityResult",
     "PatientRunnerScientificConfig",
+    "PatientRunnerScientificConfigBuildContext",
     "PatientSampledBiopsyProcessingStageConfig",
+    "PatientSamplingClassificationScientificConfig",
+    "PatientScientificShadowConfig",
+    "PatientScientificShadowRunResult",
+    "PatientScientificShadowStateIsolation",
+    "PatientScientificPathwayName",
+    "PatientScientificStageDependency",
     "PatientScientificTranche",
     "PatientScientificTrancheName",
     "PatientScientificStageResources",
@@ -165,6 +221,7 @@ __all__ = [
     "PatientStageResult",
     "PatientStageRunner",
     "PatientStageStatus",
+    "PatientSimulatedBiopsyFinalizationStageConfig",
     "PatientSimulatedBiopsyPlanningStageConfig",
     "PatientSimulatedBiopsyPreparationStageConfig",
     "PatientStandardNonBiopsyStructureProcessingStageConfig",
@@ -173,7 +230,10 @@ __all__ = [
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
+    "build_patient_runner_scientific_config",
+    "build_patient_scientific_shadow_config",
     "build_patient_scientific_stages",
+    "build_patient_scientific_stages_for_pathway",
     "build_patient_scientific_stages_for_tranches",
     "carve_patient_runtime_state",
     "carve_patient_runtime_state_by_uid",
@@ -182,14 +242,21 @@ __all__ = [
     "compare_patient_runner_recursive_csvs",
     "default_patient_stages",
     "default_patient_scientific_tranches",
+    "default_patient_runner_main_validation_output_dir",
     "default_patient_runner_post_run_parity_output_dir",
+    "executable_patient_scientific_pathway_stage_names",
     "format_patient_runner_post_run_parity_summary",
     "get_patient_scientific_tranche",
     "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
+    "patient_scientific_shadow_stage_state_manifest",
+    "patient_scientific_pathway_graph_stage_names",
+    "patient_scientific_pathway_stage_names",
     "patient_scientific_tranche_stage_names",
     "resolve_legacy_patient_uids",
+    "resolve_patient_scientific_pathway_name",
+    "resolve_patient_scientific_stage_names",
     "resolve_patient_scientific_tranche_names",
     "resolve_patient_uids",
     "run_patient_batch",
@@ -203,22 +270,35 @@ __all__ = [
     "run_patient_mc_simulation_scientific_stage",
     "run_patient_optimization_scientific_stage",
     "run_patient_preprocessing_scientific_stage",
+    "run_patient_sampling_classification_scientific_stage",
+    "run_patient_simulated_biopsy_finalization_scientific_stage",
+    "run_patient_transform_generation_scientific_stage",
     "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
+    "run_patient_scientific_shadow",
     "run_patient_stages",
     "summarize_patient_runner_main_validation",
     "summarize_patient_runner_parity_surface",
     "summarize_patient_runner_post_run_parity",
     "summarize_patient_runner_post_run_parity_surfaces",
+    "summarize_patient_scientific_shadow_run",
+    "summarize_patient_scientific_dependency_graph",
+    "summarize_patient_scientific_pathways",
     "summarize_patient_scientific_tranches",
     "summarize_patient_batch_cohort_assembly",
     "summarize_patient_batch_cohort_validation",
     "validate_patient_uids",
     "validate_patient_batch_cohort_assembly",
+    "validate_patient_scientific_graph_dependencies",
+    "validate_patient_scientific_pathway_dependencies",
+    "validate_patient_scientific_pathway_graph_dependencies",
+    "validate_patient_scientific_stage_dependencies",
     "write_patient_batch_run_manifest",
     "write_patient_batch_cohort_assembly_outputs",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
     "write_patient_runner_main_validation_summary",
+    "write_patient_scientific_shadow_stage_state_manifest",
+    "write_patient_scientific_shadow_summary",
     "write_patient_run_manifest",
 ]

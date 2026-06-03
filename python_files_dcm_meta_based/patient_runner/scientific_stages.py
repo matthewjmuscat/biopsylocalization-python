@@ -11,39 +11,61 @@ from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .runner import PatientStage
 from .scientific_config import PatientRunnerScientificConfig
+from .scientific_dependencies import DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
+from .scientific_dependencies import PatientScientificPathwayName
+from .scientific_dependencies import executable_patient_scientific_pathway_stage_names
+from .scientific_dependencies import patient_scientific_pathway_stage_names
+from .scientific_dependencies import validate_patient_scientific_stage_dependencies
 from .stages import write_patient_artifacts_stage
 
 
-DEFAULT_SCIENTIFIC_STAGE_ORDER = (
-    PatientStageName.GRID_PREPROCESSING,
-    PatientStageName.ANATOMICAL_PREPROCESSING,
-    PatientStageName.PREPROCESSING,
-    PatientStageName.MC_PREP,
-    PatientStageName.MC_SIMULATION,
-    PatientStageName.OPTIMIZATION,
-    PatientStageName.GUIDANCE,
-)
+DEFAULT_SCIENTIFIC_STAGE_ORDER = DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER
 
 
 def build_patient_scientific_stages(
     scientific_config: PatientRunnerScientificConfig,
     *,
     include_artifact_writing: bool = True,
-    stage_order: Sequence[PatientStageName | str] = DEFAULT_SCIENTIFIC_STAGE_ORDER,
+    stage_order: Sequence[PatientStageName | str] | None = None,
+    pathway_name: PatientScientificPathwayName | str | None = None,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
 ) -> tuple[PatientStage, ...]:
     """Build an opt-in stage sequence for independently run patient science."""
     if not isinstance(scientific_config, PatientRunnerScientificConfig):
         raise TypeError("scientific_config must be a PatientRunnerScientificConfig instance")
+    if pathway_name is not None and stage_order is not None:
+        raise ValueError("stage_order and pathway_name cannot both be provided")
 
     stage_builders = {
         PatientStageName.GRID_PREPROCESSING.value: _grid_preprocessing_stage(scientific_config),
         PatientStageName.ANATOMICAL_PREPROCESSING.value: _anatomical_preprocessing_stage(scientific_config),
         PatientStageName.PREPROCESSING.value: _preprocessing_stage(scientific_config),
+        PatientStageName.TRANSFORM_GENERATION.value: _transform_generation_stage(scientific_config),
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value: _simulated_biopsy_finalization_stage(scientific_config),
+        PatientStageName.SAMPLING_CLASSIFICATION.value: _sampling_classification_stage(scientific_config),
         PatientStageName.GUIDANCE.value: _guidance_stage(scientific_config),
     }
+
+    if pathway_name is not None:
+        pathway_stage_names = patient_scientific_pathway_stage_names(pathway_name)
+        if validate_dependencies:
+            validate_patient_scientific_stage_dependencies(
+                pathway_stage_names,
+                satisfied_stage_names=satisfied_stage_names,
+            )
+        stage_order = executable_patient_scientific_pathway_stage_names(
+            pathway_name,
+            satisfied_stage_names=satisfied_stage_names,
+        )
+        require_requested_stages = True
+    else:
+        stage_order = DEFAULT_SCIENTIFIC_STAGE_ORDER if stage_order is None else tuple(stage_order)
+        require_requested_stages = False
+
     stages: list[PatientStage] = []
     for stage_name in stage_order:
         resolved_stage_name = _stage_name_value(stage_name)
@@ -52,10 +74,39 @@ def build_patient_scientific_stages(
         stage = stage_builders[resolved_stage_name]
         if stage is not None:
             stages.append(stage)
+        elif require_requested_stages:
+            raise ValueError(
+                "patient scientific pathway requires an enabled stage config for: "
+                + resolved_stage_name
+            )
+
+    if validate_dependencies:
+        validate_patient_scientific_stage_dependencies(
+            tuple(stage.stage_name for stage in stages),
+            satisfied_stage_names=satisfied_stage_names,
+        )
 
     if include_artifact_writing:
         stages.append(PatientStage(PatientStageName.PATIENT_ARTIFACT_WRITING, write_patient_artifacts_stage))
     return tuple(stages)
+
+
+def build_patient_scientific_stages_for_pathway(
+    scientific_config: PatientRunnerScientificConfig,
+    pathway_name: PatientScientificPathwayName | str,
+    *,
+    include_artifact_writing: bool = True,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
+) -> tuple[PatientStage, ...]:
+    """Build patient stages for one intentional scientific pathway preset."""
+    return build_patient_scientific_stages(
+        scientific_config,
+        include_artifact_writing=include_artifact_writing,
+        pathway_name=pathway_name,
+        satisfied_stage_names=satisfied_stage_names,
+        validate_dependencies=validate_dependencies,
+    )
 
 
 def run_patient_grid_preprocessing_scientific_stage(
@@ -386,16 +437,135 @@ def run_patient_preprocessing_scientific_stage(
         metadata["steps"].append("realized_biopsy_targeting")
         metadata["realized_biopsy_count"] = len(pydicom_item.get(runtime_state.bx_ref, ()))
 
+    return PatientStageResult.success(PatientStageName.PREPROCESSING, metadata=metadata)
+
+
+def run_patient_transform_generation_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run patient-local transform-bank generation before optimizer/MC consumers."""
+    del config
+    stage_config = scientific_config.mc_prep
+    if stage_config is None or not stage_config.transform_generation_enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.TRANSFORM_GENERATION,
+            reason="transform_generation_not_configured",
+        )
+
+    from mc.prep.per_patient import generate_transformations_for_patient
+
+    num_generated_transform_samples = _resolve_transform_generation_sample_count(
+        runtime_state.master_structure_info_dict,
+        stage_config,
+    )
+    generate_transformations_for_patient(
+        patient_uid=runtime_state.patient_uid,
+        pydicom_item=runtime_state.pydicom_item,
+        simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
+            stage_config.simulate_uniform_bx_shifts_due_to_bx_needle_compartment
+        ),
+        bx_ref=runtime_state.bx_ref,
+        biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
+        num_generated_transform_samples=num_generated_transform_samples,
+        structs_referenced_list=stage_config.structs_referenced_list,
+        rng=scientific_config.resources.rng,
+    )
+    return PatientStageResult.success(
+        PatientStageName.TRANSFORM_GENERATION,
+        metadata={
+            "patient_uid": runtime_state.patient_uid,
+            "steps": ("transform_generation",),
+            "num_generated_transform_samples": int(num_generated_transform_samples),
+        },
+    )
+
+
+def run_patient_simulated_biopsy_finalization_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run post-optimizer simulated-biopsy geometry finalization."""
+    del config
+    stage_config = scientific_config.simulated_biopsy_finalization
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+            reason="simulated_biopsy_finalization_not_configured",
+        )
+
+    from preprocessing.biopsy_processing.per_patient import process_patient_simulated_biopsies
+
+    pydicom_item = runtime_state.pydicom_item
+    simulated_biopsy_count = _count_biopsies_by_simulated_flag(pydicom_item, runtime_state.bx_ref, simulated=True)
+    process_patient_simulated_biopsies(
+        patient_uid=runtime_state.patient_uid,
+        pydicom_item=pydicom_item,
+        master_structure_reference_dict=runtime_state.master_structure_reference_dict,
+        structs_referenced_dict=stage_config.structs_referenced_dict,
+        bx_ref=runtime_state.bx_ref,
+        parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.SIMULATED_BIOPSY_FINALIZATION),
+        interp_inter_slice_dist=stage_config.interp_inter_slice_dist,
+        interp_intra_slice_dist=stage_config.interp_intra_slice_dist,
+        interp_dist_caps=stage_config.interp_dist_caps,
+        biopsy_radius=stage_config.biopsy_radius,
+        voxel_size_for_structure_volume_calc_non_bx=stage_config.voxel_size_for_structure_volume_calc_non_bx,
+        factor_for_voxel_size=stage_config.factor_for_voxel_size,
+        cupy_array_upper_limit_NxN_size_input=stage_config.cupy_array_upper_limit_nxn_size_input,
+        nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+            stage_config.nearest_zslice_vals_and_indices_cupy_generic_max_size
+        ),
+        generate_cuda_log_files_volume_calculation=stage_config.generate_cuda_log_files_volume_calculation,
+        constant_z_slice_polygons_handler_option=stage_config.constant_z_slice_polygons_handler_option,
+        remove_consecutive_duplicate_points_in_polygons=stage_config.remove_consecutive_duplicate_points_in_polygons,
+        include_edges_in_log_files=stage_config.include_edges_in_log_files,
+        custom_cuda_kernel_type=stage_config.custom_cuda_kernel_type,
+        demonstrate_volume_calculation_correctness_bool_1=stage_config.demonstrate_volume_calculation_correctness_bool_1,
+        plot_volume_calculation_containment_result_bool_1_old=(
+            stage_config.plot_volume_calculation_containment_result_bool_1_old
+        ),
+        plot_binary_mask_bool=stage_config.plot_binary_mask_bool,
+    )
+    return PatientStageResult.success(
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        metadata={
+            "patient_uid": runtime_state.patient_uid,
+            "steps": ("simulated_biopsy_finalization",),
+            "simulated_biopsy_count": int(simulated_biopsy_count),
+        },
+    )
+
+
+def run_patient_sampling_classification_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Run sampled-biopsy storage and classification-adjacent patient slices."""
+    del config
+    stage_config = scientific_config.sampling_classification
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(
+            PatientStageName.SAMPLING_CLASSIFICATION,
+            reason="sampling_classification_not_configured",
+        )
+
+    metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     if stage_config.sampled_biopsy_processing is not None:
         from preprocessing.biopsy_processing.sampled_biopsy_processing import process_patient_sampled_biopsies
 
         sampled_config = stage_config.sampled_biopsy_processing
         sampled_result = process_patient_sampled_biopsies(
             patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
+            pydicom_item=runtime_state.pydicom_item,
             bx_ref=runtime_state.bx_ref,
             bx_sample_pts_lattice_spacing=sampled_config.bx_sample_pts_lattice_spacing,
-            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.PREPROCESSING),
+            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.SAMPLING_CLASSIFICATION),
             show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot=(
                 sampled_config.show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot
             ),
@@ -403,7 +573,7 @@ def run_patient_preprocessing_scientific_stage(
         metadata["steps"].append("sampled_biopsy_processing")
         metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
 
-    return PatientStageResult.success(PatientStageName.PREPROCESSING, metadata=metadata)
+    return PatientStageResult.success(PatientStageName.SAMPLING_CLASSIFICATION, metadata=metadata)
 
 
 def run_patient_mc_prep_scientific_stage(
@@ -415,18 +585,14 @@ def run_patient_mc_prep_scientific_stage(
     """Run configured patient-local MC prep transform stages."""
     del config
     stage_config = scientific_config.mc_prep
-    if stage_config is None or not stage_config.enabled:
+    if stage_config is None or not stage_config.transform_application_enabled:
         return PatientStageResult.skipped(PatientStageName.MC_PREP, reason="mc_prep_not_configured")
 
     from mc.prep.per_patient import apply_patient_biopsy_self_transforms
     from mc.prep.per_patient import apply_patient_relative_structure_transforms
-    from mc.prep.per_patient import generate_transformations_for_patient
 
     pydicom_item = runtime_state.pydicom_item
     max_simulations = _resolve_mc_prep_max_simulations(runtime_state.master_structure_info_dict, stage_config)
-    num_generated_transform_samples = stage_config.num_generated_transform_samples
-    if stage_config.run_transform_generation and num_generated_transform_samples is None:
-        num_generated_transform_samples = max_simulations
     num_mc_containment_simulations = None
     if stage_config.run_relative_structure_transforms:
         num_mc_containment_simulations = _resolve_optional_mc_info_int(
@@ -438,27 +604,10 @@ def run_patient_mc_prep_scientific_stage(
         "patient_uid": runtime_state.patient_uid,
         "steps": [],
     }
-    if num_generated_transform_samples is not None:
-        metadata["num_generated_transform_samples"] = int(num_generated_transform_samples)
     if max_simulations is not None:
         metadata["max_simulations"] = int(max_simulations)
     if num_mc_containment_simulations is not None:
         metadata["num_mc_containment_simulations"] = int(num_mc_containment_simulations)
-
-    if stage_config.run_transform_generation:
-        generate_transformations_for_patient(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
-                stage_config.simulate_uniform_bx_shifts_due_to_bx_needle_compartment
-            ),
-            bx_ref=runtime_state.bx_ref,
-            biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
-            num_generated_transform_samples=num_generated_transform_samples,
-            structs_referenced_list=stage_config.structs_referenced_list,
-            rng=scientific_config.resources.rng,
-        )
-        metadata["steps"].append("transform_generation")
 
     if stage_config.run_biopsy_self_transforms:
         if max_simulations is None:
@@ -686,8 +835,17 @@ def _anatomical_preprocessing_stage(scientific_config: PatientRunnerScientificCo
     )
 
 
+def _transform_generation_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.mc_prep is None or not scientific_config.mc_prep.transform_generation_enabled:
+        return None
+    return PatientStage(
+        PatientStageName.TRANSFORM_GENERATION,
+        partial(run_patient_transform_generation_scientific_stage, scientific_config=scientific_config),
+    )
+
+
 def _mc_prep_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
-    if scientific_config.mc_prep is None or not scientific_config.mc_prep.enabled:
+    if scientific_config.mc_prep is None or not scientific_config.mc_prep.transform_application_enabled:
         return None
     return PatientStage(
         PatientStageName.MC_PREP,
@@ -710,6 +868,27 @@ def _optimization_stage(scientific_config: PatientRunnerScientificConfig) -> Pat
     return PatientStage(
         PatientStageName.OPTIMIZATION,
         partial(run_patient_optimization_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _simulated_biopsy_finalization_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if (
+        scientific_config.simulated_biopsy_finalization is None
+        or not scientific_config.simulated_biopsy_finalization.enabled
+    ):
+        return None
+    return PatientStage(
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        partial(run_patient_simulated_biopsy_finalization_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _sampling_classification_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.sampling_classification is None or not scientific_config.sampling_classification.enabled:
+        return None
+    return PatientStage(
+        PatientStageName.SAMPLING_CLASSIFICATION,
+        partial(run_patient_sampling_classification_scientific_stage, scientific_config=scientific_config),
     )
 
 
@@ -781,13 +960,18 @@ def _resolve_optional_mc_info_int(master_structure_info_dict: Mapping[str, Any],
         ) from exc
 
 
+def _resolve_transform_generation_sample_count(master_structure_info_dict: Mapping[str, Any],
+                                               stage_config: Any) -> int:
+    if stage_config.num_generated_transform_samples is not None:
+        return int(stage_config.num_generated_transform_samples)
+    return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
+
+
 def _resolve_mc_prep_max_simulations(master_structure_info_dict: Mapping[str, Any],
                                      stage_config: Any) -> int | None:
     if stage_config.max_simulations is not None:
         return int(stage_config.max_simulations)
     if stage_config.run_biopsy_self_transforms:
-        return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
-    if stage_config.run_transform_generation and stage_config.num_generated_transform_samples is None:
         return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
     return None
 

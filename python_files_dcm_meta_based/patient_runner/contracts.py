@@ -20,6 +20,7 @@ class PatientStageName(str, Enum):
     GRID_PREPROCESSING = "grid_preprocessing"
     ANATOMICAL_PREPROCESSING = "anatomical_preprocessing"
     PREPROCESSING = "preprocessing"
+    TRANSFORM_GENERATION = "transform_generation"
     OPTIMIZATION = "optimization"
     SIMULATED_BIOPSY_FINALIZATION = "simulated_biopsy_finalization"
     SAMPLING_CLASSIFICATION = "sampling_classification"

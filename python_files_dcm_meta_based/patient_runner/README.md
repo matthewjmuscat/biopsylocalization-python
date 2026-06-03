@@ -140,24 +140,40 @@ Scientific stage config boundary:
   adapted to null/headless shims,
 - preprocessing is represented explicitly through currently patient-local slices
   such as real-biopsy geometry processing, simulated-biopsy preparation,
-  simulated-biopsy planning, uncertainty attachment, realized targeting, and
-  sampled-biopsy processing; heavier non-biopsy structure preprocessing can be
-  added to the same boundary as those signatures are cleaned,
+  simulated-biopsy planning, uncertainty attachment, and realized targeting;
+  heavier non-biopsy structure preprocessing can be added to the same boundary
+  as those signatures are cleaned,
 - `scientific_stages.py` contains thin runner adapters that translate
   `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
   existing patient scientific modules,
+- `scientific_dependencies.py` owns both the full scientific graph-node view and
+  the current executable adapter view, plus named pathway presets such as
+  `current_dosimetry_shadow`,
 - `build_patient_scientific_stages(...)` is opt-in and does not change
   `default_patient_stages()`, which remains artifact-only for the current
   shadow-output validation path.
-- simulated-biopsy finalization is intentionally not folded into the early
-  preprocessing adapter because the legacy path runs it after optimizer-v2; it
-  should become a separate opt-in stage before scientific shadow routing.
+- direct stage-order builds validate the configured stage subset by default;
+  named pathway builds require the pathway's enabled stage configs unless the
+  caller explicitly marks upstream stages as already satisfied for a controlled
+  preprocessed/debug state.
+- transform generation is now its own executable adapter before optimization
+  and MC prep,
+- simulated-biopsy finalization is now a separate executable adapter after the
+  current legacy-shadow simulated-biopsy producer; that producer is optimization
+  today because the legacy path runs finalization after optimizer-v2, but later
+  centroid/manual producers should satisfy the same producer contract,
+- sampling/classification is now a separate executable adapter after
+  simulated-biopsy finalization; it currently wraps sampled-biopsy processing,
+  with later classification fragments to add inside the same stage boundary.
 
 Scientific tranche direction:
 
 - patient scientific modules stay standalone in their owning scientific package;
   `scientific_tranches.py` defines ordered tranche recipes in `patient_runner`,
   but those recipes are orchestration only,
+- dependency edges and pathway selection should be treated as the execution
+  source of truth; tranches are removable debug/documentation groupings over
+  graph nodes, not the dependency model itself,
 - patient discovery is not a tranche: DICOM discovery, modality routing, patient
   selection, prompts, and input manifests remain run-scoped discovery/bootstrap
   work outside scientific stage recipes,
@@ -170,10 +186,12 @@ Scientific tranche direction:
   plus later patient-local lattice/grid/KD-tree artifacts, while anatomical
   preprocessing owns the current raw-contour, selected/unique structure,
   standard non-biopsy structure, and prostate-only MR ADC adapters,
-- biopsy preprocessing, pre-optimizer transforms/optimizers, post-optimizer
-  biopsy realization, sampling/classification, MC prep/simulation, and
+- biopsy preprocessing, pre-optimizer transforms/optimizers, simulated-biopsy
+  realization/finalization, sampling/classification, MC prep/simulation, and
   output/guidance/assembly/parity should remain separate tranche recipes so the
-  legacy ordering is visible and testable.
+  legacy ordering and producer choice are visible and testable.
+- the dependency/pathway terminology and current conservative graph are tracked
+  in `docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`.
 
 Main-facing validation gate:
 
@@ -184,6 +202,15 @@ Main-facing validation gate:
   assembles cohort tables, and compares them with the legacy final dataframes,
 - this first gate validates the artifact/export/assembly layer, not independent
   scientific recomputation.
+- `PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW` is a separate mode for
+  independently running a named patient scientific pathway into an explicit
+  evidence root; the first scaffold requires an explicit
+  `PatientScientificShadowConfig` and defaults to deep-copying each carved
+  patient state before scientific stages run so the legacy oracle dictionaries
+  are not mutated.
+- scientific-shadow manifests record stage status, skip/error state, metadata
+  keys, output paths, and optional dataframe snapshots/shapes as validation
+  evidence rather than production output artifacts.
 
 Post-run parity surface:
 

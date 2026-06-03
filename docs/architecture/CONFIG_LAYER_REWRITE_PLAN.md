@@ -201,6 +201,26 @@ That means fields such as "MC info", "Random info", and "Preprocessing info" sho
 
 They should not stay as a partial parallel config system.
 
+### JSON and GUI config views
+
+JSON should not become a second runtime authority during the validation phase.
+The validated Python boundary is `PipelineConfig`; file-based run plans and GUI
+forms should serialize into and out of that typed tree rather than bypassing it.
+
+Near-term policy:
+
+- keep main/default values in Python until the current config bridge and
+    scientific-shadow path have parity evidence,
+- allow JSON snapshots or manifests to record the resolved `PipelineConfig`,
+    but do not make JSON the only source of truth yet,
+- introduce a JSON schema only after the typed root config stops moving quickly,
+- treat GUI-specific labels, help text, grouping, visibility, and product
+    workflow choices as adapter metadata outside the scientific config contract.
+
+This keeps the scientific repository usable as a public research/developer
+engine while allowing a private GUI or product repository to wire into stable
+typed contracts later.
+
 ## Render manifest scope
 
 The first render manifest should be optimizer-v2 specific.

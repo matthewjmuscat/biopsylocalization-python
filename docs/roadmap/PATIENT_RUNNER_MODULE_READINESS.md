@@ -146,6 +146,14 @@ remain run-scoped discovery/bootstrap work. The first patient-runner boundary ma
 consume discovered patient case inputs and legacy-compatible reference fragments,
 but it must not start owning DICOM discovery policy.
 
+Dependency edges and pathway selection should be the scientific runner source of
+truth. Tranches remain useful as debug/documentation blocks and manifest labels,
+but they should be easy to remove and must not bypass graph validation. The
+current dependency vocabulary and conservative hard-edge map live in
+`docs/architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md`; the full graph-node view,
+current executable adapter view, pathway presets, and validation helpers live in
+`python_files_dcm_meta_based/patient_runner/scientific_dependencies.py`.
+
 Recommended tranche structure for patient-runner shadow work:
 
 1. Compatibility bootstrap/reference boundary
@@ -187,7 +195,9 @@ Recommended tranche structure for patient-runner shadow work:
    - Transform-bank generation when required by optimizer/search behavior.
    - Optimizer-v1 and optimizer-v2 patient-local stages.
 6. Post-optimizer biopsy realization tranche
-   - Simulated-biopsy finalization, which the legacy path runs after optimizer-v2.
+  - Simulated-biopsy finalization, which the current legacy path runs after
+    optimizer-v2; later optimizer-v1, centroid, or manual/configured producers
+    should satisfy the same simulated-biopsy source contract.
    - Planned-vs-realized centroid validation and post-optimizer biopsy
      annotations that depend on finalized simulated biopsy geometry.
    - Realized targeting if parity shows it belongs after finalization for the
@@ -331,35 +341,40 @@ Completed through the 2026-05-27 pass:
 
 Recommended order of operations from this point:
 
-1. Add `patient_runner` tranche recipes that group existing standalone patient
-  modules into the ordered tranches above without changing
-  `default_patient_stages()` or the frozen legacy oracle path.
-2. Keep patient discovery explicitly outside the tranche recipes. Tranches may
-  consume discovered patient cases, manifests, legacy key names, and carved
-  runtime state; they must not own DICOM discovery, modality routing, prompts, or
-  cohort case selection.
-3. Extend the runner scientific config boundary in
+1. Keep patient discovery explicitly outside the scientific dependency graph.
+  Pathways may consume discovered patient cases, manifests, legacy key names,
+  and carved runtime state; they must not own DICOM discovery, modality routing,
+  prompts, or cohort case selection.
+2. Maintain the patient-runner scientific dependency graph and named pathway
+  presets as the gate for more stage adapters. Pathways should express
+  intentional scientific workflows such as anatomical QA, optimization shadow,
+  current dosimetry shadow, or full current pipeline shadow.
+3. Keep tranches as removable debug/documentation groupings over graph nodes.
+  Tranches may consume discovered patient cases, manifests, legacy key names,
+  and carved runtime state; they must not own DICOM discovery, modality routing,
+  prompts, or cohort case selection.
+4. Extend the runner scientific config boundary in
   `patient_runner/scientific_config.py` so it can map legacy main config values
   into separate grid preprocessing, anatomical preprocessing, biopsy
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
-4. Continue splitting later preprocessing tranches that still need distinct
-  stage timing, especially simulated-biopsy finalization and
-  sampling/classification. Current adapters cover grid preprocessing,
-  anatomical preprocessing, real-biopsy processing, simulated-biopsy
-  preparation, simulated-biopsy planning, uncertainty attachment, realized
-  targeting, sampled-biopsy processing, MC prep, MC simulation, optimizer, and
-  guidance.
-5. Wire simulated-biopsy finalization as a separate post-optimizer stage because
-  the legacy path runs it after optimizer-v2, not inside early preprocessing.
-6. Add a separate scientific shadow-validation mode after the tranche sequence is
-  configured from main. Keep `SHADOW_OUTPUT` as artifact/export/assembly
-  validation from completed legacy state.
-7. Add durable stage-state parity manifests beside patient artifacts: performed
-  flags, skip reasons, output keys present, counts, dataframe shapes, and hashes
-  where useful.
-8. Compare independently run patient-stage outputs against the frozen cohort
+5. Extend the sampling/classification stage boundary with later internal slices,
+  especially double-sextant fragments and optimizer-v2 sampling audit
+  annotations. Current adapters cover grid preprocessing, anatomical
+  preprocessing, real-biopsy processing, simulated-biopsy preparation,
+  simulated-biopsy planning, uncertainty attachment, realized targeting,
+  transform generation, simulated-biopsy finalization, sampled-biopsy
+  processing, MC prep, MC simulation, optimizer, and guidance.
+6. Continue wiring the separate scientific shadow-validation mode after the
+  graph/pathway sequence is configured from main. Keep `SHADOW_OUTPUT` as
+  artifact/export/assembly validation from completed legacy state.
+7. Extend durable stage-state parity manifests beside patient artifacts:
+  performed flags, skip reasons, output keys present, counts, dataframe shapes
+  or dataframe snapshots where useful, and stable hashes where available.
+8. Map legacy main config values into `PatientRunnerScientificConfig` for the
+  first `current_dosimetry_shadow` run without changing live legacy routing.
+9. Compare independently run patient-stage outputs against the frozen cohort
   oracle through post-run parity surfaces before live routing.
-9. After patient-runner validation against the legacy cohort oracle, remove
+10. After patient-runner validation against the legacy cohort oracle, remove
   remaining Rich dependencies from patient scientific functions and keep Rich
   only in legacy/main/frontend wrappers.

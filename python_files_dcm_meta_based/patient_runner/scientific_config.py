@@ -310,6 +310,99 @@ class PatientRealBiopsyProcessingStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientSimulatedBiopsyFinalizationStageConfig:
+    """Config for patient-local post-optimizer simulated-biopsy geometry finalization."""
+
+    structs_referenced_dict: Mapping[str, Any]
+    interp_inter_slice_dist: float
+    interp_intra_slice_dist: float
+    interp_dist_caps: float
+    biopsy_radius: float
+    voxel_size_for_structure_volume_calc_non_bx: float
+    factor_for_voxel_size: float
+    cupy_array_upper_limit_nxn_size_input: Any
+    nearest_zslice_vals_and_indices_cupy_generic_max_size: Any
+    generate_cuda_log_files_volume_calculation: bool
+    constant_z_slice_polygons_handler_option: Any
+    remove_consecutive_duplicate_points_in_polygons: bool
+    include_edges_in_log_files: bool
+    custom_cuda_kernel_type: Any
+    demonstrate_volume_calculation_correctness_bool_1: bool
+    plot_volume_calculation_containment_result_bool_1_old: bool
+    plot_binary_mask_bool: bool
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "structs_referenced_dict", dict(self.structs_referenced_dict))
+        for field_name in (
+            "interp_inter_slice_dist",
+            "interp_intra_slice_dist",
+            "interp_dist_caps",
+            "biopsy_radius",
+            "voxel_size_for_structure_volume_calc_non_bx",
+            "factor_for_voxel_size",
+        ):
+            object.__setattr__(self, field_name, _positive_float(getattr(self, field_name), field_name))
+        for field_name in (
+            "generate_cuda_log_files_volume_calculation",
+            "remove_consecutive_duplicate_points_in_polygons",
+            "include_edges_in_log_files",
+            "demonstrate_volume_calculation_correctness_bool_1",
+            "plot_volume_calculation_containment_result_bool_1_old",
+            "plot_binary_mask_bool",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @classmethod
+    def from_preprocessing_config(
+        cls,
+        preprocessing_config: Any,
+        *,
+        structs_referenced_dict: Mapping[str, Any],
+        biopsy_radius: float,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "PatientSimulatedBiopsyFinalizationStageConfig":
+        """Build the simulated-biopsy finalization config from the existing pipeline config slice."""
+        return cls(
+            structs_referenced_dict=structs_referenced_dict,
+            interp_inter_slice_dist=preprocessing_config.interp_inter_slice_dist,
+            interp_intra_slice_dist=preprocessing_config.interp_intra_slice_dist,
+            interp_dist_caps=preprocessing_config.interp_dist_caps,
+            biopsy_radius=biopsy_radius,
+            voxel_size_for_structure_volume_calc_non_bx=(
+                preprocessing_config.voxel_size_for_structure_volume_calc_non_bx
+            ),
+            factor_for_voxel_size=preprocessing_config.factor_for_voxel_size,
+            cupy_array_upper_limit_nxn_size_input=preprocessing_config.cupy_array_upper_limit_nxn_size_input,
+            nearest_zslice_vals_and_indices_cupy_generic_max_size=(
+                preprocessing_config.nearest_zslice_vals_and_indices_cupy_generic_max_size
+            ),
+            generate_cuda_log_files_volume_calculation=(
+                preprocessing_config.generate_cuda_log_files_volume_calculation
+            ),
+            constant_z_slice_polygons_handler_option=preprocessing_config.constant_z_slice_polygons_handler_option,
+            remove_consecutive_duplicate_points_in_polygons=(
+                preprocessing_config.remove_consecutive_duplicate_points_in_polygons
+            ),
+            include_edges_in_log_files=preprocessing_config.include_edges_in_log_files,
+            custom_cuda_kernel_type=preprocessing_config.custom_cuda_kernel_type,
+            demonstrate_volume_calculation_correctness_bool_1=(
+                preprocessing_config.demonstrate_volume_calculation_correctness_bool_1
+            ),
+            plot_volume_calculation_containment_result_bool_1_old=(
+                preprocessing_config.plot_volume_calculation_containment_result_bool_1_old
+            ),
+            plot_binary_mask_bool=preprocessing_config.plot_binary_mask_bool,
+            metadata=dict(metadata or {}),
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return True
+
+
+@dataclass(frozen=True, slots=True)
 class PatientSimulatedBiopsyPlanningStageConfig:
     """Config for patient-local simulated-biopsy planning and planning samples."""
 
@@ -380,6 +473,21 @@ class PatientUncertaintyAttachmentStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientSamplingClassificationScientificConfig:
+    """Opt-in sampling/classification slices after simulated-biopsy finalization."""
+
+    sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return self.sampled_biopsy_processing is not None
+
+
+@dataclass(frozen=True, slots=True)
 class PatientPreprocessingScientificConfig:
     """Opt-in preprocessing slices that already have patient-local entrypoints."""
 
@@ -387,7 +495,6 @@ class PatientPreprocessingScientificConfig:
     simulated_biopsy_preparation: PatientSimulatedBiopsyPreparationStageConfig | None = None
     simulated_biopsy_planning: PatientSimulatedBiopsyPlanningStageConfig | None = None
     realized_biopsy_targeting: PatientRealizedBiopsyTargetingStageConfig | None = None
-    sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
     uncertainty_attachment: PatientUncertaintyAttachmentStageConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -404,7 +511,6 @@ class PatientPreprocessingScientificConfig:
                 self.simulated_biopsy_preparation,
                 self.simulated_biopsy_planning,
                 self.realized_biopsy_targeting,
-                self.sampled_biopsy_processing,
             )
         )
 
@@ -469,9 +575,16 @@ class PatientMCPrepScientificConfig:
 
     @property
     def enabled(self) -> bool:
+        return self.transform_generation_enabled or self.transform_application_enabled
+
+    @property
+    def transform_generation_enabled(self) -> bool:
+        return self.run_transform_generation
+
+    @property
+    def transform_application_enabled(self) -> bool:
         return any(
             (
-                self.run_transform_generation,
                 self.run_biopsy_self_transforms,
                 self.run_relative_structure_transforms,
             )
@@ -575,6 +688,8 @@ class PatientRunnerScientificConfig:
     mc_prep: PatientMCPrepScientificConfig | None = None
     mc_simulation: PatientMCSimulationScientificConfig | None = None
     optimization: PatientOptimizationScientificConfig | None = None
+    simulated_biopsy_finalization: PatientSimulatedBiopsyFinalizationStageConfig | None = None
+    sampling_classification: PatientSamplingClassificationScientificConfig | None = None
     guidance: PatientGuidanceScientificConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -593,6 +708,8 @@ class PatientRunnerScientificConfig:
             ("mc_prep", self.mc_prep),
             ("mc_simulation", self.mc_simulation),
             ("optimization", self.optimization),
+            ("simulated_biopsy_finalization", self.simulated_biopsy_finalization),
+            ("sampling_classification", self.sampling_classification),
             ("guidance", self.guidance),
         ):
             if stage_config is not None and stage_config.enabled:

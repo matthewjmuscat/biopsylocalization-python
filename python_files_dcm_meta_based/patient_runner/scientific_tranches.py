@@ -120,13 +120,13 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.PRE_OPTIMIZER_TRANSFORM_AND_OPTIMIZATION,
         display_name="Pre-Optimizer Transform And Optimization",
-        summary="Runs transform-bank generation and patient optimizer stages once split adapters are available.",
+        summary="Runs transform-bank generation and patient optimizer stages.",
         planned_surfaces=(
             "transform-bank generation",
             "optimizer-v1",
             "optimizer-v2",
         ),
-        implemented_stage_names=(PatientStageName.OPTIMIZATION,),
+        implemented_stage_names=(PatientStageName.TRANSFORM_GENERATION, PatientStageName.OPTIMIZATION),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.POST_OPTIMIZER_BIOPSY_REALIZATION,
@@ -137,17 +137,19 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
             "planned-vs-realized centroid validation",
             "post-optimizer biopsy annotations",
         ),
+        implemented_stage_names=(PatientStageName.SIMULATED_BIOPSY_FINALIZATION,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.SAMPLING_CLASSIFICATION,
         display_name="Sampling And Classification",
-        summary="Stores sampled-biopsy outputs and classification fragments before MC simulation.",
+        summary="Stores sampled-biopsy outputs and classification-adjacent fragments before MC simulation.",
         planned_surfaces=(
             "sampled-biopsy processing",
             "optimizer-v2 sampling audit annotation",
             "double-sextant sample-point fragments",
             "run-level per-voxel double-sextant assembly",
         ),
+        implemented_stage_names=(PatientStageName.SAMPLING_CLASSIFICATION,),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.MC_PREP_AND_SIMULATION,
@@ -235,6 +237,8 @@ def build_patient_scientific_stages_for_tranches(
     *,
     tranche_names: Sequence[PatientScientificTrancheName | str] = DEFAULT_PATIENT_SCIENTIFIC_TRANCHE_ORDER,
     include_artifact_writing: bool = True,
+    satisfied_stage_names: Sequence[PatientStageName | str] = (),
+    validate_dependencies: bool = True,
 ) -> tuple[PatientStage, ...]:
     """Build currently implemented patient stages from selected tranche recipes."""
     stage_order = patient_scientific_tranche_stage_names(tranche_names)
@@ -242,6 +246,8 @@ def build_patient_scientific_stages_for_tranches(
         scientific_config,
         include_artifact_writing=include_artifact_writing,
         stage_order=stage_order,
+        satisfied_stage_names=satisfied_stage_names,
+        validate_dependencies=validate_dependencies,
     )
 
 
