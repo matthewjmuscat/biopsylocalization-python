@@ -1938,6 +1938,9 @@ def main():
            
             section_start_time = datetime.now() 
             runtime_logger.phase_start("section.simulations", "Starting section: Simulations.")
+            patient_scientific_runner_post_discovery_reference_dict = None
+            patient_scientific_runner_post_discovery_info_dict = None
+            patient_scientific_runner_runtime_state_source = "legacy_current_runtime_state"
     
             if pipeline_config.artifacts.skip_preprocessing == False:
                 runtime_logger.phase_start(
@@ -2188,6 +2191,23 @@ def main():
                     master_structure_info_dict,
                     pipeline_config.random_seeds.transform_generation_random_seed,
                     pipeline_config.random_seeds.optimizer_v1_random_seed,
+                )
+
+                patient_scientific_runner_post_discovery_reference_dict = copy.deepcopy(
+                    master_structure_reference_dict,
+                )
+                patient_scientific_runner_post_discovery_info_dict = copy.deepcopy(
+                    master_structure_info_dict,
+                )
+                patient_scientific_runner_runtime_state_source = "post_discovery_deepcopy"
+                runtime_logger.checkpoint(
+                    "patient_runner.post_discovery_snapshot.ready",
+                    "Captured post-discovery runtime input snapshot for isolated patient-runner execution.",
+                    details={
+                        "runtime_state_source": patient_scientific_runner_runtime_state_source,
+                        "num_cases": patient_scientific_runner_post_discovery_info_dict["Global"]["Num cases"],
+                        "num_structures": patient_scientific_runner_post_discovery_info_dict["Global"]["Num structures"],
+                    },
                 )
 
                 input_data_type_counts = {
@@ -6038,6 +6058,21 @@ def main():
                             "output_dir": patient_runner_validation_output_dir,
                         },
                     )
+                patient_runner_validation_reference_dict = master_structure_reference_dict
+                patient_runner_validation_info_dict = master_structure_info_dict
+                patient_runner_validation_runtime_state_source = "legacy_current_runtime_state"
+                if (
+                    patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW
+                    and patient_scientific_runner_post_discovery_reference_dict is not None
+                    and patient_scientific_runner_post_discovery_info_dict is not None
+                ):
+                    patient_runner_validation_reference_dict = copy.deepcopy(
+                        patient_scientific_runner_post_discovery_reference_dict,
+                    )
+                    patient_runner_validation_info_dict = copy.deepcopy(
+                        patient_scientific_runner_post_discovery_info_dict,
+                    )
+                    patient_runner_validation_runtime_state_source = "post_discovery_deepcopy"
                 patient_runner_scientific_shadow_config = None
                 if patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
                     patient_runner_scientific_shadow_config = build_patient_scientific_shadow_config(
@@ -6053,9 +6088,12 @@ def main():
                             ),
                             mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                             parallel_pool=parallel_pool,
-                            rng=build_transform_generation_rng(master_structure_info_dict),
+                            rng=build_transform_generation_rng(patient_runner_validation_info_dict),
                             runtime_logger=runtime_logger,
-                            metadata={"source": "biopsy_localization_convex_main"},
+                            metadata={
+                                "source": "biopsy_localization_convex_main",
+                                "runtime_state_source": patient_runner_validation_runtime_state_source,
+                            },
                         ),
                         patient_uids=patient_runner_validation_patient_uids,
                         pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
@@ -6064,11 +6102,14 @@ def main():
                         write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
                         include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
                         state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
-                        metadata={"source": "biopsy_localization_convex_main"},
+                        metadata={
+                            "source": "biopsy_localization_convex_main",
+                            "runtime_state_source": patient_runner_validation_runtime_state_source,
+                        },
                     )
                 patient_runner_validation_result = run_patient_runner_main_validation(
-                    master_structure_reference_dict=master_structure_reference_dict,
-                    master_structure_info_dict=master_structure_info_dict,
+                    master_structure_reference_dict=patient_runner_validation_reference_dict,
+                    master_structure_info_dict=patient_runner_validation_info_dict,
                     master_cohort_patient_data_and_dataframes=master_cohort_patient_data_and_dataframes,
                     legacy_keys=LegacyRuntimeKeys(
                         all_ref_key=all_ref_key,
@@ -6130,6 +6171,25 @@ def main():
                 patient_scientific_runner_output_root = specific_output_dir.joinpath(
                     patient_scientific_runner_output_dir_name,
                 )
+                if (
+                    patient_scientific_runner_post_discovery_reference_dict is not None
+                    and patient_scientific_runner_post_discovery_info_dict is not None
+                ):
+                    if patient_scientific_runner_mode == "execute":
+                        patient_scientific_runner_reference_dict = copy.deepcopy(
+                            patient_scientific_runner_post_discovery_reference_dict,
+                        )
+                        patient_scientific_runner_info_dict = copy.deepcopy(
+                            patient_scientific_runner_post_discovery_info_dict,
+                        )
+                    else:
+                        patient_scientific_runner_reference_dict = patient_scientific_runner_post_discovery_reference_dict
+                        patient_scientific_runner_info_dict = patient_scientific_runner_post_discovery_info_dict
+                    patient_scientific_runner_runtime_state_source = "post_discovery_deepcopy"
+                else:
+                    patient_scientific_runner_reference_dict = master_structure_reference_dict
+                    patient_scientific_runner_info_dict = master_structure_info_dict
+                    patient_scientific_runner_runtime_state_source = "legacy_current_runtime_state"
                 patient_scientific_runner_phase_name = f"patient_runner.scientific_runner.{patient_scientific_runner_mode}"
                 if runtime_logger is not None:
                     runtime_logger.phase_start(
@@ -6139,6 +6199,7 @@ def main():
                             "mode": patient_scientific_runner_mode,
                             "pathway_name": patient_scientific_runner_pathway_name,
                             "output_root": patient_scientific_runner_output_root,
+                            "runtime_state_source": patient_scientific_runner_runtime_state_source,
                         },
                     )
 
@@ -6155,7 +6216,7 @@ def main():
                         ),
                         mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                         parallel_pool=parallel_pool,
-                        rng=build_transform_generation_rng(master_structure_info_dict),
+                        rng=build_transform_generation_rng(patient_scientific_runner_info_dict),
                         runtime_logger=runtime_logger,
                         metadata={"source": "biopsy_localization_convex_main"},
                     ),
@@ -6183,6 +6244,7 @@ def main():
                     metadata={
                         "source": "biopsy_localization_convex_main",
                         "mode": patient_scientific_runner_mode,
+                        "runtime_state_source": patient_scientific_runner_runtime_state_source,
                     },
                 )
                 patient_scientific_run_plan_summary = summarize_patient_scientific_run_config(
@@ -6195,7 +6257,7 @@ def main():
                     )
 
                 resolved_runner_patient_summary = (
-                    "all patients ({})".format(len(master_structure_reference_dict))
+                    "all patients ({})".format(len(patient_scientific_runner_reference_dict))
                     if len(patient_scientific_run_plan_summary["patient_uids"]) == 0
                     else str(patient_scientific_run_plan_summary["patient_uids"])
                 )
@@ -6215,10 +6277,13 @@ def main():
                     )
 
                 patient_scientific_runner_result_summary = dict(patient_scientific_run_plan_summary)
+                patient_scientific_runner_result_summary["runtime_state_source"] = (
+                    patient_scientific_runner_runtime_state_source
+                )
                 if patient_scientific_runner_mode == "execute":
                     patient_scientific_runner_result = run_patient_scientific_runner_from_legacy(
-                        master_structure_reference_dict,
-                        master_structure_info_dict,
+                        patient_scientific_runner_reference_dict,
+                        patient_scientific_runner_info_dict,
                         patient_scientific_run_config,
                     )
                     patient_scientific_runner_result_summary.update(
