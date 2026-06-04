@@ -611,8 +611,8 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
-    optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # Validation sidecar OFF | impact high: Jun 03 nearest-z helper validation cost about 4.0 h on the 4-patient run; validates grouped nearest-z helper parity against ver5 during optimizer-v2 scoring.
+    optimizer_v2_benchmark_isolated_winner_validation_bool = False # Validation sidecar OFF | impact high: adds one extra downstream-comparable winner-validation-like optimizer pass per target structure; validates the final optimizer-v2 winner in isolation.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
@@ -711,19 +711,19 @@ def main():
     #   - list of ints (e.g., [1, 2, 3]): attempt each in order
     #   - "all": render all available ranks for each DIL
     candidate_plot_ranks_behavior = 'all'
-    # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
-    validate_firing_df_builder_behavior = True # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
-    run_simulated_biopsy_centroid_variation_validation_bool = True
-    validate_phase3b_in_memory_patient_stitching_bool = True
-    write_phase3b_in_memory_stitched_tables_bool = True
-    write_phase3c_patient_fragment_output_surface_bool = True
-    write_phase3c_stitched_final_artifacts_bool = True
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.SHADOW_OUTPUT.value
+    # Validation/evidence sidecars default off after the Jun 03 clean parity run.
+    validate_firing_df_builder_behavior = False # Validation sidecar OFF | impact medium/high: exports guidance-map precompute contract CSVs and selection manifests; validates firing-depth dataframe-builder inputs/outputs.
+    run_simulated_biopsy_centroid_variation_validation_bool = False # Validation sidecar OFF | impact low: compares planned vs realized simulated-biopsy centroid variation metrics; re-enable when changing simulated-biopsy geometry/finalization.
+    validate_phase3b_in_memory_patient_stitching_bool = False # Validation sidecar OFF | impact low/medium: builds in-memory patient-fragment stitch comparison tables; validates patient-fragment assembly against final cohort dataframes.
+    write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
+    write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
+    write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.DISABLED.value # Validation sidecar OFF | impact medium in SHADOW_OUTPUT and high in SCIENTIFIC_SHADOW: validates patient-runner output/shadow execution against the legacy cohort oracle.
     patient_runner_validation_patient_uids = ()
     patient_runner_validation_final_table_names = ()
     patient_runner_validation_source_table_names = ()
-    patient_runner_validation_write_outputs_bool = True
-    patient_runner_validation_write_assembled_tables_bool = True
+    patient_runner_validation_write_outputs_bool = False # Validation sidecar OFF | impact low/medium IO: writes patient-runner validation summaries/artifacts when patient-runner validation mode is enabled.
+    patient_runner_validation_write_assembled_tables_bool = False # Validation sidecar OFF | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables when validation mode is enabled.
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -857,9 +857,9 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    validate_selected_structures_module_against_legacy = True
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = True
-    validate_prostate_only_mr_adc_module_against_legacy = True
+    validate_selected_structures_module_against_legacy = False # Validation sidecar OFF | impact low/medium: validates the patient/module selected-structure path against the legacy cohort structure-selection output.
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = False # Validation sidecar OFF | impact medium/high: reruns/restores the legacy non-biopsy preprocessing sidecar; validates per-patient non-biopsy structure processing against cohort-style legacy behavior.
+    validate_prostate_only_mr_adc_module_against_legacy = False # Validation sidecar OFF | impact medium: validates the prostate-only MR ADC per-patient module against legacy cohort behavior.
 
     ###
 
