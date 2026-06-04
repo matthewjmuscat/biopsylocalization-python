@@ -129,9 +129,12 @@ from .scientific_shadow import write_patient_scientific_shadow_stage_state_manif
 from .scientific_shadow import write_patient_scientific_shadow_summary
 from .scientific_runner import PatientScientificRunConfig
 from .scientific_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
+from .scientific_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS
 from .scientific_runner import PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION
+from .scientific_runner import PatientScientificRunnerCheckpoint
 from .scientific_runner import build_patient_scientific_run_config_from_pipeline
 from .scientific_runner import build_patient_scientific_runner_stages
+from .scientific_runner import get_patient_scientific_runner_checkpoint
 from .scientific_runner import patient_scientific_run_plan_summary
 from .scientific_runner import run_patient_scientific_runner_from_legacy
 from .scientific_runner import summarize_patient_scientific_run_config
@@ -184,6 +187,7 @@ __all__ = [
     "DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
     "DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS",
     "DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS",
@@ -223,6 +227,7 @@ __all__ = [
     "PatientScientificShadowRunResult",
     "PatientScientificShadowStateIsolation",
     "PatientScientificRunConfig",
+    "PatientScientificRunnerCheckpoint",
     "PatientScientificPathwayName",
     "PatientScientificStageDependency",
     "PatientScientificTranche",
@@ -261,6 +266,7 @@ __all__ = [
     "executable_patient_scientific_pathway_stage_names",
     "format_patient_runner_post_run_parity_summary",
     "get_patient_scientific_tranche",
+    "get_patient_scientific_runner_checkpoint",
     "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",

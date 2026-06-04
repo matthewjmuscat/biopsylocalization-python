@@ -724,14 +724,21 @@ def main():
     write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
     write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
     write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.DISABLED.value # Validation sidecar OFF | impact medium in SHADOW_OUTPUT and high in SCIENTIFIC_SHADOW: validates patient-runner output/shadow execution against the legacy cohort oracle.
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.SHADOW_OUTPUT.value # Overnight checkpoint ON | impact medium: validates patient-runner artifact/assembly output against the completed legacy cohort oracle after the run.
     patient_runner_validation_patient_uids = ()
     patient_runner_validation_final_table_names = ()
     patient_runner_validation_source_table_names = ()
-    patient_runner_validation_write_outputs_bool = False # Validation sidecar OFF | impact low/medium IO: writes patient-runner validation summaries/artifacts when patient-runner validation mode is enabled.
-    patient_runner_validation_write_assembled_tables_bool = False # Validation sidecar OFF | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables when validation mode is enabled.
-    patient_scientific_runner_mode = "disabled" # Opt-in runner switch: disabled, plan_only, or execute. Pathway execution is DAG-validated and per-patient.
-    patient_scientific_runner_pathway_name = "anatomical_qa" # First live-runner slice; expand intentionally to biopsy/optimization/dosimetry/full pathways after dry-run review.
+    patient_runner_validation_write_outputs_bool = True # Overnight checkpoint ON | impact low/medium IO: writes patient-runner validation summaries/artifacts for post-run review.
+    patient_runner_validation_write_assembled_tables_bool = True # Overnight checkpoint ON | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables.
+    patient_runner_validation_scientific_shadow_pathway_name = "anatomical_qa"
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = False
+    patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = True
+    patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
+    patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
+    patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
+    patient_scientific_runner_mode = "execute" # Overnight checkpoint ON: writes the plan, then runs the first DAG-valid per-patient stage slice.
+    patient_scientific_runner_checkpoint_name = "anatomical_qa"
+    patient_scientific_runner_pathway_name = "anatomical_qa" # First live-runner slice: grid preprocessing -> anatomical preprocessing.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
     patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
     patient_scientific_runner_include_artifact_writing_bool = False
@@ -1088,9 +1095,16 @@ def main():
         source_table_names=patient_runner_validation_source_table_names,
         write_outputs=patient_runner_validation_write_outputs_bool,
         write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
+        scientific_shadow_pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
+        scientific_shadow_include_artifact_writing=patient_runner_validation_scientific_shadow_include_artifact_writing_bool,
+        scientific_shadow_write_patient_run_manifests=patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool,
+        scientific_shadow_write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
+        scientific_shadow_include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
+        scientific_shadow_state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
     )
     patient_scientific_runner_defaults = PatientScientificRunnerExecutionConfig(
         mode=patient_scientific_runner_mode,
+        checkpoint_name=patient_scientific_runner_checkpoint_name,
         pathway_name=patient_scientific_runner_pathway_name,
         patient_uids=patient_scientific_runner_patient_uids,
         output_dir_name=patient_scientific_runner_output_dir_name,
@@ -1764,7 +1778,26 @@ def main():
     patient_runner_validation_source_table_names = patient_runner_validation_config.source_table_names
     patient_runner_validation_write_outputs_bool = patient_runner_validation_config.write_outputs
     patient_runner_validation_write_assembled_tables_bool = patient_runner_validation_config.write_assembled_tables
+    patient_runner_validation_scientific_shadow_pathway_name = (
+        patient_runner_validation_config.scientific_shadow_pathway_name
+    )
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = (
+        patient_runner_validation_config.scientific_shadow_include_artifact_writing
+    )
+    patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = (
+        patient_runner_validation_config.scientific_shadow_write_patient_run_manifests
+    )
+    patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = (
+        patient_runner_validation_config.scientific_shadow_write_stage_state_manifests
+    )
+    patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = (
+        patient_runner_validation_config.scientific_shadow_include_dataframe_snapshots
+    )
+    patient_runner_validation_scientific_shadow_state_isolation = (
+        patient_runner_validation_config.scientific_shadow_state_isolation
+    )
     patient_scientific_runner_mode = patient_scientific_runner_config.mode
+    patient_scientific_runner_checkpoint_name = patient_scientific_runner_config.checkpoint_name
     patient_scientific_runner_pathway_name = patient_scientific_runner_config.pathway_name
     patient_scientific_runner_patient_uids = patient_scientific_runner_config.patient_uids
     patient_scientific_runner_output_dir_name = patient_scientific_runner_config.output_dir_name
@@ -6025,7 +6058,12 @@ def main():
                             metadata={"source": "biopsy_localization_convex_main"},
                         ),
                         patient_uids=patient_runner_validation_patient_uids,
-                        include_artifact_writing=False,
+                        pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
+                        include_artifact_writing=patient_runner_validation_scientific_shadow_include_artifact_writing_bool,
+                        write_patient_run_manifests=patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool,
+                        write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
+                        include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
+                        state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
                         metadata={"source": "biopsy_localization_convex_main"},
                     )
                 patient_runner_validation_result = run_patient_runner_main_validation(
@@ -6130,6 +6168,7 @@ def main():
                         global_num_cases_key=global_num_cases_key,
                     ),
                     pathway_name=patient_scientific_runner_pathway_name,
+                    checkpoint_name=patient_scientific_runner_checkpoint_name,
                     patient_uids=patient_scientific_runner_patient_uids,
                     run_id=f"patient-scientific-runner-{patient_scientific_runner_pathway_name}",
                     max_workers=patient_scientific_runner_max_workers,

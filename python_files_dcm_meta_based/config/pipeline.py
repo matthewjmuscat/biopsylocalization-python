@@ -1030,6 +1030,12 @@ class PatientRunnerValidationHookConfig:
     source_table_names: Sequence[str] = ()
     write_outputs: bool = False
     write_assembled_tables: bool = False
+    scientific_shadow_pathway_name: str = "anatomical_qa"
+    scientific_shadow_include_artifact_writing: bool = False
+    scientific_shadow_write_patient_run_manifests: bool = True
+    scientific_shadow_write_stage_state_manifests: bool = True
+    scientific_shadow_include_dataframe_snapshots: bool = True
+    scientific_shadow_state_isolation: str = "deep_copy_patient_state"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", _non_empty_string(self.mode, "mode"))
@@ -1041,11 +1047,29 @@ class PatientRunnerValidationHookConfig:
             )
         object.__setattr__(self, "write_outputs", bool(self.write_outputs))
         object.__setattr__(self, "write_assembled_tables", bool(self.write_assembled_tables))
+        object.__setattr__(
+            self,
+            "scientific_shadow_pathway_name",
+            _non_empty_string(self.scientific_shadow_pathway_name, "scientific_shadow_pathway_name"),
+        )
+        for field_name in (
+            "scientific_shadow_include_artifact_writing",
+            "scientific_shadow_write_patient_run_manifests",
+            "scientific_shadow_write_stage_state_manifests",
+            "scientific_shadow_include_dataframe_snapshots",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(
+            self,
+            "scientific_shadow_state_isolation",
+            _non_empty_string(self.scientific_shadow_state_isolation, "scientific_shadow_state_isolation"),
+        )
 
 
 @dataclass(frozen=True)
 class PatientScientificRunnerExecutionConfig:
     mode: str = "disabled"
+    checkpoint_name: str = "anatomical_qa"
     pathway_name: str = "anatomical_qa"
     patient_uids: Sequence[str] = ()
     output_dir_name: str = "patient_scientific_runner"
@@ -1069,6 +1093,7 @@ class PatientScientificRunnerExecutionConfig:
             raise ValueError("max_workers must be at least 1")
 
         object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "checkpoint_name", _non_empty_string(self.checkpoint_name, "checkpoint_name"))
         object.__setattr__(self, "pathway_name", _non_empty_string(self.pathway_name, "pathway_name"))
         object.__setattr__(self, "output_dir_name", _non_empty_string(self.output_dir_name, "output_dir_name"))
         for field_name in ("patient_uids", "satisfied_stage_names"):

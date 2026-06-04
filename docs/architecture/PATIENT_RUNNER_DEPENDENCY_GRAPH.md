@@ -116,9 +116,30 @@ Current named pathway expansion:
 | `full_current_pipeline_shadow` | all current executable scientific stages, including guidance |
 
 The main entrypoint now has an opt-in patient scientific runner hook with three
-modes: `disabled`, `plan_only`, and `execute`. `plan_only` is the intended first
-switch-on mode: it writes the pathway/stage/patient plan without mutating
-patient state through the live runner.
+modes: `disabled`, `plan_only`, and `execute`.
+
+| Mode | Meaning | Mutates patient state through live runner? | Expected artifact |
+| --- | --- | --- | --- |
+| `disabled` | Do not build or run the live scientific runner hook. | No | None |
+| `plan_only` | Build typed config, validate checkpoint/pathway agreement, expand the DAG-valid stage list, and write the plan. | No | `patient_scientific_runner_plan.json` |
+| `execute` | Do everything in `plan_only`, then run the expanded per-patient stages through the batch runner. | Yes | plan JSON plus patient/batch run manifests |
+
+The runner should move outward by checkpoint rather than jumping directly to the
+full pathway. Each checkpoint maps to exactly one named pathway.
+
+| Checkpoint | Pathway | Purpose | Next checkpoint |
+| --- | --- | --- | --- |
+| `anatomical_qa` | `anatomical_qa` | First live runner checkpoint: grid preprocessing plus anatomical preprocessing. | `biopsy_preprocessing_shadow` |
+| `biopsy_preprocessing_shadow` | `biopsy_preprocessing_shadow` | Adds biopsy-facing preprocessing after anatomical products exist. | `optimization_shadow` |
+| `optimization_shadow` | `optimization_shadow` | Adds transform generation and optimizer-v1/v2 adapters. | `current_dosimetry_shadow` |
+| `current_dosimetry_shadow` | `current_dosimetry_shadow` | Adds simulated-biopsy finalization, sampling/classification, MC prep, dose, and MR ADC simulation. | `full_current_pipeline_shadow` |
+| `full_current_pipeline_shadow` | `full_current_pipeline_shadow` | Runs all current executable scientific stages, including guidance. | none |
+
+For the first overnight run, the intended switch set is `execute` plus
+`anatomical_qa`, with `SHADOW_OUTPUT` patient-runner validation enabled after the
+legacy oracle finishes. That combination tests the smallest live per-patient
+science slice while still writing post-run patient-runner assembly validation
+evidence.
 
 ## Pathway Meaning
 
