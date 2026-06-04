@@ -21,6 +21,8 @@ from .pipeline import OptimizerV2PlotlyExportConfig
 from .pipeline import OptimizerV2RenderConfig
 from .pipeline import OptimizerV2RuntimeConfig
 from .pipeline import OptimizerRuntimeConfig
+from .pipeline import OutputValidationConfig
+from .pipeline import PatientRunnerValidationHookConfig
 from .pipeline import PipelineConfig
 from .pipeline import PreprocessingConfig
 from .pipeline import PreprocessingDebugConfig
@@ -59,6 +61,8 @@ __all__ = [
     "OptimizerV2RenderConfig",
     "OptimizerV2RuntimeConfig",
     "OptimizerRuntimeConfig",
+    "OutputValidationConfig",
+    "PatientRunnerValidationHookConfig",
     "PipelineConfig",
     "PreprocessingConfig",
     "PreprocessingDebugConfig",

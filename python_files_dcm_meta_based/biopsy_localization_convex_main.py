@@ -156,6 +156,8 @@ from config import OptimizerV2PlotlyExportConfig
 from config import OptimizerV2RenderConfig
 from config import OptimizerV2RuntimeConfig
 from config import OptimizerRuntimeConfig
+from config import OutputValidationConfig
+from config import PatientRunnerValidationHookConfig
 from config import PipelineConfig
 from config import PreprocessingConfig
 from config import PreprocessingDebugConfig
@@ -609,7 +611,7 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = True # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
     optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
@@ -711,6 +713,7 @@ def main():
     candidate_plot_ranks_behavior = 'all'
     # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
     validate_firing_df_builder_behavior = True # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
+    run_simulated_biopsy_centroid_variation_validation_bool = True
     validate_phase3b_in_memory_patient_stitching_bool = True
     write_phase3b_in_memory_stitched_tables_bool = True
     write_phase3c_patient_fragment_output_surface_bool = True
@@ -1045,6 +1048,27 @@ def main():
     #num_simulated_bxs_to_create = len(bx_sim_locations)
     #if num_simulated_bxs_to_create == 0:
     #    simulate_biopsies_relative_to = []
+    validation_sidecar_defaults = ValidationSidecarConfig(
+        selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
+        non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
+        prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
+        guidance_map_dataframe_builder=validate_firing_df_builder_behavior,
+        simulated_biopsy_centroid_variation=run_simulated_biopsy_centroid_variation_validation_bool,
+    )
+    output_validation_defaults = OutputValidationConfig(
+        phase3b_in_memory_patient_stitching=validate_phase3b_in_memory_patient_stitching_bool,
+        write_phase3b_in_memory_stitched_tables=write_phase3b_in_memory_stitched_tables_bool,
+        phase3c_patient_fragment_output_surface=write_phase3c_patient_fragment_output_surface_bool,
+        write_phase3c_stitched_final_artifacts=write_phase3c_stitched_final_artifacts_bool,
+    )
+    patient_runner_validation_defaults = PatientRunnerValidationHookConfig(
+        mode=patient_runner_validation_mode,
+        patient_uids=patient_runner_validation_patient_uids,
+        final_table_names=patient_runner_validation_final_table_names,
+        source_table_names=patient_runner_validation_source_table_names,
+        write_outputs=patient_runner_validation_write_outputs_bool,
+        write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
+    )
     pipeline_config = PipelineConfig(
         ui=RuntimeUIConfig(
             spinner_type=spinner_type,
@@ -1198,7 +1222,7 @@ def main():
                 show_titles=show_titles_for_guidance_maps,
                 show_euler_annotation_box=show_euler_annotation_box_behavior,
                 candidate_plot_rank=candidate_plot_ranks_behavior,
-                validate_firing_df_builder=validate_firing_df_builder_behavior,
+                validate_firing_df_builder=validation_sidecar_defaults.guidance_map_dataframe_builder,
                 strict_precomputed_guidance=strict_precomputed_guidance_behavior,
             )
         ),
@@ -1392,11 +1416,9 @@ def main():
                 check_if_end_caps_filled_proper_nn_num=check_if_end_caps_filled_proper_NN_num,
             ),
         ),
-        validation_sidecars=ValidationSidecarConfig(
-            selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
-            non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
-            prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
-        ),
+        validation_sidecars=validation_sidecar_defaults,
+        output_validation=output_validation_defaults,
+        patient_runner_validation=patient_runner_validation_defaults,
     )
 
     # Transitional bridge: legacy code below still consumes flat locals, but those
@@ -1678,6 +1700,32 @@ def main():
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
     validation_sidecar_config = pipeline_config.validation_sidecars
+    output_validation_config = pipeline_config.output_validation
+    patient_runner_validation_config = pipeline_config.patient_runner_validation
+
+    validate_selected_structures_module_against_legacy = validation_sidecar_config.selected_structures_against_legacy
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = (
+        validation_sidecar_config.non_biopsy_structures_against_legacy
+    )
+    validate_prostate_only_mr_adc_module_against_legacy = (
+        validation_sidecar_config.prostate_only_mr_adc_against_legacy
+    )
+    validate_firing_df_builder_behavior = validation_sidecar_config.guidance_map_dataframe_builder
+    run_simulated_biopsy_centroid_variation_validation_bool = (
+        validation_sidecar_config.simulated_biopsy_centroid_variation
+    )
+    validate_phase3b_in_memory_patient_stitching_bool = (
+        output_validation_config.phase3b_in_memory_patient_stitching
+    )
+    write_phase3b_in_memory_stitched_tables_bool = output_validation_config.write_phase3b_in_memory_stitched_tables
+    write_phase3c_patient_fragment_output_surface_bool = output_validation_config.phase3c_patient_fragment_output_surface
+    write_phase3c_stitched_final_artifacts_bool = output_validation_config.write_phase3c_stitched_final_artifacts
+    patient_runner_validation_mode = patient_runner_validation_config.mode
+    patient_runner_validation_patient_uids = patient_runner_validation_config.patient_uids
+    patient_runner_validation_final_table_names = patient_runner_validation_config.final_table_names
+    patient_runner_validation_source_table_names = patient_runner_validation_config.source_table_names
+    patient_runner_validation_write_outputs_bool = patient_runner_validation_config.write_outputs
+    patient_runner_validation_write_assembled_tables_bool = patient_runner_validation_config.write_assembled_tables
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
@@ -4583,42 +4631,43 @@ def main():
                             live_display,
                             )
 
-                simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
-                    master_structure_reference_dict,
-                    bx_ref,
-                    all_ref_key,
-                )
-                master_cohort_patient_data_and_dataframes["Dataframes"][
-                    "Cohort: Simulated biopsy planned vs realized centroid variation validation"
-                ] = simulated_biopsy_centroid_variation_validation_dataframe
+                if run_simulated_biopsy_centroid_variation_validation_bool == True:
+                    simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
+                        master_structure_reference_dict,
+                        bx_ref,
+                        all_ref_key,
+                    )
+                    master_cohort_patient_data_and_dataframes["Dataframes"][
+                        "Cohort: Simulated biopsy planned vs realized centroid variation validation"
+                    ] = simulated_biopsy_centroid_variation_validation_dataframe
 
-                num_simulated_biopsies_validated = simulated_biopsy_centroid_variation_validation_summary_dict["Num simulated biopsies"]
-                num_missing_validation_values = (
-                    simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned mean centroid variation"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized mean centroid variation"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned maximum projected distance"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized maximum projected distance"]
-                )
-
-                if num_simulated_biopsies_validated > 0:
-                    important_info.add_text_line(
-                        "Simulated biopsy centroid-variation validation: compared {} simulated biopsies | mean abs delta (mean variation) = {} | max abs delta (mean variation) = {} | mean abs delta (max projected distance) = {} | max abs delta (max projected distance) = {}.".format(
-                            num_simulated_biopsies_validated,
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean mean-centroid-variation absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Max mean-centroid-variation absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean max-projected-distance absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Max max-projected-distance absolute delta"],
-                        ),
-                        live_display,
+                    num_simulated_biopsies_validated = simulated_biopsy_centroid_variation_validation_summary_dict["Num simulated biopsies"]
+                    num_missing_validation_values = (
+                        simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned mean centroid variation"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized mean centroid variation"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned maximum projected distance"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized maximum projected distance"]
                     )
 
-                if num_missing_validation_values > 0:
-                    important_info.add_text_line(
-                        "Notice! Simulated biopsy centroid-variation validation found missing planned or realized comparison values for {} fields across simulated biopsies.".format(
-                            num_missing_validation_values,
-                        ),
-                        live_display,
-                    )
+                    if num_simulated_biopsies_validated > 0:
+                        important_info.add_text_line(
+                            "Simulated biopsy centroid-variation validation: compared {} simulated biopsies | mean abs delta (mean variation) = {} | max abs delta (mean variation) = {} | mean abs delta (max projected distance) = {} | max abs delta (max projected distance) = {}.".format(
+                                num_simulated_biopsies_validated,
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Mean mean-centroid-variation absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Max mean-centroid-variation absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Mean max-projected-distance absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Max max-projected-distance absolute delta"],
+                            ),
+                            live_display,
+                        )
+
+                    if num_missing_validation_values > 0:
+                        important_info.add_text_line(
+                            "Notice! Simulated biopsy centroid-variation validation found missing planned or realized comparison values for {} fields across simulated biopsies.".format(
+                                num_missing_validation_values,
+                            ),
+                            live_display,
+                        )
 
                 
                 ################## ALL BIOPSIES 

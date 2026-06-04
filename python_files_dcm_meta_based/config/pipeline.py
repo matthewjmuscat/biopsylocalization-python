@@ -957,6 +957,18 @@ class ValidationSidecarConfig:
     selected_structures_against_legacy: bool = False
     non_biopsy_structures_against_legacy: bool = False
     prostate_only_mr_adc_against_legacy: bool = False
+    guidance_map_dataframe_builder: bool = False
+    simulated_biopsy_centroid_variation: bool = True
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "selected_structures_against_legacy",
+            "non_biopsy_structures_against_legacy",
+            "prostate_only_mr_adc_against_legacy",
+            "guidance_map_dataframe_builder",
+            "simulated_biopsy_centroid_variation",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
 
     def active_validation_labels(self) -> tuple[str, ...]:
         labels = []
@@ -986,6 +998,52 @@ class ValidationSidecarConfig:
 
 
 @dataclass(frozen=True)
+class OutputValidationConfig:
+    phase3b_in_memory_patient_stitching: bool = False
+    write_phase3b_in_memory_stitched_tables: bool = False
+    phase3c_patient_fragment_output_surface: bool = False
+    write_phase3c_stitched_final_artifacts: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "phase3b_in_memory_patient_stitching",
+            "write_phase3b_in_memory_stitched_tables",
+            "phase3c_patient_fragment_output_surface",
+            "write_phase3c_stitched_final_artifacts",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+
+    def active_validation_labels(self) -> tuple[str, ...]:
+        labels = []
+        if self.phase3b_in_memory_patient_stitching:
+            labels.append("phase3b-in-memory-stitching")
+        if self.phase3c_patient_fragment_output_surface:
+            labels.append("phase3c-patient-fragment-output-surface")
+        return tuple(labels)
+
+
+@dataclass(frozen=True)
+class PatientRunnerValidationHookConfig:
+    mode: str = "disabled"
+    patient_uids: Sequence[str] = ()
+    final_table_names: Sequence[str] = ()
+    source_table_names: Sequence[str] = ()
+    write_outputs: bool = False
+    write_assembled_tables: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", _non_empty_string(self.mode, "mode"))
+        for field_name in ("patient_uids", "final_table_names", "source_table_names"):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(str(value) for value in _tuple_from_sequence(getattr(self, field_name), field_name)),
+            )
+        object.__setattr__(self, "write_outputs", bool(self.write_outputs))
+        object.__setattr__(self, "write_assembled_tables", bool(self.write_assembled_tables))
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     ui: RuntimeUIConfig
     artifacts: ArtifactConfig
@@ -995,6 +1053,8 @@ class PipelineConfig:
     optimizer: OptimizerRuntimeConfig
     random_seeds: RandomSeedConfig
     validation_sidecars: ValidationSidecarConfig = field(default_factory=ValidationSidecarConfig)
+    output_validation: OutputValidationConfig = field(default_factory=OutputValidationConfig)
+    patient_runner_validation: PatientRunnerValidationHookConfig = field(default_factory=PatientRunnerValidationHookConfig)
     mc: MonteCarloConfig = field(default_factory=MonteCarloConfig)
     legacy_refs: LegacyReferenceConfig = field(default_factory=LegacyReferenceConfig)
     structure_registry: StructureRegistryConfig = field(default_factory=StructureRegistryConfig)

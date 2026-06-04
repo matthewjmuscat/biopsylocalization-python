@@ -127,6 +127,11 @@ from .scientific_shadow import run_patient_scientific_shadow
 from .scientific_shadow import summarize_patient_scientific_shadow_run
 from .scientific_shadow import write_patient_scientific_shadow_stage_state_manifest
 from .scientific_shadow import write_patient_scientific_shadow_summary
+from .scientific_runner import PatientScientificRunConfig
+from .scientific_runner import build_patient_scientific_run_config_from_pipeline
+from .scientific_runner import build_patient_scientific_runner_stages
+from .scientific_runner import run_patient_scientific_runner_from_legacy
+from .scientific_runner import summarize_patient_scientific_run_config
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
 from .scientific_stages import build_patient_scientific_stages_for_pathway
@@ -211,6 +216,7 @@ __all__ = [
     "PatientScientificShadowConfig",
     "PatientScientificShadowRunResult",
     "PatientScientificShadowStateIsolation",
+    "PatientScientificRunConfig",
     "PatientScientificPathwayName",
     "PatientScientificStageDependency",
     "PatientScientificTranche",
@@ -231,6 +237,8 @@ __all__ = [
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
     "build_patient_runner_scientific_config",
+    "build_patient_scientific_run_config_from_pipeline",
+    "build_patient_scientific_runner_stages",
     "build_patient_scientific_shadow_config",
     "build_patient_scientific_stages",
     "build_patient_scientific_stages_for_pathway",
@@ -275,6 +283,7 @@ __all__ = [
     "run_patient_transform_generation_scientific_stage",
     "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
+    "run_patient_scientific_runner_from_legacy",
     "run_patient_scientific_shadow",
     "run_patient_stages",
     "summarize_patient_runner_main_validation",
@@ -282,6 +291,7 @@ __all__ = [
     "summarize_patient_runner_post_run_parity",
     "summarize_patient_runner_post_run_parity_surfaces",
     "summarize_patient_scientific_shadow_run",
+    "summarize_patient_scientific_run_config",
     "summarize_patient_scientific_dependency_graph",
     "summarize_patient_scientific_pathways",
     "summarize_patient_scientific_tranches",
