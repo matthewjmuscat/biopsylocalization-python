@@ -157,6 +157,7 @@ from config import OptimizerV2RenderConfig
 from config import OptimizerV2RuntimeConfig
 from config import OptimizerRuntimeConfig
 from config import OutputValidationConfig
+from config import PatientScientificRunnerExecutionConfig
 from config import PatientRunnerValidationHookConfig
 from config import PipelineConfig
 from config import PreprocessingConfig
@@ -180,13 +181,18 @@ from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
 from output_artifacts import write_phase3c_output_surface
 from patient_runner import LegacyRuntimeKeys
+from patient_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
 from patient_runner import PatientRunnerMainValidationConfig
 from patient_runner import PatientRunnerMainValidationMode
 from patient_runner import PatientRunnerScientificConfigBuildContext
+from patient_runner import build_patient_scientific_run_config_from_pipeline
 from patient_runner import build_patient_scientific_shadow_config
 from patient_runner import default_patient_runner_main_validation_output_dir
 from patient_runner import run_patient_runner_main_validation
+from patient_runner import run_patient_scientific_runner_from_legacy
 from patient_runner import summarize_patient_runner_main_validation
+from patient_runner import summarize_patient_scientific_run_config
+from patient_runner import write_patient_scientific_run_plan_summary
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -724,6 +730,20 @@ def main():
     patient_runner_validation_source_table_names = ()
     patient_runner_validation_write_outputs_bool = False # Validation sidecar OFF | impact low/medium IO: writes patient-runner validation summaries/artifacts when patient-runner validation mode is enabled.
     patient_runner_validation_write_assembled_tables_bool = False # Validation sidecar OFF | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables when validation mode is enabled.
+    patient_scientific_runner_mode = "disabled" # Opt-in runner switch: disabled, plan_only, or execute. Pathway execution is DAG-validated and per-patient.
+    patient_scientific_runner_pathway_name = "anatomical_qa" # First live-runner slice; expand intentionally to biopsy/optimization/dosimetry/full pathways after dry-run review.
+    patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
+    patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
+    patient_scientific_runner_include_artifact_writing_bool = False
+    patient_scientific_runner_write_patient_run_manifests_bool = True
+    patient_scientific_runner_write_batch_run_manifest_bool = True
+    patient_scientific_runner_write_plan_summary_bool = True
+    patient_scientific_runner_max_workers = 1
+    patient_scientific_runner_execution_backend = "sequential"
+    patient_scientific_runner_satisfied_stage_names = ()
+    patient_scientific_runner_stop_on_stage_error_bool = True
+    patient_scientific_runner_raise_on_stage_error_bool = False
+    patient_scientific_runner_validate_dependencies_bool = True
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -1068,6 +1088,22 @@ def main():
         source_table_names=patient_runner_validation_source_table_names,
         write_outputs=patient_runner_validation_write_outputs_bool,
         write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
+    )
+    patient_scientific_runner_defaults = PatientScientificRunnerExecutionConfig(
+        mode=patient_scientific_runner_mode,
+        pathway_name=patient_scientific_runner_pathway_name,
+        patient_uids=patient_scientific_runner_patient_uids,
+        output_dir_name=patient_scientific_runner_output_dir_name,
+        include_artifact_writing=patient_scientific_runner_include_artifact_writing_bool,
+        write_patient_run_manifests=patient_scientific_runner_write_patient_run_manifests_bool,
+        write_batch_run_manifest=patient_scientific_runner_write_batch_run_manifest_bool,
+        write_plan_summary=patient_scientific_runner_write_plan_summary_bool,
+        max_workers=patient_scientific_runner_max_workers,
+        execution_backend=patient_scientific_runner_execution_backend,
+        satisfied_stage_names=patient_scientific_runner_satisfied_stage_names,
+        stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
+        raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
+        validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
     )
     pipeline_config = PipelineConfig(
         ui=RuntimeUIConfig(
@@ -1419,6 +1455,7 @@ def main():
         validation_sidecars=validation_sidecar_defaults,
         output_validation=output_validation_defaults,
         patient_runner_validation=patient_runner_validation_defaults,
+        patient_scientific_runner=patient_scientific_runner_defaults,
     )
 
     # Transitional bridge: legacy code below still consumes flat locals, but those
@@ -1702,6 +1739,7 @@ def main():
     validation_sidecar_config = pipeline_config.validation_sidecars
     output_validation_config = pipeline_config.output_validation
     patient_runner_validation_config = pipeline_config.patient_runner_validation
+    patient_scientific_runner_config = pipeline_config.patient_scientific_runner
 
     validate_selected_structures_module_against_legacy = validation_sidecar_config.selected_structures_against_legacy
     run_non_biopsy_structure_legacy_sidecar_validation_bool = (
@@ -1726,6 +1764,22 @@ def main():
     patient_runner_validation_source_table_names = patient_runner_validation_config.source_table_names
     patient_runner_validation_write_outputs_bool = patient_runner_validation_config.write_outputs
     patient_runner_validation_write_assembled_tables_bool = patient_runner_validation_config.write_assembled_tables
+    patient_scientific_runner_mode = patient_scientific_runner_config.mode
+    patient_scientific_runner_pathway_name = patient_scientific_runner_config.pathway_name
+    patient_scientific_runner_patient_uids = patient_scientific_runner_config.patient_uids
+    patient_scientific_runner_output_dir_name = patient_scientific_runner_config.output_dir_name
+    patient_scientific_runner_include_artifact_writing_bool = patient_scientific_runner_config.include_artifact_writing
+    patient_scientific_runner_write_patient_run_manifests_bool = (
+        patient_scientific_runner_config.write_patient_run_manifests
+    )
+    patient_scientific_runner_write_batch_run_manifest_bool = patient_scientific_runner_config.write_batch_run_manifest
+    patient_scientific_runner_write_plan_summary_bool = patient_scientific_runner_config.write_plan_summary
+    patient_scientific_runner_max_workers = patient_scientific_runner_config.max_workers
+    patient_scientific_runner_execution_backend = patient_scientific_runner_config.execution_backend
+    patient_scientific_runner_satisfied_stage_names = patient_scientific_runner_config.satisfied_stage_names
+    patient_scientific_runner_stop_on_stage_error_bool = patient_scientific_runner_config.stop_on_stage_error
+    patient_scientific_runner_raise_on_stage_error_bool = patient_scientific_runner_config.raise_on_stage_error
+    patient_scientific_runner_validate_dependencies_bool = patient_scientific_runner_config.validate_dependencies
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
@@ -6032,6 +6086,125 @@ def main():
                         patient_runner_validation_phase_name,
                         f"Completed patient-runner {patient_runner_validation_resolved_mode.value} validation.",
                         details=patient_runner_validation_summary,
+                    )
+
+            if patient_scientific_runner_mode != "disabled":
+                patient_scientific_runner_output_root = specific_output_dir.joinpath(
+                    patient_scientific_runner_output_dir_name,
+                )
+                patient_scientific_runner_phase_name = f"patient_runner.scientific_runner.{patient_scientific_runner_mode}"
+                if runtime_logger is not None:
+                    runtime_logger.phase_start(
+                        patient_scientific_runner_phase_name,
+                        f"Starting patient scientific runner {patient_scientific_runner_mode} pass.",
+                        details={
+                            "mode": patient_scientific_runner_mode,
+                            "pathway_name": patient_scientific_runner_pathway_name,
+                            "output_root": patient_scientific_runner_output_root,
+                        },
+                    )
+
+                patient_scientific_run_config = build_patient_scientific_run_config_from_pipeline(
+                    pipeline_config,
+                    PatientRunnerScientificConfigBuildContext(
+                        rtstruct_dicom_paths_by_patient_uid=locals().get("RTst_dcms_dict"),
+                        read_uncertainties_dataframe=locals().get("read_uncertainties_dataframe"),
+                        uncertainty_data_cls=uncertainty_data,
+                        dose_views_jsons_paths_list=locals().get("dose_views_jsons_paths_list", ()),
+                        containment_views_jsons_paths_list=locals().get(
+                            "containment_views_jsons_paths_list",
+                            (),
+                        ),
+                        mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
+                        parallel_pool=parallel_pool,
+                        rng=build_transform_generation_rng(master_structure_info_dict),
+                        runtime_logger=runtime_logger,
+                        metadata={"source": "biopsy_localization_convex_main"},
+                    ),
+                    output_root=patient_scientific_runner_output_root,
+                    legacy_keys=LegacyRuntimeKeys(
+                        all_ref_key=all_ref_key,
+                        bx_ref=bx_ref,
+                        by_patient_key=by_patient_key,
+                        global_key=global_key,
+                        global_num_cases_key=global_num_cases_key,
+                    ),
+                    pathway_name=patient_scientific_runner_pathway_name,
+                    patient_uids=patient_scientific_runner_patient_uids,
+                    run_id=f"patient-scientific-runner-{patient_scientific_runner_pathway_name}",
+                    max_workers=patient_scientific_runner_max_workers,
+                    execution_backend=patient_scientific_runner_execution_backend,
+                    include_artifact_writing=patient_scientific_runner_include_artifact_writing_bool,
+                    write_patient_run_manifests=patient_scientific_runner_write_patient_run_manifests_bool,
+                    write_batch_run_manifest=patient_scientific_runner_write_batch_run_manifest_bool,
+                    stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
+                    raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
+                    satisfied_stage_names=patient_scientific_runner_satisfied_stage_names,
+                    validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
+                    metadata={
+                        "source": "biopsy_localization_convex_main",
+                        "mode": patient_scientific_runner_mode,
+                    },
+                )
+                patient_scientific_run_plan_summary = summarize_patient_scientific_run_config(
+                    patient_scientific_run_config,
+                )
+                patient_scientific_run_plan_path = None
+                if patient_scientific_runner_write_plan_summary_bool == True:
+                    patient_scientific_run_plan_path = write_patient_scientific_run_plan_summary(
+                        patient_scientific_run_config,
+                    )
+
+                resolved_runner_patient_summary = (
+                    "all patients ({})".format(len(master_structure_reference_dict))
+                    if len(patient_scientific_run_plan_summary["patient_uids"]) == 0
+                    else str(patient_scientific_run_plan_summary["patient_uids"])
+                )
+                important_info.add_text_line(
+                    "Patient scientific runner plan: mode {}, pathway {}, patients {}, stages {}.".format(
+                        patient_scientific_runner_mode,
+                        patient_scientific_run_plan_summary["pathway_name"],
+                        resolved_runner_patient_summary,
+                        patient_scientific_run_plan_summary["planned_stage_names"],
+                    ),
+                    live_display,
+                )
+                if patient_scientific_run_plan_path is not None:
+                    important_info.add_text_line(
+                        "Patient scientific runner plan written to: {}".format(patient_scientific_run_plan_path),
+                        live_display,
+                    )
+
+                patient_scientific_runner_result_summary = dict(patient_scientific_run_plan_summary)
+                if patient_scientific_runner_mode == "execute":
+                    patient_scientific_runner_result = run_patient_scientific_runner_from_legacy(
+                        master_structure_reference_dict,
+                        master_structure_info_dict,
+                        patient_scientific_run_config,
+                    )
+                    patient_scientific_runner_result_summary.update(
+                        {
+                            "status": patient_scientific_runner_result.status.value,
+                            "patient_count": patient_scientific_runner_result.patient_count,
+                            "failed_patient_count": len(patient_scientific_runner_result.failed_patient_results),
+                            "elapsed_seconds": patient_scientific_runner_result.elapsed_seconds,
+                            "artifact_count": len(patient_scientific_runner_result.artifact_paths),
+                        }
+                    )
+                    important_info.add_text_line(
+                        "Patient scientific runner execution: {} patients, {} failed patients, status {}.".format(
+                            patient_scientific_runner_result.patient_count,
+                            len(patient_scientific_runner_result.failed_patient_results),
+                            patient_scientific_runner_result.status.value,
+                        ),
+                        live_display,
+                    )
+
+                if runtime_logger is not None:
+                    runtime_logger.phase_end(
+                        patient_scientific_runner_phase_name,
+                        f"Completed patient scientific runner {patient_scientific_runner_mode} pass.",
+                        details=patient_scientific_runner_result_summary,
                     )
 
 

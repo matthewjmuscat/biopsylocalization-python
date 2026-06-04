@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import json
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Sequence
 
@@ -23,6 +24,10 @@ from .scientific_dependencies import executable_patient_scientific_pathway_stage
 from .scientific_dependencies import resolve_patient_scientific_pathway_name
 from .scientific_dependencies import resolve_patient_scientific_stage_names
 from .scientific_stages import build_patient_scientific_stages_for_pathway
+
+
+PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION = "patient_scientific_runner_plan_v1"
+DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME = "patient_scientific_runner"
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,3 +184,29 @@ def summarize_patient_scientific_run_config(run_config: PatientScientificRunConf
         "max_workers": run_config.batch_config.max_workers,
         "metadata": dict(run_config.metadata),
     }
+
+
+def patient_scientific_run_plan_summary(run_config: PatientScientificRunConfig) -> dict[str, Any]:
+    """Return the durable plan summary written before optional execution."""
+    summary = summarize_patient_scientific_run_config(run_config)
+    return {
+        "schema_version": PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION,
+        "runner_boundary": "patient_scientific_runner",
+        "execution_policy": "pathway_expands_to_dependency_validated_patient_stages",
+        **summary,
+    }
+
+
+def write_patient_scientific_run_plan_summary(
+    run_config: PatientScientificRunConfig,
+    output_path: Path | None = None,
+) -> Path:
+    """Write a JSON plan for a configured patient scientific runner pass."""
+    resolved_output_path = Path(output_path) if output_path is not None else run_config.batch_config.output_root.joinpath(
+        "patient_scientific_runner_plan.json",
+    )
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_output_path.open("w", encoding="utf-8") as file_obj:
+        json.dump(patient_scientific_run_plan_summary(run_config), file_obj, indent=2, sort_keys=True)
+        file_obj.write("\n")
+    return resolved_output_path

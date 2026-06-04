@@ -958,7 +958,7 @@ class ValidationSidecarConfig:
     non_biopsy_structures_against_legacy: bool = False
     prostate_only_mr_adc_against_legacy: bool = False
     guidance_map_dataframe_builder: bool = False
-    simulated_biopsy_centroid_variation: bool = True
+    simulated_biopsy_centroid_variation: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -1044,6 +1044,54 @@ class PatientRunnerValidationHookConfig:
 
 
 @dataclass(frozen=True)
+class PatientScientificRunnerExecutionConfig:
+    mode: str = "disabled"
+    pathway_name: str = "anatomical_qa"
+    patient_uids: Sequence[str] = ()
+    output_dir_name: str = "patient_scientific_runner"
+    include_artifact_writing: bool = False
+    write_patient_run_manifests: bool = True
+    write_batch_run_manifest: bool = True
+    write_plan_summary: bool = True
+    max_workers: int = 1
+    execution_backend: str = "sequential"
+    satisfied_stage_names: Sequence[str] = ()
+    stop_on_stage_error: bool = True
+    raise_on_stage_error: bool = False
+    validate_dependencies: bool = True
+
+    def __post_init__(self) -> None:
+        mode = _non_empty_string(self.mode, "mode")
+        if mode not in {"disabled", "plan_only", "execute"}:
+            raise ValueError("mode must be one of: disabled, plan_only, execute")
+        max_workers = int(self.max_workers)
+        if max_workers < 1:
+            raise ValueError("max_workers must be at least 1")
+
+        object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "pathway_name", _non_empty_string(self.pathway_name, "pathway_name"))
+        object.__setattr__(self, "output_dir_name", _non_empty_string(self.output_dir_name, "output_dir_name"))
+        for field_name in ("patient_uids", "satisfied_stage_names"):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(str(value) for value in _tuple_from_sequence(getattr(self, field_name), field_name)),
+            )
+        for field_name in (
+            "include_artifact_writing",
+            "write_patient_run_manifests",
+            "write_batch_run_manifest",
+            "write_plan_summary",
+            "stop_on_stage_error",
+            "raise_on_stage_error",
+            "validate_dependencies",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(self, "max_workers", max_workers)
+        object.__setattr__(self, "execution_backend", _non_empty_string(self.execution_backend, "execution_backend"))
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     ui: RuntimeUIConfig
     artifacts: ArtifactConfig
@@ -1055,6 +1103,7 @@ class PipelineConfig:
     validation_sidecars: ValidationSidecarConfig = field(default_factory=ValidationSidecarConfig)
     output_validation: OutputValidationConfig = field(default_factory=OutputValidationConfig)
     patient_runner_validation: PatientRunnerValidationHookConfig = field(default_factory=PatientRunnerValidationHookConfig)
+    patient_scientific_runner: PatientScientificRunnerExecutionConfig = field(default_factory=PatientScientificRunnerExecutionConfig)
     mc: MonteCarloConfig = field(default_factory=MonteCarloConfig)
     legacy_refs: LegacyReferenceConfig = field(default_factory=LegacyReferenceConfig)
     structure_registry: StructureRegistryConfig = field(default_factory=StructureRegistryConfig)
