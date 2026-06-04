@@ -156,6 +156,9 @@ from config import OptimizerV2PlotlyExportConfig
 from config import OptimizerV2RenderConfig
 from config import OptimizerV2RuntimeConfig
 from config import OptimizerRuntimeConfig
+from config import OutputValidationConfig
+from config import PatientScientificRunnerExecutionConfig
+from config import PatientRunnerValidationHookConfig
 from config import PipelineConfig
 from config import PreprocessingConfig
 from config import PreprocessingDebugConfig
@@ -178,13 +181,18 @@ from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
 from output_artifacts import write_phase3c_output_surface
 from patient_runner import LegacyRuntimeKeys
+from patient_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
 from patient_runner import PatientRunnerMainValidationConfig
 from patient_runner import PatientRunnerMainValidationMode
 from patient_runner import PatientRunnerScientificConfigBuildContext
+from patient_runner import build_patient_scientific_run_config_from_pipeline
 from patient_runner import build_patient_scientific_shadow_config
 from patient_runner import default_patient_runner_main_validation_output_dir
 from patient_runner import run_patient_runner_main_validation
+from patient_runner import run_patient_scientific_runner_from_legacy
 from patient_runner import summarize_patient_runner_main_validation
+from patient_runner import summarize_patient_scientific_run_config
+from patient_runner import write_patient_scientific_run_plan_summary
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -609,8 +617,8 @@ def main():
         max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
     )
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = True # If True, validate the active grouped nearest-z helper against ver5 during optimizer-v2 scoring and log the exact-match result.
-    optimizer_v2_benchmark_isolated_winner_validation_bool = True # If True, rerun the final winner once more in isolation at the downstream-comparable trial count and log a direct benchmark. This adds one extra winner-validation-like pass per structure.
+    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # Validation sidecar OFF | impact high: Jun 03 nearest-z helper validation cost about 4.0 h on the 4-patient run; validates grouped nearest-z helper parity against ver5 during optimizer-v2 scoring.
+    optimizer_v2_benchmark_isolated_winner_validation_bool = False # Validation sidecar OFF | impact high: adds one extra downstream-comparable winner-validation-like optimizer pass per target structure; validates the final optimizer-v2 winner in isolation.
     optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
@@ -709,18 +717,40 @@ def main():
     #   - list of ints (e.g., [1, 2, 3]): attempt each in order
     #   - "all": render all available ranks for each DIL
     candidate_plot_ranks_behavior = 'all'
-    # Validation CSV export toggle for guidance-map precomputed inputs/contracts/selection manifest.
-    validate_firing_df_builder_behavior = True # this should be turned on for guidance map building in the future, im turning it off for now because it takes a long time
-    validate_phase3b_in_memory_patient_stitching_bool = True
-    write_phase3b_in_memory_stitched_tables_bool = True
-    write_phase3c_patient_fragment_output_surface_bool = True
-    write_phase3c_stitched_final_artifacts_bool = True
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.SHADOW_OUTPUT.value
+    # Validation/evidence sidecars default off after the Jun 03 clean parity run.
+    validate_firing_df_builder_behavior = False # Validation sidecar OFF | impact medium/high: exports guidance-map precompute contract CSVs and selection manifests; validates firing-depth dataframe-builder inputs/outputs.
+    run_simulated_biopsy_centroid_variation_validation_bool = False # Validation sidecar OFF | impact low: compares planned vs realized simulated-biopsy centroid variation metrics; re-enable when changing simulated-biopsy geometry/finalization.
+    validate_phase3b_in_memory_patient_stitching_bool = False # Validation sidecar OFF | impact low/medium: builds in-memory patient-fragment stitch comparison tables; validates patient-fragment assembly against final cohort dataframes.
+    write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
+    write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
+    write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.SHADOW_OUTPUT.value # Overnight checkpoint ON | impact medium: validates patient-runner artifact/assembly output against the completed legacy cohort oracle after the run.
     patient_runner_validation_patient_uids = ()
     patient_runner_validation_final_table_names = ()
     patient_runner_validation_source_table_names = ()
-    patient_runner_validation_write_outputs_bool = True
-    patient_runner_validation_write_assembled_tables_bool = True
+    patient_runner_validation_write_outputs_bool = True # Overnight checkpoint ON | impact low/medium IO: writes patient-runner validation summaries/artifacts for post-run review.
+    patient_runner_validation_write_assembled_tables_bool = True # Overnight checkpoint ON | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables.
+    patient_runner_validation_scientific_shadow_pathway_name = "anatomical_qa"
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = False
+    patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = True
+    patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
+    patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
+    patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
+    patient_scientific_runner_mode = "execute" # Overnight checkpoint ON: writes the plan, then runs the first DAG-valid per-patient stage slice.
+    patient_scientific_runner_checkpoint_name = "anatomical_qa"
+    patient_scientific_runner_pathway_name = "anatomical_qa" # First live-runner slice: grid preprocessing -> anatomical preprocessing.
+    patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
+    patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
+    patient_scientific_runner_include_artifact_writing_bool = False
+    patient_scientific_runner_write_patient_run_manifests_bool = True
+    patient_scientific_runner_write_batch_run_manifest_bool = True
+    patient_scientific_runner_write_plan_summary_bool = True
+    patient_scientific_runner_max_workers = 1
+    patient_scientific_runner_execution_backend = "sequential"
+    patient_scientific_runner_satisfied_stage_names = ()
+    patient_scientific_runner_stop_on_stage_error_bool = True
+    patient_scientific_runner_raise_on_stage_error_bool = False
+    patient_scientific_runner_validate_dependencies_bool = True
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -854,9 +884,9 @@ def main():
     plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
     show_equivalent_ellipsoid_from_pca_bool = False
     display_pca_fit_variation_for_biopsies_bool = False
-    validate_selected_structures_module_against_legacy = True
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = True
-    validate_prostate_only_mr_adc_module_against_legacy = True
+    validate_selected_structures_module_against_legacy = False # Validation sidecar OFF | impact low/medium: validates the patient/module selected-structure path against the legacy cohort structure-selection output.
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = False # Validation sidecar OFF | impact medium/high: reruns/restores the legacy non-biopsy preprocessing sidecar; validates per-patient non-biopsy structure processing against cohort-style legacy behavior.
+    validate_prostate_only_mr_adc_module_against_legacy = False # Validation sidecar OFF | impact medium: validates the prostate-only MR ADC per-patient module against legacy cohort behavior.
 
     ###
 
@@ -1045,6 +1075,50 @@ def main():
     #num_simulated_bxs_to_create = len(bx_sim_locations)
     #if num_simulated_bxs_to_create == 0:
     #    simulate_biopsies_relative_to = []
+    validation_sidecar_defaults = ValidationSidecarConfig(
+        selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
+        non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
+        prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
+        guidance_map_dataframe_builder=validate_firing_df_builder_behavior,
+        simulated_biopsy_centroid_variation=run_simulated_biopsy_centroid_variation_validation_bool,
+    )
+    output_validation_defaults = OutputValidationConfig(
+        phase3b_in_memory_patient_stitching=validate_phase3b_in_memory_patient_stitching_bool,
+        write_phase3b_in_memory_stitched_tables=write_phase3b_in_memory_stitched_tables_bool,
+        phase3c_patient_fragment_output_surface=write_phase3c_patient_fragment_output_surface_bool,
+        write_phase3c_stitched_final_artifacts=write_phase3c_stitched_final_artifacts_bool,
+    )
+    patient_runner_validation_defaults = PatientRunnerValidationHookConfig(
+        mode=patient_runner_validation_mode,
+        patient_uids=patient_runner_validation_patient_uids,
+        final_table_names=patient_runner_validation_final_table_names,
+        source_table_names=patient_runner_validation_source_table_names,
+        write_outputs=patient_runner_validation_write_outputs_bool,
+        write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
+        scientific_shadow_pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
+        scientific_shadow_include_artifact_writing=patient_runner_validation_scientific_shadow_include_artifact_writing_bool,
+        scientific_shadow_write_patient_run_manifests=patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool,
+        scientific_shadow_write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
+        scientific_shadow_include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
+        scientific_shadow_state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
+    )
+    patient_scientific_runner_defaults = PatientScientificRunnerExecutionConfig(
+        mode=patient_scientific_runner_mode,
+        checkpoint_name=patient_scientific_runner_checkpoint_name,
+        pathway_name=patient_scientific_runner_pathway_name,
+        patient_uids=patient_scientific_runner_patient_uids,
+        output_dir_name=patient_scientific_runner_output_dir_name,
+        include_artifact_writing=patient_scientific_runner_include_artifact_writing_bool,
+        write_patient_run_manifests=patient_scientific_runner_write_patient_run_manifests_bool,
+        write_batch_run_manifest=patient_scientific_runner_write_batch_run_manifest_bool,
+        write_plan_summary=patient_scientific_runner_write_plan_summary_bool,
+        max_workers=patient_scientific_runner_max_workers,
+        execution_backend=patient_scientific_runner_execution_backend,
+        satisfied_stage_names=patient_scientific_runner_satisfied_stage_names,
+        stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
+        raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
+        validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
+    )
     pipeline_config = PipelineConfig(
         ui=RuntimeUIConfig(
             spinner_type=spinner_type,
@@ -1198,7 +1272,7 @@ def main():
                 show_titles=show_titles_for_guidance_maps,
                 show_euler_annotation_box=show_euler_annotation_box_behavior,
                 candidate_plot_rank=candidate_plot_ranks_behavior,
-                validate_firing_df_builder=validate_firing_df_builder_behavior,
+                validate_firing_df_builder=validation_sidecar_defaults.guidance_map_dataframe_builder,
                 strict_precomputed_guidance=strict_precomputed_guidance_behavior,
             )
         ),
@@ -1392,11 +1466,10 @@ def main():
                 check_if_end_caps_filled_proper_nn_num=check_if_end_caps_filled_proper_NN_num,
             ),
         ),
-        validation_sidecars=ValidationSidecarConfig(
-            selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
-            non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
-            prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
-        ),
+        validation_sidecars=validation_sidecar_defaults,
+        output_validation=output_validation_defaults,
+        patient_runner_validation=patient_runner_validation_defaults,
+        patient_scientific_runner=patient_scientific_runner_defaults,
     )
 
     # Transitional bridge: legacy code below still consumes flat locals, but those
@@ -1678,6 +1751,68 @@ def main():
     guidance_map_planning_config = pipeline_config.guidance_maps.planning_config
     guidance_map_render_config = pipeline_config.guidance_maps.render_config
     validation_sidecar_config = pipeline_config.validation_sidecars
+    output_validation_config = pipeline_config.output_validation
+    patient_runner_validation_config = pipeline_config.patient_runner_validation
+    patient_scientific_runner_config = pipeline_config.patient_scientific_runner
+
+    validate_selected_structures_module_against_legacy = validation_sidecar_config.selected_structures_against_legacy
+    run_non_biopsy_structure_legacy_sidecar_validation_bool = (
+        validation_sidecar_config.non_biopsy_structures_against_legacy
+    )
+    validate_prostate_only_mr_adc_module_against_legacy = (
+        validation_sidecar_config.prostate_only_mr_adc_against_legacy
+    )
+    validate_firing_df_builder_behavior = validation_sidecar_config.guidance_map_dataframe_builder
+    run_simulated_biopsy_centroid_variation_validation_bool = (
+        validation_sidecar_config.simulated_biopsy_centroid_variation
+    )
+    validate_phase3b_in_memory_patient_stitching_bool = (
+        output_validation_config.phase3b_in_memory_patient_stitching
+    )
+    write_phase3b_in_memory_stitched_tables_bool = output_validation_config.write_phase3b_in_memory_stitched_tables
+    write_phase3c_patient_fragment_output_surface_bool = output_validation_config.phase3c_patient_fragment_output_surface
+    write_phase3c_stitched_final_artifacts_bool = output_validation_config.write_phase3c_stitched_final_artifacts
+    patient_runner_validation_mode = patient_runner_validation_config.mode
+    patient_runner_validation_patient_uids = patient_runner_validation_config.patient_uids
+    patient_runner_validation_final_table_names = patient_runner_validation_config.final_table_names
+    patient_runner_validation_source_table_names = patient_runner_validation_config.source_table_names
+    patient_runner_validation_write_outputs_bool = patient_runner_validation_config.write_outputs
+    patient_runner_validation_write_assembled_tables_bool = patient_runner_validation_config.write_assembled_tables
+    patient_runner_validation_scientific_shadow_pathway_name = (
+        patient_runner_validation_config.scientific_shadow_pathway_name
+    )
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = (
+        patient_runner_validation_config.scientific_shadow_include_artifact_writing
+    )
+    patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = (
+        patient_runner_validation_config.scientific_shadow_write_patient_run_manifests
+    )
+    patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = (
+        patient_runner_validation_config.scientific_shadow_write_stage_state_manifests
+    )
+    patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = (
+        patient_runner_validation_config.scientific_shadow_include_dataframe_snapshots
+    )
+    patient_runner_validation_scientific_shadow_state_isolation = (
+        patient_runner_validation_config.scientific_shadow_state_isolation
+    )
+    patient_scientific_runner_mode = patient_scientific_runner_config.mode
+    patient_scientific_runner_checkpoint_name = patient_scientific_runner_config.checkpoint_name
+    patient_scientific_runner_pathway_name = patient_scientific_runner_config.pathway_name
+    patient_scientific_runner_patient_uids = patient_scientific_runner_config.patient_uids
+    patient_scientific_runner_output_dir_name = patient_scientific_runner_config.output_dir_name
+    patient_scientific_runner_include_artifact_writing_bool = patient_scientific_runner_config.include_artifact_writing
+    patient_scientific_runner_write_patient_run_manifests_bool = (
+        patient_scientific_runner_config.write_patient_run_manifests
+    )
+    patient_scientific_runner_write_batch_run_manifest_bool = patient_scientific_runner_config.write_batch_run_manifest
+    patient_scientific_runner_write_plan_summary_bool = patient_scientific_runner_config.write_plan_summary
+    patient_scientific_runner_max_workers = patient_scientific_runner_config.max_workers
+    patient_scientific_runner_execution_backend = patient_scientific_runner_config.execution_backend
+    patient_scientific_runner_satisfied_stage_names = patient_scientific_runner_config.satisfied_stage_names
+    patient_scientific_runner_stop_on_stage_error_bool = patient_scientific_runner_config.stop_on_stage_error
+    patient_scientific_runner_raise_on_stage_error_bool = patient_scientific_runner_config.raise_on_stage_error
+    patient_scientific_runner_validate_dependencies_bool = patient_scientific_runner_config.validate_dependencies
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
@@ -4583,42 +4718,43 @@ def main():
                             live_display,
                             )
 
-                simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
-                    master_structure_reference_dict,
-                    bx_ref,
-                    all_ref_key,
-                )
-                master_cohort_patient_data_and_dataframes["Dataframes"][
-                    "Cohort: Simulated biopsy planned vs realized centroid variation validation"
-                ] = simulated_biopsy_centroid_variation_validation_dataframe
+                if run_simulated_biopsy_centroid_variation_validation_bool == True:
+                    simulated_biopsy_centroid_variation_validation_dataframe, simulated_biopsy_centroid_variation_validation_summary_dict = validate_simulated_biopsy_planned_vs_realized_centroid_variation(
+                        master_structure_reference_dict,
+                        bx_ref,
+                        all_ref_key,
+                    )
+                    master_cohort_patient_data_and_dataframes["Dataframes"][
+                        "Cohort: Simulated biopsy planned vs realized centroid variation validation"
+                    ] = simulated_biopsy_centroid_variation_validation_dataframe
 
-                num_simulated_biopsies_validated = simulated_biopsy_centroid_variation_validation_summary_dict["Num simulated biopsies"]
-                num_missing_validation_values = (
-                    simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned mean centroid variation"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized mean centroid variation"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned maximum projected distance"]
-                    + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized maximum projected distance"]
-                )
-
-                if num_simulated_biopsies_validated > 0:
-                    important_info.add_text_line(
-                        "Simulated biopsy centroid-variation validation: compared {} simulated biopsies | mean abs delta (mean variation) = {} | max abs delta (mean variation) = {} | mean abs delta (max projected distance) = {} | max abs delta (max projected distance) = {}.".format(
-                            num_simulated_biopsies_validated,
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean mean-centroid-variation absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Max mean-centroid-variation absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Mean max-projected-distance absolute delta"],
-                            simulated_biopsy_centroid_variation_validation_summary_dict["Max max-projected-distance absolute delta"],
-                        ),
-                        live_display,
+                    num_simulated_biopsies_validated = simulated_biopsy_centroid_variation_validation_summary_dict["Num simulated biopsies"]
+                    num_missing_validation_values = (
+                        simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned mean centroid variation"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized mean centroid variation"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing planned maximum projected distance"]
+                        + simulated_biopsy_centroid_variation_validation_summary_dict["Num missing realized maximum projected distance"]
                     )
 
-                if num_missing_validation_values > 0:
-                    important_info.add_text_line(
-                        "Notice! Simulated biopsy centroid-variation validation found missing planned or realized comparison values for {} fields across simulated biopsies.".format(
-                            num_missing_validation_values,
-                        ),
-                        live_display,
-                    )
+                    if num_simulated_biopsies_validated > 0:
+                        important_info.add_text_line(
+                            "Simulated biopsy centroid-variation validation: compared {} simulated biopsies | mean abs delta (mean variation) = {} | max abs delta (mean variation) = {} | mean abs delta (max projected distance) = {} | max abs delta (max projected distance) = {}.".format(
+                                num_simulated_biopsies_validated,
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Mean mean-centroid-variation absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Max mean-centroid-variation absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Mean max-projected-distance absolute delta"],
+                                simulated_biopsy_centroid_variation_validation_summary_dict["Max max-projected-distance absolute delta"],
+                            ),
+                            live_display,
+                        )
+
+                    if num_missing_validation_values > 0:
+                        important_info.add_text_line(
+                            "Notice! Simulated biopsy centroid-variation validation found missing planned or realized comparison values for {} fields across simulated biopsies.".format(
+                                num_missing_validation_values,
+                            ),
+                            live_display,
+                        )
 
                 
                 ################## ALL BIOPSIES 
@@ -5922,7 +6058,12 @@ def main():
                             metadata={"source": "biopsy_localization_convex_main"},
                         ),
                         patient_uids=patient_runner_validation_patient_uids,
-                        include_artifact_writing=False,
+                        pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
+                        include_artifact_writing=patient_runner_validation_scientific_shadow_include_artifact_writing_bool,
+                        write_patient_run_manifests=patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool,
+                        write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
+                        include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
+                        state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
                         metadata={"source": "biopsy_localization_convex_main"},
                     )
                 patient_runner_validation_result = run_patient_runner_main_validation(
@@ -5983,6 +6124,126 @@ def main():
                         patient_runner_validation_phase_name,
                         f"Completed patient-runner {patient_runner_validation_resolved_mode.value} validation.",
                         details=patient_runner_validation_summary,
+                    )
+
+            if patient_scientific_runner_mode != "disabled":
+                patient_scientific_runner_output_root = specific_output_dir.joinpath(
+                    patient_scientific_runner_output_dir_name,
+                )
+                patient_scientific_runner_phase_name = f"patient_runner.scientific_runner.{patient_scientific_runner_mode}"
+                if runtime_logger is not None:
+                    runtime_logger.phase_start(
+                        patient_scientific_runner_phase_name,
+                        f"Starting patient scientific runner {patient_scientific_runner_mode} pass.",
+                        details={
+                            "mode": patient_scientific_runner_mode,
+                            "pathway_name": patient_scientific_runner_pathway_name,
+                            "output_root": patient_scientific_runner_output_root,
+                        },
+                    )
+
+                patient_scientific_run_config = build_patient_scientific_run_config_from_pipeline(
+                    pipeline_config,
+                    PatientRunnerScientificConfigBuildContext(
+                        rtstruct_dicom_paths_by_patient_uid=locals().get("RTst_dcms_dict"),
+                        read_uncertainties_dataframe=locals().get("read_uncertainties_dataframe"),
+                        uncertainty_data_cls=uncertainty_data,
+                        dose_views_jsons_paths_list=locals().get("dose_views_jsons_paths_list", ()),
+                        containment_views_jsons_paths_list=locals().get(
+                            "containment_views_jsons_paths_list",
+                            (),
+                        ),
+                        mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
+                        parallel_pool=parallel_pool,
+                        rng=build_transform_generation_rng(master_structure_info_dict),
+                        runtime_logger=runtime_logger,
+                        metadata={"source": "biopsy_localization_convex_main"},
+                    ),
+                    output_root=patient_scientific_runner_output_root,
+                    legacy_keys=LegacyRuntimeKeys(
+                        all_ref_key=all_ref_key,
+                        bx_ref=bx_ref,
+                        by_patient_key=by_patient_key,
+                        global_key=global_key,
+                        global_num_cases_key=global_num_cases_key,
+                    ),
+                    pathway_name=patient_scientific_runner_pathway_name,
+                    checkpoint_name=patient_scientific_runner_checkpoint_name,
+                    patient_uids=patient_scientific_runner_patient_uids,
+                    run_id=f"patient-scientific-runner-{patient_scientific_runner_pathway_name}",
+                    max_workers=patient_scientific_runner_max_workers,
+                    execution_backend=patient_scientific_runner_execution_backend,
+                    include_artifact_writing=patient_scientific_runner_include_artifact_writing_bool,
+                    write_patient_run_manifests=patient_scientific_runner_write_patient_run_manifests_bool,
+                    write_batch_run_manifest=patient_scientific_runner_write_batch_run_manifest_bool,
+                    stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
+                    raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
+                    satisfied_stage_names=patient_scientific_runner_satisfied_stage_names,
+                    validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
+                    metadata={
+                        "source": "biopsy_localization_convex_main",
+                        "mode": patient_scientific_runner_mode,
+                    },
+                )
+                patient_scientific_run_plan_summary = summarize_patient_scientific_run_config(
+                    patient_scientific_run_config,
+                )
+                patient_scientific_run_plan_path = None
+                if patient_scientific_runner_write_plan_summary_bool == True:
+                    patient_scientific_run_plan_path = write_patient_scientific_run_plan_summary(
+                        patient_scientific_run_config,
+                    )
+
+                resolved_runner_patient_summary = (
+                    "all patients ({})".format(len(master_structure_reference_dict))
+                    if len(patient_scientific_run_plan_summary["patient_uids"]) == 0
+                    else str(patient_scientific_run_plan_summary["patient_uids"])
+                )
+                important_info.add_text_line(
+                    "Patient scientific runner plan: mode {}, pathway {}, patients {}, stages {}.".format(
+                        patient_scientific_runner_mode,
+                        patient_scientific_run_plan_summary["pathway_name"],
+                        resolved_runner_patient_summary,
+                        patient_scientific_run_plan_summary["planned_stage_names"],
+                    ),
+                    live_display,
+                )
+                if patient_scientific_run_plan_path is not None:
+                    important_info.add_text_line(
+                        "Patient scientific runner plan written to: {}".format(patient_scientific_run_plan_path),
+                        live_display,
+                    )
+
+                patient_scientific_runner_result_summary = dict(patient_scientific_run_plan_summary)
+                if patient_scientific_runner_mode == "execute":
+                    patient_scientific_runner_result = run_patient_scientific_runner_from_legacy(
+                        master_structure_reference_dict,
+                        master_structure_info_dict,
+                        patient_scientific_run_config,
+                    )
+                    patient_scientific_runner_result_summary.update(
+                        {
+                            "status": patient_scientific_runner_result.status.value,
+                            "patient_count": patient_scientific_runner_result.patient_count,
+                            "failed_patient_count": len(patient_scientific_runner_result.failed_patient_results),
+                            "elapsed_seconds": patient_scientific_runner_result.elapsed_seconds,
+                            "artifact_count": len(patient_scientific_runner_result.artifact_paths),
+                        }
+                    )
+                    important_info.add_text_line(
+                        "Patient scientific runner execution: {} patients, {} failed patients, status {}.".format(
+                            patient_scientific_runner_result.patient_count,
+                            len(patient_scientific_runner_result.failed_patient_results),
+                            patient_scientific_runner_result.status.value,
+                        ),
+                        live_display,
+                    )
+
+                if runtime_logger is not None:
+                    runtime_logger.phase_end(
+                        patient_scientific_runner_phase_name,
+                        f"Completed patient scientific runner {patient_scientific_runner_mode} pass.",
+                        details=patient_scientific_runner_result_summary,
                     )
 
 

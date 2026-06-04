@@ -1,6 +1,6 @@
 # Patient Runner Dependency Graph
 
-Last updated: 2026-05-27
+Last updated: 2026-06-04
 
 This document describes the intended dependency model for patient-runner
 scientific orchestration. The executable code lives in
@@ -66,6 +66,80 @@ The graph view is safer for implementation because output/guidance/parity may
 need products from more than one upstream branch. A node can have multiple
 parents. For example, current full outputs may depend on both optimizer outputs
 and MC/dosimetry outputs.
+
+## Current Visual DAG
+
+The live runner should enter through a named pathway, then expand that pathway
+to these dependency-checked per-patient stage adapters. Tranches may describe
+these blocks for planning/debug, but the pathway/DAG expansion is the execution
+authority.
+
+```mermaid
+flowchart TD
+   bootstrap[Compatibility bootstrap / patient-local state]
+   grid[Grid preprocessing\nDose + MR ADC runtime grids]
+   anatomy[Anatomical preprocessing\nContours, selected structures, non-biopsy structures]
+   biopsy[Biopsy preprocessing\nReal biopsy, simulated prep/planning, uncertainty, targeting]
+   transforms[Transform generation\nOptimizer and MC transform-bank samples]
+   optimization[Optimization\nOptimizer v1/v2 target and biopsy producers]
+   finalization[Simulated-biopsy finalization\nFinalize producer-selected biopsy geometry]
+   sampling[Sampling and classification\nSampled biopsy products and classification fragments]
+   mcprep[MC prep\nBiopsy self-transforms and relative-structure transforms]
+   mcsim[MC simulation / dosimetry / MR\nContainment, dose, DVH, MR ADC localization]
+   guidance[Guidance\nTemplate-hole and firing-depth recommendations]
+   artifacts[Artifacts / assembly / parity\nPatient outputs, cohort tables, validation evidence]
+
+   bootstrap --> grid
+   grid --> anatomy
+   anatomy --> biopsy
+   biopsy --> transforms
+   transforms --> optimization
+   optimization --> finalization
+   finalization --> sampling
+   sampling --> mcprep
+   mcprep --> mcsim
+   anatomy --> guidance
+   biopsy --> guidance
+   guidance --> artifacts
+   mcsim --> artifacts
+   sampling --> artifacts
+```
+
+Current named pathway expansion:
+
+| Pathway | Execution slice |
+| --- | --- |
+| `anatomical_qa` | grid preprocessing -> anatomical preprocessing |
+| `biopsy_preprocessing_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing |
+| `optimization_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization |
+| `current_dosimetry_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> simulated-biopsy finalization -> sampling/classification -> MC prep -> MC simulation |
+| `full_current_pipeline_shadow` | all current executable scientific stages, including guidance |
+
+The main entrypoint now has an opt-in patient scientific runner hook with three
+modes: `disabled`, `plan_only`, and `execute`.
+
+| Mode | Meaning | Mutates patient state through live runner? | Expected artifact |
+| --- | --- | --- | --- |
+| `disabled` | Do not build or run the live scientific runner hook. | No | None |
+| `plan_only` | Build typed config, validate checkpoint/pathway agreement, expand the DAG-valid stage list, and write the plan. | No | `patient_scientific_runner_plan.json` |
+| `execute` | Do everything in `plan_only`, then run the expanded per-patient stages through the batch runner. | Yes | plan JSON plus patient/batch run manifests |
+
+The runner should move outward by checkpoint rather than jumping directly to the
+full pathway. Each checkpoint maps to exactly one named pathway.
+
+| Checkpoint | Pathway | Purpose | Next checkpoint |
+| --- | --- | --- | --- |
+| `anatomical_qa` | `anatomical_qa` | First live runner checkpoint: grid preprocessing plus anatomical preprocessing. | `biopsy_preprocessing_shadow` |
+| `biopsy_preprocessing_shadow` | `biopsy_preprocessing_shadow` | Adds biopsy-facing preprocessing after anatomical products exist. | `optimization_shadow` |
+| `optimization_shadow` | `optimization_shadow` | Adds transform generation and optimizer-v1/v2 adapters. | `current_dosimetry_shadow` |
+| `current_dosimetry_shadow` | `current_dosimetry_shadow` | Adds simulated-biopsy finalization, sampling/classification, MC prep, dose, and MR ADC simulation. | `full_current_pipeline_shadow` |
+| `full_current_pipeline_shadow` | `full_current_pipeline_shadow` | Runs all current executable scientific stages, including guidance. | none |
+
+For the first overnight run, the intended switch set is `execute` plus
+`anatomical_qa`, with `SHADOW_OUTPUT` patient-runner validation enabled after the
+legacy oracle finishes. That combination tests the smallest live per-patient
+science slice while still writing post-run patient-runner assembly validation
+evidence.
 
 ## Pathway Meaning
 

@@ -957,6 +957,18 @@ class ValidationSidecarConfig:
     selected_structures_against_legacy: bool = False
     non_biopsy_structures_against_legacy: bool = False
     prostate_only_mr_adc_against_legacy: bool = False
+    guidance_map_dataframe_builder: bool = False
+    simulated_biopsy_centroid_variation: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "selected_structures_against_legacy",
+            "non_biopsy_structures_against_legacy",
+            "prostate_only_mr_adc_against_legacy",
+            "guidance_map_dataframe_builder",
+            "simulated_biopsy_centroid_variation",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
 
     def active_validation_labels(self) -> tuple[str, ...]:
         labels = []
@@ -986,6 +998,125 @@ class ValidationSidecarConfig:
 
 
 @dataclass(frozen=True)
+class OutputValidationConfig:
+    phase3b_in_memory_patient_stitching: bool = False
+    write_phase3b_in_memory_stitched_tables: bool = False
+    phase3c_patient_fragment_output_surface: bool = False
+    write_phase3c_stitched_final_artifacts: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "phase3b_in_memory_patient_stitching",
+            "write_phase3b_in_memory_stitched_tables",
+            "phase3c_patient_fragment_output_surface",
+            "write_phase3c_stitched_final_artifacts",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+
+    def active_validation_labels(self) -> tuple[str, ...]:
+        labels = []
+        if self.phase3b_in_memory_patient_stitching:
+            labels.append("phase3b-in-memory-stitching")
+        if self.phase3c_patient_fragment_output_surface:
+            labels.append("phase3c-patient-fragment-output-surface")
+        return tuple(labels)
+
+
+@dataclass(frozen=True)
+class PatientRunnerValidationHookConfig:
+    mode: str = "disabled"
+    patient_uids: Sequence[str] = ()
+    final_table_names: Sequence[str] = ()
+    source_table_names: Sequence[str] = ()
+    write_outputs: bool = False
+    write_assembled_tables: bool = False
+    scientific_shadow_pathway_name: str = "anatomical_qa"
+    scientific_shadow_include_artifact_writing: bool = False
+    scientific_shadow_write_patient_run_manifests: bool = True
+    scientific_shadow_write_stage_state_manifests: bool = True
+    scientific_shadow_include_dataframe_snapshots: bool = True
+    scientific_shadow_state_isolation: str = "deep_copy_patient_state"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", _non_empty_string(self.mode, "mode"))
+        for field_name in ("patient_uids", "final_table_names", "source_table_names"):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(str(value) for value in _tuple_from_sequence(getattr(self, field_name), field_name)),
+            )
+        object.__setattr__(self, "write_outputs", bool(self.write_outputs))
+        object.__setattr__(self, "write_assembled_tables", bool(self.write_assembled_tables))
+        object.__setattr__(
+            self,
+            "scientific_shadow_pathway_name",
+            _non_empty_string(self.scientific_shadow_pathway_name, "scientific_shadow_pathway_name"),
+        )
+        for field_name in (
+            "scientific_shadow_include_artifact_writing",
+            "scientific_shadow_write_patient_run_manifests",
+            "scientific_shadow_write_stage_state_manifests",
+            "scientific_shadow_include_dataframe_snapshots",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(
+            self,
+            "scientific_shadow_state_isolation",
+            _non_empty_string(self.scientific_shadow_state_isolation, "scientific_shadow_state_isolation"),
+        )
+
+
+@dataclass(frozen=True)
+class PatientScientificRunnerExecutionConfig:
+    mode: str = "disabled"
+    checkpoint_name: str = "anatomical_qa"
+    pathway_name: str = "anatomical_qa"
+    patient_uids: Sequence[str] = ()
+    output_dir_name: str = "patient_scientific_runner"
+    include_artifact_writing: bool = False
+    write_patient_run_manifests: bool = True
+    write_batch_run_manifest: bool = True
+    write_plan_summary: bool = True
+    max_workers: int = 1
+    execution_backend: str = "sequential"
+    satisfied_stage_names: Sequence[str] = ()
+    stop_on_stage_error: bool = True
+    raise_on_stage_error: bool = False
+    validate_dependencies: bool = True
+
+    def __post_init__(self) -> None:
+        mode = _non_empty_string(self.mode, "mode")
+        if mode not in {"disabled", "plan_only", "execute"}:
+            raise ValueError("mode must be one of: disabled, plan_only, execute")
+        max_workers = int(self.max_workers)
+        if max_workers < 1:
+            raise ValueError("max_workers must be at least 1")
+
+        object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "checkpoint_name", _non_empty_string(self.checkpoint_name, "checkpoint_name"))
+        object.__setattr__(self, "pathway_name", _non_empty_string(self.pathway_name, "pathway_name"))
+        object.__setattr__(self, "output_dir_name", _non_empty_string(self.output_dir_name, "output_dir_name"))
+        for field_name in ("patient_uids", "satisfied_stage_names"):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(str(value) for value in _tuple_from_sequence(getattr(self, field_name), field_name)),
+            )
+        for field_name in (
+            "include_artifact_writing",
+            "write_patient_run_manifests",
+            "write_batch_run_manifest",
+            "write_plan_summary",
+            "stop_on_stage_error",
+            "raise_on_stage_error",
+            "validate_dependencies",
+        ):
+            object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        object.__setattr__(self, "max_workers", max_workers)
+        object.__setattr__(self, "execution_backend", _non_empty_string(self.execution_backend, "execution_backend"))
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     ui: RuntimeUIConfig
     artifacts: ArtifactConfig
@@ -995,6 +1126,9 @@ class PipelineConfig:
     optimizer: OptimizerRuntimeConfig
     random_seeds: RandomSeedConfig
     validation_sidecars: ValidationSidecarConfig = field(default_factory=ValidationSidecarConfig)
+    output_validation: OutputValidationConfig = field(default_factory=OutputValidationConfig)
+    patient_runner_validation: PatientRunnerValidationHookConfig = field(default_factory=PatientRunnerValidationHookConfig)
+    patient_scientific_runner: PatientScientificRunnerExecutionConfig = field(default_factory=PatientScientificRunnerExecutionConfig)
     mc: MonteCarloConfig = field(default_factory=MonteCarloConfig)
     legacy_refs: LegacyReferenceConfig = field(default_factory=LegacyReferenceConfig)
     structure_registry: StructureRegistryConfig = field(default_factory=StructureRegistryConfig)

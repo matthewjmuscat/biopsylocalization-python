@@ -127,6 +127,18 @@ from .scientific_shadow import run_patient_scientific_shadow
 from .scientific_shadow import summarize_patient_scientific_shadow_run
 from .scientific_shadow import write_patient_scientific_shadow_stage_state_manifest
 from .scientific_shadow import write_patient_scientific_shadow_summary
+from .scientific_runner import PatientScientificRunConfig
+from .scientific_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
+from .scientific_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS
+from .scientific_runner import PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION
+from .scientific_runner import PatientScientificRunnerCheckpoint
+from .scientific_runner import build_patient_scientific_run_config_from_pipeline
+from .scientific_runner import build_patient_scientific_runner_stages
+from .scientific_runner import get_patient_scientific_runner_checkpoint
+from .scientific_runner import patient_scientific_run_plan_summary
+from .scientific_runner import run_patient_scientific_runner_from_legacy
+from .scientific_runner import summarize_patient_scientific_run_config
+from .scientific_runner import write_patient_scientific_run_plan_summary
 from .scientific_stages import DEFAULT_SCIENTIFIC_STAGE_ORDER
 from .scientific_stages import build_patient_scientific_stages
 from .scientific_stages import build_patient_scientific_stages_for_pathway
@@ -169,10 +181,13 @@ __all__ = [
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
     "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
     "PATIENT_SCIENTIFIC_SHADOW_SCHEMA_VERSION",
+    "PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME",
+    "DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS",
     "DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER",
     "DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS",
@@ -211,6 +226,8 @@ __all__ = [
     "PatientScientificShadowConfig",
     "PatientScientificShadowRunResult",
     "PatientScientificShadowStateIsolation",
+    "PatientScientificRunConfig",
+    "PatientScientificRunnerCheckpoint",
     "PatientScientificPathwayName",
     "PatientScientificStageDependency",
     "PatientScientificTranche",
@@ -231,6 +248,8 @@ __all__ = [
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
     "build_patient_runner_scientific_config",
+    "build_patient_scientific_run_config_from_pipeline",
+    "build_patient_scientific_runner_stages",
     "build_patient_scientific_shadow_config",
     "build_patient_scientific_stages",
     "build_patient_scientific_stages_for_pathway",
@@ -247,10 +266,12 @@ __all__ = [
     "executable_patient_scientific_pathway_stage_names",
     "format_patient_runner_post_run_parity_summary",
     "get_patient_scientific_tranche",
+    "get_patient_scientific_runner_checkpoint",
     "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
     "patient_scientific_shadow_stage_state_manifest",
+    "patient_scientific_run_plan_summary",
     "patient_scientific_pathway_graph_stage_names",
     "patient_scientific_pathway_stage_names",
     "patient_scientific_tranche_stage_names",
@@ -275,6 +296,7 @@ __all__ = [
     "run_patient_transform_generation_scientific_stage",
     "run_patient_runner_post_run_parity",
     "run_patient_runner_main_validation",
+    "run_patient_scientific_runner_from_legacy",
     "run_patient_scientific_shadow",
     "run_patient_stages",
     "summarize_patient_runner_main_validation",
@@ -282,6 +304,7 @@ __all__ = [
     "summarize_patient_runner_post_run_parity",
     "summarize_patient_runner_post_run_parity_surfaces",
     "summarize_patient_scientific_shadow_run",
+    "summarize_patient_scientific_run_config",
     "summarize_patient_scientific_dependency_graph",
     "summarize_patient_scientific_pathways",
     "summarize_patient_scientific_tranches",
@@ -298,6 +321,7 @@ __all__ = [
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
     "write_patient_runner_main_validation_summary",
+    "write_patient_scientific_run_plan_summary",
     "write_patient_scientific_shadow_stage_state_manifest",
     "write_patient_scientific_shadow_summary",
     "write_patient_run_manifest",
