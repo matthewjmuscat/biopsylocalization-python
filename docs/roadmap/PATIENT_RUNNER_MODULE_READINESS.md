@@ -359,13 +359,13 @@ Recommended order of operations from this point:
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
 5. Extend the sampling/classification stage boundary with later internal slices,
-  especially optimizer-v2 sampling audit annotations and run-level per-voxel
-  double-sextant assembly. Current adapters cover grid preprocessing, anatomical
+  especially run-level per-voxel double-sextant assembly. Current adapters cover
+  grid preprocessing, anatomical
   preprocessing, real-biopsy processing, simulated-biopsy preparation,
   simulated-biopsy planning, uncertainty attachment, transform generation,
   simulated-biopsy finalization with realized targeting, sampled-biopsy
-  processing, double-sextant sample-point fragments, MC prep, MC simulation,
-  optimizer, and guidance.
+  processing, optimizer-v2 sampling audit annotation, double-sextant sample-point
+  fragments, MC prep, MC simulation, optimizer, and guidance.
 6. Continue wiring the separate scientific shadow-validation mode after the
   graph/pathway sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.

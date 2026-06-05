@@ -2,17 +2,6 @@
 
 from __future__ import annotations
 
-
-        from biopsy_optimizer.v2.live_integration import (
-            annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
-        )
-
-        annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
-            {runtime_state.patient_uid: runtime_state.pydicom_item},
-            runtime_state.bx_ref,
-            runtime_state.all_ref_key,
-        )
-        metadata["steps"].append("optimizer_v2_sampling_audit")
 from functools import partial
 from typing import Any, Mapping, Sequence
 
@@ -607,6 +596,17 @@ def run_patient_sampling_classification_scientific_stage(
         )
         metadata["steps"].append("sampled_biopsy_processing")
         metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
+
+        from biopsy_optimizer.v2.live_integration import (
+            annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
+        )
+
+        annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
+            {runtime_state.patient_uid: runtime_state.pydicom_item},
+            runtime_state.bx_ref,
+            runtime_state.all_ref_key,
+        )
+        metadata["steps"].append("optimizer_v2_sampling_audit")
 
     if stage_config.double_sextant_classification is not None:
         from preprocessing.biopsy_processing.per_patient.double_sextant_classification import (

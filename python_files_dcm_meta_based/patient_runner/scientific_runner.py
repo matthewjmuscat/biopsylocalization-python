@@ -109,7 +109,8 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
         summary="Fifth checkpoint: adds sampled-biopsy storage and classification-adjacent patient fragments.",
         validation_after_run=(
             "Inspect sampled-biopsy stage metadata for sampled result fragments and biopsy coordinate systems.",
-            "Keep optimizer-v2 sampling audit and double-sextant cohort assembly on the legacy/oracle side until separately wired.",
+            "Confirm optimizer-v2 sampling audit annotation runs after sampled-biopsy processing.",
+            "Keep run-level per-voxel double-sextant assembly on the legacy/oracle side until separately wired.",
         ),
         next_checkpoint_name="current_dosimetry_shadow",
     ),

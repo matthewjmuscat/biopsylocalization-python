@@ -166,9 +166,9 @@ Scientific stage config boundary:
   targeting is applied in this adapter after all biopsy geometry exists,
 - sampling/classification is now a separate executable adapter after
   simulated-biopsy finalization; it currently wraps sampled-biopsy processing
-  and optimizer-v2 sampling audit annotation, with later classification
-  fragments to add inside the same stage boundary.
-  and optimizer-v2 sampling audit annotation still outside the patient stage.
+  optimizer-v2 sampling audit annotation, and double-sextant sample-point
+  fragments, while run-level per-voxel double-sextant assembly remains outside
+  the patient stage.
 
 Scientific tranche direction:
 

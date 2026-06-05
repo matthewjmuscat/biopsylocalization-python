@@ -205,8 +205,9 @@ The current executable dependency for simulated-biopsy finalization uses
 optimization as the producer because that matches the legacy-shadow pathway; it
 is not a statement that every simulated-biopsy source must be optimizer-based.
 The graph and executable adapter names are aligned for the current named nodes.
-Optimizer-v2 sampling audit annotation and run-level double-sextant per-voxel
-assembly remain later sampling/classification or assembly surfaces.
+Optimizer-v2 sampling audit annotation now runs in the sampling/classification
+adapter after sampled-biopsy processing. Run-level double-sextant per-voxel
+assembly remains a later assembly surface.
 
 ## Simulated-Biopsy Producer Contract
 
