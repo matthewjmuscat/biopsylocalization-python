@@ -15,6 +15,8 @@ class PatientScientificPathwayName(str, Enum):
     ANATOMICAL_QA = "anatomical_qa"
     BIOPSY_PREPROCESSING_SHADOW = "biopsy_preprocessing_shadow"
     OPTIMIZATION_SHADOW = "optimization_shadow"
+    POST_OPTIMIZER_BIOPSY_REALIZATION_SHADOW = "post_optimizer_biopsy_realization_shadow"
+    SAMPLING_CLASSIFICATION_SHADOW = "sampling_classification_shadow"
     CURRENT_DOSIMETRY_SHADOW = "current_dosimetry_shadow"
     FULL_CURRENT_PIPELINE_SHADOW = "full_current_pipeline_shadow"
 
@@ -98,12 +100,13 @@ DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES = (
         required_stage_names=(PatientStageName.OPTIMIZATION,),
         summary=(
             "Finalizes simulated-biopsy geometry from the current legacy-shadow "
-            "producer; the current encoded producer is optimization."
+            "producer, then applies realized targeting once all biopsy geometry exists."
         ),
         metadata={
             "dependency_scope": "current_legacy_shadow_pathway",
             "producer_contract": "simulated_biopsy_source",
             "current_producer_stage": PatientStageName.OPTIMIZATION.value,
+            "post_finalization_consumer": "realized_biopsy_targeting",
             "future_producers": ("optimizer_v1", "optimizer_v2", "centroid", "manual_or_configured"),
         },
     ),
@@ -160,12 +163,13 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES = (
         required_stage_names=(PatientStageName.OPTIMIZATION,),
         summary=(
             "Finalizes simulated-biopsy geometry from the current legacy-shadow "
-            "producer; the current encoded producer is optimization."
+            "producer, then applies realized targeting once all biopsy geometry exists."
         ),
         metadata={
             "dependency_scope": "current_legacy_shadow_pathway",
             "producer_contract": "simulated_biopsy_source",
             "current_producer_stage": PatientStageName.OPTIMIZATION.value,
+            "post_finalization_consumer": "realized_biopsy_targeting",
             "future_producers": ("optimizer_v1", "optimizer_v2", "centroid", "manual_or_configured"),
         },
     ),
@@ -209,6 +213,23 @@ DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS = {
         PatientStageName.TRANSFORM_GENERATION,
         PatientStageName.OPTIMIZATION,
     ),
+    PatientScientificPathwayName.POST_OPTIMIZER_BIOPSY_REALIZATION_SHADOW: (
+        PatientStageName.GRID_PREPROCESSING,
+        PatientStageName.ANATOMICAL_PREPROCESSING,
+        PatientStageName.PREPROCESSING,
+        PatientStageName.TRANSFORM_GENERATION,
+        PatientStageName.OPTIMIZATION,
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+    ),
+    PatientScientificPathwayName.SAMPLING_CLASSIFICATION_SHADOW: (
+        PatientStageName.GRID_PREPROCESSING,
+        PatientStageName.ANATOMICAL_PREPROCESSING,
+        PatientStageName.PREPROCESSING,
+        PatientStageName.TRANSFORM_GENERATION,
+        PatientStageName.OPTIMIZATION,
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        PatientStageName.SAMPLING_CLASSIFICATION,
+    ),
     PatientScientificPathwayName.CURRENT_DOSIMETRY_SHADOW: (
         PatientStageName.GRID_PREPROCESSING,
         PatientStageName.ANATOMICAL_PREPROCESSING,
@@ -240,6 +261,23 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS = {
         PatientStageName.PREPROCESSING,
         PatientStageName.TRANSFORM_GENERATION,
         PatientStageName.OPTIMIZATION,
+    ),
+    PatientScientificPathwayName.POST_OPTIMIZER_BIOPSY_REALIZATION_SHADOW: (
+        PatientStageName.GRID_PREPROCESSING,
+        PatientStageName.ANATOMICAL_PREPROCESSING,
+        PatientStageName.PREPROCESSING,
+        PatientStageName.TRANSFORM_GENERATION,
+        PatientStageName.OPTIMIZATION,
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+    ),
+    PatientScientificPathwayName.SAMPLING_CLASSIFICATION_SHADOW: (
+        PatientStageName.GRID_PREPROCESSING,
+        PatientStageName.ANATOMICAL_PREPROCESSING,
+        PatientStageName.PREPROCESSING,
+        PatientStageName.TRANSFORM_GENERATION,
+        PatientStageName.OPTIMIZATION,
+        PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
+        PatientStageName.SAMPLING_CLASSIFICATION,
     ),
     PatientScientificPathwayName.CURRENT_DOSIMETRY_SHADOW: (
         PatientStageName.GRID_PREPROCESSING,

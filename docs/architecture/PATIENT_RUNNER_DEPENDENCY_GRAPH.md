@@ -79,10 +79,10 @@ flowchart TD
    bootstrap[Compatibility bootstrap / patient-local state]
    grid[Grid preprocessing\nDose + MR ADC runtime grids]
    anatomy[Anatomical preprocessing\nContours, selected structures, non-biopsy structures]
-   biopsy[Biopsy preprocessing\nReal biopsy, simulated prep/planning, uncertainty, targeting]
+   biopsy[Biopsy preprocessing\nReal biopsy, simulated prep/planning, uncertainty]
    transforms[Transform generation\nOptimizer and MC transform-bank samples]
    optimization[Optimization\nOptimizer v1/v2 target and biopsy producers]
-   finalization[Simulated-biopsy finalization\nFinalize producer-selected biopsy geometry]
+   finalization[Simulated-biopsy finalization\nFinalize producer-selected biopsy geometry, then realized targeting]
    sampling[Sampling and classification\nSampled biopsy products and classification fragments]
    mcprep[MC prep\nBiopsy self-transforms and relative-structure transforms]
    mcsim[MC simulation / dosimetry / MR\nContainment, dose, DVH, MR ADC localization]
@@ -112,6 +112,8 @@ Current named pathway expansion:
 | `anatomical_qa` | grid preprocessing -> anatomical preprocessing |
 | `biopsy_preprocessing_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing |
 | `optimization_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization |
+| `post_optimizer_biopsy_realization_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> simulated-biopsy finalization |
+| `sampling_classification_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> simulated-biopsy finalization -> sampling/classification |
 | `current_dosimetry_shadow` | grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> simulated-biopsy finalization -> sampling/classification -> MC prep -> MC simulation |
 | `full_current_pipeline_shadow` | all current executable scientific stages, including guidance |
 
@@ -131,8 +133,10 @@ full pathway. Each checkpoint maps to exactly one named pathway.
 | --- | --- | --- | --- |
 | `anatomical_qa` | `anatomical_qa` | First live runner checkpoint: grid preprocessing plus anatomical preprocessing. | `biopsy_preprocessing_shadow` |
 | `biopsy_preprocessing_shadow` | `biopsy_preprocessing_shadow` | Adds biopsy-facing preprocessing after anatomical products exist. | `optimization_shadow` |
-| `optimization_shadow` | `optimization_shadow` | Adds transform generation and optimizer-v1/v2 adapters. | `current_dosimetry_shadow` |
-| `current_dosimetry_shadow` | `current_dosimetry_shadow` | Adds simulated-biopsy finalization, sampling/classification, MC prep, dose, and MR ADC simulation. | `full_current_pipeline_shadow` |
+| `optimization_shadow` | `optimization_shadow` | Adds transform generation and optimizer-v1/v2 adapters. | `post_optimizer_biopsy_realization_shadow` |
+| `post_optimizer_biopsy_realization_shadow` | `post_optimizer_biopsy_realization_shadow` | Adds simulated-biopsy finalization and realized targeting after optimizer output. | `sampling_classification_shadow` |
+| `sampling_classification_shadow` | `sampling_classification_shadow` | Adds sampled-biopsy storage and classification-adjacent patient fragments. | `current_dosimetry_shadow` |
+| `current_dosimetry_shadow` | `current_dosimetry_shadow` | Extends through MC prep, dose simulation, containment simulation, and MR ADC simulation. | `full_current_pipeline_shadow` |
 | `full_current_pipeline_shadow` | `full_current_pipeline_shadow` | Runs all current executable scientific stages, including guidance. | none |
 
 For the first overnight run, the intended switch set is `execute` plus
@@ -193,14 +197,17 @@ patient-runner adapters.
 
 The dependency module encodes this split graph while still exposing a separate
 currently executable adapter order. Transform generation, simulated-biopsy
-finalization, and sampling/classification now have patient-runner adapters. MC
-prep now covers MC transform application after finalized and sampled biopsy
-state. The current executable dependency for simulated-biopsy finalization uses
+finalization, and sampling/classification now have patient-runner adapters. The
+simulated-biopsy finalization adapter also applies realized targeting after all
+biopsy geometry has been finalized, matching the legacy main sequence. MC prep
+now covers MC transform application after finalized and sampled biopsy state.
+The current executable dependency for simulated-biopsy finalization uses
 optimization as the producer because that matches the legacy-shadow pathway; it
 is not a statement that every simulated-biopsy source must be optimizer-based.
 The graph and executable adapter names are aligned for the current named nodes,
-while later internal slices such as double-sextant classification can be added
-inside the sampling/classification stage boundary.
+while later internal slices such as optimizer-v2 sampling audit annotation and
+double-sextant classification can be added inside the sampling/classification
+stage boundary.
 
 ## Simulated-Biopsy Producer Contract
 
@@ -224,6 +231,8 @@ full graph view still remains useful for documenting later internal splits.
 | anatomical_qa | Validate anatomical preprocessing in isolation | bootstrap -> grid preprocessing -> anatomical preprocessing |
 | biopsy_preprocessing_shadow | Validate biopsy preprocessing after anatomical products exist | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing |
 | optimization_shadow | Validate optimizer-oriented patient stages | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization |
+| post_optimizer_biopsy_realization_shadow | Validate post-optimizer biopsy geometry realization before sampling or MC | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> finalization/realized targeting |
+| sampling_classification_shadow | Validate sampled-biopsy storage before MC transform application | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> finalization/realized targeting -> sampling/classification |
 | current_dosimetry_shadow | Validate current MC/dosimetry behavior | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> current simulated-biopsy producer through optimization -> finalization -> sampling/classification -> MC prep -> MC simulation |
 | full_current_pipeline_shadow | Validate the full current scientific pathway plus outputs | all current scientific nodes plus guidance/output/parity |
 

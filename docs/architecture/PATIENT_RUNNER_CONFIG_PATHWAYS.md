@@ -347,8 +347,10 @@ Debug subgroup candidates:
 - planned-vs-realized centroid validation output toggle, if made optional later
 
 Rewrite note: simulated-biopsy finalization should receive a producer contract,
-not an optimizer-specific assumption. The current `current_dosimetry_shadow`
-pathway uses optimization as the producer because that is the legacy order.
+not an optimizer-specific assumption. The current post-optimizer and dosimetry
+shadow pathways use optimization as the producer because that is the legacy
+order. Realized targeting belongs after finalization, once both real and
+simulated biopsy geometry have centroid/shape state.
 
 ### Transform Generation And Random Seeds
 
