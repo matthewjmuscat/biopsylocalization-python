@@ -362,8 +362,8 @@ Recommended order of operations from this point:
   especially double-sextant fragments and optimizer-v2 sampling audit
   annotations. Current adapters cover grid preprocessing, anatomical
   preprocessing, real-biopsy processing, simulated-biopsy preparation,
-  simulated-biopsy planning, uncertainty attachment, realized targeting,
-  transform generation, simulated-biopsy finalization, sampled-biopsy
+  simulated-biopsy planning, uncertainty attachment, transform generation,
+  simulated-biopsy finalization with realized targeting, sampled-biopsy
   processing, MC prep, MC simulation, optimizer, and guidance.
 6. Continue wiring the separate scientific shadow-validation mode after the
   graph/pathway sequence is configured from main. Keep `SHADOW_OUTPUT` as

@@ -435,21 +435,9 @@ def run_patient_preprocessing_scientific_stage(
         metadata["uncertainty_attached_count"] = int(count)
 
     if stage_config.realized_biopsy_targeting is not None:
-        from preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting import (
-            determine_patient_realized_biopsy_targeting,
+        metadata["realized_biopsy_targeting_deferred_to_stage"] = (
+            PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value
         )
-
-        targeting_config = stage_config.realized_biopsy_targeting
-        determine_patient_realized_biopsy_targeting(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            all_ref_key=runtime_state.all_ref_key,
-            bx_ref=runtime_state.bx_ref,
-            oar_ref=targeting_config.oar_ref,
-            dil_ref=targeting_config.dil_ref,
-        )
-        metadata["steps"].append("realized_biopsy_targeting")
-        metadata["realized_biopsy_count"] = len(pydicom_item.get(runtime_state.bx_ref, ()))
 
     return PatientStageResult.success(PatientStageName.PREPROCESSING, metadata=metadata)
 
@@ -516,6 +504,7 @@ def run_patient_simulated_biopsy_finalization_scientific_stage(
 
     pydicom_item = runtime_state.pydicom_item
     simulated_biopsy_count = _count_biopsies_by_simulated_flag(pydicom_item, runtime_state.bx_ref, simulated=True)
+    metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     process_patient_simulated_biopsies(
         patient_uid=runtime_state.patient_uid,
         pydicom_item=pydicom_item,
@@ -544,13 +533,34 @@ def run_patient_simulated_biopsy_finalization_scientific_stage(
         ),
         plot_binary_mask_bool=stage_config.plot_binary_mask_bool,
     )
+    metadata["steps"].append("simulated_biopsy_finalization")
+    metadata["simulated_biopsy_count"] = int(simulated_biopsy_count)
+
+    preprocessing_config = scientific_config.preprocessing
+    targeting_config = (
+        preprocessing_config.realized_biopsy_targeting
+        if preprocessing_config is not None
+        else None
+    )
+    if targeting_config is not None:
+        from preprocessing.biopsy_processing.per_patient.realized_biopsy_targeting import (
+            determine_patient_realized_biopsy_targeting,
+        )
+
+        determine_patient_realized_biopsy_targeting(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=pydicom_item,
+            all_ref_key=runtime_state.all_ref_key,
+            bx_ref=runtime_state.bx_ref,
+            oar_ref=targeting_config.oar_ref,
+            dil_ref=targeting_config.dil_ref,
+        )
+        metadata["steps"].append("realized_biopsy_targeting")
+        metadata["realized_biopsy_count"] = len(pydicom_item.get(runtime_state.bx_ref, ()))
+
     return PatientStageResult.success(
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION,
-        metadata={
-            "patient_uid": runtime_state.patient_uid,
-            "steps": ("simulated_biopsy_finalization",),
-            "simulated_biopsy_count": int(simulated_biopsy_count),
-        },
+        metadata=metadata,
     )
 
 

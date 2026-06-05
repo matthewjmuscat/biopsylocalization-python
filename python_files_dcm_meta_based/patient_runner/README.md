@@ -140,9 +140,9 @@ Scientific stage config boundary:
   adapted to null/headless shims,
 - preprocessing is represented explicitly through currently patient-local slices
   such as real-biopsy geometry processing, simulated-biopsy preparation,
-  simulated-biopsy planning, uncertainty attachment, and realized targeting;
-  heavier non-biopsy structure preprocessing can be added to the same boundary
-  as those signatures are cleaned,
+  simulated-biopsy planning, and uncertainty attachment; realized targeting is
+  deferred to the post-optimizer simulated-biopsy finalization adapter so all
+  biopsy geometry matches legacy-main ordering,
 - `scientific_stages.py` contains thin runner adapters that translate
   `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
   existing patient scientific modules,
