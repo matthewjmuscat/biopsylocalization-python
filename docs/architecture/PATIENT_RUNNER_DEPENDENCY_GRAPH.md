@@ -1,6 +1,6 @@
 # Patient Runner Dependency Graph
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 This document describes the intended dependency model for patient-runner
 scientific orchestration. The executable code lives in
@@ -186,11 +186,11 @@ patient-runner adapters.
 | compatibility bootstrap/reference boundary | runner bridge | discovered patient inputs and legacy dictionaries | one-patient runtime/reference/info state |
 | grid preprocessing | patient | compatibility bootstrap/reference boundary | dose-grid runtime objects, MR ADC input normalization, MR ADC grid runtime objects |
 | anatomical preprocessing | patient | compatibility bootstrap/reference boundary; grid preprocessing when MR/dose-derived anatomical products are enabled | raw contours, selected/unique structures, standard non-biopsy geometry/shape/MR summaries, prostate-only MR ADC summary |
-| biopsy preprocessing | patient | anatomical preprocessing | real-biopsy geometry, simulated-biopsy preparation/planning, uncertainty attachment, early targeting annotations, sampled-biopsy outputs currently still grouped here |
+| biopsy preprocessing | patient | anatomical preprocessing | real-biopsy geometry, simulated-biopsy preparation/planning, uncertainty attachment |
 | transform generation | patient/run config plus patient mutation | biopsy preprocessing; MC/optimizer transform settings | transform-bank samples used by optimizer and later MC prep |
 | optimization | patient | anatomical preprocessing; biopsy preprocessing; transform generation when optimizer-v2/search requires transform samples | optimizer-v1/v2 target-ranking and optimized biopsy outputs |
 | simulated-biopsy realization/finalization | patient | simulated-biopsy preparation/planning; a selected simulated-biopsy producer; optimization for the current legacy-shadow pathway | finalized simulated-biopsy geometry, planned-vs-realized validation fragments, post-producer targeting annotations |
-| sampling and classification | patient plus run assembly | finalized biopsy geometry | sampled-biopsy point storage, biopsy-frame coordinates, double-sextant sample-point fragments, run-level per-voxel classification assembly |
+| sampling and classification | patient plus run assembly | finalized biopsy geometry | sampled-biopsy point storage, biopsy-frame coordinates, double-sextant sample-point fragments; run-level per-voxel classification assembly remains an assembly surface |
 | MC prep | patient | finalized/sampled biopsy state; anatomical structures; transform settings | biopsy self-transforms and relative-structure transforms |
 | MC simulation / current dosimetry | patient | MC prep; anatomical structures; biopsy state; dose grid for dose simulation; MR ADC grid for MR simulation | containment, dose, dose-gradient, DVH, and MR ADC localization outputs |
 | guidance/output/parity | mixed patient and run/cohort | selected pathway products | guidance-map recommendations, patient artifacts, cohort assembly, post-run parity |
@@ -204,10 +204,9 @@ now covers MC transform application after finalized and sampled biopsy state.
 The current executable dependency for simulated-biopsy finalization uses
 optimization as the producer because that matches the legacy-shadow pathway; it
 is not a statement that every simulated-biopsy source must be optimizer-based.
-The graph and executable adapter names are aligned for the current named nodes,
-while later internal slices such as optimizer-v2 sampling audit annotation and
-double-sextant classification can be added inside the sampling/classification
-stage boundary.
+The graph and executable adapter names are aligned for the current named nodes.
+Optimizer-v2 sampling audit annotation and run-level double-sextant per-voxel
+assembly remain later sampling/classification or assembly surfaces.
 
 ## Simulated-Biopsy Producer Contract
 
@@ -232,7 +231,7 @@ full graph view still remains useful for documenting later internal splits.
 | biopsy_preprocessing_shadow | Validate biopsy preprocessing after anatomical products exist | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing |
 | optimization_shadow | Validate optimizer-oriented patient stages | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization |
 | post_optimizer_biopsy_realization_shadow | Validate post-optimizer biopsy geometry realization before sampling or MC | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> finalization/realized targeting |
-| sampling_classification_shadow | Validate sampled-biopsy storage before MC transform application | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> finalization/realized targeting -> sampling/classification |
+| sampling_classification_shadow | Validate sampled-biopsy storage and optimizer-v2 sampling audit annotation before MC transform application | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> optimization -> finalization/realized targeting -> sampling/classification |
 | current_dosimetry_shadow | Validate current MC/dosimetry behavior | bootstrap -> grid preprocessing -> anatomical preprocessing -> biopsy preprocessing -> transform generation -> current simulated-biopsy producer through optimization -> finalization -> sampling/classification -> MC prep -> MC simulation |
 | full_current_pipeline_shadow | Validate the full current scientific pathway plus outputs | all current scientific nodes plus guidance/output/parity |
 
@@ -280,5 +279,6 @@ kept only as manifest labels.
 8. Add durable stage-state evidence manifests, including performed/skipped/error
    status, metadata keys, output paths, and dataframe snapshots or shapes where
    useful.
-9. Add later internal sampling/classification slices, especially double-sextant
-   fragments, behind the existing sampling/classification stage boundary.
+9. Add later internal sampling/classification slices, especially optimizer-v2
+   sampling audit annotation and run-level double-sextant per-voxel assembly,
+   behind the existing sampling/classification or assembly boundary.

@@ -1,6 +1,6 @@
 # Patient Runner Upgrade Roadmap
 
-Last updated: 2026-05-23
+Last updated: 2026-06-05
 
 This document is the durable, public planning surface for the migration from the
 legacy all-patient monolith toward a validated per-patient runner. It should hold
@@ -240,9 +240,9 @@ extracted.
 | Configuration/bootstrap | run/cohort | keep outside patient execution | Builds `PipelineConfig`, reference names, logging, UI, pools, and shared constants. |
 | Preprocessing | patient | modularize for patient execution | Structure selection, interpolation, volumes, shape/radiomic features, MR summaries, biopsy preprocessing, and simulated biopsy preparation/planning. |
 | Optimization | patient | modularize for patient execution | Optimizer v1/v2 should operate on one patient case plus shared config. |
-| Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores and validates planned-vs-realized per-biopsy geometry. |
-| Sampling/classification | patient | modularize for patient execution | Sampled biopsy processing, target audit annotation, and double-sextant classification. |
-| MC simulation | patient | build separate patient modules | Transform generation and MR ADC localization now have patient stages; containment and dose still need full patient-stage orchestration. Leave the existing cohort MC simulator callable as the oracle. |
+| Simulated biopsy finalization | patient | modularize for patient execution | Finalizes simulated cores after the selected producer and applies realized targeting after all biopsy geometry exists; planned-vs-realized checks remain validation/QA surfaces. |
+| Sampling/classification | patient plus run assembly | modularize for patient execution | Sampled biopsy processing and double-sextant sample-point fragments are patient-stage surfaces; optimizer-v2 sampling audit and per-voxel double-sextant assembly remain follow-up assembly/annotation surfaces. |
+| MC simulation | patient | modularize for patient execution | Transform generation, MC prep, containment/dose, and MR ADC localization now have patient stages. Leave the existing cohort MC simulator callable as the oracle until runner parity is validated. |
 | Patient artifact writing | patient | core patient-runner output | Writes stable base artifacts with canonical keys. |
 | Cohort assembly | cohort/downstream | not per patient | Concatenates patient artifacts and builds required cohort outputs. |
 | Migration validation | cohort/downstream | not per patient | Compares assembled patient outputs against the legacy cohort oracle. |

@@ -145,7 +145,6 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
         summary="Stores sampled-biopsy outputs and classification-adjacent fragments before MC simulation.",
         planned_surfaces=(
             "sampled-biopsy processing",
-            "optimizer-v2 sampling audit annotation",
             "double-sextant sample-point fragments",
             "run-level per-voxel double-sextant assembly",
         ),

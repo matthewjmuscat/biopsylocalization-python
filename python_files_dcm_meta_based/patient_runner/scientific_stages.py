@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+
+        from biopsy_optimizer.v2.live_integration import (
+            annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
+        )
+
+        annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit(
+            {runtime_state.patient_uid: runtime_state.pydicom_item},
+            runtime_state.bx_ref,
+            runtime_state.all_ref_key,
+        )
+        metadata["steps"].append("optimizer_v2_sampling_audit")
 from functools import partial
 from typing import Any, Mapping, Sequence
 
@@ -596,6 +607,24 @@ def run_patient_sampling_classification_scientific_stage(
         )
         metadata["steps"].append("sampled_biopsy_processing")
         metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
+
+    if stage_config.double_sextant_classification is not None:
+        from preprocessing.biopsy_processing.per_patient.double_sextant_classification import (
+            build_patient_biopsy_double_sextant_sample_point_fragment,
+        )
+
+        double_sextant_config = stage_config.double_sextant_classification
+        sample_point_dataframe = build_patient_biopsy_double_sextant_sample_point_fragment(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=runtime_state.pydicom_item,
+            all_ref_key=runtime_state.all_ref_key,
+            bx_ref=runtime_state.bx_ref,
+            oar_ref=double_sextant_config.oar_ref,
+            biopsy_z_voxel_length=double_sextant_config.biopsy_z_voxel_length,
+        )
+        metadata["steps"].append("double_sextant_sample_point_fragment")
+        metadata["double_sextant_sample_point_row_count"] = int(len(sample_point_dataframe))
+        metadata["double_sextant_voxel_assembly_scope"] = "run_level"
 
     return PatientStageResult.success(PatientStageName.SAMPLING_CLASSIFICATION, metadata=metadata)
 

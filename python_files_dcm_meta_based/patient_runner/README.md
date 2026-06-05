@@ -165,8 +165,10 @@ Scientific stage config boundary:
   centroid/manual producers should satisfy the same producer contract; realized
   targeting is applied in this adapter after all biopsy geometry exists,
 - sampling/classification is now a separate executable adapter after
-  simulated-biopsy finalization; it currently wraps sampled-biopsy processing,
-  with later classification fragments to add inside the same stage boundary.
+  simulated-biopsy finalization; it currently wraps sampled-biopsy processing
+  and optimizer-v2 sampling audit annotation, with later classification
+  fragments to add inside the same stage boundary.
+  and optimizer-v2 sampling audit annotation still outside the patient stage.
 
 Scientific tranche direction:
 

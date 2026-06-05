@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-06-03
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -685,7 +685,7 @@ Bridge mapping:
 | `transform_generation` | `transforms`, `random_seeds`, MC/optimizer sample requirements | copied `MC info` and `Random info` snapshots |
 | `optimization` | `optimization.optimizer_v1`, `optimization.optimizer_v2` | legacy adapter configs and parallel pool |
 | `simulated_biopsy_finalization` | `biopsy.simulated_biopsy.producer_policy`, geometry core | `structs_referenced_dict`, selected producer outputs |
-| `sampling_classification` | `biopsy.sampling` | biopsy structures and legacy output stores |
+| `sampling_classification` | `biopsy.sampling`, `mc.simulation.biopsy_z_voxel_length` | biopsy structures and legacy output stores |
 | `mc_prep` | `simulation.mc.prep`, `simulation.mc.counts` | copied `MC info` sample counts |
 | `mc_simulation` | `simulation.mc.containment`, `dose`, `mr_adc` | legacy MC adapter contracts |
 | `guidance` | `guidance_maps.planning` | selected anatomy and biopsy state |
@@ -817,8 +817,9 @@ The next validation sequence is:
 
 1. Run the legacy/default cohort path and compare against the clean May 22 or
   May 21 baseline to verify the wider config bridge preserved outputs.
-2. Run a small `SCIENTIFIC_SHADOW` patient set through the typed builder and
-  current dosimetry pathway.
-3. Widen scientific-shadow validation only after the small run resolves runtime
+2. Run small `SCIENTIFIC_SHADOW` patient sets through the typed builder in
+  staged pathways: biopsy preprocessing, optimization, post-optimizer biopsy
+  realization, sampling/classification, then current dosimetry.
+3. Widen scientific-shadow validation only after the staged runs resolve runtime
   context gaps such as RTSTRUCT paths, MR ADC unit state, RNG, parallel pool,
   and view-list availability.

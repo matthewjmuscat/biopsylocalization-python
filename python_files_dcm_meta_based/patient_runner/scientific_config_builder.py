@@ -20,6 +20,7 @@ from preprocessing.transform_bank import STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_C
 from preprocessing.transform_bank import resolve_required_generated_transform_samples
 
 from .scientific_config import PatientAnatomicalPreprocessingScientificConfig
+from .scientific_config import PatientDoubleSextantClassificationStageConfig
 from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
@@ -457,12 +458,17 @@ def _build_simulated_biopsy_finalization_config(pipeline_config: Any) -> Patient
 
 
 def _build_sampling_classification_config(pipeline_config: Any) -> PatientSamplingClassificationScientificConfig:
+    refs = pipeline_config.legacy_refs
     return PatientSamplingClassificationScientificConfig(
         sampled_biopsy_processing=PatientSampledBiopsyProcessingStageConfig(
             bx_sample_pts_lattice_spacing=pipeline_config.mc.prep.bx_sample_pts_lattice_spacing,
             show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot=(
                 pipeline_config.biopsy.sampling.show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot
             ),
+        ),
+        double_sextant_classification=PatientDoubleSextantClassificationStageConfig(
+            oar_ref=refs.oar_ref,
+            biopsy_z_voxel_length=pipeline_config.mc.simulation.biopsy_z_voxel_length,
         ),
     )
 
