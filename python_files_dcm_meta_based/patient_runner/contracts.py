@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
+import traceback as traceback_module
 from typing import Any, Mapping, MutableMapping, Sequence
 
 
@@ -396,8 +397,19 @@ class PatientStageResult:
         resolved_metadata = dict(metadata or {})
         resolved_warnings = list(warnings)
         if exception is not None:
+            exception_metadata = getattr(exception, "patient_runner_failure_metadata", None)
+            if isinstance(exception_metadata, Mapping):
+                resolved_metadata.update(dict(exception_metadata))
             resolved_metadata["exception_type"] = type(exception).__name__
             resolved_metadata["exception_message"] = str(exception)
+            resolved_metadata["exception_traceback_lines"] = [
+                traceback_line.rstrip("\n")
+                for traceback_line in traceback_module.format_exception(
+                    type(exception),
+                    exception,
+                    exception.__traceback__,
+                )
+            ]
             resolved_warnings.append(f"{type(exception).__name__}: {exception}")
         return cls(
             stage_name=_stage_name_value(stage_name),

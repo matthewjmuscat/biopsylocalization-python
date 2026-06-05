@@ -206,104 +206,118 @@ def run_patient_anatomical_preprocessing_scientific_stage(
 
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     pydicom_item = runtime_state.pydicom_item
+    active_step = ""
 
-    if stage_config.raw_contour_pulling is not None:
-        from preprocessing.structure_processing.per_patient.raw_contour_pulling import (
-            pull_raw_structure_contours_for_patient,
-        )
+    try:
+        if stage_config.raw_contour_pulling is not None:
+            from preprocessing.structure_processing.per_patient.raw_contour_pulling import (
+                pull_raw_structure_contours_for_patient,
+            )
 
-        raw_config = stage_config.raw_contour_pulling
-        rtstruct_dicom_path = _resolve_patient_mapping_value(
-            raw_config.rtstruct_dicom_paths_by_patient_uid,
-            runtime_state.patient_uid,
-            "rtstruct_dicom_paths_by_patient_uid",
-        )
-        pull_raw_structure_contours_for_patient(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            rtstruct_dicom_path=rtstruct_dicom_path,
-            structs_referenced_list_generalized=raw_config.structs_referenced_list_generalized,
-            bx_ref=runtime_state.bx_ref,
-            structures_progress=None,
-            pulling_structures_task=None,
-        )
-        metadata["steps"].append("raw_contour_pulling")
-        metadata["raw_contour_structure_families"] = tuple(raw_config.structs_referenced_list_generalized)
+            active_step = "raw_contour_pulling"
+            raw_config = stage_config.raw_contour_pulling
+            rtstruct_dicom_path = _resolve_patient_mapping_value(
+                raw_config.rtstruct_dicom_paths_by_patient_uid,
+                runtime_state.patient_uid,
+                "rtstruct_dicom_paths_by_patient_uid",
+            )
+            pull_raw_structure_contours_for_patient(
+                patient_uid=runtime_state.patient_uid,
+                pydicom_item=pydicom_item,
+                rtstruct_dicom_path=rtstruct_dicom_path,
+                structs_referenced_list_generalized=raw_config.structs_referenced_list_generalized,
+                bx_ref=runtime_state.bx_ref,
+                structures_progress=None,
+                pulling_structures_task=None,
+            )
+            metadata["steps"].append(active_step)
+            metadata["raw_contour_structure_families"] = tuple(raw_config.structs_referenced_list_generalized)
 
-    if stage_config.structure_selection is not None:
-        from preprocessing.structure_selection import select_patient_unique_structures
+        if stage_config.structure_selection is not None:
+            from preprocessing.structure_selection import select_patient_unique_structures
 
-        selection_config = stage_config.structure_selection
-        presentation_context = _legacy_null_presentation_context()
-        selected_structures_dataframe = select_patient_unique_structures(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            master_structure_reference_dict=runtime_state.master_structure_reference_dict,
-            master_structure_info_dict=runtime_state.master_structure_info_dict,
-            structs_referenced_dict=selection_config.structs_referenced_dict,
-            structs_referenced_list_generalized=selection_config.structs_referenced_list_generalized,
-            structs_referenced_list_generalized_unique_structs=(
-                selection_config.structs_referenced_list_generalized_unique_structs
-            ),
-            all_ref_key=runtime_state.all_ref_key,
-            important_info=presentation_context.important_info,
-            live_display=presentation_context.live_display,
-        )
-        metadata["steps"].append("structure_selection")
-        metadata["selected_structures_rows"] = int(len(selected_structures_dataframe))
-        metadata["structure_selection_message_count"] = len(presentation_context.important_info.lines)
+            active_step = "structure_selection"
+            selection_config = stage_config.structure_selection
+            presentation_context = _legacy_null_presentation_context()
+            selected_structures_dataframe = select_patient_unique_structures(
+                patient_uid=runtime_state.patient_uid,
+                pydicom_item=pydicom_item,
+                master_structure_reference_dict=runtime_state.master_structure_reference_dict,
+                master_structure_info_dict=runtime_state.master_structure_info_dict,
+                structs_referenced_dict=selection_config.structs_referenced_dict,
+                structs_referenced_list_generalized=selection_config.structs_referenced_list_generalized,
+                structs_referenced_list_generalized_unique_structs=(
+                    selection_config.structs_referenced_list_generalized_unique_structs
+                ),
+                all_ref_key=runtime_state.all_ref_key,
+                important_info=presentation_context.important_info,
+                live_display=presentation_context.live_display,
+            )
+            metadata["steps"].append(active_step)
+            metadata["selected_structures_rows"] = int(len(selected_structures_dataframe))
+            metadata["structure_selection_message_count"] = len(presentation_context.important_info.lines)
 
-    if stage_config.standard_non_biopsy_structure_processing is not None:
-        from preprocessing.structure_processing.non_biopsy_structure_loop import (
-            process_patient_standard_non_biopsy_structure_families,
-        )
+        if stage_config.standard_non_biopsy_structure_processing is not None:
+            from preprocessing.structure_processing.non_biopsy_structure_loop import (
+                process_patient_standard_non_biopsy_structure_families,
+            )
 
-        standard_config = stage_config.standard_non_biopsy_structure_processing
-        presentation_context = _legacy_null_presentation_context()
-        process_patient_standard_non_biopsy_structure_families(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            oar_ref=standard_config.oar_ref,
-            rectum_ref_key=standard_config.rectum_ref_key,
-            urethra_ref_key=standard_config.urethra_ref_key,
-            dil_ref=standard_config.dil_ref,
-            master_structure_reference_dict=runtime_state.master_structure_reference_dict,
-            master_structure_info_dict=runtime_state.master_structure_info_dict,
-            structs_referenced_dict=standard_config.structs_referenced_dict,
-            config=standard_config.preprocessing_config,
-            parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.ANATOMICAL_PREPROCESSING),
-            layout_groups=presentation_context.layout_groups,
-            structures_progress=presentation_context.structures_progress,
-            indeterminate_progress_sub=presentation_context.indeterminate_progress_sub,
-            important_info=presentation_context.important_info,
-            live_display=presentation_context.live_display,
-            runtime_logger=scientific_config.resources.runtime_logger,
-        )
-        metadata["steps"].append("standard_non_biopsy_structure_processing")
-        metadata["standard_non_biopsy_structure_counts"] = _count_structures_for_refs(
-            pydicom_item,
-            standard_config.structure_ref_types,
-        )
-        metadata["standard_non_biopsy_message_count"] = len(presentation_context.important_info.lines)
+            active_step = "standard_non_biopsy_structure_processing"
+            standard_config = stage_config.standard_non_biopsy_structure_processing
+            presentation_context = _legacy_null_presentation_context()
+            process_patient_standard_non_biopsy_structure_families(
+                patient_uid=runtime_state.patient_uid,
+                pydicom_item=pydicom_item,
+                oar_ref=standard_config.oar_ref,
+                rectum_ref_key=standard_config.rectum_ref_key,
+                urethra_ref_key=standard_config.urethra_ref_key,
+                dil_ref=standard_config.dil_ref,
+                master_structure_reference_dict=runtime_state.master_structure_reference_dict,
+                master_structure_info_dict=runtime_state.master_structure_info_dict,
+                structs_referenced_dict=standard_config.structs_referenced_dict,
+                config=standard_config.preprocessing_config,
+                parallel_pool=_require_parallel_pool(scientific_config, PatientStageName.ANATOMICAL_PREPROCESSING),
+                layout_groups=presentation_context.layout_groups,
+                structures_progress=presentation_context.structures_progress,
+                indeterminate_progress_sub=presentation_context.indeterminate_progress_sub,
+                important_info=presentation_context.important_info,
+                live_display=presentation_context.live_display,
+                runtime_logger=scientific_config.resources.runtime_logger,
+            )
+            metadata["steps"].append(active_step)
+            metadata["standard_non_biopsy_structure_counts"] = _count_structures_for_refs(
+                pydicom_item,
+                standard_config.structure_ref_types,
+            )
+            metadata["standard_non_biopsy_message_count"] = len(presentation_context.important_info.lines)
 
-    if stage_config.prostate_only_mr_adc is not None:
-        from preprocessing.structure_processing.prostate_only_mr_adc import process_patient_prostate_only_mr_adc
+        if stage_config.prostate_only_mr_adc is not None:
+            from preprocessing.structure_processing.prostate_only_mr_adc import process_patient_prostate_only_mr_adc
 
-        prostate_only_config = stage_config.prostate_only_mr_adc
-        presentation_context = _legacy_null_presentation_context()
-        process_patient_prostate_only_mr_adc(
-            patient_uid=runtime_state.patient_uid,
-            pydicom_item=pydicom_item,
-            all_ref_key=runtime_state.all_ref_key,
-            dil_ref=prostate_only_config.dil_ref,
-            mr_adc_ref=prostate_only_config.mr_adc_ref,
-            demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
-                prostate_only_config.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
-            ),
-            indeterminate_progress_sub=presentation_context.indeterminate_progress_sub,
-        )
-        metadata["steps"].append("prostate_only_mr_adc")
-        metadata["prostate_only_mr_adc_reference_available"] = prostate_only_config.mr_adc_ref in pydicom_item
+            active_step = "prostate_only_mr_adc"
+            prostate_only_config = stage_config.prostate_only_mr_adc
+            presentation_context = _legacy_null_presentation_context()
+            process_patient_prostate_only_mr_adc(
+                patient_uid=runtime_state.patient_uid,
+                pydicom_item=pydicom_item,
+                all_ref_key=runtime_state.all_ref_key,
+                dil_ref=prostate_only_config.dil_ref,
+                mr_adc_ref=prostate_only_config.mr_adc_ref,
+                demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
+                    prostate_only_config.demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
+                ),
+                indeterminate_progress_sub=presentation_context.indeterminate_progress_sub,
+            )
+            metadata["steps"].append(active_step)
+            metadata["prostate_only_mr_adc_reference_available"] = prostate_only_config.mr_adc_ref in pydicom_item
+    except Exception as exception:
+        existing_failure_metadata = getattr(exception, "patient_runner_failure_metadata", None)
+        failure_metadata = dict(existing_failure_metadata) if isinstance(existing_failure_metadata, Mapping) else {}
+        failure_metadata.update(metadata)
+        failure_metadata["active_step"] = active_step
+        failure_metadata["completed_steps"] = tuple(metadata["steps"])
+        setattr(exception, "patient_runner_failure_metadata", failure_metadata)
+        raise
 
     return PatientStageResult.success(PatientStageName.ANATOMICAL_PREPROCESSING, metadata=metadata)
 

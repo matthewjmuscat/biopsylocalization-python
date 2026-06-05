@@ -268,4 +268,18 @@ class LegacyPresentationContext:
 
     @classmethod
     def null(cls) -> "LegacyPresentationContext":
-        return cls()
+        context = cls()
+        mc_trial_progress = LegacyNullProgress()
+        progress_group_info_list = [
+            context.completed_progress,
+            context.completed_sections_progress,
+            context.patients_progress,
+            context.structures_progress,
+            context.biopsies_progress,
+            mc_trial_progress,
+            context.indeterminate_progress_main,
+            context.indeterminate_progress_sub,
+            None,
+        ]
+        context.layout_groups = (None, progress_group_info_list, context.important_info, None)
+        return context
