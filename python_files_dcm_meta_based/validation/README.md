@@ -50,7 +50,7 @@ Each job has a `script`, a short `name`, path references, an `output_dir`, and o
 
 | Group | Enabled | Purpose |
 | --- | --- | --- |
-| `latest_standard_candidate_core` | Yes | Fast current checks for the Jun 04 22:23 latest standard run: one recursive health check and one cohort oracle check. |
+| `latest_standard_candidate_core` | Yes | Fast current checks for the Jun 05 15:05 latest standard run: one recursive health check and one cohort oracle check against Jun 04 22:23. |
 | `latest_standard_candidate_reference_set` | Yes | Cohort-table oracle checks against the current reference set. |
 | `latest_patient_runner_parity` | No | Template for patient-runner parity once a runner output directory is ready. |
 | `recursive_all_csv_reference_set` | No | Heavier recursive CSV comparisons for non-final artifacts. Enable only when investigating. |
@@ -67,11 +67,11 @@ Each job has a `script`, a short `name`, path references, an `output_dir`, and o
 
 `compare_cohort_runs.py` is the preferred final scientific-output gate. Recursive CSV comparisons are intentionally noisier because they include diagnostics, timings, and implementation artifacts.
 
-Known interpretation from the latest Jun 04 22:23 validation set:
+Known interpretation from the latest Jun 05 15:05 validation set:
 
-- Cohort outputs matched Jun 04 00:32, Jun 03 14:36, and Jun 02 01:47 with 22/22 tables and zero drift.
+- Cohort outputs matched Jun 04 22:23, Jun 04 00:32, Jun 03 14:36, and Jun 02 01:47 with 22/22 tables and zero drift.
 - The Jun 04 14:18 comparison showed two known structural row-alignment differences but no numeric scientific drift.
-- Recursive `validate_run_against_baseline.py` found the candidate run completed cleanly with no tracebacks or exception events; recursive numeric differences were diagnostic/performance artifacts rather than final cohort drift.
+- Recursive `validate_run_against_baseline.py` found the candidate run completed cleanly with no tracebacks or exception events; recursive differences were diagnostic/performance artifacts rather than final cohort drift.
 
 ## Patient-Runner Validation
 
