@@ -617,9 +617,24 @@ class PatientMCSimulationScientificConfig:
     convex_config: MCConvexSimulationConfig | None = None
     mr_config: MCMRSimulationConfig | None = None
     mr_adc_ref: str = ""
+    num_mc_containment_simulations: int = 0
+    num_mc_dose_simulations: int = 0
+    num_mc_mr_simulations: int = 0
+    bx_sample_pts_lattice_spacing: float = 1.0
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        for field_name in (
+            "num_mc_containment_simulations",
+            "num_mc_dose_simulations",
+            "num_mc_mr_simulations",
+        ):
+            object.__setattr__(self, field_name, _non_negative_int(getattr(self, field_name), field_name))
+        object.__setattr__(
+            self,
+            "bx_sample_pts_lattice_spacing",
+            _positive_float(self.bx_sample_pts_lattice_spacing, "bx_sample_pts_lattice_spacing"),
+        )
         if self.mr_config is not None:
             object.__setattr__(self, "mr_adc_ref", _non_empty_string(self.mr_adc_ref, "mr_adc_ref"))
         else:
@@ -756,6 +771,13 @@ def _positive_int(value: Any, field_name: str) -> int:
     resolved_value = int(value)
     if resolved_value < 1:
         raise ValueError(f"{field_name} must be at least 1")
+    return resolved_value
+
+
+def _non_negative_int(value: Any, field_name: str) -> int:
+    resolved_value = int(value)
+    if resolved_value < 0:
+        raise ValueError(f"{field_name} cannot be negative")
     return resolved_value
 
 

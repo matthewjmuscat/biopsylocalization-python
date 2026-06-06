@@ -309,6 +309,10 @@ def _build_mc_simulation_config(
         convex_config=convex_config,
         mr_config=mr_config,
         mr_adc_ref=pipeline_config.legacy_refs.mr_adc_ref,
+        num_mc_containment_simulations=mc.counts.num_mc_containment_simulations_input,
+        num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
+        num_mc_mr_simulations=mc.counts.num_mc_mr_simulations_input,
+        bx_sample_pts_lattice_spacing=mc.prep.bx_sample_pts_lattice_spacing,
     )
 
 
