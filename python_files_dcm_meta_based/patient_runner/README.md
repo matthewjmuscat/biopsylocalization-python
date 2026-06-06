@@ -140,15 +140,16 @@ Scientific stage config boundary:
   adapted to null/headless shims,
 - preprocessing is represented explicitly through currently patient-local slices
   such as real-biopsy geometry processing, simulated-biopsy preparation,
-  simulated-biopsy planning, uncertainty attachment, and realized targeting;
-  heavier non-biopsy structure preprocessing can be added to the same boundary
-  as those signatures are cleaned,
+  simulated-biopsy planning, and uncertainty attachment; realized targeting is
+  deferred to the post-optimizer simulated-biopsy finalization adapter so all
+  biopsy geometry matches legacy-main ordering,
 - `scientific_stages.py` contains thin runner adapters that translate
   `LegacyPatientRuntimeState` plus the scientific config bundle into calls to
   existing patient scientific modules,
 - `scientific_dependencies.py` owns both the full scientific graph-node view and
   the current executable adapter view, plus named pathway presets such as
-  `current_dosimetry_shadow`,
+  `post_optimizer_biopsy_realization_shadow`, `sampling_classification_shadow`,
+  and `current_dosimetry_shadow`,
 - `build_patient_scientific_stages(...)` is opt-in and does not change
   `default_patient_stages()`, which remains artifact-only for the current
   shadow-output validation path.
@@ -161,10 +162,13 @@ Scientific stage config boundary:
 - simulated-biopsy finalization is now a separate executable adapter after the
   current legacy-shadow simulated-biopsy producer; that producer is optimization
   today because the legacy path runs finalization after optimizer-v2, but later
-  centroid/manual producers should satisfy the same producer contract,
+  centroid/manual producers should satisfy the same producer contract; realized
+  targeting is applied in this adapter after all biopsy geometry exists,
 - sampling/classification is now a separate executable adapter after
-  simulated-biopsy finalization; it currently wraps sampled-biopsy processing,
-  with later classification fragments to add inside the same stage boundary.
+  simulated-biopsy finalization; it currently wraps sampled-biopsy processing
+  optimizer-v2 sampling audit annotation, and double-sextant sample-point
+  fragments, while run-level per-voxel double-sextant assembly remains outside
+  the patient stage.
 
 Scientific tranche direction:
 

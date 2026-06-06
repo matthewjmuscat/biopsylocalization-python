@@ -74,6 +74,7 @@ from .runner import default_patient_stages
 from .runner import run_patient_case
 from .runner import run_patient_stages
 from .scientific_config import PatientAnatomicalPreprocessingScientificConfig
+from .scientific_config import PatientDoubleSextantClassificationStageConfig
 from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
@@ -198,6 +199,7 @@ __all__ = [
     "DEFAULT_PATIENT_SCIENTIFIC_TRANCHES",
     "DEFAULT_SCIENTIFIC_STAGE_ORDER",
     "PatientAnatomicalPreprocessingScientificConfig",
+    "PatientDoubleSextantClassificationStageConfig",
     "PatientGridPreprocessingScientificConfig",
     "PatientGuidanceScientificConfig",
     "PatientMCPrepScientificConfig",

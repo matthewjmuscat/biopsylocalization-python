@@ -89,12 +89,35 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
             "Compare optimizer stage status and selected optimizer-v2 metadata against the legacy optimizer run.",
             "Re-enable optimizer-v2 validation sidecars only if optimizer behavior changed or drift is suspected.",
         ),
+        next_checkpoint_name="post_optimizer_biopsy_realization_shadow",
+    ),
+    PatientScientificRunnerCheckpoint(
+        checkpoint_name="post_optimizer_biopsy_realization_shadow",
+        pathway_name=PatientScientificPathwayName.POST_OPTIMIZER_BIOPSY_REALIZATION_SHADOW,
+        summary=(
+            "Fourth checkpoint: adds simulated-biopsy finalization and realized targeting after optimizer output."
+        ),
+        validation_after_run=(
+            "Inspect simulated-biopsy finalization metadata for succeeded status and expected simulated biopsy counts.",
+            "Confirm realized targeting runs after finalization and no biopsy centroid fields are missing.",
+        ),
+        next_checkpoint_name="sampling_classification_shadow",
+    ),
+    PatientScientificRunnerCheckpoint(
+        checkpoint_name="sampling_classification_shadow",
+        pathway_name=PatientScientificPathwayName.SAMPLING_CLASSIFICATION_SHADOW,
+        summary="Fifth checkpoint: adds sampled-biopsy storage and classification-adjacent patient fragments.",
+        validation_after_run=(
+            "Inspect sampled-biopsy stage metadata for sampled result fragments and biopsy coordinate systems.",
+            "Confirm optimizer-v2 sampling audit annotation runs after sampled-biopsy processing.",
+            "Keep run-level per-voxel double-sextant assembly on the legacy/oracle side until separately wired.",
+        ),
         next_checkpoint_name="current_dosimetry_shadow",
     ),
     PatientScientificRunnerCheckpoint(
         checkpoint_name="current_dosimetry_shadow",
         pathway_name=PatientScientificPathwayName.CURRENT_DOSIMETRY_SHADOW,
-        summary="Fourth checkpoint: adds simulated-biopsy finalization, sampling/classification, MC prep, dose, and MR ADC simulation.",
+        summary="Sixth checkpoint: extends through MC prep, dose simulation, containment simulation, and MR ADC simulation.",
         validation_after_run=(
             "Inspect MC prep and MC simulation patient manifests for succeeded stage status.",
             "Run cohort CSV parity against the previous validated run output.",

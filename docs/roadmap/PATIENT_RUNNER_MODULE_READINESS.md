@@ -1,6 +1,6 @@
 # Patient Runner Module Readiness
 
-Last updated: 2026-05-27
+Last updated: 2026-06-05
 
 This is the working checklist for moving the full `biopsy_localization_convex_main.py`
 pipeline toward patient-local execution while preserving the validated cohort path
@@ -200,13 +200,13 @@ Recommended tranche structure for patient-runner shadow work:
     should satisfy the same simulated-biopsy source contract.
    - Planned-vs-realized centroid validation and post-optimizer biopsy
      annotations that depend on finalized simulated biopsy geometry.
-   - Realized targeting if parity shows it belongs after finalization for the
-     patient-runner recipe; otherwise keep it in the biopsy preprocessing tranche
-     to match the legacy point of mutation.
+   - Realized targeting after finalization, once both real and simulated biopsy
+     geometry have finalized centroid/shape state.
 7. Sampling and classification tranche
    - Sampled-biopsy processing and biopsy-frame coordinate storage.
    - Optimizer-v2 sampling audit annotation.
-   - Double-sextant sample-point fragments plus run-level per-voxel assembly.
+   - Double-sextant sample-point fragments in the patient stage, plus run-level
+     per-voxel assembly.
 8. MC prep and simulation tranche
    - BX-only/self transforms and relative-structure transforms immediately
      before MC simulation.
@@ -359,12 +359,13 @@ Recommended order of operations from this point:
   preprocessing, optimizer, MC prep/simulation, guidance, and output/parity
   tranche config groups.
 5. Extend the sampling/classification stage boundary with later internal slices,
-  especially double-sextant fragments and optimizer-v2 sampling audit
-  annotations. Current adapters cover grid preprocessing, anatomical
+  especially run-level per-voxel double-sextant assembly. Current adapters cover
+  grid preprocessing, anatomical
   preprocessing, real-biopsy processing, simulated-biopsy preparation,
-  simulated-biopsy planning, uncertainty attachment, realized targeting,
-  transform generation, simulated-biopsy finalization, sampled-biopsy
-  processing, MC prep, MC simulation, optimizer, and guidance.
+  simulated-biopsy planning, uncertainty attachment, transform generation,
+  simulated-biopsy finalization with realized targeting, sampled-biopsy
+  processing, optimizer-v2 sampling audit annotation, double-sextant sample-point
+  fragments, MC prep, MC simulation, optimizer, and guidance.
 6. Continue wiring the separate scientific shadow-validation mode after the
   graph/pathway sequence is configured from main. Keep `SHADOW_OUTPUT` as
   artifact/export/assembly validation from completed legacy state.

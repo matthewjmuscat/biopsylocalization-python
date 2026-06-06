@@ -465,6 +465,22 @@ class PatientSampledBiopsyProcessingStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientDoubleSextantClassificationStageConfig:
+    """Config for patient-local double-sextant sample-point fragments."""
+
+    oar_ref: str
+    biopsy_z_voxel_length: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "oar_ref", _non_empty_string(self.oar_ref, "oar_ref"))
+        object.__setattr__(
+            self,
+            "biopsy_z_voxel_length",
+            _positive_float(self.biopsy_z_voxel_length, "biopsy_z_voxel_length"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class PatientUncertaintyAttachmentStageConfig:
     """Config for attaching a resolved uncertainty dataframe to one patient."""
 
@@ -477,14 +493,17 @@ class PatientSamplingClassificationScientificConfig:
     """Opt-in sampling/classification slices after simulated-biopsy finalization."""
 
     sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
+    double_sextant_classification: PatientDoubleSextantClassificationStageConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.double_sextant_classification is not None and self.sampled_biopsy_processing is None:
+            raise ValueError("double_sextant_classification requires sampled_biopsy_processing")
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
     def enabled(self) -> bool:
-        return self.sampled_biopsy_processing is not None
+        return self.sampled_biopsy_processing is not None or self.double_sextant_classification is not None
 
 
 @dataclass(frozen=True, slots=True)
