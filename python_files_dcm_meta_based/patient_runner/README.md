@@ -64,6 +64,9 @@ parallelism live in `../../docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` under
 
 Current Phase D scope:
 
+The durable output architecture target is documented in
+`../../docs/architecture/PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md`.
+
 - build an inventory from `PatientBatchRunResult.artifact_paths`,
 - optionally assemble selected cohort-style tables from written patient
   artifacts using the existing stitch-pair definitions,
