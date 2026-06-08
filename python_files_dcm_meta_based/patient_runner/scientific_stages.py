@@ -596,6 +596,15 @@ def run_patient_sampling_classification_scientific_stage(
         )
         metadata["steps"].append("sampled_biopsy_processing")
         metadata.update(_prefix_mapping(sampled_result, "sampled_biopsy_"))
+        metadata.update(
+            _prefix_mapping(
+                _hydrate_biopsy_sampling_mc_info(
+                    runtime_state.master_structure_info_dict,
+                    sampled_config.bx_sample_pts_lattice_spacing,
+                ),
+                "mc_info_",
+            )
+        )
 
         from biopsy_optimizer.v2.live_integration import (
             annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
@@ -714,6 +723,7 @@ def run_patient_mc_simulation_scientific_stage(
         return PatientStageResult.skipped(PatientStageName.MC_SIMULATION, reason="mc_simulation_not_configured")
 
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
+    metadata.update(_prefix_mapping(_hydrate_mc_simulation_mc_info(runtime_state.master_structure_info_dict, stage_config), "mc_info_"))
     if stage_config.convex_config is not None:
         from mc.simulation.per_patient import run_patient_mc_convex_stage
 
@@ -1027,6 +1037,48 @@ def _resolve_mc_prep_max_simulations(master_structure_info_dict: Mapping[str, An
     if stage_config.run_biopsy_self_transforms:
         return _resolve_optional_mc_info_int(master_structure_info_dict, None, "Max of num MC simulations")
     return None
+
+
+def _mutable_mc_info(master_structure_info_dict: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(master_structure_info_dict, dict):
+        raise TypeError("master_structure_info_dict must be mutable for patient scientific MC stages")
+    global_info = master_structure_info_dict.setdefault("Global", {})
+    if not isinstance(global_info, dict):
+        raise TypeError("master_structure_info_dict['Global'] must be a mutable dict")
+    mc_info = global_info.setdefault("MC info", {})
+    if not isinstance(mc_info, dict):
+        raise TypeError("master_structure_info_dict['Global']['MC info'] must be a mutable dict")
+    return mc_info
+
+
+def _hydrate_biopsy_sampling_mc_info(master_structure_info_dict: Mapping[str, Any],
+                                     bx_sample_pts_lattice_spacing: float) -> dict[str, Any]:
+    spacing = float(bx_sample_pts_lattice_spacing)
+    values = {
+        "BX sample pt lattice spacing (mm)": spacing,
+        "BX sample pt volume element (mm^3)": spacing ** 3,
+    }
+    _mutable_mc_info(master_structure_info_dict).update(values)
+    return values
+
+
+def _hydrate_mc_simulation_mc_info(master_structure_info_dict: Mapping[str, Any],
+                                   stage_config: Any) -> dict[str, Any]:
+    spacing = float(stage_config.bx_sample_pts_lattice_spacing)
+    values = {
+        "Num MC containment simulations": int(stage_config.num_mc_containment_simulations),
+        "Num MC dose simulations": int(stage_config.num_mc_dose_simulations),
+        "Num MC MR simulations": int(stage_config.num_mc_mr_simulations),
+        "BX sample pt lattice spacing (mm)": spacing,
+        "BX sample pt volume element (mm^3)": spacing ** 3,
+    }
+    values["Max of num MC simulations"] = max(
+        values["Num MC containment simulations"],
+        values["Num MC dose simulations"],
+        values["Num MC MR simulations"],
+    )
+    _mutable_mc_info(master_structure_info_dict).update(values)
+    return values
 
 
 def _merge_mc_performed_flags(master_structure_info_dict: Mapping[str, Any],
