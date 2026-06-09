@@ -129,6 +129,10 @@ diagnostic report.
 - `compare_patient_runner_parity.py` already compares legacy final cohort CSVs
   against assembled patient-runner cohort tables, but it expects assembled tables
   to exist before it runs.
+- `python_files_dcm_meta_based/post_run/cohort_assembly` now provides the first
+   manifest-backed post-run utility surface: JSON config loading, completed-batch
+   manifest loading, a GUI-callable service API, and a CLI wrapper around the
+   existing assembly engine.
 - Validation and assembly still assume legacy physical paths such as
   `Output CSVs/Cohort`, `Output CSVs/Preprocessing`, and
   `Output CSVs/MC simulation` in several places. These names should become
@@ -174,6 +178,9 @@ the migration.
 3. Add a post-run assembly entry point that can be run from CLI/config and that
    writes `cohort_assembly/assembled_tables`, an assembly manifest, and a summary
    report.
+   Status: initial package and entry point added under
+   `python_files_dcm_meta_based/post_run/cohort_assembly`; live validation still
+   requires an artifact-writing run.
 
 4. Replace hard-coded stitch selection with contract-driven planning backed by
    manifest discovery. The existing `SHADOW_STITCH_PAIRS` can remain as the

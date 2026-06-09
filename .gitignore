@@ -17,6 +17,7 @@ render_jsons/
 *.png
 *.json
 !python_files_dcm_meta_based/validation/configs/validation_jobs.json
+!python_files_dcm_meta_based/post_run/configs/cohort_assembly_jobs.json
 *.gif
 
 # Local tactical planning and private development notes
