@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from biopsy_optimizer.v1.per_patient import OptimizerV1LegacyConfig
     from biopsy_optimizer.v2.per_patient import OptimizerV2LiveConfig
     from guidance_maps.config import GuidanceMapPlanningConfig
-    from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig
+    from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig, PatientMCOutputTableConfig
     from preprocessing.dose_grid_processing import DoseGridProcessingConfig
     from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
     from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
@@ -647,6 +647,21 @@ class PatientMCSimulationScientificConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientMCOutputTablesScientificConfig:
+    """Config for patient-local downstream MC output dataframe fragments."""
+
+    output_table_config: PatientMCOutputTableConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return self.output_table_config is not None
+
+
+@dataclass(frozen=True, slots=True)
 class PatientOptimizationScientificConfig:
     """Config for patient-local optimizer stages."""
 
@@ -721,6 +736,7 @@ class PatientRunnerScientificConfig:
     preprocessing: PatientPreprocessingScientificConfig | None = None
     mc_prep: PatientMCPrepScientificConfig | None = None
     mc_simulation: PatientMCSimulationScientificConfig | None = None
+    mc_output_tables: PatientMCOutputTablesScientificConfig | None = None
     optimization: PatientOptimizationScientificConfig | None = None
     simulated_biopsy_finalization: PatientSimulatedBiopsyFinalizationStageConfig | None = None
     sampling_classification: PatientSamplingClassificationScientificConfig | None = None
@@ -741,6 +757,7 @@ class PatientRunnerScientificConfig:
             ("preprocessing", self.preprocessing),
             ("mc_prep", self.mc_prep),
             ("mc_simulation", self.mc_simulation),
+            ("mc_output_tables", self.mc_output_tables),
             ("optimization", self.optimization),
             ("simulated_biopsy_finalization", self.simulated_biopsy_finalization),
             ("sampling_classification", self.sampling_classification),

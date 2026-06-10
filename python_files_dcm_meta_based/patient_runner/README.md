@@ -130,8 +130,8 @@ Scientific stage config boundary:
 
 - `scientific_config.py` owns the opt-in `PatientRunnerScientificConfig` bundle
   and stage-group configs for grid preprocessing, anatomical preprocessing,
-  preprocessing, MC prep, MC simulation, optimization, and guidance-map
-  precompute,
+  preprocessing, MC prep, MC simulation, downstream MC output tables,
+  optimization, and guidance-map precompute,
 - grid preprocessing is represented as its own opt-in stage before anatomical
   preprocessing; it currently wraps patient-local dose-grid runtime object
   construction, MR ADC input normalization, and MR ADC grid runtime object
@@ -172,6 +172,9 @@ Scientific stage config boundary:
   optimizer-v2 sampling audit annotation, and double-sextant sample-point
   fragments, while run-level per-voxel double-sextant assembly remains outside
   the patient stage.
+- MC output tables are now a separate executable adapter after MC simulation;
+  they build patient-local downstream MC dataframe fragments before artifact
+  writing so post-run cohort assembly can consume durable per-patient outputs.
 
 Scientific tranche direction:
 

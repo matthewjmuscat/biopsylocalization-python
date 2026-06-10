@@ -153,7 +153,7 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.MC_PREP_AND_SIMULATION,
         display_name="MC Prep And Simulation",
-        summary="Runs MC prep transforms and patient MC simulation stages immediately before MC outputs.",
+        summary="Runs MC prep transforms, patient MC simulation, and downstream MC output table stages.",
         planned_surfaces=(
             "BX-only/self transforms",
             "relative-structure transforms",
@@ -161,7 +161,7 @@ DEFAULT_PATIENT_SCIENTIFIC_TRANCHES = (
             "MR ADC localization",
             "downstream MC annotations",
         ),
-        implemented_stage_names=(PatientStageName.MC_PREP, PatientStageName.MC_SIMULATION),
+        implemented_stage_names=(PatientStageName.MC_PREP, PatientStageName.MC_SIMULATION, PatientStageName.MC_OUTPUT_TABLES),
     ),
     PatientScientificTranche(
         tranche_name=PatientScientificTrancheName.OUTPUT_GUIDANCE_ASSEMBLY_PARITY,

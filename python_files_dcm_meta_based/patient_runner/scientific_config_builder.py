@@ -11,6 +11,7 @@ from mc.simulation.per_patient import MCContainmentSimulationConfig
 from mc.simulation.per_patient import MCConvexSimulationConfig
 from mc.simulation.per_patient import MCDoseSimulationConfig
 from mc.simulation.per_patient import MCMRSimulationConfig
+from mc.simulation.per_patient import PatientMCOutputTableConfig
 from mc.simulation.per_patient import MCReferenceKeys
 from mc.simulation.per_patient import MCSimulationRuntimeConfig
 from preprocessing.dose_grid_processing import DoseGridProcessingConfig
@@ -24,6 +25,7 @@ from .scientific_config import PatientDoubleSextantClassificationStageConfig
 from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
+from .scientific_config import PatientMCOutputTablesScientificConfig
 from .scientific_config import PatientMCSimulationScientificConfig
 from .scientific_config import PatientMRADCInputNormalizationStageConfig
 from .scientific_config import PatientOptimizationScientificConfig
@@ -43,6 +45,9 @@ from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageC
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
 from .scientific_shadow import PatientScientificShadowConfig
+
+
+DEFAULT_D_X_DVH_TO_CALC_LIST = (2, 50, 98)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +127,7 @@ def build_patient_runner_scientific_config(
         preprocessing=_build_preprocessing_config(pipeline_config, context),
         mc_prep=_build_mc_prep_config(pipeline_config),
         mc_simulation=_build_mc_simulation_config(pipeline_config, context),
+        mc_output_tables=_build_mc_output_tables_config(pipeline_config),
         optimization=_build_optimization_config(pipeline_config, context),
         simulated_biopsy_finalization=_build_simulated_biopsy_finalization_config(pipeline_config),
         sampling_classification=_build_sampling_classification_config(pipeline_config),
@@ -313,6 +319,34 @@ def _build_mc_simulation_config(
         num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
         num_mc_mr_simulations=mc.counts.num_mc_mr_simulations_input,
         bx_sample_pts_lattice_spacing=mc.prep.bx_sample_pts_lattice_spacing,
+    )
+
+
+def _build_mc_output_tables_config(pipeline_config: Any) -> PatientMCOutputTablesScientificConfig:
+    mc = pipeline_config.mc
+    refs = pipeline_config.legacy_refs
+    registry = pipeline_config.structure_registry
+    max_mc_simulations = mc.counts.max_num_mc_simulations
+    return PatientMCOutputTablesScientificConfig(
+        output_table_config=PatientMCOutputTableConfig(
+            bx_ref=refs.bx_ref,
+            all_ref_key=refs.all_ref_key,
+            structs_referenced_list=registry.structs_referenced_list,
+            dose_ref=refs.dose_ref,
+            plan_ref=refs.plan_ref,
+            mr_adc_ref=refs.mr_adc_ref,
+            biopsy_z_voxel_length=mc.simulation.biopsy_z_voxel_length,
+            num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
+            d_x_DVH_to_calc_list=DEFAULT_D_X_DVH_TO_CALC_LIST,
+            v_percent_DVH_to_calc_list=mc.simulation.v_percent_dvh_to_calc_list,
+            include_transform_tables=max_mc_simulations > 0,
+            include_tissue_tables=mc.counts.perform_mc_containment_sim,
+            include_dose_tables=mc.counts.perform_mc_dose_sim,
+            include_dvh_trial_tables=mc.counts.perform_mc_dose_sim,
+            include_dvh_metric_statistics=mc.counts.perform_mc_dose_sim,
+            include_mr_tables=mc.counts.perform_mc_mr_sim,
+        ),
+        metadata={"source": "PipelineConfig.mc"},
     )
 
 

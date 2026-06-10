@@ -27,6 +27,7 @@ class PatientStageName(str, Enum):
     SAMPLING_CLASSIFICATION = "sampling_classification"
     MC_PREP = "mc_prep"
     MC_SIMULATION = "mc_simulation"
+    MC_OUTPUT_TABLES = "mc_output_tables"
     PATIENT_ARTIFACT_WRITING = "patient_artifact_writing"
     GUIDANCE = "guidance"
 

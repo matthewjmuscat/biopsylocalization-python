@@ -117,9 +117,12 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
     PatientScientificRunnerCheckpoint(
         checkpoint_name="current_dosimetry_shadow",
         pathway_name=PatientScientificPathwayName.CURRENT_DOSIMETRY_SHADOW,
-        summary="Sixth checkpoint: extends through MC prep, dose simulation, containment simulation, and MR ADC simulation.",
+        summary=(
+            "Sixth checkpoint: extends through MC prep, dose simulation, containment simulation, "
+            "MR ADC simulation, and downstream MC output tables."
+        ),
         validation_after_run=(
-            "Inspect MC prep and MC simulation patient manifests for succeeded stage status.",
+            "Inspect MC prep, MC simulation, and MC output-table patient manifests for succeeded stage status.",
             "Run cohort CSV parity against the previous validated run output.",
             "Re-enable Phase 3B/3C output sidecars only if output schema or artifact surfaces changed.",
         ),
@@ -128,7 +131,10 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
     PatientScientificRunnerCheckpoint(
         checkpoint_name="full_current_pipeline_shadow",
         pathway_name=PatientScientificPathwayName.FULL_CURRENT_PIPELINE_SHADOW,
-        summary="Full current live-runner checkpoint: all current executable scientific stages, including guidance.",
+        summary=(
+            "Full current live-runner checkpoint: all current executable scientific stages, "
+            "including downstream MC output tables and guidance."
+        ),
         validation_after_run=(
             "Run full cohort CSV parity against the previous validated oracle run.",
             "Review guidance outputs and patient/cohort assembly evidence before considering any legacy deletion.",

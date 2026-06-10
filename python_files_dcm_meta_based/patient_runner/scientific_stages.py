@@ -44,6 +44,7 @@ def build_patient_scientific_stages(
         PatientStageName.TRANSFORM_GENERATION.value: _transform_generation_stage(scientific_config),
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
+        PatientStageName.MC_OUTPUT_TABLES.value: _mc_output_tables_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value: _simulated_biopsy_finalization_stage(scientific_config),
         PatientStageName.SAMPLING_CLASSIFICATION.value: _sampling_classification_stage(scientific_config),
@@ -775,6 +776,43 @@ def run_patient_mc_simulation_scientific_stage(
     return PatientStageResult.success(PatientStageName.MC_SIMULATION, metadata=metadata)
 
 
+def run_patient_mc_output_tables_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Build patient-local downstream MC output dataframe fragments."""
+    del config
+    stage_config = scientific_config.mc_output_tables
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(PatientStageName.MC_OUTPUT_TABLES, reason="mc_output_tables_not_configured")
+
+    from mc.simulation.per_patient import build_patient_mc_downstream_output_tables
+
+    output_bundle = build_patient_mc_downstream_output_tables(
+        runtime_state.patient_uid,
+        runtime_state.pydicom_item,
+        stage_config.output_table_config,
+        patient_info_dict=runtime_state.master_structure_info_dict,
+    )
+    artifact_count = output_bundle.patient_table_count + output_bundle.biopsy_table_count
+    metadata = {
+        "patient_uid": runtime_state.patient_uid,
+        "patient_table_count": output_bundle.patient_table_count,
+        "biopsy_table_count": output_bundle.biopsy_table_count,
+        "patient_table_names": output_bundle.patient_table_names,
+        "biopsy_table_names": output_bundle.biopsy_table_names,
+        "returned_table_names": tuple(output_bundle.returned_dataframes.keys()),
+        "annotations_applied": output_bundle.annotations_applied,
+    }
+    return PatientStageResult.success(
+        PatientStageName.MC_OUTPUT_TABLES,
+        artifact_count=artifact_count,
+        metadata=metadata,
+    )
+
+
 def run_patient_optimization_scientific_stage(
     runtime_state: LegacyPatientRuntimeState,
     config: PatientRunConfig,
@@ -922,6 +960,15 @@ def _mc_simulation_stage(scientific_config: PatientRunnerScientificConfig) -> Pa
     return PatientStage(
         PatientStageName.MC_SIMULATION,
         partial(run_patient_mc_simulation_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _mc_output_tables_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.mc_output_tables is None or not scientific_config.mc_output_tables.enabled:
+        return None
+    return PatientStage(
+        PatientStageName.MC_OUTPUT_TABLES,
+        partial(run_patient_mc_output_tables_scientific_stage, scientific_config=scientific_config),
     )
 
 
