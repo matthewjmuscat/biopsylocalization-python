@@ -731,7 +731,7 @@ def main():
     patient_runner_validation_write_outputs_bool = True # Overnight checkpoint ON | impact low/medium IO: writes patient-runner validation summaries/artifacts for post-run review.
     patient_runner_validation_write_assembled_tables_bool = True # Overnight checkpoint ON | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables.
     patient_runner_validation_scientific_shadow_pathway_name = "full_current_pipeline_shadow"
-    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = False
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = True
     patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = True
     patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
@@ -741,7 +741,7 @@ def main():
     patient_scientific_runner_pathway_name = "full_current_pipeline_shadow" # Seventh live-runner slice: adds guidance after current dosimetry.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
     patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
-    patient_scientific_runner_include_artifact_writing_bool = False
+    patient_scientific_runner_include_artifact_writing_bool = True
     patient_scientific_runner_write_patient_run_manifests_bool = True
     patient_scientific_runner_write_batch_run_manifest_bool = True
     patient_scientific_runner_write_plan_summary_bool = True
