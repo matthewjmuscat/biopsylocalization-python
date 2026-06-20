@@ -46,7 +46,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     args = _parse_args()
     surfaces: list[PatientRunnerParitySurface] = []
     if not args.skip_assembled_cohort:
@@ -70,7 +70,8 @@ def main() -> None:
     )
     print(f"[patient-runner-parity] wrote outputs to {result.output_dir}")
     print(format_patient_runner_post_run_parity_summary(result))
+    return 0 if result.summary.get("overall_status") == "passed" else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

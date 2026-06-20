@@ -6,6 +6,8 @@
     "top_n": 25
   },
   "runs": {
+    "jun15_140313_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
+    "jun10_123222_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-10-2026 Time-12,32,22 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
     "jun09_014028_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-09-2026 Time-01,40,28 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
     "jun08_125911_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-08-2026 Time-12,59,11 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
     "jun06_135138_current_dosimetry_candidate": "../Data/Output data/MC_sim_out- Date-Jun-06-2026 Time-13,51,38 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
@@ -18,30 +20,30 @@
     "jun02_0147_validation_heavy_reference": "../Data/Output data/MC_sim_out- Date-Jun-02-2026 Time-01,47,37 - validation-selected-structures-legacy_non-biopsy-structures-legacy_prostate-only-mr-adc-legacy - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
   },
   "paths": {
-    "latest_patient_scientific_runner": "../Data/Output data/MC_sim_out- Date-Jun-09-2026 Time-01,40,28 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
+    "latest_patient_scientific_runner": "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
   },
   "run_groups": {
     "latest_standard_candidate_core": {
-      "description": "Fast default checks for the latest Jun 09 01:40 standard run.",
+      "description": "Fast default checks for the latest Jun 15 14:03 standard run.",
       "enabled": true,
       "jobs": [
         {
-          "name": "recursive_manifest_and_csv_vs_jun08_125911",
+          "name": "recursive_manifest_and_csv_vs_jun10_123222",
           "script": "validate_run_against_baseline",
-          "baseline_run": "jun08_125911_full_current_candidate",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/recursive_vs_jun08_125911",
+          "baseline_run": "jun10_123222_full_current_candidate",
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/recursive_vs_jun10_123222",
           "diagnostic_column_regex": [
             "^Time|time|duration|seconds$",
             "^Memory|memory|rss|resident|peak"
           ]
         },
         {
-          "name": "cohort_final_tables_vs_jun08_125911",
+          "name": "cohort_final_tables_vs_jun10_123222",
           "script": "compare_cohort_runs",
-          "baseline_run": "jun08_125911_full_current_candidate",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun08_125911"
+          "baseline_run": "jun10_123222_full_current_candidate",
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun10_123222"
         }
       ]
     },
@@ -53,71 +55,71 @@
           "name": "cohort_final_tables_vs_jun06_135138",
           "script": "compare_cohort_runs",
           "baseline_run": "jun06_135138_current_dosimetry_candidate",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun06_135138"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun06_135138"
         },
         {
           "name": "cohort_final_tables_vs_jun05_211724",
           "script": "compare_cohort_runs",
           "baseline_run": "jun05_211724_current_dosimetry_candidate",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun05_211724"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun05_211724"
         },
         {
           "name": "cohort_final_tables_vs_jun05_150512",
           "script": "compare_cohort_runs",
           "baseline_run": "jun05_150512_sampling_classification_candidate",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun05_150512"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun05_150512"
         },
         {
           "name": "cohort_final_tables_vs_jun04_222357",
           "script": "compare_cohort_runs",
           "baseline_run": "jun04_222357_latest_standard",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun04_222357"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_222357"
         },
         {
           "name": "cohort_final_tables_vs_jun04_1418",
           "script": "compare_cohort_runs",
           "baseline_run": "jun04_1418_standard_reference",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun04_1418"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_1418"
         },
         {
           "name": "cohort_final_tables_vs_jun04_0032",
           "script": "compare_cohort_runs",
           "baseline_run": "jun04_0032_standard_reference",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun04_0032"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_0032"
         },
         {
           "name": "cohort_final_tables_vs_jun03_1436",
           "script": "compare_cohort_runs",
           "baseline_run": "jun03_1436_validation_heavy_reference",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun03_1436"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun03_1436"
         },
         {
           "name": "cohort_final_tables_vs_jun02_0147",
           "script": "compare_cohort_runs",
           "baseline_run": "jun02_0147_validation_heavy_reference",
-          "candidate_run": "jun09_014028_full_current_candidate",
-          "output_dir": "validation_outputs/jun09_014028/cohort_vs_jun02_0147"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun02_0147"
         }
       ]
     },
     "latest_patient_runner_parity": {
       "description": "Template group for patient-runner parity once a runner output directory is ready.",
-      "enabled": false,
+      "enabled": true,
       "jobs": [
         {
-          "name": "patient_runner_parity_vs_latest_legacy",
+          "name": "patient_runner_parity_vs_jun15_legacy",
           "script": "compare_patient_runner_parity",
-          "legacy_output_run": "jun08_125911_full_current_candidate",
+          "legacy_output_run": "jun15_140313_full_current_candidate",
           "patient_runner_output_path": "latest_patient_scientific_runner",
-          "output_dir": "validation_outputs/jun08_125911/patient_runner_parity",
-          "recursive_csv": true
+          "output_dir": "validation_outputs/jun15_140313/patient_runner_parity",
+          "recursive_csv": false
         }
       ]
     },
@@ -129,22 +131,22 @@
           "name": "all_csv_vs_jun04_0032",
           "script": "compare_run_csv_outputs",
           "baseline_run": "jun04_0032_standard_reference",
-          "candidate_run": "jun08_125911_full_current_candidate",
-          "output_dir": "validation_outputs/jun08_125911/all_csv_vs_jun04_0032"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun04_0032"
         },
         {
           "name": "all_csv_vs_jun03_1436",
           "script": "compare_run_csv_outputs",
           "baseline_run": "jun03_1436_validation_heavy_reference",
-          "candidate_run": "jun08_125911_full_current_candidate",
-          "output_dir": "validation_outputs/jun08_125911/all_csv_vs_jun03_1436"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun03_1436"
         },
         {
           "name": "all_csv_vs_jun02_0147",
           "script": "compare_run_csv_outputs",
           "baseline_run": "jun02_0147_validation_heavy_reference",
-          "candidate_run": "jun08_125911_full_current_candidate",
-          "output_dir": "validation_outputs/jun08_125911/all_csv_vs_jun02_0147"
+          "candidate_run": "jun15_140313_full_current_candidate",
+          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun02_0147"
         }
       ]
     }
