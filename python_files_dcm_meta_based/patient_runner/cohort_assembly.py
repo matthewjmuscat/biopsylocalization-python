@@ -14,9 +14,11 @@ import pandas as pd
 
 from legacy_data_keys import legacy_data_keys
 from output_artifacts import OutputSchemaRegistry
+from output_artifacts import build_output_assembly_plans
 from output_artifacts import normalize_legacy_table_name
 from output_artifacts import write_dataframe_artifact
-from output_artifacts.stitch_validation import SHADOW_STITCH_PAIRS
+from output_artifacts.assembly_planner import ORDER_MODE_COLUMN_SORT
+from output_artifacts.assembly_planner import OutputAssemblyPlan
 from output_artifacts.stitch_validation import ShadowStitchPair
 
 from .contracts import PatientBatchRunResult
@@ -26,6 +28,7 @@ from .contracts import validate_patient_uids
 PATIENT_BATCH_COHORT_ASSEMBLY_SCHEMA_VERSION = "patient_batch_cohort_assembly_v1"
 PATIENT_BATCH_COHORT_VALIDATION_SCHEMA_VERSION = "patient_batch_cohort_validation_v1"
 COHORT_ARTIFACT_PATIENT_UID = legacy_data_keys.artifacts.global_patient_uid
+AssemblyPlanLike = OutputAssemblyPlan | ShadowStitchPair
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,18 +99,18 @@ def _assembly_config_or_default(config: PatientBatchCohortAssemblyConfig | None)
     return PatientBatchCohortAssemblyConfig() if config is None else config
 
 
-def _selected_stitch_pairs(stitch_pairs: Sequence[ShadowStitchPair],
-                           config: PatientBatchCohortAssemblyConfig) -> tuple[ShadowStitchPair, ...]:
-    selected_pairs: list[ShadowStitchPair] = []
+def _selected_assembly_plans(plans: Sequence[AssemblyPlanLike],
+                             config: PatientBatchCohortAssemblyConfig) -> tuple[AssemblyPlanLike, ...]:
+    selected_plans: list[AssemblyPlanLike] = []
     final_table_names = set(config.final_table_names)
     source_table_names = set(config.source_table_names)
-    for pair in stitch_pairs:
-        if final_table_names and pair.final_table_name not in final_table_names:
+    for plan in plans:
+        if final_table_names and plan.final_table_name not in final_table_names:
             continue
-        if source_table_names and pair.source_table_name not in source_table_names:
+        if source_table_names and plan.source_table_name not in source_table_names:
             continue
-        selected_pairs.append(pair)
-    return tuple(selected_pairs)
+        selected_plans.append(plan)
+    return tuple(selected_plans)
 
 
 def _artifact_kind(path: Path) -> str:
@@ -233,15 +236,84 @@ def build_patient_batch_artifact_inventory(batch_result: PatientBatchRunResult) 
     return inventory_df
 
 
-def _cohort_sort_columns(pair: ShadowStitchPair) -> tuple[str, ...]:
-    if pair.row_order_columns:
-        return pair.row_order_columns
+def _cohort_sort_columns(plan: AssemblyPlanLike) -> tuple[str, ...]:
+    if isinstance(plan, OutputAssemblyPlan):
+        policy = plan.order_policy("validation")
+        return policy.columns if policy.order_mode == ORDER_MODE_COLUMN_SORT else ()
+    if plan.row_order_columns:
+        return plan.row_order_columns
     spec = OutputSchemaRegistry().match_spec(
-        pair.final_table_name,
+        plan.final_table_name,
         "Output CSVs/Cohort",
-        pair.file_extension,
+        plan.file_extension,
     )
     return spec.canonical_primary_key if spec is not None else ()
+
+
+def _plan_row_fields(plan: AssemblyPlanLike) -> dict[str, Any]:
+    if isinstance(plan, OutputAssemblyPlan):
+        row = plan.to_row()
+        return {
+            "assembly_plan_schema_version": row["schema_version"],
+            "final_table_id": row["final_table_id"],
+            "source_table_id": row["source_table_id"],
+            "registry_stitch_method": row["registry_stitch_method"],
+            "identity_key": row["identity_key"],
+            "validation_order_policy_id": row["validation_order_policy_id"],
+            "validation_order_mode": row["validation_order_mode"],
+            "validation_order_columns": row["validation_order_columns"],
+            "production_order_policy_id": row["production_order_policy_id"],
+            "production_order_mode": row["production_order_mode"],
+            "production_order_columns": row["production_order_columns"],
+            "columns_policy": row["columns_policy"],
+            "validation_csv_index": bool(row["validation_csv_index"]),
+            "production_csv_index": bool(row["production_csv_index"]),
+            "registry_validation_status": row["validation_status"],
+            "retention_policy": row["retention_policy"],
+        }
+
+    return {
+        "assembly_plan_schema_version": "legacy_shadow_stitch_pair",
+        "final_table_id": "",
+        "source_table_id": "",
+        "registry_stitch_method": plan.stitch_method,
+        "identity_key": " | ".join(_cohort_sort_columns(plan)),
+        "validation_order_policy_id": "legacy_shadow_row_order_columns" if plan.row_order_columns else "registry_canonical_primary_key",
+        "validation_order_mode": ORDER_MODE_COLUMN_SORT if _cohort_sort_columns(plan) else "source_fragment_order",
+        "validation_order_columns": " | ".join(_cohort_sort_columns(plan)),
+        "production_order_policy_id": "",
+        "production_order_mode": "",
+        "production_order_columns": "",
+        "columns_policy": "",
+        "validation_csv_index": True,
+        "production_csv_index": False,
+        "registry_validation_status": "",
+        "retention_policy": "",
+    }
+
+
+def _bool_from_report_value(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text_value = str(value).strip().lower()
+    if text_value in {"true", "1", "yes", "y"}:
+        return True
+    if text_value in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
+def _validation_csv_index_for_table(assembly_result: PatientBatchCohortAssemblyResult,
+                                    table_name: str) -> bool:
+    assembly_df = assembly_result.assembly_df
+    if assembly_df.empty or "validation_csv_index" not in assembly_df.columns:
+        return True
+    table_rows = assembly_df[assembly_df["final_table_name"].eq(table_name)]
+    if table_rows.empty:
+        return True
+    return _bool_from_report_value(table_rows.iloc[0].get("validation_csv_index"), True)
 
 
 def _sort_dataframe_by_columns(dataframe: pd.DataFrame, sort_columns: Sequence[str]) -> pd.DataFrame:
@@ -291,16 +363,17 @@ def _read_table(path: Path, *, has_multiindex_columns: bool = False) -> pd.DataF
 
 
 def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
-                                         stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS,
+                                         stitch_pairs: Sequence[AssemblyPlanLike] | None = None,
                                          *,
                                          assembly_config: PatientBatchCohortAssemblyConfig | None = None) -> PatientBatchCohortAssemblyResult:
     """Assemble selected cohort-style tables from patient artifacts."""
     config = _assembly_config_or_default(assembly_config)
+    assembly_plans = build_output_assembly_plans() if stitch_pairs is None else tuple(stitch_pairs)
     inventory_df = build_patient_batch_artifact_inventory(batch_result)
     rows: list[dict[str, Any]] = []
     assembled_tables: dict[str, pd.DataFrame] = {}
 
-    for pair in _selected_stitch_pairs(stitch_pairs, config):
+    for pair in _selected_assembly_plans(assembly_plans, config):
         source_rows = inventory_df[
             inventory_df["artifact_kind"].eq("table")
             & inventory_df["output_section"].eq(pair.source_output_section)
@@ -320,6 +393,7 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             "source_output_section": pair.source_output_section,
             "file_extension": pair.file_extension,
             "stitch_method": pair.stitch_method,
+            **_plan_row_fields(pair),
             "source_file_count": int(len(source_rows)),
             "assembled_rows": 0,
             "assembled_columns": 0,
@@ -497,7 +571,7 @@ def run_patient_batch_cohort_assembly(batch_result: PatientBatchRunResult,
                                       assembly_config: PatientBatchCohortAssemblyConfig | None = None,
                                       *,
                                       final_cohort_dataframes: Mapping[str, pd.DataFrame] | None = None,
-                                      stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS) -> tuple[PatientBatchCohortAssemblyResult, pd.DataFrame | None, tuple[Path, ...]]:
+                                      stitch_pairs: Sequence[AssemblyPlanLike] | None = None) -> tuple[PatientBatchCohortAssemblyResult, pd.DataFrame | None, tuple[Path, ...]]:
     """Run optional post-run assembly, validation, and writing as one utility call."""
     config = _assembly_config_or_default(assembly_config)
     assembly_result = assemble_patient_batch_cohort_tables(
@@ -601,6 +675,7 @@ def write_patient_batch_cohort_assembly_outputs(assembly_result: PatientBatchCoh
                 write_dataframe_artifact(
                     dataframe,
                     table_dir.joinpath(f"{_safe_path_name(table_name)}.csv"),
+                    csv_index=_validation_csv_index_for_table(assembly_result, table_name),
                 )
             )
 

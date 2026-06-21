@@ -1,5 +1,11 @@
 """Output artifact inventory helpers for patient-scoped refactors."""
 
+from .assembly_planner import OUTPUT_ASSEMBLY_PLANNER_SCHEMA_VERSION
+from .assembly_planner import OutputAssemblyPlan
+from .assembly_planner import OutputRowOrderPolicy
+from .assembly_planner import build_output_assembly_plans
+from .assembly_planner import build_shadow_stitch_pairs_from_output_assembly_plans
+from .assembly_planner import output_assembly_plan_rows
 from .contracts import OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION
 from .contracts import build_output_table_contracts
 from .contracts import normalize_legacy_table_name
@@ -56,6 +62,7 @@ __all__ = [
     "PATIENT_ARTIFACT_MANIFEST_SCHEMA_VERSION",
     "PATIENT_STITCH_PLAN_SCHEMA_VERSION",
     "OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION",
+    "OUTPUT_ASSEMBLY_PLANNER_SCHEMA_VERSION",
     "PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION",
     "PHASE3C_OUTPUT_DIR_NAME",
     "PHASE3C_OUTPUT_SURFACE_SCHEMA_VERSION",
@@ -66,16 +73,20 @@ __all__ = [
     "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
     "DataframeArtifact",
     "CanonicalKeySpec",
+    "OutputAssemblyPlan",
+    "OutputRowOrderPolicy",
     "OutputSchemaRegistry",
     "OutputTableSpec",
     "Phase3COutputSurfaceResult",
     "build_output_artifact_inventory",
+    "build_output_assembly_plans",
     "build_in_memory_stitch_validation",
     "build_patient_artifact_manifest",
     "build_patient_stitch_plan",
     "build_output_table_contracts",
     "build_output_schema_data_dictionary",
     "build_output_schema_coverage_report",
+    "build_shadow_stitch_pairs_from_output_assembly_plans",
     "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
     "iter_biopsy_mc_artifacts",
@@ -83,6 +94,7 @@ __all__ = [
     "iter_patient_mc_artifacts",
     "iter_patient_preprocessing_artifacts",
     "normalize_legacy_table_name",
+    "output_assembly_plan_rows",
     "run_shadow_stitch_validation",
     "render_output_schema_data_dictionary_markdown",
     "summarize_in_memory_stitch_validation",

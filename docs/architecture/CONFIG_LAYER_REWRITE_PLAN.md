@@ -221,6 +221,31 @@ This keeps the scientific repository usable as a public research/developer
 engine while allowing a private GUI or product repository to wire into stable
 typed contracts later.
 
+### Input config versus output provenance
+
+Use three separate roles instead of letting one file format become the whole
+configuration system.
+
+1. `PipelineConfig` and its frozen domain dataclasses are the runtime authority.
+   Scientific code should receive typed config objects, not raw parsed file
+   dictionaries.
+2. TOML is the preferred future format for human-authored run profiles. It is
+   comment-friendly, strict enough for reproducible research settings, and can
+   be parsed with Python's standard `tomllib` on Python 3.11+.
+3. JSON is primarily generated output provenance: resolved config snapshots,
+   run manifests, validation job manifests, batch summaries, and machine-readable
+   reports. Hand-authored JSON can remain useful for temporary validation job
+   lists, but it should be treated as tooling input, not the canonical scientific
+   config surface.
+
+YAML is not the default recommendation for this project because implicit typing
+and permissive parsing make scientific reproducibility easier to surprise. If a
+future workflow needs YAML, it should sit behind the same typed config adapter
+and strict validation boundary as TOML.
+
+The GUI should follow the same rule: build or edit a typed `PipelineConfig`, then
+write a resolved JSON snapshot for provenance after the run plan is resolved.
+
 ## Render manifest scope
 
 The first render manifest should be optimizer-v2 specific.

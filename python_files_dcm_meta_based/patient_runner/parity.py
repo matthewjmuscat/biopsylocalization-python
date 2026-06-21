@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from output_artifacts.stitch_validation import SHADOW_STITCH_PAIRS
+from output_artifacts import build_shadow_stitch_pairs_from_output_assembly_plans
 from output_artifacts.stitch_validation import ShadowStitchPair
 from validation import DEFAULT_VALIDATION_OUTPUT_ROOT
 from validation import compare_run_csv_output_dirs
@@ -201,10 +201,15 @@ def compare_patient_runner_assembled_cohort_tables(legacy_output_dir: str | Path
                                                    final_table_names: Sequence[str] = (),
                                                    abs_tol: float = 1e-8,
                                                    rel_tol: float = 1e-6,
-                                                   stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS) -> PatientRunnerParitySurfaceResult:
+                                                   stitch_pairs: Sequence[ShadowStitchPair] | None = None) -> PatientRunnerParitySurfaceResult:
     """Compare legacy final cohort CSVs with patient-runner assembled cohort CSVs."""
     legacy_output_dir = Path(legacy_output_dir)
     patient_runner_output_dir = Path(patient_runner_output_dir)
+    resolved_stitch_pairs = (
+        build_shadow_stitch_pairs_from_output_assembly_plans()
+        if stitch_pairs is None
+        else tuple(stitch_pairs)
+    )
     legacy_cohort_dir = legacy_output_dir.joinpath("Output CSVs", "Cohort")
     resolved_assembled_table_dir = (
         Path(assembled_table_dir)
@@ -219,7 +224,7 @@ def compare_patient_runner_assembled_cohort_tables(legacy_output_dir: str | Path
     inventory_rows: list[dict[str, object]] = []
     summary_rows: list[dict[str, object]] = []
     column_rows: list[dict[str, object]] = []
-    for pair in _selected_stitch_pairs(stitch_pairs, final_table_names):
+    for pair in _selected_stitch_pairs(resolved_stitch_pairs, final_table_names):
         relative_path = f"{pair.final_table_name}{pair.file_extension}"
         baseline_path = legacy_cohort_dir.joinpath(relative_path)
         candidate_file_name = f"{_safe_path_name(pair.final_table_name)}{pair.file_extension}"
