@@ -24,6 +24,7 @@ from .scientific_dependencies import executable_patient_scientific_pathway_stage
 from .scientific_dependencies import resolve_patient_scientific_pathway_name
 from .scientific_dependencies import resolve_patient_scientific_stage_names
 from .scientific_stages import build_patient_scientific_stages_for_pathway
+from random_seed_policy import random_seed_policy_metadata
 
 
 PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION = "patient_scientific_runner_plan_v1"
@@ -256,6 +257,13 @@ def build_patient_scientific_run_config_from_pipeline(
         global_num_cases_key=refs.global_num_cases_key,
     )
     resolved_metadata = dict(metadata or {})
+    resolved_metadata.setdefault(
+        "random_seed_policy",
+        random_seed_policy_metadata(
+            transform_generation_random_seed=pipeline_config.random_seeds.transform_generation_random_seed,
+            optimizer_v1_random_seed=pipeline_config.random_seeds.optimizer_v1_random_seed,
+        ),
+    )
     patient_config = PatientRunConfig(
         output_root=Path(output_root),
         legacy_keys=resolved_legacy_keys,

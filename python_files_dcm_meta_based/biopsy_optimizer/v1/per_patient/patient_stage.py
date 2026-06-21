@@ -19,6 +19,7 @@ import point_containment_tools
 from biopsy_optimizer.v1 import biopsy_optimizer_module_v1_helpers
 from presentation import LegacyNullProgress
 from presentation import LegacyPresentationContext
+from random_seed_policy import build_optimizer_v1_patient_rng
 
 from .legacy_adapter import OptimizerV1LegacyConfig
 from .legacy_adapter import build_patient_info_from_reference
@@ -172,7 +173,8 @@ def _run_patient_dil_optimizer(*,
                                selected_prostate_info: Mapping[str, Any],
                                prostate_centroid: np.ndarray,
                                config: OptimizerV1LegacyConfig,
-                               context: LegacyPresentationContext) -> None:
+                               context: LegacyPresentationContext,
+                               rng: Any = None) -> None:
     structure_id_dil = specific_dil_structure["ROI"]
     structure_info = misc_tools.specific_structure_info_dict_creator(
         "given",
@@ -269,6 +271,7 @@ def _run_patient_dil_optimizer(*,
             config.generate_cuda_log_files_biopsy_optimizer,
             test_lattice_arr=contained_lattice_points_arr,
             all_points_to_set_to_zero_arr=not_contained_lattice_points_arr,
+            rng=rng,
         )
     )
     context.live_display = live_display
@@ -449,6 +452,11 @@ def run_patient_optimizer_v1_stage(
         working_patient_reference_dict,
         config,
     )
+    optimizer_v1_rng, optimizer_v1_seed_metadata = build_optimizer_v1_patient_rng(
+        master_structure_info_dict,
+        resolved_patient_uid,
+        optimizer_v1_random_seed=config.optimizer_v1_random_seed,
+    )
 
     structure_task = context.structures_progress.add_task(
         f"[cyan]Processing optimizer-v1 DIL structures [{resolved_patient_uid}]...",
@@ -470,6 +478,7 @@ def run_patient_optimizer_v1_stage(
             prostate_centroid=prostate_centroid,
             config=config,
             context=context,
+            rng=optimizer_v1_rng,
         )
         context.structures_progress.update(structure_task, advance=1)
     context.structures_progress.update(structure_task, visible=False)
@@ -490,5 +499,5 @@ def run_patient_optimizer_v1_stage(
             all_ref_key=config.all_ref_key,
         ),
         dil_count=len(working_patient_reference_dict[config.dil_ref]),
-        metadata={"side_effect_options_rejected": True},
+        metadata={"side_effect_options_rejected": True, **optimizer_v1_seed_metadata},
     )

@@ -494,11 +494,19 @@ class PatientSamplingClassificationScientificConfig:
 
     sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
     double_sextant_classification: PatientDoubleSextantClassificationStageConfig | None = None
+    structs_referenced_list: Sequence[str] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.double_sextant_classification is not None and self.sampled_biopsy_processing is None:
             raise ValueError("double_sextant_classification requires sampled_biopsy_processing")
+        object.__setattr__(
+            self,
+            "structs_referenced_list",
+            _non_empty_string_tuple(self.structs_referenced_list, "structs_referenced_list")
+            if self.structs_referenced_list
+            else (),
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property

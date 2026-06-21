@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from legacy_data_keys import legacy_data_keys
 from presentation import LegacyPresentationContext
+from random_seed_policy import configure_runtime_random_seed_settings
 
 
 LEGACY_MASTER_INFO_KEYS = legacy_data_keys.master_info
@@ -74,6 +75,7 @@ class OptimizerV1LegacyConfig:
     demonstrate_dil_optimization_points_inside_correctness_num_3: int
     generate_cuda_log_files_biopsy_optimizer: bool
     display_optimization_contour_plots_bool: bool
+    optimizer_v1_random_seed: int | None = None
 
     def as_legacy_args(self) -> tuple[Any, ...]:
         return (
@@ -283,6 +285,11 @@ def run_patient_optimizer_v1_legacy_adapter(
         bx_ref=config.bx_ref,
         dil_ref=config.dil_ref,
         all_ref_key=config.all_ref_key,
+    )
+    configure_runtime_random_seed_settings(
+        master_structure_info_dict,
+        transform_generation_random_seed=None,
+        optimizer_v1_random_seed=config.optimizer_v1_random_seed,
     )
     context = presentation_context or LegacyPresentationContext.null()
     live_display = biopsy_optimizer_module_v1(

@@ -112,6 +112,9 @@ from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runt
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.output_runtime_dirs import write_run_completion_manifest
+from random_seed_policy import build_transform_generation_rng
+from random_seed_policy import configure_runtime_random_seed_settings
+from random_seed_policy import runtime_random_seed_manifest_metadata
 from preprocessing.dose_grid_processing import DoseGridProcessingConfig
 from preprocessing.dose_grid_processing import build_dose_grids_for_cohort
 from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
@@ -210,33 +213,6 @@ def configure_transform_precompute_settings(master_structure_info_dict,
     mc_info = master_structure_info_dict["Global"].setdefault("MC info", {})
     mc_info[OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY] = resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config)
     mc_info[STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY] = num_stochastic_targeting_transform_samples_input
-
-
-def configure_runtime_random_seed_settings(master_structure_info_dict,
-                                           transform_generation_random_seed,
-                                           optimizer_v1_random_seed):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    random_info["Transform generation random seed"] = transform_generation_random_seed
-    random_info["Optimizer v1 random seed"] = optimizer_v1_random_seed
-
-
-def build_transform_generation_rng(master_structure_info_dict):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    transform_generation_random_seed = random_info.get("Transform generation random seed")
-    if transform_generation_random_seed is None:
-        return cp.random.RandomState()
-
-    return cp.random.RandomState(transform_generation_random_seed)
-
-
-def apply_optimizer_v1_random_seed(master_structure_info_dict):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    optimizer_v1_random_seed = random_info.get("Optimizer v1 random seed")
-    if optimizer_v1_random_seed is None:
-        return
-
-    cp.random.seed(optimizer_v1_random_seed)
-    np.random.seed(optimizer_v1_random_seed)
 
 
 def configure_transform_generation_counts(master_structure_info_dict,
@@ -4590,7 +4566,11 @@ def main():
                     "Captured memory snapshot before optimizer-v1.",
                 )
                 runtime_logger.phase_start("optimizer_v1", "Starting optimizer-v1.")
-                apply_optimizer_v1_random_seed(master_structure_info_dict)
+                runtime_logger.checkpoint(
+                    "optimizer_v1.random_seed_policy",
+                    "Optimizer-v1 surrogate RNG uses configured patient-derived seed streams.",
+                    details=runtime_random_seed_manifest_metadata(master_structure_info_dict),
+                )
                 live_display = biopsy_optimizer_module_v1(master_structure_reference_dict,
                               master_structure_info_dict,
                               structs_referenced_dict,

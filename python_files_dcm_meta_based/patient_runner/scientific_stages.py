@@ -620,7 +620,9 @@ def run_patient_sampling_classification_scientific_stage(
 
     if stage_config.double_sextant_classification is not None:
         from preprocessing.biopsy_processing.per_patient.double_sextant_classification import (
+            assemble_biopsy_double_sextant_classification_fragments,
             build_patient_biopsy_double_sextant_sample_point_fragment,
+            store_patient_biopsy_double_sextant_voxel_fragment,
         )
 
         double_sextant_config = stage_config.double_sextant_classification
@@ -632,9 +634,45 @@ def run_patient_sampling_classification_scientific_stage(
             oar_ref=double_sextant_config.oar_ref,
             biopsy_z_voxel_length=double_sextant_config.biopsy_z_voxel_length,
         )
+        _per_sample_point_dataframe, per_voxel_dataframe = assemble_biopsy_double_sextant_classification_fragments(
+            [sample_point_dataframe]
+        )
+        store_patient_biopsy_double_sextant_voxel_fragment(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=runtime_state.pydicom_item,
+            all_ref_key=runtime_state.all_ref_key,
+            per_voxel_dataframe=per_voxel_dataframe,
+        )
         metadata["steps"].append("double_sextant_sample_point_fragment")
         metadata["double_sextant_sample_point_row_count"] = int(len(sample_point_dataframe))
-        metadata["double_sextant_voxel_assembly_scope"] = "run_level"
+        metadata["double_sextant_per_voxel_row_count"] = int(len(per_voxel_dataframe))
+        metadata["double_sextant_voxel_assembly_scope"] = "patient"
+
+    if stage_config.structs_referenced_list:
+        import dataframe_builders
+
+        singleton_reference_dict = {runtime_state.patient_uid: runtime_state.pydicom_item}
+        nearest_dils_dataframe = dataframe_builders.bx_nearest_dils_dataframe_builder(
+            singleton_reference_dict,
+            stage_config.structs_referenced_list,
+            runtime_state.all_ref_key,
+            runtime_state.bx_ref,
+        )
+        biopsy_basic_spatial_dataframe = dataframe_builders.biopsy_basic_spatial_features_information_dataframe_builder(
+            singleton_reference_dict,
+            runtime_state.all_ref_key,
+            runtime_state.bx_ref,
+        )
+        radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(
+            singleton_reference_dict,
+            stage_config.structs_referenced_list,
+            runtime_state.bx_ref,
+            all_ref_key=runtime_state.all_ref_key,
+        )
+        metadata["steps"].append("preprocessing_dataframe_fragments")
+        metadata["nearest_dils_row_count"] = int(len(nearest_dils_dataframe))
+        metadata["biopsy_basic_spatial_row_count"] = int(len(biopsy_basic_spatial_dataframe))
+        metadata["radiomic_features_row_count"] = int(len(radiomic_features_dataframe))
 
     return PatientStageResult.success(PatientStageName.SAMPLING_CLASSIFICATION, metadata=metadata)
 

@@ -410,6 +410,7 @@ def _build_optimization_config(
             ),
             generate_cuda_log_files_biopsy_optimizer=optimizer_v1.generate_cuda_log_files_biopsy_optimizer,
             display_optimization_contour_plots_bool=optimizer_v1.display_optimization_contour_plots_bool,
+            optimizer_v1_random_seed=pipeline_config.random_seeds.optimizer_v1_random_seed,
         ),
         optimizer_v2_config=OptimizerV2LiveConfig(
             structs_referenced_dict=registry.structs_referenced_dict,
@@ -497,6 +498,7 @@ def _build_simulated_biopsy_finalization_config(pipeline_config: Any) -> Patient
 
 def _build_sampling_classification_config(pipeline_config: Any) -> PatientSamplingClassificationScientificConfig:
     refs = pipeline_config.legacy_refs
+    registry = pipeline_config.structure_registry
     return PatientSamplingClassificationScientificConfig(
         sampled_biopsy_processing=PatientSampledBiopsyProcessingStageConfig(
             bx_sample_pts_lattice_spacing=pipeline_config.mc.prep.bx_sample_pts_lattice_spacing,
@@ -508,6 +510,7 @@ def _build_sampling_classification_config(pipeline_config: Any) -> PatientSampli
             oar_ref=refs.oar_ref,
             biopsy_z_voxel_length=pipeline_config.mc.simulation.biopsy_z_voxel_length,
         ),
+        structs_referenced_list=registry.structs_referenced_list,
     )
 
 

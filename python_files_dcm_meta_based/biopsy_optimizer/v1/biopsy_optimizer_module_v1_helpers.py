@@ -58,7 +58,8 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
                                 demonstrate_dil_optimization_points_inside_correctness_num_3,
                                 generate_cuda_log_files_biopsy_optimizer,
                                 test_lattice_arr = None,
-                                all_points_to_set_to_zero_arr = np.array([[]])
+                                all_points_to_set_to_zero_arr = np.array([[]]),
+                                rng = None,
                                 ):
     
 
@@ -306,9 +307,10 @@ def find_dil_optimal_sampling_position(specific_dil_structure,
 
 
 
-    three_d_normal_dist_points_x_cupy = cp.random.normal(loc=0,scale=normal_dist_sigma_x, size=num_normal_dist_points_for_biopsy_optimizer)
-    three_d_normal_dist_points_y_cupy = cp.random.normal(loc=0,scale=normal_dist_sigma_y, size=num_normal_dist_points_for_biopsy_optimizer)
-    three_d_normal_dist_points_z_cupy = cp.random.normal(loc=0,scale=normal_dist_sigma_z, size=num_normal_dist_points_for_biopsy_optimizer)
+    normal_dist_rng = cp.random if rng is None else rng
+    three_d_normal_dist_points_x_cupy = normal_dist_rng.normal(loc=0,scale=normal_dist_sigma_x, size=num_normal_dist_points_for_biopsy_optimizer)
+    three_d_normal_dist_points_y_cupy = normal_dist_rng.normal(loc=0,scale=normal_dist_sigma_y, size=num_normal_dist_points_for_biopsy_optimizer)
+    three_d_normal_dist_points_z_cupy = normal_dist_rng.normal(loc=0,scale=normal_dist_sigma_z, size=num_normal_dist_points_for_biopsy_optimizer)
     three_d_normal_dist_points_cupy = cp.empty((num_normal_dist_points_for_biopsy_optimizer,3))
     three_d_normal_dist_points_cupy[:,0] = three_d_normal_dist_points_x_cupy
     three_d_normal_dist_points_cupy[:,1] = three_d_normal_dist_points_y_cupy
