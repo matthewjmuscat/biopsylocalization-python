@@ -382,6 +382,37 @@ def build_patient_simulated_biopsy_preparation_dataframe(*,
     return patient_dataframe
 
 
+def finalize_patient_simulated_biopsy_preparation_dataframe_for_export(*,
+                                                                       patient_uid,
+                                                                       pydicom_item,
+                                                                       bx_ref,
+                                                                       all_ref_key,
+                                                                       downcast_threshold=0.25):
+    import dataframe_builders
+
+    preproc_df_dict = pydicom_item[all_ref_key]["Multi-structure pre-processing output dataframes dict"]
+    patient_dataframe = preproc_df_dict.get("Simulated biopsy preparation dataframe")
+    if not isinstance(patient_dataframe, pandas.DataFrame) or patient_dataframe.empty:
+        return patient_dataframe
+
+    biopsy_identifier_dataframe = dataframe_builders._build_patient_biopsy_identifier_dataframe(
+        patient_uid,
+        pydicom_item,
+        bx_ref,
+    )
+    patient_dataframe = dataframe_builders._merge_biopsy_identifier_columns(
+        patient_dataframe,
+        biopsy_identifier_dataframe,
+    )
+    patient_dataframe = dataframe_builders.convert_columns_to_categorical_and_downcast(
+        patient_dataframe,
+        threshold=downcast_threshold,
+        ignore_types=(np.floating,),
+    )
+    preproc_df_dict["Simulated biopsy preparation dataframe"] = patient_dataframe
+    return patient_dataframe
+
+
 def prepare_patient_simulated_biopsies(*,
                                        patient_uid,
                                        pydicom_item,
@@ -412,6 +443,12 @@ def prepare_patient_simulated_biopsies(*,
         biopsy_needle_compartment_length=biopsy_needle_compartment_length,
     )
     patient_dataframe = build_patient_simulated_biopsy_preparation_dataframe(
+        patient_uid=patient_uid,
+        pydicom_item=pydicom_item,
+        bx_ref=bx_ref,
+        all_ref_key=all_ref_key,
+    )
+    patient_dataframe = finalize_patient_simulated_biopsy_preparation_dataframe_for_export(
         patient_uid=patient_uid,
         pydicom_item=pydicom_item,
         bx_ref=bx_ref,

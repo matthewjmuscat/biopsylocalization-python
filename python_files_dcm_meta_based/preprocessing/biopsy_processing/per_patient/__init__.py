@@ -14,6 +14,7 @@ from .simulated_biopsy_preparation import assign_patient_simulated_biopsy_target
 from .simulated_biopsy_preparation import build_patient_simulated_biopsy_preparation_dataframe
 from .simulated_biopsy_preparation import determine_patient_simulated_biopsy_lengths
 from .simulated_biopsy_preparation import expand_patient_simulated_biopsy_multiplicity
+from .simulated_biopsy_preparation import finalize_patient_simulated_biopsy_preparation_dataframe_for_export
 from .simulated_biopsy_preparation import prepare_patient_simulated_biopsies
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "determine_patient_simulated_biopsy_lengths",
     "determine_patient_realized_biopsy_targeting",
     "expand_patient_simulated_biopsy_multiplicity",
+    "finalize_patient_simulated_biopsy_preparation_dataframe_for_export",
     "plan_patient_simulated_biopsies",
     "prepare_patient_simulated_biopsies",
     "process_patient_real_biopsies",

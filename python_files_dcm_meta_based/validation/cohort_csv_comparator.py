@@ -202,9 +202,10 @@ def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
-    if path.name in KNOWN_MULTIINDEX_FILES:
-        df = pd.read_csv(path, header=KNOWN_MULTIINDEX_FILES[path.name], low_memory=False)
+def _read_csv(path: Path, *, logical_name: str | None = None) -> tuple[pd.DataFrame, str]:
+    multiindex_key = logical_name if logical_name in KNOWN_MULTIINDEX_FILES else path.name
+    if multiindex_key in KNOWN_MULTIINDEX_FILES:
+        df = pd.read_csv(path, header=KNOWN_MULTIINDEX_FILES[multiindex_key], low_memory=False)
         if isinstance(df.columns, pd.MultiIndex):
             keep_cols = [
                 column
@@ -300,8 +301,8 @@ def _compare_common_file(
     abs_tol: float,
     rel_tol: float,
 ) -> tuple[FileComparisonResult, list[dict[str, object]]]:
-    baseline_df, baseline_header_kind = _read_csv(baseline_path)
-    candidate_df, candidate_header_kind = _read_csv(candidate_path)
+    baseline_df, baseline_header_kind = _read_csv(baseline_path, logical_name=relative_path)
+    candidate_df, candidate_header_kind = _read_csv(candidate_path, logical_name=relative_path)
     header_kind = baseline_header_kind if baseline_header_kind == candidate_header_kind else "mixed"
 
     baseline_columns = list(baseline_df.columns)
