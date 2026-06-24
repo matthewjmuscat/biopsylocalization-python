@@ -15,6 +15,8 @@ import pandas as pd
 from legacy_data_keys import legacy_data_keys
 from output_artifacts import OutputSchemaRegistry
 from output_artifacts import build_output_assembly_plans
+from output_artifacts import classify_expected_assembly_plan
+from output_artifacts import expected_artifact_decision_report_fields
 from output_artifacts import normalize_legacy_table_name
 from output_artifacts import write_dataframe_artifact
 from output_artifacts.assembly_planner import ORDER_MODE_COLUMN_SORT
@@ -368,7 +370,11 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
                                          assembly_config: PatientBatchCohortAssemblyConfig | None = None) -> PatientBatchCohortAssemblyResult:
     """Assemble selected cohort-style tables from patient artifacts."""
     config = _assembly_config_or_default(assembly_config)
-    assembly_plans = build_output_assembly_plans() if stitch_pairs is None else tuple(stitch_pairs)
+    assembly_plans = (
+        build_output_assembly_plans()
+        if stitch_pairs is None
+        else build_output_assembly_plans(stitch_pairs=tuple(stitch_pairs))
+    )
     inventory_df = build_patient_batch_artifact_inventory(batch_result)
     rows: list[dict[str, Any]] = []
     assembled_tables: dict[str, pd.DataFrame] = {}
@@ -400,10 +406,18 @@ def assemble_patient_batch_cohort_tables(batch_result: PatientBatchRunResult,
             "assembly_status": "not_run",
             "assembly_notes": "",
         }
+        expected_decision = classify_expected_assembly_plan(
+            pair,
+            present_in_candidate=not source_rows.empty,
+        )
+        row.update(expected_artifact_decision_report_fields(expected_decision))
 
         if source_rows.empty:
             row["assembly_status"] = "missing_source_fragments"
-            row["assembly_notes"] = "No patient artifacts matched this stitch pair."
+            if expected_decision.missing_artifact_is_failure:
+                row["assembly_notes"] = "No patient artifacts matched this required stitch pair."
+            else:
+                row["assembly_notes"] = "No patient artifacts matched this stitch pair; expected-artifact policy marks the absence non-failing."
             rows.append(row)
             continue
 
@@ -608,6 +622,8 @@ def summarize_patient_batch_cohort_assembly(assembly_result: PatientBatchCohortA
         "generated_utc": _utc_now_iso(),
         "assembly_pair_count": int(len(assembly_df)),
         "assembly_status_counts": dict(Counter(assembly_df["assembly_status"])),
+        "expected_artifact_status_counts": dict(Counter(assembly_df["expected_artifact_status"])),
+        "missing_artifact_failure_count": int(assembly_df["missing_artifact_is_failure"].fillna(False).astype(bool).sum()),
         "assembled_table_count": assembly_result.assembled_table_count,
         "artifact_count": int(len(assembly_result.inventory_df)),
     }

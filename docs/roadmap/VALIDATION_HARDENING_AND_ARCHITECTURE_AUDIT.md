@@ -56,15 +56,26 @@ Remaining risks to make explicit:
   ordering, and consistent CSV/index policy.
 - Multi-run assembly must fail closed unless manifests prove compatibility.
 
-Recommended proof before relying on full split-cohort operation:
+Recommended proof before relying on full split-cohort operation should use a
+decompose-and-reconstruct comparison rather than raw folder diffing. The point
+is to reduce each run to registry-known patient artifacts, reconstruct the
+cohort surface through one deterministic policy, and compare those reconstructed
+surfaces. That prevents validation from being fooled by harmless differences in
+filesystem layout, run grouping, output folder names, or multi-run artifact
+ordering.
+
+The reusable validation function should do this:
 
 1. Select a small cohort subset that can run as one legacy/cohort run.
 2. Run it once as a single cohort.
-3. Run the same subset as two split runs.
-4. Assemble the split patient-runner artifacts into one cohort surface.
-5. Compare single-run versus split-run assembled outputs by table ID, row grain,
-   canonical keys, numeric values, text values, and manifest seed provenance.
-6. Treat any difference as a validation finding unless it is explained by a
+3. Run the same subset as two or more split runs.
+4. Decompose each run into registry-known patient artifacts and manifest
+  provenance.
+5. Reconstruct each cohort surface through the same assembly policy.
+6. Compare reconstructed surfaces by table ID, row grain, canonical keys,
+  numeric values, text values, row-set hashes, ordered hashes, and manifest
+  seed provenance.
+7. Treat any difference as a validation finding unless it is explained by a
    deliberate run-profile setting.
 
 For long-term reproducibility, transform-generation RNG should move toward the
@@ -224,8 +235,13 @@ Recommended private-note rule:
    status.
 3. Design and validate patient-derived transform RNG or per-patient transform
    seed replay.
-4. Run split-vs-single equivalence on a small cohort subset.
-5. Update documentation index and archive stale private notes after their useful
+4. Add the generalized decompose-and-reconstruct validation function for one
+  full run versus two-or-more split runs.
+5. Run split-vs-single equivalence on a small cohort subset.
+6. Continue pipeline config migration: move resolved runtime configuration
+  toward TOML/JSON-backed provenance, make resolved config manifests explicit,
+  and retire duplicated loose config locals only after validation gates pass.
+7. Update documentation index and archive stale private notes after their useful
    content is promoted.
 
 Recommended commit messages for these future slices:

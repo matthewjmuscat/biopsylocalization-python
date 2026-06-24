@@ -19,6 +19,14 @@ from .exporters import iter_patient_mc_artifacts
 from .exporters import iter_patient_preprocessing_artifacts
 from .exporters import write_dataframe_artifact
 from .exporters import write_dataframe_artifacts
+from .expected_artifacts import EXPECTED_ARTIFACT_POLICY_SCHEMA_VERSION
+from .expected_artifacts import ExpectedArtifactDecision
+from .expected_artifacts import ExpectedArtifactStatus
+from .expected_artifacts import MissingArtifactSeverity
+from .expected_artifacts import classify_expected_artifact
+from .expected_artifacts import classify_expected_assembly_plan
+from .expected_artifacts import classify_expected_table_spec
+from .expected_artifacts import expected_artifact_decision_report_fields
 from .in_memory_stitching import IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION
 from .in_memory_stitching import build_in_memory_stitch_validation
 from .in_memory_stitching import collect_patient_fragment_dataframes
@@ -68,6 +76,7 @@ __all__ = [
     "PHASE3C_OUTPUT_SURFACE_SCHEMA_VERSION",
     "OUTPUT_SCHEMA_COVERAGE_SCHEMA_VERSION",
     "OUTPUT_SCHEMA_REGISTRY_VERSION",
+    "EXPECTED_ARTIFACT_POLICY_SCHEMA_VERSION",
     "EXPECTED_CURRENT_REGISTRY_COUNT",
     "SHADOW_STITCH_VALIDATION_SCHEMA_VERSION",
     "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
@@ -77,6 +86,9 @@ __all__ = [
     "OutputRowOrderPolicy",
     "OutputSchemaRegistry",
     "OutputTableSpec",
+    "ExpectedArtifactDecision",
+    "ExpectedArtifactStatus",
+    "MissingArtifactSeverity",
     "Phase3COutputSurfaceResult",
     "build_output_artifact_inventory",
     "build_output_assembly_plans",
@@ -89,6 +101,10 @@ __all__ = [
     "build_shadow_stitch_pairs_from_output_assembly_plans",
     "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
+    "classify_expected_artifact",
+    "classify_expected_assembly_plan",
+    "classify_expected_table_spec",
+    "expected_artifact_decision_report_fields",
     "iter_biopsy_mc_artifacts",
     "iter_cohort_artifacts",
     "iter_patient_mc_artifacts",
