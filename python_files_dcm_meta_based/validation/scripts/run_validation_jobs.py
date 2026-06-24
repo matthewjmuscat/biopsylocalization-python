@@ -20,6 +20,7 @@ SCRIPT_REGISTRY = {
     "compare_cohort_runs": PYTHON_ROOT / "compare_cohort_runs.py",
     "compare_run_csv_outputs": PYTHON_ROOT / "compare_run_csv_outputs.py",
     "compare_patient_runner_parity": PYTHON_ROOT / "compare_patient_runner_parity.py",
+    "compare_reconstructed_cohort_runs": PYTHON_ROOT / "compare_reconstructed_cohort_runs.py",
 }
 
 
@@ -135,6 +136,45 @@ def _build_patient_runner_parity_args(config: Mapping[str, Any], job: Mapping[st
     return args
 
 
+def _resolve_job_path_list(config: Mapping[str, Any], job: Mapping[str, Any], field_name: str) -> tuple[Path, ...]:
+    direct_values = job.get(field_name, ())
+    if direct_values:
+        if isinstance(direct_values, str):
+            raise TypeError(f"{field_name} must be a list when provided")
+        return tuple(_resolve_path(value) for value in direct_values)
+
+    run_values = job.get(f"{field_name}_runs", ())
+    if run_values:
+        if isinstance(run_values, str):
+            raise TypeError(f"{field_name}_runs must be a list when provided")
+        return tuple(_resolve_named_path(config, str(value)) for value in run_values)
+
+    path_values = job.get(f"{field_name}_paths", ())
+    if path_values:
+        if isinstance(path_values, str):
+            raise TypeError(f"{field_name}_paths must be a list when provided")
+        return tuple(_resolve_named_path(config, str(value)) for value in path_values)
+
+    return ()
+
+
+def _build_reconstructed_cohort_args(config: Mapping[str, Any], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> list[str]:
+    reference = _resolve_job_path(config, job, "reference_patient_runner_output")
+    if reference is None:
+        raise ValueError("compare_reconstructed_cohort_runs jobs require reference_patient_runner_output")
+    split_outputs = _resolve_job_path_list(config, job, "split_patient_runner_outputs")
+    if not split_outputs:
+        raise ValueError("compare_reconstructed_cohort_runs jobs require split_patient_runner_outputs")
+
+    args = [str(reference), *(str(path) for path in split_outputs)]
+    _append_common_options(args, job, defaults)
+    for table_name in job.get("final_table_names", ()):
+        args.extend(["--final-table-name", str(table_name)])
+    if bool(job.get("allow_patient_set_mismatch", False)):
+        args.append("--allow-patient-set-mismatch")
+    return args
+
+
 def _build_script_args(config: Mapping[str, Any], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> list[str]:
     script_name = str(job.get("script", "")).strip()
     if script_name == "validate_run_against_baseline":
@@ -143,6 +183,8 @@ def _build_script_args(config: Mapping[str, Any], job: Mapping[str, Any], defaul
         return _build_two_run_compare_args(config, job, defaults)
     if script_name == "compare_patient_runner_parity":
         return _build_patient_runner_parity_args(config, job, defaults)
+    if script_name == "compare_reconstructed_cohort_runs":
+        return _build_reconstructed_cohort_args(config, job, defaults)
     raise ValueError(f"Unsupported validation script: {script_name!r}")
 
 

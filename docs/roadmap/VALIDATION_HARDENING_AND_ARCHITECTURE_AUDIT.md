@@ -235,7 +235,9 @@ Recommended private-note rule:
 3. Design and validate patient-derived transform RNG or per-patient transform
    seed replay.
 4. Add the generalized decompose-and-reconstruct validation function for one
-  full run versus two-or-more split runs.
+  full run versus two-or-more split runs. The first reusable implementation is
+  `validation.reconstructed_cohort_comparator` with the CLI wrapper
+  `compare_reconstructed_cohort_runs.py`.
 5. Run split-vs-single equivalence on a small cohort subset.
 6. Continue pipeline config migration: move resolved runtime configuration
   toward TOML/JSON-backed provenance, make resolved config manifests explicit,

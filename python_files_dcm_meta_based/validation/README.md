@@ -26,6 +26,7 @@ To use a different config file, pass its path as the single positional argument.
 | `compare_cohort_runs.py` | Main oracle gate for final cohort CSV tables. This is the cleanest scientific-regression check for legacy-output parity. | `baseline`, `candidate` run folders. | Per-table diff summaries under `output_dir`. |
 | `compare_run_csv_outputs.py` | Recursive all-CSV comparison. Useful for investigating intermediate artifacts and diagnostic files. | `baseline`, `candidate` run folders. | Recursive CSV diff summaries under `output_dir`. |
 | `compare_patient_runner_parity.py` | Patient-runner parity against a legacy/oracle run once patient-runner artifacts are available. | `legacy_output`, `patient_runner_output`. | Assembled parity tables and optional recursive CSV diffs. |
+| `compare_reconstructed_cohort_runs.py` | Full-vs-split patient-runner validation after decomposing patient artifacts and reconstructing both cohort surfaces through one assembly policy. | One reference patient-runner output plus one-or-more split patient-runner outputs. | Reconstructed cohort surfaces, assembly reports, and cohort CSV comparison outputs under `output_dir`. |
 
 ## Config Layout
 
@@ -77,3 +78,21 @@ Known interpretation from the latest Jun 08 12:59 validation set:
 ## Patient-Runner Validation
 
 The patient-runner parity group is disabled until a runner output directory is ready. When enabling it, set `patient_runner_output_path` to a named path under `paths`, then run the same launcher. This keeps the legacy/oracle run and the patient-runner artifact location explicit in JSON.
+
+## Full-Vs-Split Reconstruction Validation
+
+Use `compare_reconstructed_cohort_runs.py` after a full/reference patient-runner run and two-or-more split patient-runner runs have completed with artifact writing enabled. The validator loads patient batch manifests, combines split patient results by patient UID, reconstructs both cohort surfaces through the same assembly planner, writes both reconstructed `Output CSVs/Cohort` surfaces, and then runs the standard cohort CSV comparator.
+
+Example direct call:
+
+```bash
+PYTHONPATH=python_files_dcm_meta_based \
+	/home/matthew-muscat/.local/share/virtualenvs/biopsylocalization-python-a85Yh81c/bin/python \
+	python_files_dcm_meta_based/compare_reconstructed_cohort_runs.py \
+	/path/to/full_run/patient_scientific_runner \
+	/path/to/split_a/patient_scientific_runner \
+	/path/to/split_b/patient_scientific_runner \
+	--output-dir validation_outputs/<candidate-key>/full_vs_split_reconstructed
+```
+
+For config-driven use, add a job with script `compare_reconstructed_cohort_runs`, one `reference_patient_runner_output_*` field, and a list-valued `split_patient_runner_outputs_*` field. The patient UID sets must match by default; pass `allow_patient_set_mismatch: true` only for exploratory partial checks.
