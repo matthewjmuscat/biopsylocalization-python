@@ -271,6 +271,7 @@ def _build_mc_prep_config(pipeline_config: Any) -> PatientMCPrepScientificConfig
         run_biopsy_self_transforms=mc.prep.run_biopsy_self_transforms,
         run_relative_structure_transforms=mc.prep.run_relative_structure_transforms,
         num_generated_transform_samples=max_generated_transform_samples,
+        transform_generation_random_seed=pipeline_config.random_seeds.transform_generation_random_seed,
         max_simulations=max_simulations,
         num_mc_containment_simulations=mc.counts.num_mc_containment_simulations_input,
         inspect_self_biopsy_dilate_bool=mc.debug.inspect_self_biopsy_dilate_bool,

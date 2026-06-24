@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Mapping, Sequence
 
+from random_seed_policy import build_transform_generation_patient_rng
+
 from .contracts import LegacyPatientRuntimeState
 from .contracts import PatientRunConfig
 from .contracts import PatientStageName
@@ -464,6 +466,11 @@ def run_patient_transform_generation_scientific_stage(
         runtime_state.master_structure_info_dict,
         stage_config,
     )
+    transform_rng, transform_seed_metadata = build_transform_generation_patient_rng(
+        runtime_state.master_structure_info_dict,
+        runtime_state.patient_uid,
+        transform_generation_random_seed=stage_config.transform_generation_random_seed,
+    )
     generate_transformations_for_patient(
         patient_uid=runtime_state.patient_uid,
         pydicom_item=runtime_state.pydicom_item,
@@ -474,7 +481,7 @@ def run_patient_transform_generation_scientific_stage(
         biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
         num_generated_transform_samples=num_generated_transform_samples,
         structs_referenced_list=stage_config.structs_referenced_list,
-        rng=scientific_config.resources.rng,
+        rng=transform_rng,
     )
     return PatientStageResult.success(
         PatientStageName.TRANSFORM_GENERATION,
@@ -482,6 +489,7 @@ def run_patient_transform_generation_scientific_stage(
             "patient_uid": runtime_state.patient_uid,
             "steps": ("transform_generation",),
             "num_generated_transform_samples": int(num_generated_transform_samples),
+            **transform_seed_metadata,
         },
     )
 

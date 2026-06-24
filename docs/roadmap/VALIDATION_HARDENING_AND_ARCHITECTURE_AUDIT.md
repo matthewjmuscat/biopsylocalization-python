@@ -48,10 +48,9 @@ Known retired cohort-derived pathways support this assumption:
 
 Remaining risks to make explicit:
 
-- Transform generation currently reports a cohort-stream seed. If per-patient
-  transform banks depend on iteration order, split-vs-single byte identity is
-  not guaranteed until transform seeds are patient-derived or recorded/replayed
-  per patient.
+- Transform generation must keep using patient-derived resolved seeds, with the
+  resolved seed map written to runtime manifests. Any future transform RNG
+  change must preserve patient-order independence or provide explicit replay.
 - Output assembly must use stable table IDs, canonical keys, deterministic row
   ordering, and consistent CSV/index policy.
 - Multi-run assembly must fail closed unless manifests prove compatibility.
@@ -78,8 +77,8 @@ The reusable validation function should do this:
 7. Treat any difference as a validation finding unless it is explained by a
    deliberate run-profile setting.
 
-For long-term reproducibility, transform-generation RNG should move toward the
-same policy already used for optimizer-v1: stable patient-derived streams with
+For long-term reproducibility, transform-generation RNG now follows the same
+policy already used for optimizer-v1: stable patient-derived streams with
 resolved patient seeds recorded in manifests.
 
 ## Validation Hardening Plan

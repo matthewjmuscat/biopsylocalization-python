@@ -112,7 +112,7 @@ from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runt
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.output_runtime_dirs import write_run_completion_manifest
-from random_seed_policy import build_transform_generation_rng
+from random_seed_policy import build_transform_generation_patient_rng
 from random_seed_policy import configure_runtime_random_seed_settings
 from random_seed_policy import runtime_random_seed_manifest_metadata
 from preprocessing.dose_grid_processing import DoseGridProcessingConfig
@@ -4541,14 +4541,20 @@ def main():
                     indeterminate_task_generating_transforms = indeterminate_progress_main.add_task("[red]Generating transforms", total=None)
                     indeterminate_task_generating_transforms_completed = completed_progress.add_task("[green]Generating transforms", visible = False, total = 1)
 
-                    transform_sampling_rng = build_transform_generation_rng(master_structure_info_dict)
+                    def transform_sampling_rng_for_patient(patient_uid):
+                        patient_rng, _ = build_transform_generation_patient_rng(
+                            master_structure_info_dict,
+                            patient_uid,
+                        )
+                        return patient_rng
+
                     MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
                                                     simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                     bx_ref,
                                                     biopsy_needle_compartment_length,
                                                     max_generated_transform_samples,
                                                     structs_referenced_list,
-                                                    rng=transform_sampling_rng)
+                                                    rng_by_patient=transform_sampling_rng_for_patient)
 
                     indeterminate_progress_main.update(indeterminate_task_generating_transforms, visible = False, refresh = True)
                     completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
@@ -6068,7 +6074,6 @@ def main():
                             ),
                             mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                             parallel_pool=parallel_pool,
-                            rng=build_transform_generation_rng(patient_runner_validation_info_dict),
                             runtime_logger=runtime_logger,
                             metadata={
                                 "source": "biopsy_localization_convex_main",
@@ -6196,7 +6201,6 @@ def main():
                         ),
                         mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                         parallel_pool=parallel_pool,
-                        rng=build_transform_generation_rng(patient_scientific_runner_info_dict),
                         runtime_logger=runtime_logger,
                         metadata={"source": "biopsy_localization_convex_main"},
                     ),

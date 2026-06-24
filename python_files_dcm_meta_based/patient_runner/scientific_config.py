@@ -555,6 +555,7 @@ class PatientMCPrepScientificConfig:
     num_generated_transform_samples: int | None = None
     max_simulations: int | None = None
     num_mc_containment_simulations: int | None = None
+    transform_generation_random_seed: int | None = None
     inspect_self_biopsy_dilate_bool: bool = False
     inspect_self_biopsy_dilate_and_rotate_bool: bool = False
     inspect_self_biopsy_dilate_and_rotate_and_translate_bool: bool = False
@@ -594,6 +595,11 @@ class PatientMCPrepScientificConfig:
             field_value = getattr(self, field_name)
             if field_value is not None:
                 object.__setattr__(self, field_name, _positive_int(field_value, field_name))
+        if self.transform_generation_random_seed is not None:
+            seed = int(self.transform_generation_random_seed)
+            if seed < 0:
+                raise ValueError("transform_generation_random_seed cannot be negative")
+            object.__setattr__(self, "transform_generation_random_seed", seed)
         inspect_count = int(self.inspect_relative_structure_rotate_and_shift_number)
         if inspect_count < 0:
             raise ValueError("inspect_relative_structure_rotate_and_shift_number cannot be negative")
