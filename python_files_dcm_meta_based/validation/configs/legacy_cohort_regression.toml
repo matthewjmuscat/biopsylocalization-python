@@ -1,0 +1,33 @@
+schema_version = "validation_run_config_v1"
+description = "Focused interrun validation: compare final legacy cohort CSV outputs between two completed main runs."
+
+[defaults]
+abs_tol = 1e-9
+rel_tol = 1e-9
+top_n = 25
+
+[runs]
+baseline = "../Data/Output data/MC_sim_out- Date-Jun-10-2026 Time-12,32,22 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+candidate = "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+
+[run_groups.legacy_cohort_regression]
+description = "Clean final-output oracle gate for legacy/cohort CSV tables."
+enabled = true
+
+[[run_groups.legacy_cohort_regression.jobs]]
+name = "cohort_final_tables_vs_baseline"
+script = "compare_cohort_runs"
+baseline_run = "baseline"
+candidate_run = "candidate"
+output_dir = "validation_outputs/jun15_140313/cohort_vs_jun10_123222"
+
+[[run_groups.legacy_cohort_regression.jobs]]
+name = "recursive_manifest_and_csv_vs_baseline"
+script = "validate_run_against_baseline"
+baseline_run = "baseline"
+candidate_run = "candidate"
+output_dir = "validation_outputs/jun15_140313/recursive_vs_jun10_123222"
+diagnostic_column_regex = [
+  "^Time|time|duration|seconds$",
+  "^Memory|memory|rss|resident|peak",
+]

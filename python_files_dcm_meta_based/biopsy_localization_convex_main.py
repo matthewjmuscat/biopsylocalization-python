@@ -700,7 +700,7 @@ def main():
     write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
     write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
     write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW.value # Overnight checkpoint ON | impact medium/high: captures per-stage scientific-shadow evidence and dataframe snapshots from the fresh post-discovery state boundary.
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.DISABLED.value # Overnight checkpoint ON | impact medium/high: captures per-stage scientific-shadow evidence and dataframe snapshots from the fresh post-discovery state boundary.
     patient_runner_validation_patient_uids = ()
     patient_runner_validation_final_table_names = ()
     patient_runner_validation_source_table_names = ()

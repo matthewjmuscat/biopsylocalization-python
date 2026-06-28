@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -9,13 +10,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from validation.run_config import DEFAULT_CONFIG_PATH
+from validation.run_config import REPO_ROOT
+from validation.run_config import ValidationRunConfig
+from validation.run_config import load_validation_run_config
+
 
 VALIDATION_DIR = Path(__file__).resolve().parents[1]
 PYTHON_ROOT = VALIDATION_DIR.parent
-REPO_ROOT = PYTHON_ROOT.parent
-DEFAULT_CONFIG_PATH = VALIDATION_DIR / "configs" / "validation_jobs.json"
 
 SCRIPT_REGISTRY = {
+    "post_run_cohort_assembly": PYTHON_ROOT / "assemble_patient_runner_cohort.py",
     "validate_run_against_baseline": PYTHON_ROOT / "validate_run_against_baseline.py",
     "compare_cohort_runs": PYTHON_ROOT / "compare_cohort_runs.py",
     "compare_run_csv_outputs": PYTHON_ROOT / "compare_run_csv_outputs.py",
@@ -31,6 +36,7 @@ class ValidationJobResult:
     script_name: str
     returncode: int
     command: tuple[str, ...]
+    dry_run: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -39,14 +45,6 @@ class ValidationJobResult:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _read_config(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as file_obj:
-        config = json.load(file_obj)
-    if not isinstance(config, dict):
-        raise TypeError("validation config root must be a JSON object")
-    return config
 
 
 def _resolve_path(value: str | Path) -> Path:
@@ -78,10 +76,14 @@ def _resolve_job_path(config: Mapping[str, Any], job: Mapping[str, Any], field_n
     return None
 
 
-def _append_common_options(args: list[str], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> None:
+def _append_output_dir_option(args: list[str], job: Mapping[str, Any]) -> None:
     output_dir = job.get("output_dir")
     if output_dir:
         args.extend(["--output-dir", str(_resolve_path(output_dir))])
+
+
+def _append_common_options(args: list[str], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> None:
+    _append_output_dir_option(args, job)
 
     abs_tol = job.get("abs_tol", defaults.get("abs_tol"))
     rel_tol = job.get("rel_tol", defaults.get("rel_tol"))
@@ -136,6 +138,28 @@ def _build_patient_runner_parity_args(config: Mapping[str, Any], job: Mapping[st
     return args
 
 
+def _build_post_run_cohort_assembly_args(config: Mapping[str, Any], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> list[str]:
+    patient_runner_output = _resolve_job_path(config, job, "patient_runner_output")
+    if patient_runner_output is None and job.get("patient_runner_output_dir"):
+        patient_runner_output = _resolve_path(job["patient_runner_output_dir"])
+    if patient_runner_output is None:
+        raise ValueError("post_run_cohort_assembly jobs require patient_runner_output")
+
+    args = [str(patient_runner_output)]
+    _append_output_dir_option(args, job)
+    for patient_uid in job.get("patient_uids", defaults.get("patient_uids", ())) or ():
+        args.extend(["--patient-uid", str(patient_uid)])
+    for table_name in job.get("final_table_names", defaults.get("final_table_names", ())) or ():
+        args.extend(["--final-table-name", str(table_name)])
+    for table_name in job.get("source_table_names", defaults.get("source_table_names", ())) or ():
+        args.extend(["--source-table-name", str(table_name)])
+    if not bool(job.get("write_outputs", defaults.get("write_outputs", True))):
+        args.append("--no-write-outputs")
+    if not bool(job.get("write_assembled_tables", defaults.get("write_assembled_tables", True))):
+        args.append("--no-write-assembled-tables")
+    return args
+
+
 def _resolve_job_path_list(config: Mapping[str, Any], job: Mapping[str, Any], field_name: str) -> tuple[Path, ...]:
     direct_values = job.get(field_name, ())
     if direct_values:
@@ -177,6 +201,8 @@ def _build_reconstructed_cohort_args(config: Mapping[str, Any], job: Mapping[str
 
 def _build_script_args(config: Mapping[str, Any], job: Mapping[str, Any], defaults: Mapping[str, Any]) -> list[str]:
     script_name = str(job.get("script", "")).strip()
+    if script_name == "post_run_cohort_assembly":
+        return _build_post_run_cohort_assembly_args(config, job, defaults)
     if script_name == "validate_run_against_baseline":
         return _build_validate_run_args(config, job, defaults)
     if script_name in {"compare_cohort_runs", "compare_run_csv_outputs"}:
@@ -215,7 +241,7 @@ def _iter_enabled_jobs(config: Mapping[str, Any]) -> Sequence[tuple[str, str, Ma
     return tuple(jobs)
 
 
-def _run_job(config: Mapping[str, Any], group_name: str, job_name: str, job: Mapping[str, Any]) -> ValidationJobResult:
+def _run_job(config: Mapping[str, Any], group_name: str, job_name: str, job: Mapping[str, Any], *, dry_run: bool = False) -> ValidationJobResult:
     defaults = config.get("defaults", {})
     script_name = str(job.get("script", "")).strip()
     script_path = SCRIPT_REGISTRY.get(script_name)
@@ -229,6 +255,17 @@ def _run_job(config: Mapping[str, Any], group_name: str, job_name: str, job: Map
     print(f"\n[validation-jobs] {group_name}/{job_name}: {script_name}")
     print("[validation-jobs] command:", " ".join(command))
 
+    if dry_run:
+        print("[validation-jobs] dry-run: command not executed")
+        return ValidationJobResult(
+            group_name=group_name,
+            job_name=job_name,
+            script_name=script_name,
+            returncode=0,
+            command=tuple(command),
+            dry_run=True,
+        )
+
     env = os.environ.copy()
     current_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(PYTHON_ROOT) if not current_pythonpath else f"{PYTHON_ROOT}{os.pathsep}{current_pythonpath}"
@@ -239,16 +276,20 @@ def _run_job(config: Mapping[str, Any], group_name: str, job_name: str, job: Map
         script_name=script_name,
         returncode=int(completed.returncode),
         command=tuple(command),
+        dry_run=False,
     )
 
 
-def _write_run_summary(config_path: Path, results: Sequence[ValidationJobResult]) -> Path:
+def _write_run_summary(run_config: ValidationRunConfig, results: Sequence[ValidationJobResult]) -> Path:
     output_path = REPO_ROOT / "validation_outputs" / "configured_validation_last_run.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": "configured_validation_run_v1",
         "generated_utc": _utc_now_iso(),
-        "config_path": str(config_path),
+        "config_path": str(run_config.source_path),
+        "config_format": run_config.source_format,
+        "config_schema_version": run_config.schema_version,
+        "config_description": run_config.description,
         "job_count": len(results),
         "failed_job_count": sum(1 for result in results if not result.succeeded),
         "jobs": [
@@ -258,6 +299,7 @@ def _write_run_summary(config_path: Path, results: Sequence[ValidationJobResult]
                 "script_name": result.script_name,
                 "returncode": result.returncode,
                 "succeeded": result.succeeded,
+                "dry_run": result.dry_run,
                 "command": list(result.command),
             }
             for result in results
@@ -267,20 +309,41 @@ def _write_run_summary(config_path: Path, results: Sequence[ValidationJobResult]
     return output_path
 
 
-def main() -> int:
-    config_path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else DEFAULT_CONFIG_PATH
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
-    config = _read_config(config_path)
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run validation jobs from a TOML or JSON config file."
+    )
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Validation config path. Defaults to validation/configs/validation_jobs.toml when present, otherwise validation_jobs.json.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve jobs and print commands without executing comparator scripts.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    run_config = load_validation_run_config(args.config_path)
+    config = run_config.as_mapping()
     jobs = _iter_enabled_jobs(config)
     if not jobs:
-        print(f"[validation-jobs] no enabled jobs in {config_path}")
+        print(f"[validation-jobs] no enabled jobs in {run_config.source_path}")
         return 0
 
-    print(f"[validation-jobs] config: {config_path}")
+    print(f"[validation-jobs] config: {run_config.source_path}")
+    print(f"[validation-jobs] config format: {run_config.source_format}")
     print(f"[validation-jobs] enabled jobs: {len(jobs)}")
-    results = [_run_job(config, group_name, job_name, job) for group_name, job_name, job in jobs]
-    summary_path = _write_run_summary(config_path, results)
+    if args.dry_run:
+        print("[validation-jobs] dry-run enabled")
+    results = [_run_job(config, group_name, job_name, job, dry_run=args.dry_run) for group_name, job_name, job in jobs]
+    summary_path = _write_run_summary(run_config, results)
     failed_results = [result for result in results if not result.succeeded]
     print(f"\n[validation-jobs] wrote summary: {summary_path}")
     print(f"[validation-jobs] completed jobs: {len(results)} | failed jobs: {len(failed_results)}")

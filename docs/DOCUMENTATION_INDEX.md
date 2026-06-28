@@ -67,6 +67,7 @@ Current module-local docs:
 - `python_files_dcm_meta_based/post_run/README.md`
 - `python_files_dcm_meta_based/deprecated/README.md`
 - `python_files_dcm_meta_based/validation/README.md`
+- `python_files_dcm_meta_based/validation/RUN_VALIDATION_CODEBOOK.md`
 - `python_files_dcm_meta_based/ui/RENDER_BROKER_DESIGN.md`
 
 ### Package extraction docs

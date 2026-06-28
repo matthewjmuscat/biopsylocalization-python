@@ -1,22 +1,24 @@
 # Validation Runbook
 
-This folder contains the reusable validation package plus config-driven launchers for checking a new run against known reference output. The existing top-level scripts are still the canonical comparators; the launcher here removes the need to rebuild long command lines by hand.
+This folder contains the reusable validation package plus config-driven launchers for checking completed runs against known reference output. The existing top-level scripts are still the canonical comparators; `run_validation.py` removes the need to rebuild long command lines by hand.
+
+For the current TOML-driven workflow and intrarun/interrun examples, start with `RUN_VALIDATION_CODEBOOK.md`.
 
 ## Quick Start
 
 From the repository root:
 
 ```bash
-PYTHONPATH=python_files_dcm_meta_based /home/matthew-muscat/.local/share/virtualenvs/biopsylocalization-python-a85Yh81c/bin/python python_files_dcm_meta_based/validation/scripts/run_validation_jobs.py
+/home/matthew-muscat/.local/share/virtualenvs/biopsylocalization-python-a85Yh81c/bin/python python_files_dcm_meta_based/run_validation.py
 ```
 
-The launcher reads `validation/configs/validation_jobs.json`, runs every enabled job, and writes a machine-readable summary to:
+The launcher reads `validation/configs/validation_jobs.toml` when present, runs every enabled job, and writes a machine-readable JSON provenance summary to:
 
 ```text
 validation_outputs/configured_validation_last_run.json
 ```
 
-To use a different config file, pass its path as the single positional argument. The intended day-to-day workflow is to edit the JSON, not construct command options repeatedly.
+To use a different config file, pass its path as the single positional argument. The intended day-to-day workflow is to edit TOML profiles, not construct command options repeatedly. JSON configs remain supported for compatibility and generated provenance.
 
 ## Available Scripts
 
@@ -25,6 +27,7 @@ To use a different config file, pass its path as the single positional argument.
 | `validate_run_against_baseline.py` | Broad run health: run-completion manifests, logs, recursive CSV comparisons, warnings/exceptions. | `baseline`, `candidate` run folders. | JSON/CSV diagnostics under the configured `output_dir`. |
 | `compare_cohort_runs.py` | Main oracle gate for final cohort CSV tables. This is the cleanest scientific-regression check for legacy-output parity. | `baseline`, `candidate` run folders. | Per-table diff summaries under `output_dir`. |
 | `compare_run_csv_outputs.py` | Recursive all-CSV comparison. Useful for investigating intermediate artifacts and diagnostic files. | `baseline`, `candidate` run folders. | Recursive CSV diff summaries under `output_dir`. |
+| `assemble_patient_runner_cohort.py` | Post-run cohort assembly from completed patient-runner artifacts. | `patient_runner_output`. | `cohort_assembly/` reports and assembled tables. |
 | `compare_patient_runner_parity.py` | Patient-runner parity against a legacy/oracle run once patient-runner artifacts are available. | `legacy_output`, `patient_runner_output`. | Assembled parity tables and optional recursive CSV diffs. |
 | `compare_reconstructed_cohort_runs.py` | Full-vs-split patient-runner validation after decomposing patient artifacts and reconstructing both cohort surfaces through one assembly policy. | One reference patient-runner output plus one-or-more split patient-runner outputs. | Reconstructed cohort surfaces, assembly reports, and cohort CSV comparison outputs under `output_dir`. |
 
@@ -33,7 +36,7 @@ To use a different config file, pass its path as the single positional argument.
 The default config is:
 
 ```text
-python_files_dcm_meta_based/validation/configs/validation_jobs.json
+python_files_dcm_meta_based/validation/configs/validation_jobs.toml
 ```
 
 It has four main sections:
@@ -46,6 +49,8 @@ It has four main sections:
 | `run_groups` | Named groups of validation jobs. Toggle a whole group with `enabled`. |
 
 Each job has a `script`, a short `name`, path references, an `output_dir`, and optional script-specific settings. Keep `output_dir` short, because full run-folder names are long enough to hit OS filename limits when nested repeatedly.
+
+TOML is the human-authored profile format. The runner still writes resolved JSON summaries under `validation_outputs/` for provenance.
 
 ## Current Default Groups
 

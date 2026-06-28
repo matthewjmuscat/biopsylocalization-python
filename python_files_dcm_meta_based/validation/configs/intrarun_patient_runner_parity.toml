@@ -1,0 +1,30 @@
+schema_version = "validation_run_config_v1"
+description = "Focused intrarun validation: assemble one completed patient-runner output and compare it with that same run's legacy/oracle cohort output."
+
+[defaults]
+abs_tol = 1e-8
+rel_tol = 1e-6
+write_outputs = true
+write_assembled_tables = true
+
+[runs]
+single_shot = "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+
+[paths]
+single_shot_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
+
+[run_groups.intrarun_patient_runner_parity]
+description = "Run assembly before parity so one command validates the completed run."
+enabled = true
+
+[[run_groups.intrarun_patient_runner_parity.jobs]]
+name = "assemble_patient_runner_cohort"
+script = "post_run_cohort_assembly"
+patient_runner_output_path = "single_shot_patient_runner"
+
+[[run_groups.intrarun_patient_runner_parity.jobs]]
+name = "patient_runner_parity_vs_legacy"
+script = "compare_patient_runner_parity"
+legacy_output_run = "single_shot"
+patient_runner_output_path = "single_shot_patient_runner"
+output_dir = "validation_outputs/jun25_205540/patient_runner_parity"
