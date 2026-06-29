@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-06-23
+Last updated: 2026-06-28
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -40,6 +40,9 @@ Current durable docs:
   pathway/checkpoint vocabulary for patient-runner scientific orchestration.
 - `architecture/PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md` - output-layer contract
   for patient artifacts, manifests, post-run assembly, and parity.
+- `architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md` - standalone
+  parent/worker process architecture for moving the patient runner outside the
+  legacy all-patient runtime.
 - `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
   plan.
 - `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
@@ -110,6 +113,7 @@ docs/
     PATIENT_RUNNER_CONFIG_PATHWAYS.md
     PATIENT_RUNNER_DEPENDENCY_GRAPH.md
     PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md
+    PATIENT_RUNNER_PROCESS_ARCHITECTURE.md
   boundaries/
     PICKLE_EXPORT_BOUNDARIES.md
   input/

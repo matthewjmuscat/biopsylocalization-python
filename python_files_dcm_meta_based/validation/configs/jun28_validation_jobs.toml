@@ -1,0 +1,51 @@
+# Jun28 patient-runner validation profile.
+# TOML is the human-authored run profile; resolved execution summaries are JSON provenance.
+
+schema_version = "validation_run_config_v1"
+description = "Jun28 patient-runner validation profile: intrarun parity for the single-shot run plus same-subset full-vs-split reconstruction."
+
+[defaults]
+abs_tol = 1e-8
+rel_tol = 1e-6
+write_outputs = true
+write_assembled_tables = true
+
+[runs]
+jun28_004913_single_shot = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-00,49,13 - standard-run - inputs-dicom-500_mr-adc-0_mr-t2-0_rtdose-5_rtplan-5_rtstruct-5_us-5"
+jun28_125054_split_a = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-12,50,54 - standard-run - inputs-dicom-180_mr-adc-0_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2"
+jun28_132509_split_b = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-13,25,09 - standard-run - inputs-dicom-320_mr-adc-0_mr-t2-0_rtdose-3_rtplan-3_rtstruct-3_us-3"
+
+[paths]
+jun28_004913_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-00,49,13 - standard-run - inputs-dicom-500_mr-adc-0_mr-t2-0_rtdose-5_rtplan-5_rtstruct-5_us-5/patient_scientific_runner"
+jun28_125054_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-12,50,54 - standard-run - inputs-dicom-180_mr-adc-0_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2/patient_scientific_runner"
+jun28_132509_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-13,25,09 - standard-run - inputs-dicom-320_mr-adc-0_mr-t2-0_rtdose-3_rtplan-3_rtstruct-3_us-3/patient_scientific_runner"
+
+[run_groups.jun28_intrarun_patient_runner_parity]
+description = "Assemble completed single-shot patient-runner artifacts, then compare assembled cohort tables against the same run's legacy/oracle cohort output."
+enabled = true
+
+[[run_groups.jun28_intrarun_patient_runner_parity.jobs]]
+name = "assemble_patient_runner_cohort"
+script = "post_run_cohort_assembly"
+patient_runner_output_path = "jun28_004913_patient_runner"
+
+[[run_groups.jun28_intrarun_patient_runner_parity.jobs]]
+name = "patient_runner_parity_vs_legacy"
+script = "compare_patient_runner_parity"
+legacy_output_run = "jun28_004913_single_shot"
+patient_runner_output_path = "jun28_004913_patient_runner"
+output_dir = "validation_outputs/jun28_004913/patient_runner_parity"
+
+[run_groups.jun28_full_vs_split_reconstructed]
+description = "Compare the Jun28 single-shot patient-runner cohort surface to the same patient set reconstructed from the two split runs."
+enabled = true
+
+[[run_groups.jun28_full_vs_split_reconstructed.jobs]]
+name = "full_vs_split_reconstructed"
+script = "compare_reconstructed_cohort_runs"
+reference_patient_runner_output_path = "jun28_004913_patient_runner"
+split_patient_runner_outputs_paths = [
+  "jun28_125054_patient_runner",
+  "jun28_132509_patient_runner",
+]
+output_dir = "validation_outputs/jun28_004913/full_vs_split_reconstructed"

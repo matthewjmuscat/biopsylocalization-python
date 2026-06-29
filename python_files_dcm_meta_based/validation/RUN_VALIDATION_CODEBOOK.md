@@ -61,6 +61,13 @@ Current checked-in profiles:
   full-vs-split patient-runner profile.
 - `validation/configs/legacy_cohort_regression.toml`: focused legacy/cohort
   baseline-vs-candidate profile.
+- `validation/configs/jun28_validation_jobs.toml`: Jun28 single-shot plus
+  split-run profile, including intrarun parity and full-vs-split
+  reconstruction.
+- `validation/configs/jun28_intrarun_patient_runner_parity.toml`: focused
+  Jun28 intrarun parity profile.
+- `validation/configs/jun28_interrun_full_vs_split_reconstructed.toml`:
+  focused Jun28 full-vs-split patient-runner profile.
 
 The older `validation/configs/validation_jobs.json` remains supported for
 compatibility and for machine-generated job manifests, but new hand-edited

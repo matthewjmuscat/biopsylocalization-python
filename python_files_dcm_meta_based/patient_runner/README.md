@@ -62,6 +62,23 @@ The detailed recommendations and non-recommendations for patient-level
 parallelism live in `../../docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` under
 "Parallelism Opportunities and Recommendations".
 
+Standalone process architecture target:
+
+- the current `from_legacy` bridge remains a validation adapter, not the final
+  primary runner memory model,
+- the future primary runner should use a parent orchestrator plus isolated
+  patient worker processes,
+- the parent should keep only run config, patient inventory, worker statuses,
+  manifest paths, and artifact paths,
+- each worker should build one patient-local runtime state, run the selected
+  pathway, write artifacts/manifests, and exit so Python/native/CUDA allocator
+  state is released,
+- post-run assembly should continue to read artifacts from disk rather than
+  holding cohort data in the patient execution loop.
+
+The durable target contract lives in
+`../../docs/architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md`.
+
 Current Phase D scope:
 
 The durable output architecture target is documented in
