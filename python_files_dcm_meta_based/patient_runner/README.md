@@ -66,6 +66,11 @@ Standalone process architecture target:
 
 - the current `from_legacy` bridge remains a validation adapter, not the final
   primary runner memory model,
+- `run_patient_scientific_standalone.py` is the new parent CLI surface for
+  resolving input-manifest patients into worker job packets and parent plans,
+- `run_patient_scientific_worker.py` is the new one-patient worker CLI surface;
+  it currently supports dry-run job/result validation while the patient-local
+  runtime-state builder is wired,
 - the future primary runner should use a parent orchestrator plus isolated
   patient worker processes,
 - the parent should keep only run config, patient inventory, worker statuses,

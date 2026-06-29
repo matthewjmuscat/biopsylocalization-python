@@ -66,6 +66,37 @@ legacy main builds full master dictionaries
 This is appropriate for oracle parity and migration checkpoints, but it can keep
 cohort-scale legacy state alive for the duration of the process.
 
+The legacy main path should remain runnable with all patient-runner hooks off.
+There are two distinct legacy-adjacent controls:
+
+- `patient_runner_validation_mode = "disabled"` disables the main-facing
+   validation hook. In disabled mode the hook returns a skipped result before it
+   wraps legacy state or runs patient-runner validation.
+- `patient_scientific_runner_mode = "disabled"` skips the live
+   patient-scientific runner block inside legacy main. Any production legacy-only
+   run should use this value until the standalone primary runner is ready.
+
+Current migration status:
+
+- `run_patient_scientific_standalone.py` writes a parent plan and one JSON
+   worker job packet per selected manifest patient.
+- `run_patient_scientific_worker.py` loads one worker job packet and writes a
+   worker result JSON. Its dry-run mode validates the process/job/result boundary
+   without touching patient data.
+- Non-dry-run worker execution intentionally reports the missing
+   `one_patient_runtime_state_builder` boundary until the patient-local runtime
+   builder is implemented.
+- The legacy-main live patient-scientific runner default is disabled; the
+   from-legacy bridge remains available as an explicit validation adapter.
+
+The long-term removal path should be conservative. First, make both legacy hooks
+default to disabled for ordinary legacy runs. Second, move new patient-runner
+execution to the standalone parent/worker entrypoint. Third, keep the
+`from_legacy` bridge available as an explicit validation adapter until primary
+runner parity is proven. Only after that should legacy-main imports, config
+fields, and call sites be deleted or moved behind a smaller validation-only
+entrypoint.
+
 Target primary mode:
 
 ```text

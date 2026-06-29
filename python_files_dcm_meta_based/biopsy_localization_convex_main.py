@@ -712,7 +712,7 @@ def main():
     patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
     patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
-    patient_scientific_runner_mode = "execute" # Overnight checkpoint ON: writes the plan, then runs the DAG-valid per-patient stage slice.
+    patient_scientific_runner_mode = "disabled" # Legacy-main hook OFF: standalone process runner now owns new patient-runner execution work.
     patient_scientific_runner_checkpoint_name = "full_current_pipeline_shadow"
     patient_scientific_runner_pathway_name = "full_current_pipeline_shadow" # Seventh live-runner slice: adds guidance after current dosimetry.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.

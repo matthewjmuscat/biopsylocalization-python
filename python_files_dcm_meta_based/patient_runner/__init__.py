@@ -68,6 +68,22 @@ from .parity import run_patient_runner_post_run_parity
 from .parity import summarize_patient_runner_parity_surface
 from .parity import summarize_patient_runner_post_run_parity
 from .parity import summarize_patient_runner_post_run_parity_surfaces
+from .process_runner import DEFAULT_PATIENT_PROCESS_RUNNER_DIR_NAME
+from .process_runner import PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION
+from .process_runner import PATIENT_WORKER_JOB_SCHEMA_VERSION
+from .process_runner import PATIENT_WORKER_RESULT_SCHEMA_VERSION
+from .process_runner import PatientProcessFailurePolicy
+from .process_runner import PatientProcessRunPlan
+from .process_runner import PatientWorkerJob
+from .process_runner import PatientWorkerResult
+from .process_runner import build_patient_process_run_plan
+from .process_runner import load_patient_worker_job
+from .process_runner import run_patient_process_plan
+from .process_runner import run_patient_worker_job
+from .process_runner import run_worker_job_file
+from .process_runner import write_patient_process_run_plan
+from .process_runner import write_patient_worker_job_packets
+from .process_runner import write_patient_worker_result
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
@@ -181,11 +197,15 @@ __all__ = [
     "PatientCase",
     "PatientRunConfig",
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
+    "PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION",
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
     "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
     "PATIENT_SCIENTIFIC_SHADOW_SCHEMA_VERSION",
     "PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION",
+    "PATIENT_WORKER_JOB_SCHEMA_VERSION",
+    "PATIENT_WORKER_RESULT_SCHEMA_VERSION",
     "PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
+    "DEFAULT_PATIENT_PROCESS_RUNNER_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_PARITY_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SCIENTIFIC_SHADOW_DIR_NAME",
     "DEFAULT_PATIENT_RUNNER_SHADOW_OUTPUT_DIR_NAME",
@@ -210,6 +230,8 @@ __all__ = [
     "PatientMRADCInputNormalizationStageConfig",
     "PatientOptimizationScientificConfig",
     "PatientPreprocessingScientificConfig",
+    "PatientProcessFailurePolicy",
+    "PatientProcessRunPlan",
     "PatientProstateOnlyMRADCStageConfig",
     "PatientRawContourPullingStageConfig",
     "PatientRealBiopsyProcessingStageConfig",
@@ -249,9 +271,12 @@ __all__ = [
     "PatientStandardNonBiopsyStructureProcessingStageConfig",
     "PatientStructureSelectionStageConfig",
     "PatientUncertaintyAttachmentStageConfig",
+    "PatientWorkerJob",
+    "PatientWorkerResult",
     "assemble_patient_batch_cohort_tables",
     "build_patient_case_from_legacy",
     "build_patient_batch_artifact_inventory",
+    "build_patient_process_run_plan",
     "build_patient_runner_scientific_config",
     "build_patient_scientific_run_config_from_pipeline",
     "build_patient_scientific_runner_stages",
@@ -289,6 +314,7 @@ __all__ = [
     "run_patient_batch_cohort_assembly",
     "run_patient_batch_from_legacy",
     "run_patient_case",
+    "run_patient_process_plan",
     "run_patient_anatomical_preprocessing_scientific_stage",
     "run_patient_grid_preprocessing_scientific_stage",
     "run_patient_guidance_scientific_stage",
@@ -305,6 +331,8 @@ __all__ = [
     "run_patient_scientific_runner_from_legacy",
     "run_patient_scientific_shadow",
     "run_patient_stages",
+    "run_patient_worker_job",
+    "run_worker_job_file",
     "summarize_patient_runner_main_validation",
     "summarize_patient_runner_parity_surface",
     "summarize_patient_runner_post_run_parity",
@@ -324,11 +352,14 @@ __all__ = [
     "validate_patient_scientific_stage_dependencies",
     "write_patient_batch_run_manifest",
     "write_patient_batch_cohort_assembly_outputs",
+    "write_patient_process_run_plan",
     "write_patient_artifacts_stage",
     "write_patient_dataframe_artifacts",
     "write_patient_runner_main_validation_summary",
     "write_patient_scientific_run_plan_summary",
     "write_patient_scientific_shadow_stage_state_manifest",
     "write_patient_scientific_shadow_summary",
+    "write_patient_worker_job_packets",
+    "write_patient_worker_result",
     "write_patient_run_manifest",
 ]
