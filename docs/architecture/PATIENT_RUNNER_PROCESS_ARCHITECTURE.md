@@ -141,6 +141,8 @@ The worker owns one patient attempt:
 
 - receive a typed worker job or resolved JSON job packet,
 - load/build one patient runtime state from the patient input manifest,
+- preflight required core input paths such as RTSTRUCT, RTDOSE, and RTPLAN
+   before scientific stages begin,
 - adapt to legacy-shaped patient-local state only at compatibility boundaries,
 - run the dependency-checked pathway,
 - write patient artifacts, patient manifests, and patient logs,
@@ -209,11 +211,19 @@ Every patient attempt should produce enough evidence to decide what happened:
 - elapsed seconds,
 - exit code,
 - timeout flag,
+- input-preflight status for required core DICOM paths,
 - exception summary when available,
 - peak memory when available,
 - GPU/device assignment when relevant,
 - patient manifest path,
 - artifact count and output root.
+
+The Jun28 split-A 185 failure is the motivating example for this contract. The
+legacy all-patient path completed, but the from-legacy patient-runner replay
+failed when it reran raw-contour pulling from RTSTRUCT paths that were no longer
+available. The standalone runner should surface that condition as a worker input
+preflight failure before raw-contour pulling, and should keep the failed worker
+result separate from completed patient artifacts.
 
 The first supported policies should be:
 

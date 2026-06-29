@@ -78,6 +78,45 @@ def _case_row_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
+def _case_row_path(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _case_row_path_exists(value: Any) -> bool:
+    path_text = _case_row_path(value)
+    return bool(path_text) and Path(path_text).expanduser().is_file()
+
+
+def _core_input_path_metadata(row: Mapping[str, str]) -> dict[str, Any]:
+    core_input_paths = {
+        "rtstruct": _case_row_path(row.get("RTSTRUCT path")),
+        "rtdose": _case_row_path(row.get("RTDOSE path")),
+        "rtplan": _case_row_path(row.get("RTPLAN path")),
+    }
+    core_input_paths_exist = {
+        role: _case_row_path_exists(path)
+        for role, path in core_input_paths.items()
+    }
+    return {
+        "core_input_paths": core_input_paths,
+        "core_input_paths_exist": core_input_paths_exist,
+        "core_input_paths_all_present": all(core_input_paths_exist.values()),
+    }
+
+
+def _missing_core_input_roles(patient_case: PatientCase) -> tuple[str, ...]:
+    if "core_input_paths_exist" not in patient_case.metadata:
+        return ()
+    paths_exist = patient_case.metadata.get("core_input_paths_exist", {})
+    if not isinstance(paths_exist, Mapping):
+        return ()
+    return tuple(
+        role
+        for role in ("rtstruct", "rtdose", "rtplan")
+        if not bool(paths_exist.get(role, False))
+    )
+
+
 def _patient_cases_from_input_case_manifest(
     input_case_manifest_path: Path,
     patient_uids: Sequence[str] = (),
@@ -123,6 +162,7 @@ def _patient_cases_from_input_case_manifest(
                     "num_us_files": row.get("Num US files", ""),
                     "num_mr_t2_files": row.get("Num MR T2 files", ""),
                     "num_mr_adc_files": row.get("Num MR ADC files", ""),
+                    **_core_input_path_metadata(row),
                 },
             )
         )
@@ -388,15 +428,45 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
     keeping the one-patient runtime builder explicit.
     """
     start_time = perf_counter()
+    missing_core_input_roles = _missing_core_input_roles(job.patient_case)
+    input_preflight_metadata = {
+        "core_input_paths_all_present": not missing_core_input_roles,
+        "missing_core_input_roles": missing_core_input_roles,
+    }
     if dry_run:
+        warnings = ["dry-run worker did not build runtime state or execute scientific stages"]
+        if missing_core_input_roles:
+            warnings.append(
+                "input preflight found missing core input files: " + ", ".join(missing_core_input_roles)
+            )
         return PatientWorkerResult(
             worker_job=job,
             status=PatientStageStatus.SKIPPED,
             elapsed_seconds=perf_counter() - start_time,
             exit_code=0,
             dry_run=True,
-            warnings=("dry-run worker did not build runtime state or execute scientific stages",),
-            metadata={"worker_boundary": "standalone_patient_process_runner"},
+            warnings=tuple(warnings),
+            metadata={
+                "worker_boundary": "standalone_patient_process_runner",
+                "input_preflight": input_preflight_metadata,
+            },
+        )
+
+    if missing_core_input_roles:
+        return PatientWorkerResult(
+            worker_job=job,
+            status=PatientStageStatus.FAILED,
+            elapsed_seconds=perf_counter() - start_time,
+            exit_code=2,
+            dry_run=False,
+            warnings=(
+                "input preflight found missing core input files: " + ", ".join(missing_core_input_roles),
+            ),
+            metadata={
+                "worker_boundary": "standalone_patient_process_runner",
+                "failed_boundary": "core_input_path_preflight",
+                "input_preflight": input_preflight_metadata,
+            },
         )
 
     return PatientWorkerResult(
@@ -409,6 +479,7 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
         metadata={
             "worker_boundary": "standalone_patient_process_runner",
             "missing_boundary": "one_patient_runtime_state_builder",
+            "input_preflight": input_preflight_metadata,
         },
     )
 
