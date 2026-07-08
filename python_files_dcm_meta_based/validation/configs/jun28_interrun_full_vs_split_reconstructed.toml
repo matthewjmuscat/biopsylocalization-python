@@ -1,5 +1,5 @@
 schema_version = "validation_run_config_v1"
-description = "Focused Jun28 interrun validation: compare a full patient-runner run with split patient-runner runs for the same patient set."
+description = "Focused Jun28 interrun validation retained for historical triage only; disabled because the input folder was changed during split-run execution."
 
 [defaults]
 abs_tol = 1e-8
@@ -11,8 +11,8 @@ split_a_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-
 split_b_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-28-2026 Time-13,25,09 - standard-run - inputs-dicom-320_mr-adc-0_mr-t2-0_rtdose-3_rtplan-3_rtstruct-3_us-3/patient_scientific_runner"
 
 [run_groups.full_vs_split_reconstructed]
-description = "Patient UID sets must match by default; do not enable allow_patient_set_mismatch for the real equivalence gate."
-enabled = true
+description = "Historical triage only: not a valid equivalence gate after the input folder changed during split-run execution."
+enabled = false
 
 [[run_groups.full_vs_split_reconstructed.jobs]]
 name = "full_vs_split_reconstructed"

@@ -60,7 +60,8 @@ Current checked-in profiles:
 - `validation/configs/interrun_full_vs_split_reconstructed.toml`: focused
   full-vs-split patient-runner profile.
 - `validation/configs/legacy_cohort_regression.toml`: focused legacy/cohort
-  baseline-vs-candidate profile.
+  baseline-vs-candidate profile using the retained Jun02/Jun03 archival
+  validation-heavy runs.
 - `validation/configs/jun28_validation_jobs.toml`: Jun28 single-shot plus
   split-run profile, including intrarun parity and full-vs-split
   reconstruction.
@@ -72,6 +73,25 @@ Current checked-in profiles:
 The older `validation/configs/validation_jobs.json` remains supported for
 compatibility and for machine-generated job manifests, but new hand-edited
 profiles should be TOML.
+
+## Current Local Evidence Status
+
+As of 2026-07-05, the checked-in validation profiles point only at output roots
+that are still retained locally:
+
+- Jun25/Jun26 patient-runner profiles are the current reusable patient-runner
+  validation evidence: Jun25 single-shot intrarun parity and Jun25-vs-Jun26
+  full-vs-split reconstruction.
+- Jun28 patient-runner output folders are still present, but the split-A/split-B
+  comparison is not a valid equivalence gate because the input folder was
+  changed while the split runs were executing. Use Jun28 only for historical
+  triage unless those split runs are rerun from stable inputs.
+- The dedicated legacy cohort regression profile now uses the retained Jun02
+  and Jun03 validation-heavy runs because the previous Jun10/Jun15 runs were
+  deleted to recover disk space.
+- The JSON validation profile is a compatibility sample that mirrors the
+  retained Jun25/Jun26 patient-runner validation surface; TOML remains the
+  preferred hand-edited format.
 
 ## TOML Layout
 

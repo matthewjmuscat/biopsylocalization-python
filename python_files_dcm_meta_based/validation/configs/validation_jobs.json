@@ -1,152 +1,54 @@
 {
   "schema_version": "validation_jobs_v1",
+  "description": "Compatibility JSON profile mirroring the retained Jun25/Jun26 patient-runner validation surface. Prefer TOML for hand-edited profiles.",
   "defaults": {
-    "abs_tol": 1e-9,
-    "rel_tol": 1e-9,
-    "top_n": 25
+    "abs_tol": 1e-8,
+    "rel_tol": 1e-6,
+    "write_outputs": true,
+    "write_assembled_tables": true
   },
   "runs": {
-    "jun15_140313_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun10_123222_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-10-2026 Time-12,32,22 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun09_014028_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-09-2026 Time-01,40,28 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun08_125911_full_current_candidate": "../Data/Output data/MC_sim_out- Date-Jun-08-2026 Time-12,59,11 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun06_135138_current_dosimetry_candidate": "../Data/Output data/MC_sim_out- Date-Jun-06-2026 Time-13,51,38 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun05_211724_current_dosimetry_candidate": "../Data/Output data/MC_sim_out- Date-Jun-05-2026 Time-21,17,24 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun05_150512_sampling_classification_candidate": "../Data/Output data/MC_sim_out- Date-Jun-05-2026 Time-15,05,12 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun04_222357_latest_standard": "../Data/Output data/MC_sim_out- Date-Jun-04-2026 Time-22,23,57 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun04_1418_standard_reference": "../Data/Output data/MC_sim_out- Date-Jun-04-2026 Time-14,18,02 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun04_0032_standard_reference": "../Data/Output data/MC_sim_out- Date-Jun-04-2026 Time-00,32,15 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun03_1436_validation_heavy_reference": "../Data/Output data/MC_sim_out- Date-Jun-03-2026 Time-14,36,52 - validation-selected-structures-legacy_non-biopsy-structures-legacy_prostate-only-mr-adc-legacy - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
-    "jun02_0147_validation_heavy_reference": "../Data/Output data/MC_sim_out- Date-Jun-02-2026 Time-01,47,37 - validation-selected-structures-legacy_non-biopsy-structures-legacy_prostate-only-mr-adc-legacy - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+    "jun25_205540_single_shot": "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4",
+    "jun26_123614_split_a": "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-12,36,14 - standard-run - inputs-dicom-194_mr-adc-0_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2",
+    "jun26_142500_split_b": "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-14,25,00 - standard-run - inputs-dicom-263_mr-adc-1_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2"
   },
   "paths": {
-    "latest_patient_scientific_runner": "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
+    "jun25_205540_patient_runner": "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner",
+    "jun26_123614_patient_runner": "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-12,36,14 - standard-run - inputs-dicom-194_mr-adc-0_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2/patient_scientific_runner",
+    "jun26_142500_patient_runner": "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-14,25,00 - standard-run - inputs-dicom-263_mr-adc-1_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2/patient_scientific_runner"
   },
   "run_groups": {
-    "latest_standard_candidate_core": {
-      "description": "Fast default checks for the latest Jun 15 14:03 standard run.",
+    "jun25_intrarun_patient_runner_parity": {
+      "description": "Assemble retained Jun25 patient-runner artifacts, then compare assembled cohort tables against the same run's legacy/oracle cohort output.",
       "enabled": true,
       "jobs": [
         {
-          "name": "recursive_manifest_and_csv_vs_jun10_123222",
-          "script": "validate_run_against_baseline",
-          "baseline_run": "jun10_123222_full_current_candidate",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/recursive_vs_jun10_123222",
-          "diagnostic_column_regex": [
-            "^Time|time|duration|seconds$",
-            "^Memory|memory|rss|resident|peak"
-          ]
+          "name": "assemble_patient_runner_cohort",
+          "script": "post_run_cohort_assembly",
+          "patient_runner_output_path": "jun25_205540_patient_runner"
         },
         {
-          "name": "cohort_final_tables_vs_jun10_123222",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun10_123222_full_current_candidate",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun10_123222"
-        }
-      ]
-    },
-    "latest_standard_candidate_reference_set": {
-      "description": "Cohort-table oracle checks across the current reference set.",
-      "enabled": true,
-      "jobs": [
-        {
-          "name": "cohort_final_tables_vs_jun06_135138",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun06_135138_current_dosimetry_candidate",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun06_135138"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun05_211724",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun05_211724_current_dosimetry_candidate",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun05_211724"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun05_150512",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun05_150512_sampling_classification_candidate",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun05_150512"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun04_222357",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun04_222357_latest_standard",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_222357"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun04_1418",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun04_1418_standard_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_1418"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun04_0032",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun04_0032_standard_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun04_0032"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun03_1436",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun03_1436_validation_heavy_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun03_1436"
-        },
-        {
-          "name": "cohort_final_tables_vs_jun02_0147",
-          "script": "compare_cohort_runs",
-          "baseline_run": "jun02_0147_validation_heavy_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/cohort_vs_jun02_0147"
-        }
-      ]
-    },
-    "latest_patient_runner_parity": {
-      "description": "Template group for patient-runner parity once a runner output directory is ready.",
-      "enabled": true,
-      "jobs": [
-        {
-          "name": "patient_runner_parity_vs_jun15_legacy",
+          "name": "patient_runner_parity_vs_legacy",
           "script": "compare_patient_runner_parity",
-          "legacy_output_run": "jun15_140313_full_current_candidate",
-          "patient_runner_output_path": "latest_patient_scientific_runner",
-          "output_dir": "validation_outputs/jun15_140313/patient_runner_parity",
-          "recursive_csv": false
+          "legacy_output_run": "jun25_205540_single_shot",
+          "patient_runner_output_path": "jun25_205540_patient_runner",
+          "output_dir": "validation_outputs/jun25_205540/patient_runner_parity"
         }
       ]
     },
-    "recursive_all_csv_reference_set": {
-      "description": "Heavier recursive CSV comparisons; keep disabled unless investigating non-final artifacts.",
-      "enabled": false,
+    "jun25_full_vs_split_reconstructed": {
+      "description": "Compare the retained Jun25 single-shot patient-runner cohort surface to the same patient set reconstructed from retained Jun26 split runs.",
+      "enabled": true,
       "jobs": [
         {
-          "name": "all_csv_vs_jun04_0032",
-          "script": "compare_run_csv_outputs",
-          "baseline_run": "jun04_0032_standard_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun04_0032"
-        },
-        {
-          "name": "all_csv_vs_jun03_1436",
-          "script": "compare_run_csv_outputs",
-          "baseline_run": "jun03_1436_validation_heavy_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun03_1436"
-        },
-        {
-          "name": "all_csv_vs_jun02_0147",
-          "script": "compare_run_csv_outputs",
-          "baseline_run": "jun02_0147_validation_heavy_reference",
-          "candidate_run": "jun15_140313_full_current_candidate",
-          "output_dir": "validation_outputs/jun15_140313/all_csv_vs_jun02_0147"
+          "name": "full_vs_split_reconstructed",
+          "script": "compare_reconstructed_cohort_runs",
+          "reference_patient_runner_output_path": "jun25_205540_patient_runner",
+          "split_patient_runner_outputs_paths": [
+            "jun26_123614_patient_runner",
+            "jun26_142500_patient_runner"
+          ],
+          "output_dir": "validation_outputs/jun25_205540/full_vs_split_reconstructed"
         }
       ]
     }

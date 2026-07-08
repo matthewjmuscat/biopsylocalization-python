@@ -9,15 +9,15 @@
     "source_table_names": []
   },
   "paths": {
-    "jun15_full_current_patient_runner": "../Data/Output data/MC_sim_out- Date-Jun-15-2026 Time-14,03,13 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
+    "jun25_full_current_patient_runner": "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
   },
   "jobs": [
     {
-      "name": "jun15_full_current",
+      "name": "jun25_full_current",
       "enabled": true,
-      "patient_runner_output_path": "jun15_full_current_patient_runner",
+      "patient_runner_output_path": "jun25_full_current_patient_runner",
       "metadata": {
-        "note": "Jun 15 patient-scientific runner completed artifact writing after the mc_output_tables fix; run post-run cohort assembly from completed artifacts."
+        "note": "Jun 25 patient-scientific runner output is retained locally and can be assembled from completed artifacts."
       }
     }
   ]

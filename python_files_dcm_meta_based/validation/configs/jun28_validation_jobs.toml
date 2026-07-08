@@ -2,7 +2,7 @@
 # TOML is the human-authored run profile; resolved execution summaries are JSON provenance.
 
 schema_version = "validation_run_config_v1"
-description = "Jun28 patient-runner validation profile: intrarun parity for the single-shot run plus same-subset full-vs-split reconstruction."
+description = "Jun28 patient-runner validation profile. Intrarun single-shot parity remains useful; split-run reconstruction is disabled because the input folder was changed during the split runs."
 
 [defaults]
 abs_tol = 1e-8
@@ -37,8 +37,8 @@ patient_runner_output_path = "jun28_004913_patient_runner"
 output_dir = "validation_outputs/jun28_004913/patient_runner_parity"
 
 [run_groups.jun28_full_vs_split_reconstructed]
-description = "Compare the Jun28 single-shot patient-runner cohort surface to the same patient set reconstructed from the two split runs."
-enabled = true
+description = "Historical triage only: disabled because split-A/split-B were run while the input folder was changed, so this is not a valid equivalence gate."
+enabled = false
 
 [[run_groups.jun28_full_vs_split_reconstructed.jobs]]
 name = "full_vs_split_reconstructed"
