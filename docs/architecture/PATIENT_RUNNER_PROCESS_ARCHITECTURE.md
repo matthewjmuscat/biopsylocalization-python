@@ -1,6 +1,6 @@
 # Patient-Runner Process Architecture
 
-Last updated: 2026-06-28
+Last updated: 2026-07-08
 
 This note defines the target execution architecture for moving the patient
 runner outside the legacy all-patient runtime. It is the process and memory
@@ -116,6 +116,39 @@ exist for the full cohort. Legacy-shaped dictionaries may still exist inside a
 single worker while a migrated stage needs them, but that state should be
 patient-local and process-local.
 
+## Paired Oracle And Standalone Runs
+
+The future run profile should allow standalone patient execution and legacy
+oracle execution in the same resolved plan. This is not an either/or choice:
+intrarun and interrun validation need both modes to remain available.
+
+When both are requested, the preferred execution order is:
+
+```text
+run profile
+-> resolve config and patient inventory
+-> standalone patient runner first
+   -> one worker process per selected patient
+   -> patient artifacts and manifests
+-> legacy oracle runner second
+   -> separate process
+   -> legacy cohort outputs
+-> post-run cohort assembly
+-> validation
+```
+
+The patient runner should run before the legacy oracle so legacy all-patient
+memory does not persist into patient execution. The parent orchestrator should
+remain light: it records config, inventory, job order, status, and paths. It
+should launch both the standalone runner and the legacy oracle as subprocess
+jobs rather than importing heavy scientific state into the parent.
+
+During migration, `biopsy_localization_convex_main.py` remains the legacy oracle
+entrypoint and can still produce input manifests. The standalone runner may
+initially consume those manifests, but the long-term owner should be shared
+input/config services that can be called by the legacy oracle, standalone CLI,
+validation tooling, and a future GUI.
+
 ## Process Roles
 
 ### Parent Orchestrator
@@ -172,6 +205,22 @@ as patient selection, pathway, output root, failure policy, worker backend, and
 resource limits. It should not become a second loose scientific-config system.
 Scientific parameters should still flow through typed config contracts such as
 `PipelineConfig` and patient-runner scientific config adapters.
+
+The run profile is an orchestration config, not a replacement for scientific
+config. It should own:
+
+- input root or input manifest paths,
+- patient/fraction selection,
+- pathway/checkpoint selection,
+- requested execution jobs such as `standalone_patient_runner`,
+  `legacy_oracle`, `post_run_assembly`, and `validation`,
+- execution order, failure policy, retry policy, and resource limits,
+- output root and provenance labels.
+
+It should not copy every scientific knob from `biopsy_localization_convex_main.py`.
+Those values should move gradually into `PipelineConfig` and related typed
+domain configs, then the run profile should point at that resolved scientific
+config.
 
 ## Worker Backends
 
@@ -270,6 +319,42 @@ For the current migration, the priority memory contract is:
    against completed legacy/oracle outputs and same-subset split/full runs.
 8. Add bounded process-pool execution only after the sequential subprocess path
    has passing validation and resource logging.
+
+## Phased Upgrade Plan And Risk Controls
+
+The migration should proceed in phases so we can keep momentum without running
+large validation jobs after every small edit. The principle is cheap structural
+checks after every phase, targeted one-patient checks at patient-runtime
+boundaries, and full validation only after behavior-capable boundaries change.
+
+| Phase | Scope | Confidence | Silent mistake risk | Main protections |
+| --- | --- | --- | --- | --- |
+| 0 | Retain usable validation profiles and disable invalid historical gates | High | Low | Path audits, validation dry-runs, explicit notes for invalid Jun28 split evidence |
+| 1 | Add TOML run-profile contract and typed plan-only loader | High | Low to medium | Parse tests, dry-run resolved JSON snapshots, no scientific execution |
+| 2 | Add light parent orchestrator that orders standalone, legacy, assembly, validation jobs | High | Low to medium | Plan-only output, subprocess command dry-runs, no heavy state in parent |
+| 3 | Extend standalone manifest-first worker planning and preflight | High | Low | Synthetic manifests, path preflight, patient UID filtering tests, worker result JSON checks |
+| 4 | Implement one-patient runtime builder from manifest and typed config | Medium | Medium to high | One-patient parity against from-legacy adapter, stage manifests, artifact row/count checks, fail-closed missing-input handling |
+| 5 | Extract input discovery/inventory from `main` into shared services | Medium | Medium to high | Compare generated manifests byte/field-wise against legacy-main manifests before running science |
+| 6 | Add paired patient-first-then-legacy execution mode | Medium | Medium | Separate subprocesses, output-root separation, run manifest state machine, memory/status logging |
+| 7 | Migrate scientific config groups out of `main` | Medium | High if broad | One config group at a time, default-equivalence snapshots, retained legacy regression profiles |
+| 8 | GUI/product backend boundary | Medium | Low for science if kept API-driven | GUI calls public CLI/API only, JSON/TOML contract tests, no GUI dependence on `main` globals |
+
+Phase 4 and Phase 7 are the highest-risk areas. Phase 4 can silently change
+which patient objects or input files feed the scientific stages. Phase 7 can
+silently change defaults. Both should be split into small, reviewable passes
+with explicit before/after config or manifest evidence.
+
+Recommended validation cadence:
+
+- After phases 1 to 3: run parser, dry-run, synthetic manifest, and worker JSON
+   checks only.
+- During phase 4: use one controlled patient first, then a small retained subset.
+- Before phase 5 replaces discovery behavior: compare only generated input
+   manifests against legacy-main manifests.
+- After phases 4, 5, and 6: run post-run assembly and parity on the retained
+   Jun25/Jun26-style surfaces or a fresh small subset.
+- Run a full validation gate only after a phase changes scientific execution,
+   input discovery, or config defaults that affect scientific values.
 
 ## Validation Gates
 

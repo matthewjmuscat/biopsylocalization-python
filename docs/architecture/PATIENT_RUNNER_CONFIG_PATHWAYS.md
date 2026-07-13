@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-06-05
+Last updated: 2026-07-08
 
 ## Purpose
 
@@ -96,6 +96,45 @@ The highest-risk rewrite failure would be adding a patient-runner bridge that
 copies every loose local into `PatientRunnerScientificConfig` directly. That
 would make the new runner depend on the same scattered source of truth that the
 config rewrite is meant to replace.
+
+## Target Run Profile Boundary
+
+The standalone patient runner needs a run profile, but that profile should be
+the orchestration layer above scientific config, not a second source of
+scientific truth.
+
+Target flow:
+
+```text
+human TOML run profile
+  -> typed resolved run plan
+  -> input discovery or retained input manifests
+  -> standalone patient-runner jobs
+  -> optional legacy-oracle job
+  -> post-run assembly
+  -> validation
+```
+
+The run profile should choose what to execute and what evidence to produce:
+
+- input folder or input manifest source,
+- selected patients/fractions,
+- pathway and checkpoint names,
+- whether to run standalone patient workers,
+- whether to run the legacy oracle,
+- patient-first execution order when both standalone and legacy are requested,
+- post-run cohort assembly jobs,
+- validation jobs,
+- output root, run labels, failure/retry policy, and resource limits.
+
+Scientific defaults and model parameters should continue moving into
+`PipelineConfig` and domain configs. The run profile can reference or embed a
+resolved scientific config, but it should not copy the hundreds of loose
+`main` locals into a parallel TOML schema.
+
+The future GUI should edit this run profile and call public runner/assembly/
+validation entrypoints. It should not depend on `biopsy_localization_convex_main.py`
+locals or private in-memory dictionaries.
 
 ## Current Config Tree By Domain
 
