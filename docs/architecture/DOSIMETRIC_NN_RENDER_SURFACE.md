@@ -381,25 +381,28 @@ sidecar should record the source scene manifest and display/export settings.
 - Keep PyVista/VTK imports inside the backend module.
 - Validate that the backend can build a non-empty synthetic scene on the local
   workstation before relying on it for real-data figure generation.
-- Next implementation target.
+- Status: initial synthetic backend complete. `dose_nn_pyvista.py` can build a
+  PyVista plotter from `DoseNNPreparedScene`, add named lattice/biopsy/nearest
+  neighbour/vector layers, export an offscreen screenshot, and write a provenance
+  sidecar.
 
 Detailed next pass:
 
-1. Add `dose_nn_pyvista.py` with lazy PyVista imports, a small renderer settings
+1. Status: added `dose_nn_pyvista.py` with lazy PyVista imports, a small renderer settings
   dataclass, and functions to build a `pyvista.Plotter` from
   `DoseNNPreparedScene`.
-2. Render lattice points with dose scalars, biopsy query points, nearest-neighbour
+2. Status: render lattice points with dose scalars, biopsy query points, nearest-neighbour
   points, optional line/vector geometry, scalar bars, stable colors, and camera
   presets suitable for screenshot export.
-3. Add synthetic tests that either exercise the backend when PyVista is available
+3. Status: added synthetic tests that exercise the backend when PyVista is available
   or skip clearly when the optional renderer dependency cannot initialize.
-4. Add an export function that writes screenshots plus a small provenance JSON
+4. Status: added an export function that writes screenshots plus a small provenance JSON
   recording source scene identity, config, backend, camera, image size, and code
   version when available.
-5. Add a saved-scene CLI or service function that reads a
+5. Next: add a saved-scene CLI or service function that reads a
   `DoseNNRenderScene` artifact, applies render config, and exports a figure
   without touching the scientific pipeline.
-6. After the synthetic renderer/export path is stable, connect it to retained
+6. After the saved-scene renderer/export path is stable, connect it to retained
   context artifacts for new runs. Historical runs that lack those artifacts can
   use an existing saved scene, transitional results-pickle reconstruction, or an
   approved selected inline capture hook.

@@ -13,9 +13,11 @@ compatible runs complete.
 - Preserve successful patient outputs when another patient fails.
 - Keep cohort-style outputs as derived products, not as the only durable output
   boundary.
-- Favor storage-efficient, machine-readable primary runtime artifacts; build
-   human-readable dataframe/table views as explicit post-run derived products
-   when they are needed for QA, notebooks, manuscripts, or downstream analysis.
+- Favor storage-efficient, machine-readable primary runtime artifacts for heavy
+   scientific numerical outputs; build human-readable dataframe/table views as
+   explicit post-run derived products when they are needed for QA, notebooks,
+   manuscripts, or downstream analysis. Small manifests, summaries, audit records,
+   and logs should remain directly inspectable runtime outputs.
 - Allow cohort assembly to run separately after the main algorithm completes.
 - Allow config to request automatic cohort assembly at the end of a run.
 - Let the assembly service discover what it can produce from artifact manifests
@@ -82,7 +84,9 @@ dictionaries.
 
 As more runtime outputs migrate to compact array/native artifact classes,
 dataframe-like outputs should be treated as materialized views unless they are
-already the most efficient natural representation of the data. The stable API
+already the most efficient natural representation of the data. This applies most
+strongly to large scientific numerical outputs, not small QA manifests, summaries,
+audit records, or logs that should stay directly inspectable. The stable API
 should be artifact IDs, contracts, and manifests; the dataframe constructor can
 then build human-readable tables from those sources for analysis and audit.
 
