@@ -57,6 +57,13 @@ The target boundary is manifest-backed patient artifacts:
 The artifact reader should reconstruct useful analysis contexts from these
 contracts, not from private in-memory dictionaries or pickled object graphs.
 
+Existing historical runs will not automatically contain newly defined context
+artifacts. Once the context-artifact writers exist, a run must either be rerun
+with the requested retention policy or processed by an explicit reconstruction
+utility when enough legacy retained state exists. The manifest should make this
+visible: a post-run tool must fail clearly when a requested context artifact was
+not retained or cannot be reconstructed.
+
 ## Recommended Storage Model
 
 Use the storage format that matches the data shape.
@@ -257,6 +264,12 @@ Required checks:
 Post-run GUI tools should read manifests and context artifacts. They should not
 depend on `biopsy_localization_convex_main.py`, legacy mutable dictionaries, or
 pickled runtime objects.
+
+The dose render GUI should be independently runnable as a post-run utility. Once
+the main algorithm has produced the required scene or context artifacts, the
+render utility should be callable repeatedly with different thresholds, trial
+selections, camera settings, and renderer backends without rerunning the main
+algorithm.
 
 The GUI should be able to:
 
@@ -525,6 +538,12 @@ is a disabled-by-default inline capture hook at the point where the legacy MC
 loop still has `dose_nearest_neighbour_results_dataframe`. That hook should only
 write selected compact scene/context artifacts and should never open render
 windows.
+
+These touch points are listed as a boundary contract, not as a plan to edit them.
+They mark places where the additive utility layer may discover that legacy code
+does not expose enough data for the figure or future context artifacts. If that
+happens, the next step is explicit discussion and a narrowly scoped approved
+change, not a silent modification of legacy scientific code.
 
 ### Recommended Build Order
 

@@ -220,6 +220,11 @@ future GUI: choose a patient, biopsy, trial, thresholds, and backend from a
 durable output dataset or captured scene file, then render/export without
 re-entering the scientific pipeline.
 
+Once a scene or context artifact exists, this utility should be independently
+runnable as many times as needed for figure tuning. Changing display thresholds,
+trial selections, vector thinning, camera position, or renderer backend should
+not require rerunning the main algorithm.
+
 The only inline runtime role should be optional capture, not interactive
 rendering. The raw nearest-neighbour dataframe is intentionally short-lived in
 the legacy MC path because it can be large. If the final output dataset does not
@@ -257,6 +262,12 @@ context artifacts: dose lattice arrays, biopsy query geometry, transform
 provenance, resolved transform/query arrays, optional nearest-neighbour index
 tensors, and selected render-scene artifacts. The dose renderer should consume
 those artifacts through stable contracts once they exist.
+
+Historical runs that predate these artifacts will need either a rerun with the
+new retention policy or an explicit reconstruction/capture pass when sufficient
+legacy retained state exists. The normal pointwise/voxelwise dose tables cannot
+be silently upgraded into full NN-vector scene artifacts because they lack the
+nearest-neighbour geometry.
 
 The clean target is therefore a dedicated, compact `DoseNNRenderScene` artifact
 for selected patient/biopsy/trial cases. That artifact should capture only the
