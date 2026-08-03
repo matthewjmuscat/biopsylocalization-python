@@ -517,14 +517,26 @@ not perform scientific localization or artifact writing.
 
 Initial implementation status: synthetic backend complete for PyVista plotter
 construction, named scene layers, offscreen screenshot export, and provenance
-sidecar writing. It still needs a saved-scene CLI/service wrapper before it is a
-comfortable post-run utility.
+sidecar writing.
 
 Core functions:
 
 - `build_pyvista_dose_nn_plotter(...)`
 - `render_dose_nn_scene_pyvista(...)`
 - `export_dose_nn_scene_pyvista(...)`
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_render_service.py
+```
+
+Saved-scene post-run service and CLI. It reads a compact `DoseNNRenderScene`
+artifact, applies renderer-neutral config, and exports an image/provenance
+sidecar through PyVista without touching scientific runtime code.
+
+Core functions:
+
+- `render_saved_dose_nn_scene_artifact_pyvista(...)`
+- `main(...)`
 
 ```text
 python_files_dcm_meta_based/mc/visualization/dose_nn_selector.py
@@ -689,7 +701,7 @@ change, not a silent modification of legacy scientific code.
   `.npz` arrays are complete and synthetically validated.
 2. Status: PyVista rendering from `DoseNNPreparedScene` is added and validated
   on synthetic data.
-3. Add a CLI or small service function that renders a saved selected scene.
+3. Status: added a CLI/service function that renders a saved selected scene.
 4. Add context-artifact contracts, Zarr array-store support, generated data
   dictionary output, and synthetic manifest/array-store validation.
 5. Add the post-run dataframe constructor boundary for selected synthetic views,

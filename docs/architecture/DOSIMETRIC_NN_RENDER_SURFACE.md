@@ -386,6 +386,11 @@ sidecar should record the source scene manifest and display/export settings.
   neighbour/vector layers, export an offscreen screenshot, and write a provenance
   sidecar.
 
+Offscreen export means PyVista renders to an image buffer/file without opening an
+interactive window. It is the right default for tests, CLI use, batch figure
+exports, and movie-frame generation. It does not prevent a future interactive
+GUI from using an on-screen PyVista plotter for live inspection.
+
 Detailed next pass:
 
 1. Status: added `dose_nn_pyvista.py` with lazy PyVista imports, a small renderer settings
@@ -399,10 +404,10 @@ Detailed next pass:
 4. Status: added an export function that writes screenshots plus a small provenance JSON
   recording source scene identity, config, backend, camera, image size, and code
   version when available.
-5. Next: add a saved-scene CLI or service function that reads a
+5. Status: added a saved-scene CLI/service function that reads a
   `DoseNNRenderScene` artifact, applies render config, and exports a figure
   without touching the scientific pipeline.
-6. After the saved-scene renderer/export path is stable, connect it to retained
+6. Next: connect the renderer/export path to retained
   context artifacts for new runs. Historical runs that lack those artifacts can
   use an existing saved scene, transitional results-pickle reconstruction, or an
   approved selected inline capture hook.
