@@ -201,6 +201,26 @@ This pass does not migrate the older direct Open3D debug calls elsewhere in the 
 
 Those will be moved later once the broker contract has been proven stable in optimizer-v2.
 
+## Planned Dosimetric NN Adoption
+
+The next additive adoption target is the dosimetric nearest-neighbour render
+surface described in `docs/architecture/DOSIMETRIC_NN_RENDER_SURFACE.md`.
+
+That surface should follow the optimizer-v2 pattern without making the broker
+dose-aware:
+
+1. Build a replayable dose render scene from dose-localization outputs.
+2. Keep dose-specific trial, threshold, point-stride, vector, and colorwash
+   controls in the dose selector/config layer.
+3. Build broker choice groups at the dose render orchestration seam.
+4. Route selected scenes to dose-owned Plotly and Open3D backend modules.
+5. Keep MC dose math, nearest-neighbour search, and patient-runner execution
+   unchanged underneath.
+
+The broker should not import MC modules, Plotly, Open3D, or Tk-specific dose
+controls. If a later GUI adapter replaces Tkinter, the dose scene contracts and
+renderer modules should remain reusable.
+
 ## Migration Strategy For The Rest Of The Codebase
 
 Later migrations should follow the same pattern.

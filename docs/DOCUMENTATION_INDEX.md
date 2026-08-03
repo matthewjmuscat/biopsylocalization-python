@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-06-28
+Last updated: 2026-08-03
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -43,6 +43,10 @@ Current durable docs:
 - `architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md` - standalone
   parent/worker process architecture for moving the patient runner outside the
   legacy all-patient runtime.
+- `architecture/DOSIMETRIC_NN_RENDER_SURFACE.md` - additive dose
+  nearest-neighbour render surface for publication figures, debug inspection,
+  and future GUI integration without changing MC dose math or patient-runner
+  execution semantics.
 - `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
   plan.
 - `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
@@ -112,6 +116,7 @@ docs/
     PATIENT_MODULE_TREE_GUIDE.md
     PATIENT_RUNNER_CONFIG_PATHWAYS.md
     PATIENT_RUNNER_DEPENDENCY_GRAPH.md
+    DOSIMETRIC_NN_RENDER_SURFACE.md
     PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md
     PATIENT_RUNNER_PROCESS_ARCHITECTURE.md
   boundaries/
