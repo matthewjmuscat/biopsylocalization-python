@@ -36,6 +36,16 @@ from .inventory import OUTPUT_ARTIFACT_INVENTORY_SCHEMA_VERSION
 from .inventory import build_output_artifact_inventory
 from .inventory import summarize_output_artifact_inventory
 from .inventory import write_output_artifact_inventory
+from .manifest_index import RUN_MANIFEST_INDEX_SCHEMA_VERSION
+from .manifest_index import ManifestIndexEntry
+from .manifest_index import ManifestIndexRecorder
+from .manifest_index import build_run_manifest_index
+from .manifest_index import default_run_manifest_index_path
+from .manifest_index import manifest_index_entry
+from .manifest_index import manifest_index_rows
+from .manifest_index import read_run_manifest_index
+from .manifest_index import summarize_manifest_index_entries
+from .manifest_index import write_run_manifest_index
 from .patient_artifacts import PATIENT_ARTIFACT_MANIFEST_SCHEMA_VERSION
 from .patient_artifacts import PATIENT_STITCH_PLAN_SCHEMA_VERSION
 from .patient_artifacts import build_patient_artifact_manifest
@@ -80,6 +90,7 @@ __all__ = [
     "EXPECTED_CURRENT_REGISTRY_COUNT",
     "SHADOW_STITCH_VALIDATION_SCHEMA_VERSION",
     "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
+    "RUN_MANIFEST_INDEX_SCHEMA_VERSION",
     "DataframeArtifact",
     "CanonicalKeySpec",
     "OutputAssemblyPlan",
@@ -89,6 +100,8 @@ __all__ = [
     "ExpectedArtifactDecision",
     "ExpectedArtifactStatus",
     "MissingArtifactSeverity",
+    "ManifestIndexEntry",
+    "ManifestIndexRecorder",
     "Phase3COutputSurfaceResult",
     "build_output_artifact_inventory",
     "build_output_assembly_plans",
@@ -98,6 +111,7 @@ __all__ = [
     "build_output_table_contracts",
     "build_output_schema_data_dictionary",
     "build_output_schema_coverage_report",
+    "build_run_manifest_index",
     "build_shadow_stitch_pairs_from_output_assembly_plans",
     "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
@@ -109,10 +123,15 @@ __all__ = [
     "iter_cohort_artifacts",
     "iter_patient_mc_artifacts",
     "iter_patient_preprocessing_artifacts",
+    "default_run_manifest_index_path",
+    "manifest_index_entry",
+    "manifest_index_rows",
     "normalize_legacy_table_name",
     "output_assembly_plan_rows",
+    "read_run_manifest_index",
     "run_shadow_stitch_validation",
     "render_output_schema_data_dictionary_markdown",
+    "summarize_manifest_index_entries",
     "summarize_in_memory_stitch_validation",
     "summarize_output_artifact_inventory",
     "summarize_output_schema_coverage",
@@ -128,6 +147,7 @@ __all__ = [
     "write_output_schema_data_dictionary",
     "write_patient_artifact_outputs",
     "write_output_table_contracts",
+    "write_run_manifest_index",
     "write_phase3c_output_surface",
     "write_shadow_stitch_validation",
 ]

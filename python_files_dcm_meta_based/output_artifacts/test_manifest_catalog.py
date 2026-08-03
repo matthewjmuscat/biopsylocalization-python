@@ -34,6 +34,7 @@ class ManifestCatalogTests(unittest.TestCase):
             "input_dicom_manifest",
             "patient_run_manifest",
             "patient_batch_run_manifest",
+            "run_manifest_index",
             "dose_nn_render_scene_artifact_manifest",
             "patient_scientific_context_manifest",
         }

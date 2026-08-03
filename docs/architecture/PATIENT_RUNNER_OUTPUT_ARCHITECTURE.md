@@ -91,6 +91,31 @@ The assembly service should not need a new code path for each new table. Adding
 a new patient-stitchable artifact should usually mean adding or updating a
 contract, then relying on the generic planner and assembly engine.
 
+## Manifest Inventory Boundary
+
+Manifest governance has three separate layers.
+
+- The manifest catalog is the code-owned contract inventory. It lists manifest
+   types the codebase knows about, their purpose, producer, expected paths,
+   schema-version source, and tracked concepts. This is produced by
+   `output_artifacts.manifest_catalog` and is not evidence that a concrete run
+   wrote a given manifest.
+- The run manifest index is the target per-run output artifact. A run
+   orchestrator or manifest writer wrapper should record each manifest event as
+   `written`, `constructed_not_written`, `skipped`, or `failed`, then write
+   `manifests/run_manifest_index.json` through
+   `output_artifacts.manifest_index`. This index is the preferred answer to
+   "what manifests did this run actually produce, and where?"
+- The post-run presence scanner is a fallback and audit utility. It inspects an
+   existing output tree against cataloged default paths, but it cannot prove that
+   an in-memory manifest object was constructed and intentionally not written.
+
+Manifest writers should not silently mutate a global file as a hidden side
+effect. The safer pattern is for the run boundary to own a recorder and pass it
+to manifest-producing services, or for a thin wrapper around each writer to
+record the returned path and schema metadata. This keeps construction localized
+while still producing one run-level index for inspection.
+
 ## Planning And Discovery
 
 Assembly should use both contract planning and manifest discovery.
