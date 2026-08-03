@@ -33,6 +33,7 @@ python_files_dcm_meta_based/
       __init__.py
       dose_nn_scene.py
       dose_nn_capture.py
+      dose_nn_pyvista.py
       dose_nn_plotly.py
       dose_nn_open3d.py
       dose_nn_selector.py
@@ -129,10 +130,19 @@ than a full third-party plugin manager. That gives the code plugin boundaries
 without over-building packaging, discovery, versioning, and dependency policy
 before the first figure exists.
 
-Initial backend modules:
+Preferred backend modules:
 
-- `dose_nn_plotly.py` for publication figure export and HTML inspection.
-- `dose_nn_open3d.py` for interactive 3D inspection and screenshots.
+- `dose_nn_pyvista.py` for the primary scientific 3D renderer. PyVista provides
+  a Pythonic VTK surface for scalar-colored point clouds, thresholding, clipping,
+  arrows/glyphs, scalar bars, camera control, screenshots, and offscreen export.
+- `dose_nn_plotly.py` for HTML sharing and lightweight interactive inspection.
+- `dose_nn_open3d.py` only as an optional compatibility/inspection backend if it
+  remains useful for point-cloud workflows.
+
+ParaView should be treated first as an external export target rather than the
+embedded backend. The scene contract should make it straightforward to export
+VTK-family files for ParaView later if PyVista is not sufficient for final
+publication figure polish.
 
 The selector module should build `RenderBrokerRequest` choice groups and map
 broker decisions back to the dose render backend registry. It owns dose-specific
@@ -199,6 +209,22 @@ builder and the run-profile/orchestrator boundary. The dose render work should
 not add new dependencies from the patient runner back into legacy main-local
 variables.
 
+## Run Location
+
+The primary GUI/render workflow should run post-run or as a standalone utility
+over a saved `DoseNNRenderScene` artifact. That is the cleanest fit for the
+future GUI: choose a patient, biopsy, trial, thresholds, and backend from a
+durable output dataset or captured scene file, then render/export without
+re-entering the scientific pipeline.
+
+The only inline runtime role should be optional capture, not interactive
+rendering. The raw nearest-neighbour dataframe is intentionally short-lived in
+the legacy MC path because it can be large. If the final output dataset does not
+retain enough NN detail to reconstruct the figure, an explicit selected run may
+capture a small scene artifact while the dataframe exists, then return control
+to the post-run renderer. Inline capture should be disabled by default and
+should never open render windows inside the MC numerical loop.
+
 ## Implementation Phases
 
 ### Phase 1: Scene Contract And Synthetic Validation
@@ -208,27 +234,36 @@ variables.
 - Build a scene from a small synthetic nearest-neighbour dataframe.
 - Validate thresholding, trial selection, vector counts, and shape invariants.
 
-### Phase 2: Plotly Publication Renderer
+### Phase 2: PyVista Scientific Renderer
+
+- Implement a PyVista backend for dose-colored lattice points, biopsy points,
+  NN points, optional vectors, scalar bars, camera presets, and screenshots.
+- Keep PyVista/VTK imports inside the backend module.
+- Validate that the backend can build a non-empty synthetic scene on the local
+  workstation before relying on it for real-data figure generation.
+
+### Phase 3: Plotly Sharing Renderer
 
 - Implement a Plotly backend for dose-colored lattice points, biopsy points,
   NN points, and optional vectors.
 - Support static export settings through the existing render broker export
   model.
-- Keep visual defaults paper-oriented and reproducible.
+- Keep visual defaults useful for HTML inspection and lightweight exports, but
+  do not require Plotly to carry very large point clouds.
 
-### Phase 3: Open3D Inspection Renderer
+### Phase 4: Optional Open3D Inspection Renderer
 
 - Implement an Open3D backend for interactive scene inspection.
 - Reuse existing view JSONs only as optional camera presets.
 - Keep Open3D imports out of scene contracts and numerical modules.
 
-### Phase 4: Broker Selector
+### Phase 5: Broker Selector
 
 - Build dose-specific choice groups and action handling in `dose_nn_selector.py`.
 - Keep arbitrary dose sliders and toggles in the dose selector/config layer.
 - Re-enter the broker loop after rendering, matching the optimizer-v2 pattern.
 
-### Phase 5: Real-Data Capture Path
+### Phase 6: Real-Data Capture Path
 
 - Add a controlled one-patient, one-biopsy capture path that can produce a
   render scene artifact from existing dose-localization outputs.
