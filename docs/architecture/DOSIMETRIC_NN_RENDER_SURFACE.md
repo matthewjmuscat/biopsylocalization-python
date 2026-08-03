@@ -34,11 +34,12 @@ events, and post-run tools can ask the generated index what was actually
 produced. Additional legacy or GUI run boundaries should adopt the recorder when
 they gain new manifest writers.
 
-The next render pass should continue from the existing scene contract and saved
-scene-artifact layer, not from raw scientific code. If a real-data figure needs
-data that historical outputs did not retain, the decision should be explicit:
-read a saved selected scene artifact, reconstruct from retained context, perform
-a selected reconstruction from a transitional results pickle, or add a
+The next render pass should continue from the existing renderer-agnostic scene
+contract and saved scene-artifact layer, not from raw scientific code. For new
+runs, the target source is algorithm-completion context artifacts. If a
+historical run did not retain enough context for a real-data figure, the
+fallback decision should be explicit: read an already saved selected scene
+artifact, reconstruct from a transitional results pickle, or add a
 disabled-by-default inline capture hook after approval.
 
 ## Decision
@@ -116,6 +117,10 @@ plugin.
 ## Contract Shape
 
 The first stable contract should be a scene object, not a live GUI object.
+`DoseNNRenderScene` is not an exported image. It is renderer-agnostic scene data
+that can be consumed by PyVista, Plotly, Open3D, a future GUI, or a batch movie
+exporter. Images, HTML views, and movies are derived outputs created from the
+scene plus `DoseNNRenderConfig` and backend-specific export settings.
 
 Suggested core dataclasses:
 
@@ -249,6 +254,18 @@ runnable as many times as needed for figure tuning. Changing display thresholds,
 trial selections, vector thinning, camera position, or renderer backend should
 not require rerunning the main algorithm.
 
+The same boundary should support two export modes:
+
+- interactive export, where a GUI button saves the currently viewed rendered
+  image, selected scene artifact, or provenance sidecar;
+- algorithmic export, where a batch process iterates through many trials or
+  camera states to generate figure series or movie frames from retained context
+  artifacts.
+
+Large movie-style exports should stream trial windows from context artifacts.
+They should not require keeping every trial scene or every rendered frame in
+memory at once.
+
 The only inline runtime role should be optional capture, not interactive
 rendering. The raw nearest-neighbour dataframe is intentionally short-lived in
 the legacy MC path because it can be large. If the final output dataset does not
@@ -297,9 +314,15 @@ The clean target is therefore a dedicated, compact `DoseNNRenderScene` artifact
 for selected patient/biopsy/trial cases. That artifact should capture only the
 display-scoped lattice subset, biopsy query points, nearest-neighbour points,
 nearest-neighbour doses, distances, and provenance needed for rendering. It
-should be generated either from retained context artifacts, from a transitional
-results pickle by recomputing NN rows, or from an explicit inline capture while
-the NN dataframe exists.
+should normally be generated from retained context artifacts. Transitional
+results-pickle reconstruction or explicit inline capture are fallback paths for
+historical runs or selected legacy workflows that predate the context-artifact
+surface.
+
+For broad trial coverage, the primary retained artifact should be a compact
+context store, not one selected scene per trial. A movie exporter can then slice
+or stream the context store by trial, create a prepared scene for the current
+frame, render/export it, and release it before moving to the next frame.
 
 ## Why Manifest Work Came First
 
@@ -376,10 +399,10 @@ Detailed next pass:
 5. Add a saved-scene CLI or service function that reads a
   `DoseNNRenderScene` artifact, applies render config, and exports a figure
   without touching the scientific pipeline.
-6. Only after the synthetic renderer/export path is stable, choose the real-data
-  scene source: existing saved scene artifact, retained context artifacts,
-  transitional results-pickle reconstruction, or an approved selected inline
-  capture hook.
+6. After the synthetic renderer/export path is stable, connect it to retained
+  context artifacts for new runs. Historical runs that lack those artifacts can
+  use an existing saved scene, transitional results-pickle reconstruction, or an
+  approved selected inline capture hook.
 
 ### Phase 3: Plotly Sharing Renderer
 
@@ -406,8 +429,9 @@ Detailed next pass:
 
 - Add a controlled one-patient, one-biopsy capture path that can produce a
   render scene artifact from existing dose-localization outputs.
-- Prefer recomputing from a results pickle or consuming an already-captured
-  scene artifact over enabling full raw NN dumps.
+- Prefer retained context artifacts for new runs. For historical runs, prefer
+  recomputing from a results pickle or consuming an already-captured scene
+  artifact over enabling full raw NN dumps.
 - If an inline capture rerun is needed because raw NN data were not retained,
   keep it explicit, selected, and user-operated for real patient data.
 

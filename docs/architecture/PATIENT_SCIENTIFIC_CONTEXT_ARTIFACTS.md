@@ -51,7 +51,7 @@ The target boundary is manifest-backed patient artifacts:
 
 - JSON for manifests, provenance summaries, schema versions, and path indexes;
 - Parquet for tabular/indexed products and dataframe-like outputs;
-- chunked array stores for large numeric arrays and tensors;
+- Zarr-backed chunked array stores for large numeric arrays and tensors;
 - compact selected render-scene artifacts for publication/debug surfaces.
 
 The artifact reader should reconstruct useful analysis contexts from these
@@ -67,6 +67,11 @@ not retained or cannot be reconstructed.
 ## Recommended Storage Model
 
 Use the storage format that matches the data shape.
+
+This design assumes the retained context can become large. The goal is not to
+save every convenient intermediate dataframe. The goal is to retain enough
+scientific state for reconstruction and audit in compact array-native layouts,
+with explicit retention controls for high-volume tensors.
 
 ### JSON Manifests
 
@@ -101,11 +106,12 @@ array artifacts can represent the same information more compactly.
 ### Chunked Array Stores
 
 Use chunked numeric array artifacts for large N-dimensional scientific context.
-Zarr is the preferred long-term candidate because it is Python-native, chunked,
-directory-friendly, and compatible with manifest-backed artifact layouts. HDF5
-is acceptable where a single-file container is preferable. NPZ is acceptable for
-small selected scene artifacts or early prototypes, but it is not the long-term
-large-array store.
+Zarr should be the first implementation target for large patient context arrays,
+not a deferred upgrade path. It is Python-native, chunked, directory-friendly,
+compressible, and compatible with manifest-backed artifact layouts. HDF5 is
+acceptable where a single-file container is preferable for external exchange.
+NPZ is acceptable for small selected render-scene artifacts, unit tests, and
+temporary interchange, but it is not the primary large-array context store.
 
 Examples:
 
@@ -119,6 +125,40 @@ Examples:
 
 Preserve source precision by default. Downcast or quantize only behind an
 explicit retention policy with validation evidence.
+
+Large-array writers should choose chunking around expected access patterns. For
+dose movies and trial-by-trial inspection, trial-major chunks are preferable so
+one trial or a small trial window can be read without materializing all trials.
+For point-cloud inspection, point-major or spatially filtered chunks may be more
+appropriate. The manifest must record chunk shape and compression settings so a
+future reader can understand both the scientific content and the storage layout.
+
+## Data Documentation Contract
+
+Every retained context artifact should be self-describing from the manifest and
+from code-owned artifact contracts. Do not rely on a separate prose note as the
+only place where shapes and meanings are explained.
+
+Each array artifact spec should record:
+
+- artifact ID and human-readable title;
+- relative path and storage format;
+- dataset names inside the store;
+- symbolic shape such as `query_points[n_trials, n_points, 3]`;
+- concrete shape for the written artifact;
+- dimension names and axis order;
+- dtype, units, coordinate frame, and coordinate convention;
+- chunk shape, compressor, filters, and fill-value policy;
+- checksum or content fingerprint where practical;
+- retention level that caused the artifact to be written;
+- source stage, source object IDs, trial IDs, and provenance event IDs;
+- reader/unpack function that reconstructs the in-memory contract.
+
+The best future-facing pattern is a code-owned contract plus generated
+documentation. The same specs used by writers and readers should generate a
+Markdown/CSV data dictionary for human inspection. This keeps the future audit
+documentation synchronized with the actual artifact writer instead of requiring
+manual shape notes that can drift.
 
 ## Artifact Families
 
@@ -213,10 +253,12 @@ lattice. This keeps the artifact complete for rendering and auditing without
 storing repeated coordinate triples for every query point and neighbour.
 
 The full `dose_nn_context` should be retention-policy controlled. For routine
-scientific runs, it may be enough to retain dose lattice, query geometry, and
-derived dose tables, then recompute selected NN rows on demand. For publication
-figures or debugging, retain selected compact render scenes or selected NN
-context arrays.
+scientific runs, retaining dose lattice, query geometry, and derived dose tables
+may be enough if selected NN rows can be recomputed cheaply and reproducibly.
+For publication figures, debugging, audit, or movie generation, retain selected
+or full NN index/distance tensors according to the requested retention policy.
+Avoid storing repeated nearest-neighbour coordinate triples when lattice indices
+and a lattice coordinate array can reconstruct the same geometry.
 
 ## Retention Policies
 
@@ -237,8 +279,10 @@ full_debug
 ```
 
 The default standalone-run target should be `context`, not `minimal`, once the
-artifact surface is validated. `full_debug` should require explicit patient and
-stage selection because it can grow quickly.
+artifact surface is validated. `diagnostic` and `full_debug` should require
+explicit patient/stage selection and should estimate expected storage before
+writing where possible, because trial-by-point-by-neighbour tensors can become
+large quickly.
 
 ## Validation Requirements
 
@@ -276,9 +320,20 @@ The GUI should be able to:
 - list patients, biopsies, trials, structures, and available context artifacts;
 - request an on-demand derived scene from retained context;
 - choose a renderer backend;
-- export figures and provenance summaries;
+- export figures, movies, selected scene artifacts, and provenance summaries;
 - fail clearly when a requested scene requires a context level that was not
   retained.
+
+`DoseNNRenderScene` is a renderer-agnostic data object, not an exported image.
+Rendered PNGs, SVGs, HTML files, and movie frames are derived products created
+from a scene plus a render configuration. The same scene/context contract should
+support both an algorithmic export job, such as iterating over many trials to
+produce movie frames, and an interactive GUI button that saves the currently
+viewed patient/biopsy/trial scene or rendered image.
+
+For large movie workflows, the renderer should stream or slice from context
+artifacts by trial/window. It should not require loading all 10,000 trials or
+materializing 10,000 complete scene objects in memory at once.
 
 Inline runtime code should only write artifacts. It should not open interactive
 render windows as part of the numerical loop.
@@ -457,10 +512,11 @@ Responsibilities:
 
 - `contracts.py`: shared dataclasses and string constants for context artifacts.
 - `manifest.py`: JSON serialization/deserialization and path resolution.
-- `array_store.py`: storage adapters for `.npz` initially and Zarr once added as
-  an explicit dependency.
+- `array_store.py`: Zarr-backed storage adapters for large arrays, with NPZ only
+  for small selected scenes, tests, and temporary interchange.
 - `retention.py`: retention-level normalization and artifact selection policy.
-- `validation.py`: synthetic writer/reader and manifest consistency checks.
+- `validation.py`: synthetic writer/reader, generated data-dictionary, and
+  manifest consistency checks.
 
 Core shared objects:
 
@@ -469,7 +525,8 @@ Core shared objects:
 - `CoordinateFrameRecord`: frame key, units, parent frame, description, and
   convention metadata.
 - `ScientificArrayArtifactSpec`: artifact id, relative path, storage format,
-  shape, dtype, units, coordinate frame, checksum/fingerprint, and schema
+  dataset names, symbolic shape, concrete shape, dimension names, chunk shape,
+  compressor, dtype, units, coordinate frame, checksum/fingerprint, and schema
   version.
 - `ScientificTableArtifactSpec`: table id, relative path, row grain, primary
   keys, storage format, schema version, and compatibility version.
@@ -552,7 +609,9 @@ for a concrete implementation step:
   math;
 - changing MC simulation outputs or DVH calculations;
 - changing patient-runner process execution semantics;
-- adding Zarr to `Pipfile` and `Pipfile.lock`;
+- adding Zarr should be part of the first large-context array-store
+  implementation, but it should still be validated in the project environment
+  before broad code depends on it;
 - extending `output_artifacts/schema_registry.py` beyond additive metadata
   classes;
 - changing default artifact retention levels for production/legacy runs;
@@ -577,7 +636,8 @@ change, not a silent modification of legacy scientific code.
 2. Add PyVista rendering from `DoseNNPreparedScene` and validate on synthetic
    data.
 3. Add a CLI or small service function that renders a saved selected scene.
-4. Add context-artifact contracts and synthetic manifest/array-store validation.
+4. Add context-artifact contracts, Zarr array-store support, generated data
+  dictionary output, and synthetic manifest/array-store validation.
 5. Add MC dose lattice and biopsy query context builders from patient-local
    contexts.
 6. Add nearest-neighbour index/distance tensor writer for selected synthetic
