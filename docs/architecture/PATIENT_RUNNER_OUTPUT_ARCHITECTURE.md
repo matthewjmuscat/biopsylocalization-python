@@ -13,6 +13,9 @@ compatible runs complete.
 - Preserve successful patient outputs when another patient fails.
 - Keep cohort-style outputs as derived products, not as the only durable output
   boundary.
+- Favor storage-efficient, machine-readable primary runtime artifacts; build
+   human-readable dataframe/table views as explicit post-run derived products
+   when they are needed for QA, notebooks, manuscripts, or downstream analysis.
 - Allow cohort assembly to run separately after the main algorithm completes.
 - Allow config to request automatic cohort assembly at the end of a run.
 - Let the assembly service discover what it can produce from artifact manifests
@@ -53,7 +56,14 @@ compatible runs complete.
    eligible artifact families, applies the registered assembly policy, writes
    cohort-style tables, and records assembly evidence.
 
-5. Post-run parity
+5. Post-run dataframe/table constructors
+   A separate utility layer materializes requested human-readable tables from
+   efficient primary artifacts. It should read manifests, array stores,
+   provenance records, and contracts; write Parquet/CSV views only for requested
+   slices or downstream products; and record constructor manifests that identify
+   source artifacts, schema versions, filters, and row counts.
+
+6. Post-run parity
    Validation compares assembled patient-runner cohort tables against the legacy
    final cohort outputs. This remains outside normal scientific execution.
 
@@ -69,6 +79,12 @@ runs should eventually retain selected scientific arrays, resolved transforms,
 coordinate-frame registries, and transformation provenance so post-run tools can
 inspect and regenerate context without depending on pickles or legacy in-memory
 dictionaries.
+
+As more runtime outputs migrate to compact array/native artifact classes,
+dataframe-like outputs should be treated as materialized views unless they are
+already the most efficient natural representation of the data. The stable API
+should be artifact IDs, contracts, and manifests; the dataframe constructor can
+then build human-readable tables from those sources for analysis and audit.
 
 Each contract should include:
 
@@ -189,16 +205,21 @@ the migration.
    should ask the manifest/registry for artifact locations instead of building
    paths like `Output CSVs/Cohort` directly.
 
-3. Introduce cleaner physical names as aliases after manifest-aware validation is
+3. Add post-run dataframe/table constructors for efficient primary artifacts.
+   These constructors should materialize requested views from manifest-backed
+   arrays and provenance records, rather than making large intermediate
+   dataframes the default runtime output.
+
+4. Introduce cleaner physical names as aliases after manifest-aware validation is
    in place. For example, a future layout may use `patients/<uid>/tables/...`
    and `cohort/tables/...`, while still emitting legacy aliases during the
    transition.
 
-4. Rename table files only after each table has a stable `table_id`, legacy-name
+5. Rename table files only after each table has a stable `table_id`, legacy-name
    alias, schema version, and downstream compatibility note. The stable API
    should be the contract ID, not the filename.
 
-5. Retire legacy paths only after the validators and downstream consumers can use
+6. Retire legacy paths only after the validators and downstream consumers can use
    manifest/contract IDs, and after a validation run proves old-path and new-path
    outputs are equivalent.
 
