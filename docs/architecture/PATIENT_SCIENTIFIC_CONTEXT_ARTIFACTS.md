@@ -286,3 +286,260 @@ render windows as part of the numerical loop.
 This sequence lets the codebase move toward durable, inspectable scientific
 context without destabilizing the current legacy oracle or forcing all runs to
 retain full debug tensors.
+
+## Implementation Inventory Before Broad Buildout
+
+The broader context-artifact system should be implemented from a written file
+inventory rather than by opportunistic additions. The first buildout should keep
+all new code additive unless a specific touch point is listed below and approved
+for that pass.
+
+### Already-Started Dose Render Surface
+
+```text
+python_files_dcm_meta_based/mc/visualization/__init__.py
+```
+
+Package marker for dose and MC visualization contracts.
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_scene.py
+```
+
+Renderer-agnostic scene and display-filter contracts. This module should own
+small dataclasses and pure NumPy/pandas transformations only. It should not
+import PyVista, Plotly, Open3D, Tkinter, legacy main, or patient-runner process
+code.
+
+Core objects:
+
+- `DoseNNSceneMetadata`
+- `DoseNNRenderScene`
+- `DoseNNRenderConfig`
+- `DoseNNPreparedScene`
+
+Core arrays:
+
+- `lattice_points`: `float64[n_lattice, 3]`
+- `lattice_doses`: `float64[n_lattice]`
+- `trial_numbers`: `int[n_query]`
+- `original_point_indices`: `int[n_query]`
+- `biopsy_points`: `float64[n_query, 3]`
+- `interpolated_biopsy_doses`: `float64[n_query]`
+- `nearest_lattice_points`: `float64[n_query, k, 3]`
+- `nearest_lattice_doses`: `float64[n_query, k]`
+- `nearest_distances`: `float64[n_query, k]`
+
+```text
+python_files_dcm_meta_based/mc/visualization/test_dose_nn_scene.py
+```
+
+Synthetic unit tests for scene construction, trial filtering, thresholding,
+vector construction, and fail-closed validation. Tests must remain synthetic and
+must not inspect patient data.
+
+### Next Additive Files For The Dose Figure Path
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_capture.py
+```
+
+Build selected `DoseNNRenderScene` objects from existing localization data. It
+should accept either a completed nearest-neighbour dataframe plus lattice arrays,
+or future context artifacts. It should not run the full MC simulation.
+
+Expected functions:
+
+- `build_scene_from_dose_localization_outputs(...)`
+- `build_scene_from_patient_dose_contexts(...)`
+- `build_scene_from_context_artifacts(...)`
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_scene_artifacts.py
+```
+
+Read/write compact selected render scenes. The first implementation can use
+JSON metadata plus `.npz` arrays for selected scenes. A later Zarr adapter can
+share the same dataclass contract.
+
+Expected objects/functions:
+
+- `DoseNNRenderSceneArtifactManifest`
+- `write_dose_nn_render_scene_artifact(...)`
+- `read_dose_nn_render_scene_artifact(...)`
+- checksum/fingerprint helpers for exported arrays
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_pyvista.py
+```
+
+Primary scientific renderer backend. This is where PyVista/VTK imports belong.
+It should consume `DoseNNPreparedScene` and renderer/export settings. It should
+not perform scientific localization or artifact writing.
+
+Expected functions:
+
+- `build_pyvista_dose_nn_plotter(...)`
+- `render_dose_nn_scene_pyvista(...)`
+- `export_dose_nn_scene_pyvista(...)`
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_selector.py
+```
+
+Dose-specific selection layer around the generic render broker. It should build
+choice groups, hold dose-specific trial/threshold/vector options, and dispatch
+to renderer backends. The generic broker remains domain-agnostic.
+
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_plotly.py
+python_files_dcm_meta_based/mc/visualization/dose_nn_open3d.py
+```
+
+Optional later backends. Plotly is useful for HTML inspection and lightweight
+sharing. Open3D is optional compatibility/inspection support, not the primary
+scientific renderer.
+
+### Additive Files For Durable Scientific Context
+
+The broader context-artifact code should live near the output-artifact layer,
+not inside the dose renderer. Proposed package:
+
+```text
+python_files_dcm_meta_based/output_artifacts/scientific_context/
+  __init__.py
+  contracts.py
+  manifest.py
+  array_store.py
+  retention.py
+  validation.py
+```
+
+Responsibilities:
+
+- `contracts.py`: shared dataclasses and string constants for context artifacts.
+- `manifest.py`: JSON serialization/deserialization and path resolution.
+- `array_store.py`: storage adapters for `.npz` initially and Zarr once added as
+  an explicit dependency.
+- `retention.py`: retention-level normalization and artifact selection policy.
+- `validation.py`: synthetic writer/reader and manifest consistency checks.
+
+Core shared objects:
+
+- `ScientificContextRetentionLevel`: string policy values `minimal`, `context`,
+  `diagnostic`, `full_debug`.
+- `CoordinateFrameRecord`: frame key, units, parent frame, description, and
+  convention metadata.
+- `ScientificArrayArtifactSpec`: artifact id, relative path, storage format,
+  shape, dtype, units, coordinate frame, checksum/fingerprint, and schema
+  version.
+- `ScientificTableArtifactSpec`: table id, relative path, row grain, primary
+  keys, storage format, schema version, and compatibility version.
+- `TransformEventRecord`: event id, object id, trial id, source/target frame,
+  transform family, algorithm version, config fingerprint, seed/provenance
+  reference, and validation status.
+- `PatientScientificContextManifest`: patient UID, run ID, pathway, frame
+  records, transform event table path, array artifacts, table artifacts, scene
+  artifacts, code/config identity, and compatibility policy.
+
+### Additive MC Context Modules
+
+Domain-specific builders should sit under MC, separate from generic artifact IO:
+
+```text
+python_files_dcm_meta_based/mc/context/
+  __init__.py
+  dose_lattice_artifact.py
+  biopsy_query_artifact.py
+  dose_nn_artifact.py
+  test_dose_context_artifacts.py
+```
+
+Responsibilities:
+
+- `dose_lattice_artifact.py`: convert `PatientDoseLatticeContext` into a compact
+  lattice artifact spec and array payload.
+- `biopsy_query_artifact.py`: convert `PatientDoseBiopsyContext` or resolved
+  transform outputs into query-point arrays and point/trial indexes.
+- `dose_nn_artifact.py`: store nearest-neighbour indices, distances, and
+  interpolated dose tensors without repeating nearest-neighbour coordinates.
+- `test_dose_context_artifacts.py`: synthetic round-trip and recomputation tests.
+
+Target dose arrays:
+
+- `physical_coordinates`: `float64[n_lattice, 3]` when an irregular coordinate
+  array is needed.
+- `dose_values`: preserve source dtype initially, usually `float64[n_lattice]`.
+- `gradient_vectors`: preserve source dtype, shape `float64[n_lattice, 3]` when
+  retained.
+- `query_points`: `float64[n_trials, n_points, 3]`.
+- `nearest_lattice_indices`: `int32[n_trials, n_points, k]` if lattice size fits;
+  use `int64` if required by lattice length.
+- `nearest_distances`: preserve source precision, normally `float64[n_trials,
+  n_points, k]`.
+- `interpolated_dose`: preserve source precision, normally `float64[n_trials,
+  n_points]`.
+
+### Required Existing Objects Or Inputs
+
+For the dose-NN context and render path, the first implementation needs these
+existing sources:
+
+- `PatientDoseLatticeContext` for lattice coordinates, sampled values, result
+  column, and patient identity.
+- `PatientDoseBiopsyContext` for nominal/shifted query points, biopsy identity,
+  point count, and sampled point arrays.
+- `PatientDoseLocalizationOutputs` or the localizer dataframe for nearest
+  neighbour rows while available.
+- `MCDoseSimulationConfig` for `num_dose_calc_NN`, `idw_power`, and related dose
+  simulation settings.
+- patient/run manifest identity once standalone artifact writing owns the path.
+
+For broader transform context, the first implementation needs:
+
+- canonical patient UID and structure identity keys;
+- source and target coordinate-frame names;
+- per-trial transform ids and trial numbers;
+- resolved matrices or resolved transformed arrays;
+- transform-family/config fingerprints;
+- validation/oracle comparison hooks.
+
+### Non-Additive Or Approval-Required Touch Points
+
+The following are not part of the additive first pass unless explicitly approved
+for a concrete implementation step:
+
+- editing `biopsy_localization_convex_main.py` to add inline capture flags;
+- changing `dosimetric_localizer.py` return semantics or dose interpolation
+  math;
+- changing MC simulation outputs or DVH calculations;
+- changing patient-runner process execution semantics;
+- adding Zarr to `Pipfile` and `Pipfile.lock`;
+- extending `output_artifacts/schema_registry.py` beyond additive metadata
+  classes;
+- changing default artifact retention levels for production/legacy runs;
+- running scripts over real patient data.
+
+The likely first approval-required change, if needed for the publication figure,
+is a disabled-by-default inline capture hook at the point where the legacy MC
+loop still has `dose_nearest_neighbour_results_dataframe`. That hook should only
+write selected compact scene/context artifacts and should never open render
+windows.
+
+### Recommended Build Order
+
+1. Finish selected scene artifact read/write using JSON plus `.npz` arrays.
+2. Add PyVista rendering from `DoseNNPreparedScene` and validate on synthetic
+   data.
+3. Add a CLI or small service function that renders a saved selected scene.
+4. Add context-artifact contracts and synthetic manifest/array-store validation.
+5. Add MC dose lattice and biopsy query context builders from patient-local
+   contexts.
+6. Add nearest-neighbour index/distance tensor writer for selected synthetic
+   scenes.
+7. Only then decide whether the real-data figure should be generated from a
+   transitional results pickle, a selected inline capture, or a newly retained
+   context artifact.
+
+This order gives the immediate paper-render path without forcing the entire
+standalone patient context-artifact system into one risky pass.
