@@ -14,12 +14,37 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .manifest_catalog import manifest_contracts_by_key
+from .manifest_contracts import manifest_contract
 
 
 RUN_MANIFEST_INDEX_SCHEMA_VERSION = "run_manifest_index_v1"
 RUN_MANIFEST_INDEX_FILENAME = "run_manifest_index.json"
 RUN_MANIFEST_INDEX_DIR_NAME = "manifests"
+
+MANIFEST_CONTRACTS = (
+    manifest_contract(
+        "run_manifest_index",
+        "Run manifest index",
+        "run",
+        "manifest_index",
+        "current_durable",
+        ("manifests/run_manifest_index.json",),
+        "json",
+        "output_artifacts.manifest_index.RUN_MANIFEST_INDEX_SCHEMA_VERSION",
+        "output_artifacts.manifest_index.ManifestIndexRecorder.write",
+        "Index every manifest object recorded during one run, including written, constructed-only, skipped, and failed manifests.",
+        (
+            "manifest key",
+            "produced status",
+            "manifest path when written",
+            "path existence at index write time",
+            "scope and artifact class",
+            "producer",
+            "patient and stage context when available",
+        ),
+        notes="Currently emitted by patient_runner.run_patient_batch; broader legacy/runtime wiring can be added at other run boundaries.",
+    ),
+)
 
 MANIFEST_STATUS_WRITTEN = "written"
 MANIFEST_STATUS_CONSTRUCTED_NOT_WRITTEN = "constructed_not_written"
@@ -246,6 +271,8 @@ def manifest_index_entry(
     notes: str = "",
 ) -> ManifestIndexEntry:
     """Build a manifest index entry, enriching it from the catalog when known."""
+    from .manifest_catalog import manifest_contracts_by_key
+
     contract = manifest_contracts_by_key().get(str(manifest_key).strip())
     manifest_path_text, path_is_relative, path_exists = _manifest_path_info(manifest_path, run_root)
     if contract is None:

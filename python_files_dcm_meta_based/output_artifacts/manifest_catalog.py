@@ -10,108 +10,22 @@ single queryable surface for what each manifest does and what it tracks.
 
 from collections import Counter
 import csv
-from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping, Sequence
 
+from patient_runner.manifests import MANIFEST_CONTRACTS as PATIENT_RUNNER_MANIFEST_CONTRACTS
 
-MANIFEST_CATALOG_SCHEMA_VERSION = "manifest_catalog_v1"
-
-
-@dataclass(frozen=True, slots=True)
-class ManifestContract:
-    """Contract metadata for one produced or planned manifest surface."""
-
-    manifest_key: str
-    title: str
-    scope: str
-    artifact_data_class: str
-    lifecycle_status: str
-    default_relative_paths: tuple[str, ...]
-    payload_format: str
-    schema_version_source: str
-    producer: str
-    purpose: str
-    tracks: tuple[str, ...]
-    reader: str = ""
-    notes: str = ""
-
-    def __post_init__(self) -> None:
-        _validate_non_empty(self.manifest_key, "manifest_key")
-        _validate_non_empty(self.title, "title")
-        _validate_non_empty(self.scope, "scope")
-        _validate_non_empty(self.artifact_data_class, "artifact_data_class")
-        _validate_non_empty(self.lifecycle_status, "lifecycle_status")
-        _validate_non_empty(self.payload_format, "payload_format")
-        _validate_non_empty(self.schema_version_source, "schema_version_source")
-        _validate_non_empty(self.producer, "producer")
-        _validate_non_empty(self.purpose, "purpose")
-        _validate_non_empty_sequence(self.default_relative_paths, "default_relative_paths")
-        _validate_non_empty_sequence(self.tracks, "tracks")
-        object.__setattr__(self, "default_relative_paths", tuple(self.default_relative_paths))
-        object.__setattr__(self, "tracks", tuple(self.tracks))
-
-    def to_row(self) -> dict[str, Any]:
-        """Return a CSV-friendly row for generated catalog reports."""
-        row = asdict(self)
-        for key, value in list(row.items()):
-            if isinstance(value, tuple):
-                row[key] = " | ".join(str(item) for item in value)
-        row["schema_version"] = MANIFEST_CATALOG_SCHEMA_VERSION
-        return row
+from .manifest_contracts import MANIFEST_CATALOG_SCHEMA_VERSION
+from .manifest_contracts import ManifestContract
+from .manifest_contracts import manifest_contract as _contract
+from .manifest_index import MANIFEST_CONTRACTS as RUN_MANIFEST_INDEX_CONTRACTS
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _validate_non_empty(value: str, field_name: str) -> None:
-    if str(value).strip() == "":
-        raise ValueError(f"{field_name} cannot be empty")
-
-
-def _validate_non_empty_sequence(values: Sequence[str], field_name: str) -> None:
-    if not values:
-        raise ValueError(f"{field_name} cannot be empty")
-    for value in values:
-        if str(value).strip() == "":
-            raise ValueError(f"{field_name} cannot contain empty values")
-
-
-def _contract(
-    manifest_key: str,
-    title: str,
-    scope: str,
-    artifact_data_class: str,
-    lifecycle_status: str,
-    default_relative_paths: tuple[str, ...],
-    payload_format: str,
-    schema_version_source: str,
-    producer: str,
-    purpose: str,
-    tracks: tuple[str, ...],
-    *,
-    reader: str = "",
-    notes: str = "",
-) -> ManifestContract:
-    return ManifestContract(
-        manifest_key=manifest_key,
-        title=title,
-        scope=scope,
-        artifact_data_class=artifact_data_class,
-        lifecycle_status=lifecycle_status,
-        default_relative_paths=default_relative_paths,
-        payload_format=payload_format,
-        schema_version_source=schema_version_source,
-        producer=producer,
-        reader=reader,
-        purpose=purpose,
-        tracks=tracks,
-        notes=notes,
-    )
 
 
 _MANIFEST_CONTRACTS: tuple[ManifestContract, ...] = (
@@ -233,73 +147,8 @@ _MANIFEST_CONTRACTS: tuple[ManifestContract, ...] = (
             "case and structure counts",
         ),
     ),
-    _contract(
-        "run_manifest_index",
-        "Run manifest index",
-        "run",
-        "manifest_index",
-        "current_durable",
-        ("manifests/run_manifest_index.json",),
-        "json",
-        "output_artifacts.manifest_index.RUN_MANIFEST_INDEX_SCHEMA_VERSION",
-        "output_artifacts.manifest_index.ManifestIndexRecorder.write",
-        "Index every manifest object recorded during one run, including written, constructed-only, skipped, and failed manifests.",
-        (
-            "manifest key",
-            "produced status",
-            "manifest path when written",
-            "path existence at index write time",
-            "scope and artifact class",
-            "producer",
-            "patient and stage context when available",
-        ),
-        notes="Currently emitted by patient_runner.run_patient_batch; broader legacy/runtime wiring can be added at other run boundaries.",
-    ),
-    _contract(
-        "patient_run_manifest",
-        "Patient run manifest",
-        "patient",
-        "manifest",
-        "current_durable",
-        ("patients/<patient_uid>/patient_run_manifest.json", "patient_run_manifest.json"),
-        "json",
-        "patient_runner.manifests.PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
-        "patient_runner.manifests.write_patient_run_manifest",
-        "Record status, stage results, artifacts, and lightweight identity for one patient run.",
-        (
-            "patient UID and label",
-            "source run and input manifest IDs",
-            "patient metadata",
-            "overall patient status",
-            "output root",
-            "elapsed time",
-            "stage statuses and warnings",
-            "artifact paths",
-        ),
-        reader="post_run.cohort_assembly.manifest_loader.load_patient_batch_result_from_manifest",
-    ),
-    _contract(
-        "patient_batch_run_manifest",
-        "Patient batch run manifest",
-        "batch_run",
-        "manifest",
-        "current_durable",
-        ("patient_batch_run_manifest.json", "patient_scientific_runner/patient_batch_run_manifest.json"),
-        "json",
-        "patient_runner.manifests.PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
-        "patient_runner.manifests.write_patient_batch_run_manifest",
-        "Aggregate patient-run results and provide the primary entry point for post-run assembly.",
-        (
-            "batch status",
-            "output root",
-            "elapsed time",
-            "patient count and failed-patient count",
-            "batch artifact paths",
-            "per-patient status summaries",
-            "run metadata",
-        ),
-        reader="post_run.cohort_assembly.manifest_loader.load_patient_batch_result_from_manifest",
-    ),
+    *RUN_MANIFEST_INDEX_CONTRACTS,
+    *PATIENT_RUNNER_MANIFEST_CONTRACTS,
     _contract(
         "patient_process_run_plan",
         "Standalone patient process run plan",

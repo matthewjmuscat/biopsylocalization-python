@@ -17,6 +17,8 @@ from output_artifacts.manifest_catalog import summarize_manifest_catalog
 from output_artifacts.manifest_catalog import summarize_manifest_presence
 from output_artifacts.manifest_catalog import write_manifest_catalog
 from output_artifacts.manifest_catalog import write_manifest_presence_report
+from output_artifacts.manifest_index import MANIFEST_CONTRACTS as RUN_MANIFEST_INDEX_CONTRACTS
+from patient_runner.manifests import MANIFEST_CONTRACTS as PATIENT_RUNNER_MANIFEST_CONTRACTS
 
 
 class ManifestCatalogTests(unittest.TestCase):
@@ -51,6 +53,13 @@ class ManifestCatalogTests(unittest.TestCase):
             contracts_by_key["patient_scientific_context_manifest"].lifecycle_status,
             "planned",
         )
+
+    def test_catalog_aggregates_producer_local_contracts(self) -> None:
+        contracts_by_key = manifest_contracts_by_key()
+
+        for contract in (*RUN_MANIFEST_INDEX_CONTRACTS, *PATIENT_RUNNER_MANIFEST_CONTRACTS):
+            self.assertIn(contract.manifest_key, contracts_by_key)
+            self.assertEqual(contracts_by_key[contract.manifest_key], contract)
 
     def test_catalog_rows_are_report_ready(self) -> None:
         rows = manifest_catalog_rows()

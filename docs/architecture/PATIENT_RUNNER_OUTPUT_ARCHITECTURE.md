@@ -99,7 +99,10 @@ Manifest governance has three separate layers.
    types the codebase knows about, their purpose, producer, expected paths,
    schema-version source, and tracked concepts. This is produced by
    `output_artifacts.manifest_catalog` and is not evidence that a concrete run
-   wrote a given manifest.
+   wrote a given manifest. New manifest writers should define a local
+   `MANIFEST_CONTRACTS` tuple beside the writer where practical; the central
+   catalog should aggregate those producer-local contracts rather than
+   duplicating their details by hand.
 - The run manifest index is the per-run output artifact for manifest events.
    The patient-runner batch boundary currently records patient and batch run
    manifests as `written` or `skipped`, then writes
