@@ -283,6 +283,24 @@ The GUI should be able to:
 Inline runtime code should only write artifacts. It should not open interactive
 render windows as part of the numerical loop.
 
+## Manifest Accounting Readiness
+
+The first manifest-accounting pass is complete enough for the dose render GUI to
+continue. The current pattern separates three concerns:
+
+- `ManifestContract` describes a manifest type and belongs near the producer
+  module where practical;
+- the manifest catalog aggregates known contracts for documentation and audit;
+- the run manifest index records which manifests were actually written,
+  skipped, failed, or constructed during a concrete run boundary.
+
+This matters for context artifacts because post-run GUI tools must distinguish
+"this run did not retain the needed context" from "the context exists but is in
+a different path" and from "a manifest writer failed." The scene/context
+artifact writers should therefore expose normal write functions, while the run
+boundary that calls them records their returned manifest paths in the run index.
+Object construction alone should not imply artifact production.
+
 ## Migration Strategy
 
 1. Keep legacy CSV/parquet outputs and validation surfaces stable.
@@ -351,6 +369,28 @@ Synthetic unit tests for scene construction, trial filtering, thresholding,
 vector construction, and fail-closed validation. Tests must remain synthetic and
 must not inspect patient data.
 
+```text
+python_files_dcm_meta_based/mc/visualization/dose_nn_scene_artifacts.py
+```
+
+Read/write compact selected render scenes as JSON metadata plus `.npz` arrays.
+The current implementation validates array shapes, dtypes, checksums, duplicate
+manifest entries, overwrite protection, and manifest-only reads on synthetic
+data. A later Zarr adapter can share the same dataclass contract.
+
+Core objects/functions:
+
+- `DoseNNRenderSceneArtifactManifest`
+- `write_dose_nn_render_scene_artifact(...)`
+- `read_dose_nn_render_scene_artifact(...)`
+- checksum/fingerprint helpers for exported arrays
+
+```text
+python_files_dcm_meta_based/mc/visualization/test_dose_nn_scene_artifacts.py
+```
+
+Synthetic round-trip and fail-closed tests for selected scene artifact IO.
+
 ### Next Additive Files For The Dose Figure Path
 
 ```text
@@ -366,21 +406,6 @@ Expected functions:
 - `build_scene_from_dose_localization_outputs(...)`
 - `build_scene_from_patient_dose_contexts(...)`
 - `build_scene_from_context_artifacts(...)`
-
-```text
-python_files_dcm_meta_based/mc/visualization/dose_nn_scene_artifacts.py
-```
-
-Read/write compact selected render scenes. The first implementation can use
-JSON metadata plus `.npz` arrays for selected scenes. A later Zarr adapter can
-share the same dataclass contract.
-
-Expected objects/functions:
-
-- `DoseNNRenderSceneArtifactManifest`
-- `write_dose_nn_render_scene_artifact(...)`
-- `read_dose_nn_render_scene_artifact(...)`
-- checksum/fingerprint helpers for exported arrays
 
 ```text
 python_files_dcm_meta_based/mc/visualization/dose_nn_pyvista.py
@@ -547,7 +572,8 @@ change, not a silent modification of legacy scientific code.
 
 ### Recommended Build Order
 
-1. Finish selected scene artifact read/write using JSON plus `.npz` arrays.
+1. Status: selected scene contract and artifact read/write using JSON plus
+  `.npz` arrays are complete and synthetically validated.
 2. Add PyVista rendering from `DoseNNPreparedScene` and validate on synthetic
    data.
 3. Add a CLI or small service function that renders a saved selected scene.

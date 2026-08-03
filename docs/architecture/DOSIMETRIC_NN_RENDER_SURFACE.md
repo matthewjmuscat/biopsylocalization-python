@@ -17,6 +17,30 @@ and as a domain-specific plugin in a future GUI.
 This render surface is the first concrete consumer of the broader patient
 context-artifact strategy described in `PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md`.
 
+## Current Checkpoint
+
+The manifest/accounting detour is resolved enough to resume this render surface.
+The codebase now has a code-owned manifest catalog, a post-run presence scanner,
+a per-run `run_manifest_index.json` writer, patient-runner batch integration,
+and producer-local contract declarations for the patient-runner manifests and
+the run manifest index. That is the durable pattern to reuse as new selected
+scene/context artifacts are produced.
+
+This does not mean every legacy output boundary now writes a run manifest index.
+It means the brittle "manual manifest of manifests" problem has a stable owning
+pattern: producer modules declare their manifest contract locally where
+practical, run boundaries explicitly record written/skipped/failed manifest
+events, and post-run tools can ask the generated index what was actually
+produced. Additional legacy or GUI run boundaries should adopt the recorder when
+they gain new manifest writers.
+
+The next render pass should continue from the existing scene contract and saved
+scene-artifact layer, not from raw scientific code. If a real-data figure needs
+data that historical outputs did not retain, the decision should be explicit:
+read a saved selected scene artifact, reconstruct from retained context, perform
+a selected reconstruction from a transitional results pickle, or add a
+disabled-by-default inline capture hook after approval.
+
 ## Decision
 
 Build this as additive, contract-driven visualization code. It should consume
@@ -277,6 +301,30 @@ should be generated either from retained context artifacts, from a transitional
 results pickle by recomputing NN rows, or from an explicit inline capture while
 the NN dataframe exists.
 
+## Why Manifest Work Came First
+
+The render surface introduces another manifest-like output: a selected
+`DoseNNRenderScene` artifact with JSON metadata and array payloads. Without a
+run-level index, post-run tools would have to guess whether that artifact was
+written, infer locations from conventions, or rely on a brittle hand-maintained
+inventory. That is exactly the failure mode the manifest pass addressed.
+
+The reason was therefore both artifact accounting and scientific reconstruction:
+
+- artifact accounting, because the GUI and publication workflow must know which
+  patient, biopsy, trial, scene, and renderer artifacts were produced and where;
+- reconstruction, because normal pointwise/voxelwise dose tables do not retain
+  nearest-neighbour geometry, so selected scene/context artifacts need explicit
+  retention and manifest entries;
+- maintainability, because new manifest producers should not require a separate
+  manual catalog edit that can drift away from the writer.
+
+For the next dose-render work, the saved scene artifact should be treated as a
+normal manifest-backed artifact. When a scene writer is called from a run
+boundary, that boundary should record the scene manifest in the run manifest
+index. When a scene is rendered later from an already saved artifact, the export
+sidecar should record the source scene manifest and display/export settings.
+
 ## Implementation Phases
 
 ### Phase 1: Scene Contract And Synthetic Validation
@@ -285,6 +333,23 @@ the NN dataframe exists.
 - Define scene/config/backend contracts.
 - Build a scene from a small synthetic nearest-neighbour dataframe.
 - Validate thresholding, trial selection, vector counts, and shape invariants.
+- Status: complete for the renderer-neutral scene/config layer.
+
+### Phase 1B: Selected Scene Artifact IO
+
+- Write selected scene artifacts as JSON metadata plus compressed NumPy arrays.
+- Validate round-trip loading, checksum failures, existing-file protection, and
+  manifest-only reads on synthetic scenes.
+- Status: complete for compact `.npz` selected scenes.
+
+### Phase 1C: Manifest Accounting Boundary
+
+- Catalog the selected scene artifact manifest and run-index manifest surfaces.
+- Keep contract declarations beside producers where practical.
+- Record written/skipped/failed manifest events at run boundaries rather than by
+  hidden global mutation during object construction.
+- Status: complete enough to resume rendering; broader legacy run boundaries can
+  adopt the same recorder as they gain migrated manifest writers.
 
 ### Phase 2: PyVista Scientific Renderer
 
@@ -293,6 +358,28 @@ the NN dataframe exists.
 - Keep PyVista/VTK imports inside the backend module.
 - Validate that the backend can build a non-empty synthetic scene on the local
   workstation before relying on it for real-data figure generation.
+- Next implementation target.
+
+Detailed next pass:
+
+1. Add `dose_nn_pyvista.py` with lazy PyVista imports, a small renderer settings
+  dataclass, and functions to build a `pyvista.Plotter` from
+  `DoseNNPreparedScene`.
+2. Render lattice points with dose scalars, biopsy query points, nearest-neighbour
+  points, optional line/vector geometry, scalar bars, stable colors, and camera
+  presets suitable for screenshot export.
+3. Add synthetic tests that either exercise the backend when PyVista is available
+  or skip clearly when the optional renderer dependency cannot initialize.
+4. Add an export function that writes screenshots plus a small provenance JSON
+  recording source scene identity, config, backend, camera, image size, and code
+  version when available.
+5. Add a saved-scene CLI or service function that reads a
+  `DoseNNRenderScene` artifact, applies render config, and exports a figure
+  without touching the scientific pipeline.
+6. Only after the synthetic renderer/export path is stable, choose the real-data
+  scene source: existing saved scene artifact, retained context artifacts,
+  transitional results-pickle reconstruction, or an approved selected inline
+  capture hook.
 
 ### Phase 3: Plotly Sharing Renderer
 
