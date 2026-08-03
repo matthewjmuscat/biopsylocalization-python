@@ -44,6 +44,10 @@ class ManifestCatalogTests(unittest.TestCase):
             "scene_manifest",
         )
         self.assertEqual(
+            contracts_by_key["run_manifest_index"].lifecycle_status,
+            "current_durable",
+        )
+        self.assertEqual(
             contracts_by_key["patient_scientific_context_manifest"].lifecycle_status,
             "planned",
         )

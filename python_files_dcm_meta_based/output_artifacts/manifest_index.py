@@ -8,7 +8,7 @@ failed to produce, or constructed without writing to disk.
 """
 
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -201,14 +201,27 @@ class ManifestIndexRecorder:
         return self.record_entry(entry)
 
     def write(self, *, overwrite: bool = True) -> Path:
+        entries = (*self.entries, self._self_entry())
         return write_run_manifest_index(
-            self.entries,
+            entries,
             self.output_path,
             run_id=self.run_id,
             run_root=self.run_root,
             metadata=self.metadata,
             overwrite=overwrite,
         )
+
+    def _self_entry(self) -> ManifestIndexEntry:
+        entry = manifest_index_entry(
+            "run_manifest_index",
+            MANIFEST_STATUS_WRITTEN,
+            manifest_path=self.output_path,
+            run_root=self.run_root,
+            manifest_schema_version=RUN_MANIFEST_INDEX_SCHEMA_VERSION,
+            stage_name="manifest_index",
+            notes="Run manifest index carrier artifact.",
+        )
+        return replace(entry, path_exists_at_index_write=True)
 
 
 def default_run_manifest_index_path(run_root: Path | str) -> Path:

@@ -100,12 +100,13 @@ Manifest governance has three separate layers.
    schema-version source, and tracked concepts. This is produced by
    `output_artifacts.manifest_catalog` and is not evidence that a concrete run
    wrote a given manifest.
-- The run manifest index is the target per-run output artifact. A run
-   orchestrator or manifest writer wrapper should record each manifest event as
-   `written`, `constructed_not_written`, `skipped`, or `failed`, then write
+- The run manifest index is the per-run output artifact for manifest events.
+   The patient-runner batch boundary currently records patient and batch run
+   manifests as `written` or `skipped`, then writes
    `manifests/run_manifest_index.json` through
-   `output_artifacts.manifest_index`. This index is the preferred answer to
-   "what manifests did this run actually produce, and where?"
+   `output_artifacts.manifest_index`. Other run boundaries can adopt the same
+   recorder when their manifest writers are migrated. This index is the
+   preferred answer to "what manifests did this run actually produce, and where?"
 - The post-run presence scanner is a fallback and audit utility. It inspects an
    existing output tree against cataloged default paths, but it cannot prove that
    an in-memory manifest object was constructed and intentionally not written.

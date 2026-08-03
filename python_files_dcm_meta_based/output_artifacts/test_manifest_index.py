@@ -97,12 +97,15 @@ class ManifestIndexTests(unittest.TestCase):
 
             self.assertEqual(output_path, default_run_manifest_index_path(run_root))
             payload = read_run_manifest_index(output_path)
-            self.assertEqual(payload["manifest_count"], 2)
-            self.assertEqual(payload["summary"]["produced_status_counts"][MANIFEST_STATUS_WRITTEN], 1)
+            self.assertEqual(payload["manifest_count"], 3)
+            self.assertEqual(payload["summary"]["produced_status_counts"][MANIFEST_STATUS_WRITTEN], 2)
             self.assertEqual(
                 payload["summary"]["produced_status_counts"][MANIFEST_STATUS_CONSTRUCTED_NOT_WRITTEN],
                 1,
             )
+            self_entry = next(entry for entry in payload["manifests"] if entry["manifest_key"] == "run_manifest_index")
+            self.assertEqual(self_entry["manifest_path"], "manifests/run_manifest_index.json")
+            self.assertTrue(self_entry["path_exists_at_index_write"])
 
     def test_summary_counts_unknown_contracts(self) -> None:
         entry = manifest_index_entry(

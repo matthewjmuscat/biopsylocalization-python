@@ -238,7 +238,7 @@ _MANIFEST_CONTRACTS: tuple[ManifestContract, ...] = (
         "Run manifest index",
         "run",
         "manifest_index",
-        "planned",
+        "current_durable",
         ("manifests/run_manifest_index.json",),
         "json",
         "output_artifacts.manifest_index.RUN_MANIFEST_INDEX_SCHEMA_VERSION",
@@ -253,7 +253,7 @@ _MANIFEST_CONTRACTS: tuple[ManifestContract, ...] = (
             "producer",
             "patient and stage context when available",
         ),
-        notes="Utility exists; run orchestrators and manifest writers still need to be wired to record entries during execution.",
+        notes="Currently emitted by patient_runner.run_patient_batch; broader legacy/runtime wiring can be added at other run boundaries.",
     ),
     _contract(
         "patient_run_manifest",
