@@ -63,6 +63,13 @@ Every durable output family should have an artifact contract. The current
 `OutputSchemaRegistry` is the seed of this contract layer, but the contract needs
 to become the single source for output planning and assembly.
 
+Tabular outputs are only one artifact family. The companion context-artifact
+direction is described in `PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md`: patient
+runs should eventually retain selected scientific arrays, resolved transforms,
+coordinate-frame registries, and transformation provenance so post-run tools can
+inspect and regenerate context without depending on pickles or legacy in-memory
+dictionaries.
+
 Each contract should include:
 
 - `table_id`
@@ -73,6 +80,7 @@ Each contract should include:
 - row grain
 - primary keys and stable sort keys
 - file format and storage policy
+- artifact data class: `table`, `array`, `manifest`, `scene`, or `provenance`
 - schema version and compatibility version
 - assembly policy: `concat_patient_fragments`, `aggregate_patient_fragments`,
   `copy_run_level`, `external_source`, `validation_only`, or `not_stitchable`

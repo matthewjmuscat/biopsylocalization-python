@@ -14,6 +14,9 @@ for interpolation and the vectors from biopsy query points to those neighbours.
 The same surface should also be useful later as a dose-localization debug tool
 and as a domain-specific plugin in a future GUI.
 
+This render surface is the first concrete consumer of the broader patient
+context-artifact strategy described in `PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md`.
+
 ## Decision
 
 Build this as additive, contract-driven visualization code. It should consume
@@ -225,6 +228,44 @@ capture a small scene artifact while the dataframe exists, then return control
 to the post-run renderer. Inline capture should be disabled by default and
 should never open render windows inside the MC numerical loop.
 
+## Current Retention Assessment
+
+The normal exported MC CSV/parquet dataset is not sufficient by itself to rebuild
+the full nearest-neighbour vector render surface. It retains pointwise and
+voxelwise interpolated dose products such as `Point-wise dose output by MC trial
+number` and `Voxel-wise dose output by MC trial number`, but those tables do not
+retain the nearest dose-lattice point coordinates, nearest-lattice doses, or
+nearest-neighbour distances needed to draw the vectors used by the interpolation.
+
+The legacy MC loop currently creates the full `dose_nearest_neighbour_results_dataframe`,
+optionally writes it when `raw_data_mc_dosimetry_dump_bool` is enabled, pivots it
+to the point-by-trial interpolated dose array, stores that compact dose array on
+the biopsy record, and deletes the dataframe. The raw dump is disabled by
+default and is documented in `biopsy_localization_convex_main.py` as potentially
+hundreds of gigabytes, so it should not become the routine figure workflow.
+
+A results pickle is a transitional reconstruction source because the
+results-pickle sanitizer keeps picklable scientific arrays while dropping
+runtime-only Open3D/KD-tree objects. In particular, the retained dose-and-gradient
+physical-space array can rebuild the dose lattice, and the retained biopsy
+sampled/shifted arrays can rebuild the query points. That should allow
+nearest-neighbour rows to be recomputed after the run, but it depends on a
+legacy pickle workflow rather than the target standalone-run artifact boundary.
+
+The long-term target is not pickle replay. The target is manifest-backed patient
+context artifacts: dose lattice arrays, biopsy query geometry, transform
+provenance, resolved transform/query arrays, optional nearest-neighbour index
+tensors, and selected render-scene artifacts. The dose renderer should consume
+those artifacts through stable contracts once they exist.
+
+The clean target is therefore a dedicated, compact `DoseNNRenderScene` artifact
+for selected patient/biopsy/trial cases. That artifact should capture only the
+display-scoped lattice subset, biopsy query points, nearest-neighbour points,
+nearest-neighbour doses, distances, and provenance needed for rendering. It
+should be generated either from retained context artifacts, from a transitional
+results pickle by recomputing NN rows, or from an explicit inline capture while
+the NN dataframe exists.
+
 ## Implementation Phases
 
 ### Phase 1: Scene Contract And Synthetic Validation
@@ -267,9 +308,10 @@ should never open render windows inside the MC numerical loop.
 
 - Add a controlled one-patient, one-biopsy capture path that can produce a
   render scene artifact from existing dose-localization outputs.
-- Prefer consuming already-computed nearest-neighbour outputs where available.
-- If a rerun is needed because raw NN data were not retained, keep it explicit,
-  selected, and user-operated for real patient data.
+- Prefer recomputing from a results pickle or consuming an already-captured
+  scene artifact over enabling full raw NN dumps.
+- If an inline capture rerun is needed because raw NN data were not retained,
+  keep it explicit, selected, and user-operated for real patient data.
 
 ## Pushback And Non-Goals
 

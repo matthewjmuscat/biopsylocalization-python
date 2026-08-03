@@ -40,6 +40,10 @@ Current durable docs:
   pathway/checkpoint vocabulary for patient-runner scientific orchestration.
 - `architecture/PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md` - output-layer contract
   for patient artifacts, manifests, post-run assembly, and parity.
+- `architecture/PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md` - durable patient
+  context-artifact strategy for retaining inspectable scientific arrays,
+  transform provenance, and post-run GUI/reanalysis context without relying on
+  pickles.
 - `architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md` - standalone
   parent/worker process architecture for moving the patient runner outside the
   legacy all-patient runtime.
@@ -117,6 +121,7 @@ docs/
     PATIENT_RUNNER_CONFIG_PATHWAYS.md
     PATIENT_RUNNER_DEPENDENCY_GRAPH.md
     DOSIMETRIC_NN_RENDER_SURFACE.md
+    PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md
     PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md
     PATIENT_RUNNER_PROCESS_ARCHITECTURE.md
   boundaries/
