@@ -14,7 +14,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+import re
+from typing import Any, Iterable, Mapping, Sequence
 
 
 MANIFEST_CATALOG_SCHEMA_VERSION = "manifest_catalog_v1"
@@ -646,6 +647,65 @@ def summarize_manifest_catalog(
     }
 
 
+def inspect_manifest_presence(
+    run_dir: Path | str,
+    contracts: Iterable[ManifestContract] | None = None,
+) -> list[dict[str, Any]]:
+    """Inspect which cataloged manifest paths are present under a run directory.
+
+    This is a presence report, not a run-profile validator. A missing manifest is
+    evidence about that output tree, but it is not automatically a failure unless
+    a separate compatibility or retention policy says the manifest was required.
+    """
+    resolved_run_dir = Path(run_dir).expanduser().resolve(strict=False)
+    resolved_contracts = iter_manifest_contracts() if contracts is None else tuple(contracts)
+    rows: list[dict[str, Any]] = []
+    for contract in sorted(resolved_contracts, key=lambda item: item.manifest_key):
+        found_paths = _find_manifest_paths(resolved_run_dir, contract.default_relative_paths)
+        if found_paths:
+            presence_status = "found"
+        elif contract.lifecycle_status == "planned":
+            presence_status = "planned_not_expected"
+        else:
+            presence_status = "not_found_in_run"
+        rows.append(
+            {
+                "schema_version": MANIFEST_CATALOG_SCHEMA_VERSION,
+                "run_dir": resolved_run_dir.as_posix(),
+                "manifest_key": contract.manifest_key,
+                "title": contract.title,
+                "scope": contract.scope,
+                "artifact_data_class": contract.artifact_data_class,
+                "lifecycle_status": contract.lifecycle_status,
+                "payload_format": contract.payload_format,
+                "presence_status": presence_status,
+                "found_count": len(found_paths),
+                "found_relative_paths": " | ".join(path.as_posix() for path in found_paths),
+                "default_relative_paths": " | ".join(contract.default_relative_paths),
+                "producer": contract.producer,
+                "reader": contract.reader,
+                "purpose": contract.purpose,
+                "tracks": " | ".join(contract.tracks),
+            }
+        )
+    return rows
+
+
+def summarize_manifest_presence(presence_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Summarize rows returned by ``inspect_manifest_presence``."""
+    presence_status_counts = Counter(str(row.get("presence_status", "")) for row in presence_rows)
+    lifecycle_status_counts = Counter(str(row.get("lifecycle_status", "")) for row in presence_rows)
+    return {
+        "schema_version": MANIFEST_CATALOG_SCHEMA_VERSION,
+        "generated_utc": _utc_now_iso(),
+        "run_dir": str(presence_rows[0].get("run_dir", "")) if presence_rows else "",
+        "manifest_contract_count": len(presence_rows),
+        "found_manifest_contract_count": int(presence_status_counts.get("found", 0)),
+        "presence_status_counts": dict(presence_status_counts),
+        "lifecycle_status_counts": dict(lifecycle_status_counts),
+    }
+
+
 def render_manifest_catalog_markdown(
     contracts: Iterable[ManifestContract] | None = None,
 ) -> str:
@@ -698,5 +758,43 @@ def write_manifest_catalog(
     return catalog_path, summary_path, markdown_path
 
 
+def write_manifest_presence_report(
+    run_dir: Path | str,
+    output_dir: Path | str,
+    contracts: Iterable[ManifestContract] | None = None,
+) -> tuple[Path, Path]:
+    """Write a CSV and JSON summary showing cataloged manifests found in a run."""
+    resolved_output_dir = Path(output_dir)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    presence_rows = inspect_manifest_presence(run_dir, contracts)
+    presence_path = resolved_output_dir / "manifest_presence.csv"
+    summary_path = resolved_output_dir / "manifest_presence_summary.json"
+    fieldnames = list(presence_rows[0].keys()) if presence_rows else ["schema_version"]
+    with presence_path.open("w", encoding="utf-8", newline="") as file_obj:
+        writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(presence_rows)
+    with summary_path.open("w", encoding="utf-8") as file_obj:
+        json.dump(summarize_manifest_presence(presence_rows), file_obj, indent=2, sort_keys=True)
+        file_obj.write("\n")
+    return presence_path, summary_path
+
+
 def _markdown_cell(value: Any) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _find_manifest_paths(run_dir: Path, relative_paths: Sequence[str]) -> tuple[Path, ...]:
+    found_paths: dict[str, Path] = {}
+    for relative_path in relative_paths:
+        pattern = _relative_path_to_glob_pattern(relative_path)
+        for path in run_dir.glob(pattern):
+            if not path.is_file():
+                continue
+            relative_found_path = path.relative_to(run_dir)
+            found_paths[relative_found_path.as_posix()] = relative_found_path
+    return tuple(found_paths[key] for key in sorted(found_paths))
+
+
+def _relative_path_to_glob_pattern(relative_path: str) -> str:
+    return re.sub(r"<[^/<>]+>", "*", str(relative_path).strip())

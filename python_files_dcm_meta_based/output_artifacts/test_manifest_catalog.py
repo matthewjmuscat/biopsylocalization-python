@@ -8,12 +8,15 @@ from pathlib import Path
 
 from output_artifacts.manifest_catalog import MANIFEST_CATALOG_SCHEMA_VERSION
 from output_artifacts.manifest_catalog import ManifestContract
+from output_artifacts.manifest_catalog import inspect_manifest_presence
 from output_artifacts.manifest_catalog import iter_manifest_contracts
 from output_artifacts.manifest_catalog import manifest_catalog_rows
 from output_artifacts.manifest_catalog import manifest_contracts_by_key
 from output_artifacts.manifest_catalog import render_manifest_catalog_markdown
 from output_artifacts.manifest_catalog import summarize_manifest_catalog
+from output_artifacts.manifest_catalog import summarize_manifest_presence
 from output_artifacts.manifest_catalog import write_manifest_catalog
+from output_artifacts.manifest_catalog import write_manifest_presence_report
 
 
 class ManifestCatalogTests(unittest.TestCase):
@@ -99,6 +102,51 @@ class ManifestCatalogTests(unittest.TestCase):
             self.assertEqual(len(rows), len(iter_manifest_contracts()))
             self.assertEqual(summary["schema_version"], MANIFEST_CATALOG_SCHEMA_VERSION)
             self.assertIn("patient_batch_run_manifest", markdown_path.read_text(encoding="utf-8"))
+
+    def test_manifest_presence_inspection_matches_direct_and_placeholder_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+            run_dir.joinpath("manifests").mkdir(parents=True)
+            run_dir.joinpath("manifests", "input_manifest_summary.json").write_text("{}\n", encoding="utf-8")
+            run_dir.joinpath("patients", "P001").mkdir(parents=True)
+            run_dir.joinpath("patients", "P001", "patient_run_manifest.json").write_text("{}\n", encoding="utf-8")
+            run_dir.joinpath("render_scenes", "scene_a").mkdir(parents=True)
+            run_dir.joinpath("render_scenes", "scene_a", "manifest.json").write_text("{}\n", encoding="utf-8")
+
+            rows = inspect_manifest_presence(run_dir)
+            rows_by_key = {row["manifest_key"]: row for row in rows}
+
+            self.assertEqual(rows_by_key["input_manifest_summary"]["presence_status"], "found")
+            self.assertEqual(rows_by_key["input_manifest_summary"]["found_count"], 1)
+            self.assertIn(
+                "patients/P001/patient_run_manifest.json",
+                rows_by_key["patient_run_manifest"]["found_relative_paths"],
+            )
+            self.assertEqual(rows_by_key["dose_nn_render_scene_artifact_manifest"]["presence_status"], "found")
+            self.assertEqual(rows_by_key["patient_scientific_context_manifest"]["presence_status"], "planned_not_expected")
+
+    def test_write_manifest_presence_report_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+            output_dir = Path(temp_dir) / "report"
+            run_dir.joinpath("manifests").mkdir(parents=True)
+            run_dir.joinpath("manifests", "input_manifest_summary.json").write_text("{}\n", encoding="utf-8")
+
+            presence_path, summary_path = write_manifest_presence_report(run_dir, output_dir)
+
+            self.assertTrue(presence_path.is_file())
+            self.assertTrue(summary_path.is_file())
+            with presence_path.open("r", encoding="utf-8", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+            with summary_path.open("r", encoding="utf-8") as file_obj:
+                summary = json.load(file_obj)
+            self.assertEqual(len(rows), len(iter_manifest_contracts()))
+            self.assertEqual(summary["schema_version"], MANIFEST_CATALOG_SCHEMA_VERSION)
+            self.assertGreater(summary["presence_status_counts"].get("found", 0), 0)
+            self.assertEqual(
+                summarize_manifest_presence(rows)["manifest_contract_count"],
+                len(iter_manifest_contracts()),
+            )
 
 
 if __name__ == "__main__":
