@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 import re
 
 from ui.render_broker import RenderBrokerChoiceGroup
@@ -51,6 +51,17 @@ class DoseNNSavedSceneOption:
     available_trials: tuple[int, ...] = ()
     lattice_dose_range: tuple[float, float] | None = None
     suggested_export_output_dir: Path | None = None
+
+
+class DoseNNRenderControlSelectionAdapter(Protocol):
+    """Dose-specific control collector used after a saved-scene choice."""
+
+    def collect_control_selection(
+        self,
+        option: DoseNNSavedSceneOption,
+        initial_selection: DoseNNRenderControlSelection | None = None,
+    ) -> DoseNNRenderControlSelection | None:
+        ...
 
 
 def discover_saved_dose_nn_scene_options(
@@ -258,6 +269,80 @@ def run_saved_dose_nn_scene_selector_session(
             control_selection=control_selection,
             overwrite=overwrite,
         )
+
+    return run_render_broker_session(
+        request,
+        resolved_dialog_adapter,
+        _handle_decision,
+        initial_session_state=initial_session_state,
+    )
+
+
+def run_saved_dose_nn_scene_controlled_selector_session(
+    search_root: Path | str,
+    output_dir: Path | str,
+    *,
+    suggested_export_root: Path | str | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    initial_control_selection: DoseNNRenderControlSelection | None = None,
+    dialog_adapter: RenderBrokerDialogAdapter | None = None,
+    control_dialog_adapter: DoseNNRenderControlSelectionAdapter | None = None,
+    timeout_policy: RenderBrokerTimeoutPolicy | None = None,
+    initial_session_state: RenderBrokerSessionState | None = None,
+    overwrite: bool = False,
+) -> RenderBrokerSessionState:
+    """Run a saved-scene selector loop with dose-specific render controls."""
+    options = discover_saved_dose_nn_scene_options(
+        search_root,
+        suggested_export_root=suggested_export_root,
+    )
+    options_by_key = _options_by_key(options)
+    request = build_saved_dose_nn_scene_broker_request(
+        options,
+        summary_lines=("{} saved scene artifact(s) discovered.".format(len(options)),),
+        timeout_policy=timeout_policy,
+    )
+
+    resolved_dialog_adapter = dialog_adapter
+    if resolved_dialog_adapter is None:
+        from ui.tk_render_broker import TkRenderBrokerDialogAdapter
+
+        resolved_dialog_adapter = TkRenderBrokerDialogAdapter()
+
+    resolved_control_dialog_adapter = control_dialog_adapter
+    if resolved_control_dialog_adapter is None:
+        from .dose_nn_tk_render_controls import TkDoseNNRenderControlSelectionAdapter
+
+        resolved_control_dialog_adapter = TkDoseNNRenderControlSelectionAdapter()
+
+    current_control_selection: dict[str, DoseNNRenderControlSelection | None] = {
+        "value": initial_control_selection,
+    }
+
+    def _handle_decision(decision: RenderBrokerDecision) -> None:
+        if decision.group_key != DOSE_NN_SAVED_SCENE_GROUP_KEY:
+            raise ValueError("unsupported dose NN render broker group: {}".format(decision.group_key))
+        if not render_backend_includes(decision.render_backend, "pyvista"):
+            raise ValueError("dose NN saved-scene selector currently supports PyVista rendering only")
+        for selected_option_key in tuple(decision.selected_option_keys):
+            if selected_option_key not in options_by_key:
+                raise ValueError("unknown dose NN saved scene option: {}".format(selected_option_key))
+            option = options_by_key[selected_option_key]
+            control_selection = resolved_control_dialog_adapter.collect_control_selection(
+                option,
+                current_control_selection["value"],
+            )
+            if control_selection is None:
+                continue
+            current_control_selection["value"] = control_selection
+            render_saved_dose_nn_scene_selection_pyvista(
+                options,
+                (selected_option_key,),
+                output_dir,
+                settings=settings,
+                control_selection=control_selection,
+                overwrite=overwrite,
+            )
 
     return run_render_broker_session(
         request,

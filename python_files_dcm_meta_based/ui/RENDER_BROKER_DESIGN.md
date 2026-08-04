@@ -229,6 +229,10 @@ The toolkit-neutral dose control handoff is `DoseNNRenderControlSelection`,
 which a dose GUI can build from saved-scene manifest summaries after the run.
 The broker continues to know only about scene options, backend selection,
 exports, and the render-again-or-exit loop.
+The current dose implementation uses a two-step UI: the generic broker selects
+the saved scene and PyVista backend, then a dose-owned Tk dialog collects
+`DoseNNRenderControlSelection` for that scene. This preserves the broker
+contract while providing real dose controls for the post-run renderer.
 
 Current asymmetry: the broker contract can now express PyVista decisions for
 the dose NN surface, but optimizer-v2 still implements only Open3D and Plotly

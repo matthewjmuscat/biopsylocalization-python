@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -27,6 +28,7 @@ from mc.visualization.dose_nn_selector import build_saved_dose_nn_scene_choice_g
 from mc.visualization.dose_nn_selector import discover_saved_dose_nn_scene_options
 from mc.visualization.dose_nn_selector import handle_saved_dose_nn_scene_broker_decision_pyvista
 from mc.visualization.dose_nn_selector import render_saved_dose_nn_scene_selection_pyvista
+from mc.visualization.dose_nn_selector import run_saved_dose_nn_scene_controlled_selector_session
 from mc.visualization.dose_nn_selector import run_saved_dose_nn_scene_selector_session
 
 
@@ -237,6 +239,57 @@ class DoseNNSelectorTests(unittest.TestCase):
                     control_selection=DoseNNRenderControlSelection(selected_trials=(99,)),
                 )
 
+    def test_controlled_selector_session_collects_controls_before_rendering(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            dialog_adapter = _RenderThenContinueDialogAdapter()
+            control_adapter = _ControlSelectionAdapter(
+                DoseNNRenderControlSelection(
+                    selected_trials=(0,),
+                    show_dose_colorwash=True,
+                    show_lattice_points=False,
+                )
+            )
+
+            with patch(
+                "mc.visualization.dose_nn_selector.render_saved_dose_nn_scene_selection_pyvista"
+            ) as render_mock:
+                session_state = run_saved_dose_nn_scene_controlled_selector_session(
+                    root,
+                    root.joinpath("exports"),
+                    dialog_adapter=dialog_adapter,
+                    control_dialog_adapter=control_adapter,
+                )
+
+        self.assertFalse(session_state.timeout_disabled_for_run)
+        self.assertEqual(dialog_adapter.call_count, 2)
+        self.assertEqual(control_adapter.option.scene_id, "synthetic_scene")
+        render_mock.assert_called_once()
+        self.assertFalse(render_mock.call_args.kwargs["control_selection"].show_lattice_points)
+        self.assertTrue(render_mock.call_args.kwargs["control_selection"].show_dose_colorwash)
+
+    def test_controlled_selector_session_skips_render_when_controls_cancelled(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            dialog_adapter = _RenderThenContinueDialogAdapter()
+            control_adapter = _ControlSelectionAdapter(None)
+
+            with patch(
+                "mc.visualization.dose_nn_selector.render_saved_dose_nn_scene_selection_pyvista"
+            ) as render_mock:
+                run_saved_dose_nn_scene_controlled_selector_session(
+                    root,
+                    root.joinpath("exports"),
+                    dialog_adapter=dialog_adapter,
+                    control_dialog_adapter=control_adapter,
+                )
+
+        render_mock.assert_not_called()
+
 
 class _ContinueDialogAdapter:
     def __init__(self) -> None:
@@ -250,6 +303,40 @@ class _ContinueDialogAdapter:
                 timeout_disabled_for_run=session_state.timeout_disabled_for_run,
             ),
         )
+
+
+class _RenderThenContinueDialogAdapter:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def collect_selection(self, request, session_state):
+        self.call_count += 1
+        if self.call_count == 1:
+            return RenderBrokerDialogResult(
+                decision=RenderBrokerDecision(
+                    action="render",
+                    group_key=DOSE_NN_SAVED_SCENE_GROUP_KEY,
+                    selected_option_keys=("synthetic_scene",),
+                    render_backend="pyvista",
+                ),
+                session_state=session_state,
+            )
+        return RenderBrokerDialogResult(
+            decision=RenderBrokerDecision(action="continue"),
+            session_state=session_state,
+        )
+
+
+class _ControlSelectionAdapter:
+    def __init__(self, selection):
+        self.selection = selection
+        self.option = None
+        self.initial_selection = None
+
+    def collect_control_selection(self, option, initial_selection=None):
+        self.option = option
+        self.initial_selection = initial_selection
+        return self.selection
 
 
 def _synthetic_scene():

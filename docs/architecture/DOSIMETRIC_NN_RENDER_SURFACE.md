@@ -188,6 +188,13 @@ not construct one of these objects during scientific execution. It should write
 the general retained context and manifest summaries needed for the GUI to build
 one after the run.
 
+The first concrete adapter for that contract is
+`TkDoseNNRenderControlSelectionAdapter`. It is a dose-layer Tkinter dialog that
+appears after the generic saved-scene broker selection, uses manifest summaries
+to prefill/validate trial and dose-range controls, and returns a
+`DoseNNRenderControlSelection`. The generic broker remains unaware of dose
+thresholds, lattice/colorwash semantics, reference biopsy points, or NN vectors.
+
 ## GUI Controls
 
 The figure/debug workflow needs dose-domain controls beyond the current generic
@@ -231,6 +238,9 @@ dose render controls
 
 generic broker
   owns scene/backend selection and the render-again-or-exit loop
+
+dose Tk control adapter
+  collects dose-specific values for the selected saved scene
 
 renderer backend
   consumes the resolved config/settings and writes figures or frames
@@ -503,6 +513,18 @@ Detailed next pass:
   colorwash style, opacity, stride controls, axes, and scalar bar settings. The
   saved-scene selector can now accept that control selection and resolve it per
   scene using manifest trial summaries.
+- Status: added `TkDoseNNRenderControlSelectionAdapter` in
+  `dose_nn_tk_render_controls.py` and
+  `run_saved_dose_nn_scene_controlled_selector_session(...)`. The current GUI
+  flow is two-step but cleanly separated: the generic broker selects a saved
+  scene/backend, then the dose-specific Tk control dialog collects trial,
+  threshold, colorwash, lattice, vector, and reference-point settings for that
+  scene before rendering. If the control dialog is cancelled, no render is
+  emitted and the broker loop continues.
+- Remaining: improve figure-tuning ergonomics around output naming, camera/view
+  presets, screenshot dimensions, and eventual movie/video writer controls. The
+  current adapter is intentionally a boundary-setting first pass, not the final
+  publication GUI.
 
 Known render-backend asymmetry: the generic broker can now carry PyVista
 decisions and the dose surface has a PyVista backend, but optimizer-v2 still has
