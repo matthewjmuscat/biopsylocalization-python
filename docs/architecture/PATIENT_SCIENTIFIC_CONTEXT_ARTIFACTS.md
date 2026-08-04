@@ -315,6 +315,18 @@ identity keys, artifact refs, and lazy readers rather than full high-volume
 arrays. This keeps the runtime ergonomic without recreating a global mutable
 scientific dictionary.
 
+The long-term plan is not to convert every live runtime structure into Zarr and
+then immediately unpack it again during the same patient calculation. Runtime
+stages should keep using efficient in-memory forms when those forms are the
+right compute representation, such as KD-trees, NumPy/CuPy arrays, point clouds,
+or typed stage dataclasses. Artifact writers should run at intentional stage
+boundaries, preserving compact scientific context for post-run rendering,
+validation, dataframe construction, resume/debug workflows, and future method
+development. Artifact-backed readers become the source of truth after the run,
+or when a later process needs to reconstruct a context without rerunning the
+full pipeline; they are not the default transport mechanism between tightly
+coupled calculations that are already executing in memory.
+
 For migration, nested legacy structure records can remain dict-backed until
 their field and mutation rules are validated. The boundary should still be
 explicit: adapters ingest legacy dicts, validate identity keys such as patient
