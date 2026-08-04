@@ -212,7 +212,8 @@ mc/simulation/per_patient/
   dose_context_artifacts.py
     dose-owned ArtifactRef/ArrayArtifactSpec/TableArtifactSpec builders for
     lattice, biopsy query, and nearest-neighbour localization context;
-    next step is dose Zarr writers/readers and legacy dose adapter inputs
+    dose Zarr array writers/readers for explicit array payloads;
+    next step is Parquet row writers and legacy dose adapter inputs
 
 preprocessing/ or sampling/
   structure_context_artifacts.py, transform_context_artifacts.py

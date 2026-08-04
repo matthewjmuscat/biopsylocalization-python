@@ -84,10 +84,16 @@ from .dose import (
 )
 from .dose_context_artifacts import (
     DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION,
+    DoseZarrArrayArtifactReader,
     PatientDoseContextArtifactPlan,
     build_patient_dose_biopsy_query_context_artifact_plan,
     build_patient_dose_lattice_context_artifact_plan,
     build_patient_dose_localization_context_artifact_plan,
+    open_patient_dose_zarr_array_artifact,
+    patient_dose_biopsy_query_context_array_payload,
+    patient_dose_lattice_context_array_payload,
+    patient_dose_localization_context_array_payload,
+    write_patient_dose_context_zarr_arrays,
 )
 from .legacy_keys import (
     LegacyMCBiopsyIdentityKeys,
@@ -174,6 +180,7 @@ __all__ = [
     "LegacyMCOutputTableKeys",
     "DEFAULT_MC_DOSE_OUTPUT_VALUE_COLUMNS",
     "DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION",
+    "DoseZarrArrayArtifactReader",
     "PatientContainmentBiopsyContext",
     "PatientContainmentBiopsyStatisticsOutputs",
     "PatientContainmentCentroidDistanceResult",
@@ -217,6 +224,11 @@ __all__ = [
     "build_patient_dose_lattice_context",
     "build_patient_dose_lattice_context_artifact_plan",
     "build_patient_dose_localization_context_artifact_plan",
+    "open_patient_dose_zarr_array_artifact",
+    "patient_dose_biopsy_query_context_array_payload",
+    "patient_dose_lattice_context_array_payload",
+    "patient_dose_localization_context_array_payload",
+    "write_patient_dose_context_zarr_arrays",
     "build_patient_mr_biopsy_context",
     "build_patient_mr_lattice_context",
     "build_patient_mc_dose_output_tables",

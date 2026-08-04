@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping
 
 from output_artifacts.context_contracts import ArtifactRef
@@ -71,6 +72,115 @@ class PatientDoseContextArtifactPlan:
             artifacts=self.artifact_refs,
             metadata=dict(self.metadata),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DoseZarrArrayArtifactReader:
+    """Lazy reader for one retained dose Zarr array artifact."""
+
+    artifact_ref: ArtifactRef
+    output_root: Path | str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.artifact_ref, ArtifactRef):
+            raise TypeError("artifact_ref must be an ArtifactRef")
+        if self.artifact_ref.storage_format != "zarr":
+            raise ValueError("DoseZarrArrayArtifactReader requires a Zarr ArtifactRef")
+        object.__setattr__(self, "output_root", Path(self.output_root))
+
+    @property
+    def artifact_path(self) -> Path:
+        """Return the filesystem path to this artifact's Zarr store."""
+        return _resolve_artifact_path(Path(self.output_root), self.artifact_ref)
+
+    def open_group(self) -> Any:
+        """Open the Zarr group without materializing any dataset arrays."""
+        zarr = _import_zarr()
+        return zarr.open_group(str(self.artifact_path), mode="r")
+
+    def read_array(self, dataset_name: str, selection: Any | None = None) -> Any:
+        """Read a dataset or dataset slice from this artifact."""
+        dataset = self.open_group()[str(dataset_name)]
+        if selection is None:
+            return dataset[...]
+        return dataset[selection]
+
+    def dataset_shape(self, dataset_name: str) -> tuple[int, ...]:
+        """Return one dataset shape without loading its values."""
+        dataset = self.open_group()[str(dataset_name)]
+        return tuple(int(dimension) for dimension in tuple(dataset.shape))
+
+
+def patient_dose_lattice_context_array_payload(lattice_context: Any) -> dict[str, Any]:
+    """Return arrays keyed by dose lattice context dataset name."""
+    return {
+        "source_dose_and_gradient_array": lattice_context.source_dose_and_gradient_array,
+        "localization_map_array": lattice_context.localization_map_array,
+        "localization_map_flattened": lattice_context.localization_map_flattened,
+        "physical_coordinates": lattice_context.physical_coordinates,
+        "sampled_values": lattice_context.sampled_values,
+    }
+
+
+def patient_dose_biopsy_query_context_array_payload(biopsy_context: Any) -> dict[str, Any]:
+    """Return arrays keyed by dose biopsy query context dataset name."""
+    return {
+        "unshifted_sampled_points": biopsy_context.unshifted_sampled_points,
+        "sampled_points_bx_coord_sys": biopsy_context.sampled_points_bx_coord_sys,
+        "bx_only_shifted_points": biopsy_context.bx_only_shifted_points,
+        "bx_only_shifted_points_cutoff": biopsy_context.bx_only_shifted_points_cutoff,
+        "nominal_and_shifted_points": biopsy_context.nominal_and_shifted_points,
+        "stacked_nominal_and_shifted_points": biopsy_context.stacked_nominal_and_shifted_points,
+    }
+
+
+def patient_dose_localization_context_array_payload(localization_outputs: Any) -> dict[str, Any]:
+    """Return arrays keyed by dose localization context dataset name."""
+    return {
+        "values_by_point_nominal_and_trials": localization_outputs.values_by_point_nominal_and_trials,
+    }
+
+
+def write_patient_dose_context_zarr_arrays(
+    plan: PatientDoseContextArtifactPlan,
+    arrays_by_dataset: Mapping[str, Any],
+    output_root: Path | str,
+    *,
+    overwrite: bool = False,
+) -> dict[str, Path]:
+    """Write the Zarr array artifacts described by a dose context plan."""
+    if not isinstance(plan, PatientDoseContextArtifactPlan):
+        raise TypeError("plan must be a PatientDoseContextArtifactPlan")
+    output_root_path = Path(output_root)
+    zarr = _import_zarr()
+    specs_by_artifact = _group_array_specs_by_artifact(plan.array_specs)
+    written_paths: dict[str, Path] = {}
+    for artifact_id, grouped_specs in specs_by_artifact.items():
+        artifact_ref = grouped_specs[0].artifact_ref
+        artifact_path = _resolve_artifact_path(output_root_path, artifact_ref)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        group = zarr.open_group(str(artifact_path), mode="w" if overwrite else "w-")
+        group.attrs["artifact_ref"] = artifact_ref.to_dict()
+        group.attrs["schema_version"] = DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION
+        group.attrs["array_specs"] = [array_spec.to_dict() for array_spec in grouped_specs]
+        for array_spec in grouped_specs:
+            array_data = _coerce_array_for_zarr(arrays_by_dataset[array_spec.dataset_name])
+            _validate_array_matches_spec(array_data, array_spec)
+            create_dataset_kwargs: dict[str, Any] = {"data": array_data}
+            if array_spec.chunk_shape is not None:
+                create_dataset_kwargs["chunks"] = array_spec.chunk_shape
+            dataset = group.create_dataset(array_spec.dataset_name, **create_dataset_kwargs)
+            dataset.attrs["array_spec"] = array_spec.to_dict()
+        written_paths[artifact_id] = artifact_path
+    return written_paths
+
+
+def open_patient_dose_zarr_array_artifact(
+    artifact_ref: ArtifactRef,
+    output_root: Path | str,
+) -> DoseZarrArrayArtifactReader:
+    """Return a lazy reader for one retained dose Zarr array artifact."""
+    return DoseZarrArrayArtifactReader(artifact_ref=artifact_ref, output_root=output_root)
 
 
 def build_patient_dose_lattice_context_artifact_plan(
@@ -322,6 +432,64 @@ def _artifact_ref(
         reader=DOSE_CONTEXT_ARTIFACT_MODULE,
         metadata=dict(metadata or {}),
     )
+
+
+def _group_array_specs_by_artifact(
+    array_specs: tuple[ArrayArtifactSpec, ...],
+) -> dict[str, tuple[ArrayArtifactSpec, ...]]:
+    grouped: dict[str, list[ArrayArtifactSpec]] = {}
+    for array_spec in array_specs:
+        if array_spec.artifact_ref.storage_format != "zarr":
+            raise ValueError("Zarr writer received non-Zarr array artifact: {}".format(array_spec.artifact_ref.artifact_id))
+        grouped.setdefault(array_spec.artifact_ref.artifact_id, []).append(array_spec)
+    return {artifact_id: tuple(grouped_specs) for artifact_id, grouped_specs in grouped.items()}
+
+
+def _resolve_artifact_path(output_root: Path, artifact_ref: ArtifactRef) -> Path:
+    relative_path = Path(artifact_ref.relative_path)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise ValueError("artifact relative_path must stay inside output_root")
+    return output_root.joinpath(relative_path)
+
+
+def _import_zarr() -> Any:
+    try:
+        import zarr
+    except ImportError as exc:
+        raise ImportError("Zarr support requires the 'zarr' package. Install the project Pipfile dependencies.") from exc
+    return zarr
+
+
+def _coerce_array_for_zarr(array_like: Any) -> Any:
+    import numpy as np
+
+    try:
+        import cupy as cp
+    except ImportError:
+        return np.asarray(array_like)
+    if isinstance(array_like, cp.ndarray):
+        return cp.asnumpy(array_like)
+    return np.asarray(array_like)
+
+
+def _validate_array_matches_spec(array_data: Any, array_spec: ArrayArtifactSpec) -> None:
+    shape = tuple(int(dimension) for dimension in tuple(array_data.shape))
+    if shape != array_spec.shape:
+        raise ValueError(
+            "array {!r} shape {} does not match spec shape {}".format(
+                array_spec.dataset_name,
+                shape,
+                array_spec.shape,
+            )
+        )
+    if str(array_data.dtype) != array_spec.dtype:
+        raise ValueError(
+            "array {!r} dtype {} does not match spec dtype {}".format(
+                array_spec.dataset_name,
+                array_data.dtype,
+                array_spec.dtype,
+            )
+        )
 
 
 def _array_spec(

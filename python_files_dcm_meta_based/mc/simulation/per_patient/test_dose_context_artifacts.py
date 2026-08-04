@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -13,6 +15,10 @@ from mc.simulation.per_patient.dose import PatientDoseLocalizationOutputs
 from mc.simulation.per_patient.dose_context_artifacts import build_patient_dose_biopsy_query_context_artifact_plan
 from mc.simulation.per_patient.dose_context_artifacts import build_patient_dose_lattice_context_artifact_plan
 from mc.simulation.per_patient.dose_context_artifacts import build_patient_dose_localization_context_artifact_plan
+from mc.simulation.per_patient.dose_context_artifacts import open_patient_dose_zarr_array_artifact
+from mc.simulation.per_patient.dose_context_artifacts import patient_dose_lattice_context_array_payload
+from mc.simulation.per_patient.dose_context_artifacts import patient_dose_localization_context_array_payload
+from mc.simulation.per_patient.dose_context_artifacts import write_patient_dose_context_zarr_arrays
 
 
 class DoseContextArtifactPlanTests(unittest.TestCase):
@@ -93,6 +99,64 @@ class DoseContextArtifactPlanTests(unittest.TestCase):
             plan.to_patient_artifact_index(run_id="run_1").artifacts_by_id["dose_biopsy_002_nearest_neighbour_rows"].storage_format,
             "parquet",
         )
+
+    def test_write_and_lazy_read_lattice_zarr_arrays(self) -> None:
+        lattice_context = PatientDoseLatticeContext(
+            patient_uid="synthetic_patient",
+            localization_kind="dose",
+            dose_reference_dict={},
+            source_dose_and_gradient_array=np.arange(84, dtype=np.float32).reshape(2, 3, 14),
+            localization_map_array=np.arange(42, dtype=np.float32).reshape(2, 3, 7),
+            localization_map_flattened=np.arange(42, dtype=np.float32).reshape(6, 7),
+            physical_coordinates=np.arange(18, dtype=np.float64).reshape(6, 3),
+            sampled_values=np.arange(6, dtype=np.float64),
+            kdtree=None,
+            result_column=MC_DOSE_VALUE_COLUMN,
+            output_key="dose_values",
+            kdtree_key="dose_kdtree",
+        )
+        plan = build_patient_dose_lattice_context_artifact_plan(lattice_context)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            written_paths = write_patient_dose_context_zarr_arrays(
+                plan,
+                patient_dose_lattice_context_array_payload(lattice_context),
+                Path(temporary_directory),
+            )
+            reader = open_patient_dose_zarr_array_artifact(plan.artifact_refs[0], Path(temporary_directory))
+
+            self.assertTrue(written_paths["dose_lattice_context"].exists())
+            self.assertEqual(reader.dataset_shape("physical_coordinates"), (6, 3))
+            np.testing.assert_array_equal(reader.read_array("sampled_values", np.s_[2:5]), np.array([2.0, 3.0, 4.0]))
+            self.assertEqual(reader.open_group().attrs["artifact_ref"]["artifact_id"], "dose_lattice_context")
+
+    def test_write_localization_zarr_array_ignores_parquet_table_spec(self) -> None:
+        outputs = PatientDoseLocalizationOutputs(
+            localization_kind="dose",
+            result_column=MC_DOSE_VALUE_COLUMN,
+            output_key="dose_values",
+            nearest_neighbour_dataframe=_FakeNearestNeighbourRows(),
+            values_by_point_nominal_and_trials=np.arange(12, dtype=np.float64).reshape(4, 3),
+        )
+        plan = build_patient_dose_localization_context_artifact_plan(
+            outputs,
+            patient_uid="synthetic_patient",
+            biopsy_index=2,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            written_paths = write_patient_dose_context_zarr_arrays(
+                plan,
+                patient_dose_localization_context_array_payload(outputs),
+                Path(temporary_directory),
+            )
+            reader = open_patient_dose_zarr_array_artifact(plan.artifact_refs[0], Path(temporary_directory))
+
+            self.assertEqual(tuple(written_paths), ("dose_biopsy_002_localization_values",))
+            np.testing.assert_array_equal(
+                reader.read_array("values_by_point_nominal_and_trials", np.s_[:, 1]),
+                np.array([1.0, 4.0, 7.0, 10.0]),
+            )
 
 
 class _FakeNearestNeighbourRows:
