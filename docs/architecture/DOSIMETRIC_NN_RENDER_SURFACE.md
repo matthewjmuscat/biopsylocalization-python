@@ -347,6 +347,34 @@ runnable as many times as needed for figure tuning. Changing display thresholds,
 trial selections, vector thinning, camera position, or renderer backend should
 not require rerunning the main algorithm.
 
+Operationally, the current boundary is split in two:
+
+- Inline patient-runner capture is toggleable through
+  `PatientRunnerScientificConfigBuildContext(write_dose_context_artifacts=True)`
+  or an equivalent `PatientMCSimulationScientificConfig` value. This writes the
+  retained dose context artifacts during the MC simulation stage finalization
+  boundary.
+- Rendering remains post-run. After the run, inspect the generated patient
+  context index with:
+
+```bash
+PYTHONPATH=python_files_dcm_meta_based pipenv run python -m mc.visualization.dose_nn_context_render_service \
+  --patient-artifact-index <patient_output_dir>/context/manifest.json \
+  --list-contexts
+```
+
+Then materialize a saved scene for a selected biopsy with:
+
+```bash
+PYTHONPATH=python_files_dcm_meta_based pipenv run python -m mc.visualization.dose_nn_context_render_service \
+  --patient-artifact-index <patient_output_dir>/context/manifest.json \
+  --output-root <patient_output_dir> \
+  --biopsy-index <biopsy_index> \
+  --scene-artifact-dir <patient_output_dir>/render_scenes/dose_nn_biopsy_<biopsy_index> \
+  --scene-id dose_nn_biopsy_<biopsy_index> \
+  --overwrite
+```
+
 The same boundary should support two export modes:
 
 - interactive export, where a GUI button saves the currently viewed rendered
