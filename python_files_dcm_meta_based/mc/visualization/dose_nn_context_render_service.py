@@ -138,19 +138,19 @@ def materialize_and_run_dose_nn_context_selector_session(
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for materializing and optionally launching a dose NN context render."""
     args = _build_argument_parser().parse_args(argv)
+    patient_artifact_index = _resolve_patient_artifact_index_path(args)
     if bool(args.list_contexts):
-        index = read_patient_artifact_index(args.patient_artifact_index)
+        index = read_patient_artifact_index(patient_artifact_index)
         _print_available_contexts(index.artifacts, localization_kind=args.localization_kind)
         return 0
 
-    output_root = _required_cli_arg(args.output_root, "--output-root")
-    scene_artifact_dir = _required_cli_arg(args.scene_artifact_dir, "--scene-artifact-dir")
-    scene_id = _required_cli_arg(args.scene_id, "--scene-id")
+    output_root = _resolve_output_root(args)
+    scene_id = _resolve_scene_id(args)
+    scene_artifact_dir = _resolve_scene_artifact_dir(args, output_root=output_root, scene_id=scene_id)
     if bool(args.launch_selector):
-        if args.export_dir is None:
-            raise ValueError("--export-dir is required when --launch-selector is used")
+        export_dir = _resolve_export_dir(args, output_root=output_root)
         result = materialize_and_run_dose_nn_context_selector_session(
-            patient_artifact_index_path=args.patient_artifact_index,
+            patient_artifact_index_path=patient_artifact_index,
             output_root=output_root,
             lattice_artifact_id=args.lattice_artifact_id,
             render_context_artifact_id=args.render_context_artifact_id,
@@ -158,16 +158,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             biopsy_index=args.biopsy_index,
             scene_artifact_dir=scene_artifact_dir,
             scene_id=scene_id,
-            export_dir=args.export_dir,
+            export_dir=export_dir,
             scene_search_root=args.scene_search_root,
-            suggested_export_root=args.suggested_export_root,
+            suggested_export_root=args.suggested_export_root or export_dir,
             overwrite=bool(args.overwrite),
         )
         print("[dose-nn-context-render] materialized {}".format(result.materialization.scene_artifact_dir))
         return 0
 
     result = materialize_dose_nn_saved_scene_artifact_from_patient_index(
-        patient_artifact_index_path=args.patient_artifact_index,
+        patient_artifact_index_path=patient_artifact_index,
         output_root=output_root,
         lattice_artifact_id=args.lattice_artifact_id,
         render_context_artifact_id=args.render_context_artifact_id,
@@ -185,7 +185,8 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Materialize a dose NN saved scene from retained context artifacts.",
     )
-    parser.add_argument("--patient-artifact-index", required=True, type=Path)
+    parser.add_argument("--patient-dir", required=False, type=Path)
+    parser.add_argument("--patient-artifact-index", required=False, type=Path)
     parser.add_argument("--output-root", required=False, type=Path)
     parser.add_argument("--lattice-artifact-id", default=None)
     parser.add_argument("--render-context-artifact-id", default=None)
@@ -200,6 +201,44 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scene-search-root", type=Path, default=None)
     parser.add_argument("--suggested-export-root", type=Path, default=None)
     return parser
+
+
+def _resolve_patient_artifact_index_path(args: argparse.Namespace) -> Path:
+    if args.patient_artifact_index is not None:
+        return Path(args.patient_artifact_index)
+    if args.patient_dir is not None:
+        return Path(args.patient_dir).joinpath("context", "manifest.json")
+    raise ValueError("--patient-artifact-index or --patient-dir is required")
+
+
+def _resolve_output_root(args: argparse.Namespace) -> Path:
+    if args.output_root is not None:
+        return Path(args.output_root)
+    if args.patient_dir is not None:
+        return Path(args.patient_dir)
+    raise ValueError("--output-root is required unless --patient-dir is used")
+
+
+def _resolve_scene_id(args: argparse.Namespace) -> str:
+    if args.scene_id is not None:
+        return str(args.scene_id)
+    if args.biopsy_index is not None:
+        return "dose_nn_biopsy_{}".format(int(args.biopsy_index))
+    if args.render_context_artifact_id is not None:
+        return "dose_nn_{}".format(_normal_token(args.render_context_artifact_id))
+    return "dose_nn_context"
+
+
+def _resolve_scene_artifact_dir(args: argparse.Namespace, *, output_root: Path, scene_id: str) -> Path:
+    if args.scene_artifact_dir is not None:
+        return Path(args.scene_artifact_dir)
+    return Path(output_root).joinpath("render_scenes", scene_id)
+
+
+def _resolve_export_dir(args: argparse.Namespace, *, output_root: Path) -> Path:
+    if args.export_dir is not None:
+        return Path(args.export_dir)
+    return Path(output_root).joinpath("render_exports")
 
 
 def _resolve_lattice_artifact_ref(

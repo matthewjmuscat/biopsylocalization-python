@@ -314,6 +314,7 @@ def run_saved_dose_nn_scene_controlled_selector_session(
         from .dose_nn_tk_render_controls import TkDoseNNRenderControlSelectionAdapter
 
         resolved_control_dialog_adapter = TkDoseNNRenderControlSelectionAdapter()
+    resolved_settings = settings or DoseNNPyVistaRenderSettings(off_screen=False)
 
     current_control_selection: dict[str, DoseNNRenderControlSelection | None] = {
         "value": initial_control_selection,
@@ -335,14 +336,24 @@ def run_saved_dose_nn_scene_controlled_selector_session(
             if control_selection is None:
                 continue
             current_control_selection["value"] = control_selection
-            render_saved_dose_nn_scene_selection_pyvista(
-                options,
-                (selected_option_key,),
-                output_dir,
-                settings=settings,
-                control_selection=control_selection,
-                overwrite=overwrite,
-            )
+            try:
+                results = render_saved_dose_nn_scene_selection_pyvista(
+                    options,
+                    (selected_option_key,),
+                    output_dir,
+                    settings=resolved_settings,
+                    control_selection=control_selection,
+                    overwrite=overwrite,
+                )
+            except Exception as exc:
+                notify_error = getattr(resolved_control_dialog_adapter, "notify_render_error", None)
+                if callable(notify_error):
+                    notify_error(exc)
+                    continue
+                raise
+            notify_result = getattr(resolved_control_dialog_adapter, "notify_render_result", None)
+            if callable(notify_result):
+                notify_result(results)
 
     return run_render_broker_session(
         request,

@@ -133,9 +133,12 @@ def export_dose_nn_scene_pyvista(
     prepared_scene = prepare_dose_nn_render_scene(scene, resolved_config)
     plotter = build_pyvista_dose_nn_plotter(prepared_scene, settings=resolved_settings)
     try:
-        plotter.screenshot(str(resolved_output_path))
+        if bool(resolved_settings.off_screen):
+            plotter.screenshot(str(resolved_output_path))
+        else:
+            plotter.show(screenshot=str(resolved_output_path), auto_close=bool(close_plotter))
     finally:
-        if close_plotter:
+        if close_plotter and bool(resolved_settings.off_screen):
             plotter.close()
 
     _write_json(

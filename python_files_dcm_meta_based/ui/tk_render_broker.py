@@ -20,7 +20,7 @@ from ui.render_broker import (
 
 
 class TkRenderBrokerDialogAdapter:
-    def __init__(self, default_geometry: str = "1260x920", min_size=(1080, 760)):
+    def __init__(self, default_geometry: str = "980x720", min_size=(760, 520)):
         self.default_geometry = str(default_geometry)
         self.min_size = tuple(min_size)
 
@@ -121,7 +121,11 @@ class TkRenderBrokerDialogAdapter:
             "<Configure>",
             lambda event: main_canvas.configure(scrollregion=main_canvas.bbox("all")),
         )
-        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        scrollable_window_id = main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.bind(
+            "<Configure>",
+            lambda event: main_canvas.itemconfigure(scrollable_window_id, width=event.width),
+        )
         main_canvas.configure(yscrollcommand=main_scrollbar.set)
         main_canvas.pack(side="left", fill="both", expand=True)
         main_scrollbar.pack(side="right", fill="y")

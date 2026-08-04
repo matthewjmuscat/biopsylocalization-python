@@ -267,6 +267,7 @@ class DoseNNSelectorTests(unittest.TestCase):
         self.assertEqual(dialog_adapter.call_count, 2)
         self.assertEqual(control_adapter.option.scene_id, "synthetic_scene")
         render_mock.assert_called_once()
+        self.assertFalse(render_mock.call_args.kwargs["settings"].off_screen)
         self.assertFalse(render_mock.call_args.kwargs["control_selection"].show_lattice_points)
         self.assertTrue(render_mock.call_args.kwargs["control_selection"].show_dose_colorwash)
 

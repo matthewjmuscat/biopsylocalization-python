@@ -13,7 +13,7 @@ from .dose_nn_render_controls import normalize_dose_nn_render_control_selection
 class TkDoseNNRenderControlSelectionAdapter:
     """Collect dose-specific render controls without extending the generic broker."""
 
-    def __init__(self, default_geometry: str = "820x760", min_size: tuple[int, int] = (760, 680)):
+    def __init__(self, default_geometry: str = "780x640", min_size: tuple[int, int] = (640, 460)):
         self.default_geometry = str(default_geometry)
         self.min_size = tuple(int(value) for value in min_size)
 
@@ -38,8 +38,21 @@ class TkDoseNNRenderControlSelectionAdapter:
         root.attributes("-topmost", True)
         root.after(250, lambda: root.attributes("-topmost", False))
 
-        frame = ttk.Frame(root, padding=14)
-        frame.pack(fill="both", expand=True)
+        canvas = tk.Canvas(root, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+        frame = ttk.Frame(canvas, padding=14)
+        frame.bind(
+            "<Configure>",
+            lambda event: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        frame_window_id = canvas.create_window((0, 0), window=frame, anchor="nw")
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(frame_window_id, width=event.width),
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         frame.columnconfigure(1, weight=1)
 
         scene_label = str(getattr(option, "display_label", getattr(option, "scene_id", "saved scene")))
@@ -177,6 +190,37 @@ class TkDoseNNRenderControlSelectionAdapter:
         root.protocol("WM_DELETE_WINDOW", _cancel)
         root.mainloop()
         return result_ref["value"]
+
+    def notify_render_result(self, results: tuple[Any, ...]) -> None:
+        """Show a completion message for GUI-launched renders."""
+        import tkinter as tk
+        from tkinter import messagebox
+
+        if len(results) == 0:
+            return
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            screenshot_paths = [str(getattr(result, "screenshot_path", result)) for result in tuple(results)]
+            messagebox.showinfo(
+                "Dose NN render complete",
+                "Wrote render output:\n{}".format("\n".join(screenshot_paths)),
+                parent=root,
+            )
+        finally:
+            root.destroy()
+
+    def notify_render_error(self, error: BaseException) -> None:
+        """Show render errors without losing the selector loop."""
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            messagebox.showerror("Dose NN render failed", str(error), parent=root)
+        finally:
+            root.destroy()
 
 
 def _add_labeled_entry(frame: Any, row: int, label: str, variable: Any, hint: str) -> int:

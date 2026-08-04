@@ -115,6 +115,41 @@ class DoseNNContextRenderServiceTests(unittest.TestCase):
         self.assertIn("dose_lattice_context", stdout.getvalue())
         self.assertIn("dose_biopsy_002_render_context", stdout.getvalue())
 
+    def test_cli_patient_dir_shortcut_lists_contexts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = _write_context_fixture(Path(temporary_directory))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    (
+                        "--patient-dir",
+                        str(fixture.output_root),
+                        "--list-contexts",
+                    )
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("dose_lattice_context", stdout.getvalue())
+        self.assertIn("dose_biopsy_002_render_context", stdout.getvalue())
+
+    def test_cli_patient_dir_shortcut_materializes_with_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = _write_context_fixture(Path(temporary_directory))
+            exit_code = main(
+                (
+                    "--patient-dir",
+                    str(fixture.output_root),
+                    "--biopsy-index",
+                    "2",
+                    "--overwrite",
+                )
+            )
+            scene_artifact_dir = fixture.output_root.joinpath("render_scenes", "dose_nn_biopsy_2")
+            loaded_scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(loaded_scene.metadata.biopsy_index, 2)
+
     def test_auto_resolves_context_artifacts_by_biopsy_index(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             fixture = _write_context_fixture(Path(temporary_directory))

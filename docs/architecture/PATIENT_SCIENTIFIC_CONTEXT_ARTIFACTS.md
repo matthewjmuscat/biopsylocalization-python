@@ -208,6 +208,32 @@ selector launch is a separate default-off option,
 `launch_dose_nn_render_selector_after_persisting_artifacts`, and must run only
 after the persisted context artifact snapshot exists.
 
+For post-run dose NN renderer inspection, the preferred user-facing utility is
+`mc.visualization.dose_nn_context_render_service`. The simplest invocation uses
+the patient-scientific-runner patient directory, which contains
+`context/manifest.json`, and lets the utility derive the manifest path, output
+root, saved-scene directory, scene ID, and export directory:
+
+```bash
+PYTHONPATH=python_files_dcm_meta_based pipenv run python -m mc.visualization.dose_nn_context_render_service \
+  --patient-dir "$PATIENT_DIR" \
+  --list-contexts
+
+PYTHONPATH=python_files_dcm_meta_based pipenv run python -m mc.visualization.dose_nn_context_render_service \
+  --patient-dir "$PATIENT_DIR" \
+  --biopsy-index 0 \
+  --launch-selector \
+  --overwrite
+```
+
+The selector opens the saved-scene picker, then a dose-control dialog, then an
+interactive PyVista render window. It also writes a screenshot and provenance
+sidecar under the patient directory's `render_exports` subtree.
+
+Advanced calls may still pass `--patient-artifact-index`, `--output-root`,
+`--scene-artifact-dir`, `--scene-id`, and `--export-dir` explicitly, but routine
+post-run inspection should not require those paths.
+
 Do not turn the master structure reference dictionary into the new artifact
 registry. It can remain a legacy in-memory source, oracle, or adapter input while
 the migration is in progress. The durable boundary should be new code-owned
