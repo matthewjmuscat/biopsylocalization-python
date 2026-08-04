@@ -188,8 +188,10 @@ Suggested starting inventory:
   declared physical meaning and prevents silent frame mixing.
 - Structure preprocessing: structure IDs, source ROI names, voxelization or
   surface parameters, sampled point arrays, masks, centroids, and source frame
-  references. Reason: allows geometry audit, rendering, and downstream distance
-  calculations without serializing one large mutable dictionary.
+  references. Raw contours should allow ragged per-slice or per-ring point
+  counts through offsets/groups instead of assuming a padded dense array.
+  Reason: allows geometry audit, rendering, and downstream distance calculations
+  without serializing one large mutable dictionary.
 - Transformation and uncertainty sampling: sampled trial IDs, random seed or
   random-variable provenance, transformation-specific parameters, and resolved
   per-trial maps or query coordinates. Reason: preserves both audit lineage and
@@ -597,7 +599,9 @@ to renderer backends. The generic broker remains domain-agnostic.
 Initial implementation status: saved-scene catalog and PyVista dispatch helper
 complete. The selector can discover compact render-scene artifacts from their
 manifests without loading arrays, build broker-compatible scene choice options,
-and render selected options through `dose_nn_render_service.py`.
+and render selected options through `dose_nn_render_service.py`. The generic
+broker now accepts PyVista as a backend choice so the saved-scene selector can
+use the same broker loop as other render surfaces.
 
 ```text
 python_files_dcm_meta_based/mc/visualization/dose_nn_plotly.py

@@ -103,12 +103,19 @@ Validation burden scale: `small`, `medium`, `large`, `massive`.
 - Problem: these are array-native scientific geometry products, but they are
   often bundled with mixed runtime state. That makes it hard to retain geometry
   efficiently, audit coordinate frames, or stream selected structures without
-  loading broad patient dictionaries.
+  loading broad patient dictionaries. Raw contour sets may also have different
+  point counts per z-plane slice or contour ring, so forcing them into a dense
+  `n_slices x n_points x 3` layout would either fail or introduce padded rows
+  that need explicit mask semantics.
 - Recommendation: handle large structure point clouds similarly to dose/MR
   lattices: store them as manifest-backed chunked arrays when large, with JSON
   metadata for structure identity, coordinate frame, units, algorithm/source
   provenance, and retention level. Unlike regular dose lattices, structure sets
-  may be ragged and multi-object, so contracts should include object indexes,
+  may be ragged and multi-object, so raw-contour contracts should prefer flat
+  point arrays plus contour/slice offsets, or per-structure/per-contour groups,
+  over implicit padding. Interpolated or voxelized normalized products can use
+  dense arrays only when the normalization step deliberately creates that shape
+  and records mask/fill semantics. Contracts should include object indexes,
   offsets or per-structure groups, optional topology/mask datasets, and ROI-name
   normalization provenance.
 - Expected storage/performance benefit: medium to large.

@@ -435,8 +435,9 @@ Detailed next pass:
 - Status: initial saved-scene selector layer added. It can discover retained
   scene artifacts from manifests, build stable scene options, and dispatch
   selected saved scenes through the PyVista render service. The generic broker
-  still needs a PyVista-aware control/export model before the Tk dialog should
-  be treated as the primary dose GUI.
+  now supports PyVista as a selectable backend, preserving the existing
+  Open3D/Plotly `both` alias for optimizer-v2. The remaining GUI work is richer
+  dose-specific controls and export settings, not basic backend selection.
 
 ### Phase 6: Real-Data Capture Path
 

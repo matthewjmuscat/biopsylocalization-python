@@ -9,6 +9,13 @@ import re
 
 from ui.render_broker import RenderBrokerChoiceGroup
 from ui.render_broker import RenderBrokerChoiceOption
+from ui.render_broker import RenderBrokerDecision
+from ui.render_broker import RenderBrokerDialogAdapter
+from ui.render_broker import RenderBrokerRequest
+from ui.render_broker import RenderBrokerSessionState
+from ui.render_broker import RenderBrokerTimeoutPolicy
+from ui.render_broker import render_backend_includes
+from ui.render_broker import run_render_broker_session
 
 from .dose_nn_pyvista import DoseNNPyVistaExportResult
 from .dose_nn_pyvista import DoseNNPyVistaRenderSettings
@@ -149,9 +156,97 @@ def build_saved_dose_nn_scene_choice_group(
         description="Select a retained scene artifact for post-run PyVista rendering.",
         selection_mode="single",
         options=choice_options,
-        default_backend="none",
+        default_backend="pyvista",
         render_action_label="Render saved scene",
         empty_state_message="No saved dose NN scene artifacts were found.",
+        allow_pyvista=True,
+    )
+
+
+def build_saved_dose_nn_scene_broker_request(
+    options: Sequence[DoseNNSavedSceneOption],
+    *,
+    summary_lines: Sequence[str] = (),
+    timeout_policy: RenderBrokerTimeoutPolicy | None = None,
+) -> RenderBrokerRequest:
+    """Build a broker request for saved dose NN scene review."""
+    return RenderBrokerRequest(
+        title="Dose NN saved-scene renderer",
+        summary_lines=tuple(str(summary_line) for summary_line in tuple(summary_lines)),
+        choice_groups=(build_saved_dose_nn_scene_choice_group(options),),
+        continue_button_label="Continue without rendering",
+        timeout_policy=timeout_policy,
+    )
+
+
+def handle_saved_dose_nn_scene_broker_decision_pyvista(
+    decision: RenderBrokerDecision,
+    options: Mapping[str, DoseNNSavedSceneOption] | Sequence[DoseNNSavedSceneOption],
+    output_dir: Path | str,
+    *,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    overwrite: bool = False,
+) -> tuple[DoseNNPyVistaExportResult, ...]:
+    """Render selected saved scenes from a broker decision through PyVista."""
+    if decision.group_key != DOSE_NN_SAVED_SCENE_GROUP_KEY:
+        raise ValueError("unsupported dose NN render broker group: {}".format(decision.group_key))
+    if not render_backend_includes(decision.render_backend, "pyvista"):
+        raise ValueError("dose NN saved-scene selector currently supports PyVista rendering only")
+    return render_saved_dose_nn_scene_selection_pyvista(
+        options,
+        decision.selected_option_keys,
+        output_dir,
+        config=config,
+        settings=settings,
+        overwrite=overwrite,
+    )
+
+
+def run_saved_dose_nn_scene_selector_session(
+    search_root: Path | str,
+    output_dir: Path | str,
+    *,
+    suggested_export_root: Path | str | None = None,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    dialog_adapter: RenderBrokerDialogAdapter | None = None,
+    timeout_policy: RenderBrokerTimeoutPolicy | None = None,
+    initial_session_state: RenderBrokerSessionState | None = None,
+    overwrite: bool = False,
+) -> RenderBrokerSessionState:
+    """Run the saved-scene selector loop through the generic render broker."""
+    options = discover_saved_dose_nn_scene_options(
+        search_root,
+        suggested_export_root=suggested_export_root,
+    )
+    request = build_saved_dose_nn_scene_broker_request(
+        options,
+        summary_lines=("{} saved scene artifact(s) discovered.".format(len(options)),),
+        timeout_policy=timeout_policy,
+    )
+
+    resolved_dialog_adapter = dialog_adapter
+    if resolved_dialog_adapter is None:
+        from ui.tk_render_broker import TkRenderBrokerDialogAdapter
+
+        resolved_dialog_adapter = TkRenderBrokerDialogAdapter()
+
+    def _handle_decision(decision: RenderBrokerDecision) -> None:
+        handle_saved_dose_nn_scene_broker_decision_pyvista(
+            decision,
+            options,
+            output_dir,
+            config=config,
+            settings=settings,
+            overwrite=overwrite,
+        )
+
+    return run_render_broker_session(
+        request,
+        resolved_dialog_adapter,
+        _handle_decision,
+        initial_session_state=initial_session_state,
     )
 
 

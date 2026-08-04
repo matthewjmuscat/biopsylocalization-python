@@ -8,6 +8,10 @@ from pathlib import Path
 
 import numpy as np
 
+from ui.render_broker import RenderBrokerDecision
+from ui.render_broker import RenderBrokerDialogResult
+from ui.render_broker import RenderBrokerSessionState
+
 from mc.visualization.dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from mc.visualization.dose_nn_pyvista import is_pyvista_available
 from mc.visualization.dose_nn_scene import DoseNNRenderConfig
@@ -16,9 +20,12 @@ from mc.visualization.dose_nn_scene import build_dose_nn_render_scene
 from mc.visualization.dose_nn_scene_artifacts import DOSE_NN_RENDER_SCENE_MANIFEST_FILENAME
 from mc.visualization.dose_nn_scene_artifacts import write_dose_nn_render_scene_artifact
 from mc.visualization.dose_nn_selector import DOSE_NN_SAVED_SCENE_GROUP_KEY
+from mc.visualization.dose_nn_selector import build_saved_dose_nn_scene_broker_request
 from mc.visualization.dose_nn_selector import build_saved_dose_nn_scene_choice_group
 from mc.visualization.dose_nn_selector import discover_saved_dose_nn_scene_options
+from mc.visualization.dose_nn_selector import handle_saved_dose_nn_scene_broker_decision_pyvista
 from mc.visualization.dose_nn_selector import render_saved_dose_nn_scene_selection_pyvista
+from mc.visualization.dose_nn_selector import run_saved_dose_nn_scene_selector_session
 
 
 class DoseNNSelectorTests(unittest.TestCase):
@@ -58,12 +65,61 @@ class DoseNNSelectorTests(unittest.TestCase):
 
         self.assertEqual(choice_group.group_key, DOSE_NN_SAVED_SCENE_GROUP_KEY)
         self.assertEqual(choice_group.selection_mode, "single")
+        self.assertTrue(choice_group.allow_pyvista)
+        self.assertEqual(choice_group.default_backend, "pyvista")
         self.assertEqual(choice_group.options[0].option_key, "synthetic_scene")
         self.assertTrue(choice_group.options[0].selected_by_default)
+
+    def test_broker_request_wraps_saved_scene_choice_group(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            options = discover_saved_dose_nn_scene_options(temporary_directory)
+
+        request = build_saved_dose_nn_scene_broker_request(options, summary_lines=("one scene",))
+
+        self.assertEqual(request.title, "Dose NN saved-scene renderer")
+        self.assertEqual(request.summary_lines, ("one scene",))
+        self.assertEqual(request.choice_groups[0].group_key, DOSE_NN_SAVED_SCENE_GROUP_KEY)
 
     def test_render_unknown_saved_scene_option_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown dose NN saved scene option"):
             render_saved_dose_nn_scene_selection_pyvista((), ("missing",), Path("unused"))
+
+    def test_broker_decision_requires_saved_scene_group_and_pyvista(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported dose NN render broker group"):
+            handle_saved_dose_nn_scene_broker_decision_pyvista(
+                RenderBrokerDecision(action="render", group_key="other", render_backend="pyvista"),
+                (),
+                Path("unused"),
+            )
+
+    def test_selector_session_can_continue_without_opening_tk(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            dialog_adapter = _ContinueDialogAdapter()
+
+            session_state = run_saved_dose_nn_scene_selector_session(
+                root,
+                root.joinpath("exports"),
+                dialog_adapter=dialog_adapter,
+            )
+
+        self.assertFalse(session_state.timeout_disabled_for_run)
+        self.assertEqual(dialog_adapter.request.title, "Dose NN saved-scene renderer")
+        self.assertTrue(dialog_adapter.request.choice_groups[0].allow_pyvista)
+        with self.assertRaisesRegex(ValueError, "PyVista"):
+            handle_saved_dose_nn_scene_broker_decision_pyvista(
+                RenderBrokerDecision(
+                    action="render",
+                    group_key=DOSE_NN_SAVED_SCENE_GROUP_KEY,
+                    render_backend="plotly",
+                ),
+                (),
+                Path("unused"),
+            )
 
     def test_render_saved_scene_selection_writes_outputs(self) -> None:
         if not is_pyvista_available():
@@ -105,6 +161,20 @@ class DoseNNSelectorTests(unittest.TestCase):
                         show_scalar_bar=False,
                     ),
                 )
+
+
+class _ContinueDialogAdapter:
+    def __init__(self) -> None:
+        self.request = None
+
+    def collect_selection(self, request, session_state):
+        self.request = request
+        return RenderBrokerDialogResult(
+            decision=RenderBrokerDecision(action="continue"),
+            session_state=RenderBrokerSessionState(
+                timeout_disabled_for_run=session_state.timeout_disabled_for_run,
+            ),
+        )
 
 
 def _synthetic_scene():
