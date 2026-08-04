@@ -595,7 +595,7 @@ def main():
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
     optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # Validation sidecar OFF | impact high: Jun 03 nearest-z helper validation cost about 4.0 h on the 4-patient run; validates grouped nearest-z helper parity against ver5 during optimizer-v2 scoring.
     optimizer_v2_benchmark_isolated_winner_validation_bool = False # Validation sidecar OFF | impact high: adds one extra downstream-comparable winner-validation-like optimizer pass per target structure; validates the final optimizer-v2 winner in isolation.
-    optimizer_v2_render_stage_boundary_candidate_clouds_bool = True # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # Opens one stage-switchable scene per v2 biopsy. Keep False for unattended dose-context artifact runs.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
     optimizer_v2_render_plotly_export_bool = False # HERE # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
@@ -608,7 +608,7 @@ def main():
     optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
     optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
     optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
-    optimizer_v2_render_winner_containment_debug_bool = True # HERE # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
+    optimizer_v2_render_winner_containment_debug_bool = False # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
     optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
     optimizer_v2_render_include_target_points_bool = False # If False, omit the raw DIL point cloud and rely on contour-style target layers instead.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
@@ -713,11 +713,11 @@ def main():
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
     patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
     patient_scientific_runner_mode = "disabled" # Legacy-main hook OFF: standalone process runner now owns new patient-runner execution work.
-    patient_scientific_runner_checkpoint_name = "full_current_pipeline_shadow"
-    patient_scientific_runner_pathway_name = "full_current_pipeline_shadow" # Seventh live-runner slice: adds guidance after current dosimetry.
+    patient_scientific_runner_checkpoint_name = "current_dosimetry_shadow"
+    patient_scientific_runner_pathway_name = "current_dosimetry_shadow" # Dose-context artifact slice: stops after MC output tables, before guidance.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
     patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
-    patient_scientific_runner_include_artifact_writing_bool = True
+    patient_scientific_runner_include_artifact_writing_bool = False
     patient_scientific_runner_write_patient_run_manifests_bool = True
     patient_scientific_runner_write_batch_run_manifest_bool = True
     patient_scientific_runner_write_plan_summary_bool = True
@@ -727,6 +727,12 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = True
     patient_scientific_runner_raise_on_stage_error_bool = False
     patient_scientific_runner_validate_dependencies_bool = True
+    patient_scientific_runner_persist_dose_context_artifacts_bool = False
+    patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = True
+    patient_scientific_runner_dose_context_artifact_localization_kinds = ("dose",)
+    patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = False
+    patient_scientific_runner_dose_nn_render_selector_biopsy_index = None
+    patient_scientific_runner_dose_nn_render_selector_localization_kind = "dose"
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -1094,6 +1100,14 @@ def main():
         stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
         raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
         validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
+        persist_dose_context_artifacts=patient_scientific_runner_persist_dose_context_artifacts_bool,
+        persist_dose_nn_render_context_artifacts=patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool,
+        dose_context_artifact_localization_kinds=patient_scientific_runner_dose_context_artifact_localization_kinds,
+        launch_dose_nn_render_selector_after_persisting_artifacts=(
+            patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool
+        ),
+        dose_nn_render_selector_biopsy_index=patient_scientific_runner_dose_nn_render_selector_biopsy_index,
+        dose_nn_render_selector_localization_kind=patient_scientific_runner_dose_nn_render_selector_localization_kind,
     )
     pipeline_config = PipelineConfig(
         ui=RuntimeUIConfig(
@@ -1789,6 +1803,24 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = patient_scientific_runner_config.stop_on_stage_error
     patient_scientific_runner_raise_on_stage_error_bool = patient_scientific_runner_config.raise_on_stage_error
     patient_scientific_runner_validate_dependencies_bool = patient_scientific_runner_config.validate_dependencies
+    patient_scientific_runner_persist_dose_context_artifacts_bool = (
+        patient_scientific_runner_config.persist_dose_context_artifacts
+    )
+    patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = (
+        patient_scientific_runner_config.persist_dose_nn_render_context_artifacts
+    )
+    patient_scientific_runner_dose_context_artifact_localization_kinds = (
+        patient_scientific_runner_config.dose_context_artifact_localization_kinds
+    )
+    patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = (
+        patient_scientific_runner_config.launch_dose_nn_render_selector_after_persisting_artifacts
+    )
+    patient_scientific_runner_dose_nn_render_selector_biopsy_index = (
+        patient_scientific_runner_config.dose_nn_render_selector_biopsy_index
+    )
+    patient_scientific_runner_dose_nn_render_selector_localization_kind = (
+        patient_scientific_runner_config.dose_nn_render_selector_localization_kind
+    )
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
@@ -6202,6 +6234,22 @@ def main():
                         mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                         parallel_pool=parallel_pool,
                         runtime_logger=runtime_logger,
+                        persist_dose_context_artifacts=patient_scientific_runner_persist_dose_context_artifacts_bool,
+                        persist_dose_nn_render_context_artifacts=(
+                            patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool
+                        ),
+                        dose_context_artifact_localization_kinds=(
+                            patient_scientific_runner_dose_context_artifact_localization_kinds
+                        ),
+                        launch_dose_nn_render_selector_after_persisting_artifacts=(
+                            patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool
+                        ),
+                        dose_nn_render_selector_biopsy_index=(
+                            patient_scientific_runner_dose_nn_render_selector_biopsy_index
+                        ),
+                        dose_nn_render_selector_localization_kind=(
+                            patient_scientific_runner_dose_nn_render_selector_localization_kind
+                        ),
                         metadata={"source": "biopsy_localization_convex_main"},
                     ),
                     output_root=patient_scientific_runner_output_root,
