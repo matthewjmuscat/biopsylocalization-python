@@ -88,6 +88,8 @@ class DoseNNPreparedScene:
     config: DoseNNRenderConfig
     lattice_points: np.ndarray
     lattice_doses: np.ndarray
+    colorwash_lattice_points: np.ndarray
+    colorwash_lattice_doses: np.ndarray
     original_point_indices: np.ndarray
     trial_numbers: np.ndarray
     biopsy_points: np.ndarray
@@ -234,6 +236,8 @@ def prepare_dose_nn_render_scene(
         config=resolved_config,
         lattice_points=scene.lattice_points[lattice_indices],
         lattice_doses=scene.lattice_doses[lattice_indices],
+        colorwash_lattice_points=scene.lattice_points,
+        colorwash_lattice_doses=scene.lattice_doses,
         original_point_indices=scene.original_point_indices[row_indices],
         trial_numbers=scene.trial_numbers[row_indices],
         biopsy_points=biopsy_points,

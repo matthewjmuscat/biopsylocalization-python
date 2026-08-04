@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .dose_nn_render_controls import DOSE_NN_DOSE_COLOR_SCALE_MODES
 from .dose_nn_render_controls import DOSE_NN_COLORWASH_STYLES
 from .dose_nn_render_controls import DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER
 from .dose_nn_render_controls import DoseNNRenderControlSelection
@@ -13,7 +14,7 @@ from .dose_nn_render_controls import normalize_dose_nn_render_control_selection
 class TkDoseNNRenderControlSelectionAdapter:
     """Collect dose-specific render controls without extending the generic broker."""
 
-    def __init__(self, default_geometry: str = "780x640", min_size: tuple[int, int] = (640, 460)):
+    def __init__(self, default_geometry: str = "980x840", min_size: tuple[int, int] = (760, 580)):
         self.default_geometry = str(default_geometry)
         self.min_size = tuple(int(value) for value in min_size)
 
@@ -92,6 +93,9 @@ class TkDoseNNRenderControlSelectionAdapter:
         radius_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.spatial_radius_mm))
         biopsy_stride_var = tk.StringVar(value=str(resolved_initial_selection.biopsy_point_stride))
         vector_stride_var = tk.StringVar(value=str(resolved_initial_selection.vector_stride))
+        color_scale_mode_var = tk.StringVar(value=str(resolved_initial_selection.dose_color_scale_mode))
+        color_scale_min_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.dose_color_scale_min))
+        color_scale_max_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.dose_color_scale_max))
         opacity_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_opacity))
         colorwash_point_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_size))
         colorwash_style_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_style))
@@ -107,9 +111,19 @@ class TkDoseNNRenderControlSelectionAdapter:
 
         current_row = 2
         current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all available")
-        current_row = _add_labeled_entry(frame, current_row, "Reference trials", reference_trials_var, "blank = none")
+        current_row = _add_labeled_entry(frame, current_row, "Nominal trial", reference_trials_var, "usually 0 = non-transformed position")
         current_row = _add_labeled_entry(frame, current_row, "Dose min", dose_min_var, "blank = no lower cutoff")
         current_row = _add_labeled_entry(frame, current_row, "Dose max", dose_max_var, "blank = no upper cutoff")
+        ttk.Label(frame, text="Dose color scaling").grid(row=current_row, column=0, sticky="w", pady=(4, 4))
+        ttk.Combobox(
+            frame,
+            textvariable=color_scale_mode_var,
+            values=DOSE_NN_DOSE_COLOR_SCALE_MODES,
+            state="readonly",
+        ).grid(row=current_row, column=1, sticky="ew", pady=(4, 4))
+        current_row += 1
+        current_row = _add_labeled_entry(frame, current_row, "Color scale min", color_scale_min_var, "blank = use dose data minimum")
+        current_row = _add_labeled_entry(frame, current_row, "Color scale max", color_scale_max_var, "blank = use dose data maximum")
         current_row = _add_labeled_entry(frame, current_row, "Max lattice points", max_lattice_var, "blank = no cap")
         current_row = _add_labeled_entry(frame, current_row, "Spatial radius mm", radius_var, "blank = no radius filter")
         current_row = _add_labeled_entry(frame, current_row, "Biopsy stride", biopsy_stride_var, "positive integer")
@@ -137,7 +151,7 @@ class TkDoseNNRenderControlSelectionAdapter:
         layers_frame.columnconfigure(0, weight=1)
         layers_frame.columnconfigure(1, weight=1)
         _add_checkbox(layers_frame, 0, 0, "Biopsy points", show_biopsy_var)
-        _add_checkbox(layers_frame, 0, 1, "Reference biopsy points", show_reference_var)
+        _add_checkbox(layers_frame, 0, 1, "Nominal biopsy position", show_reference_var)
         _add_checkbox(layers_frame, 1, 0, "Dose lattice points", show_lattice_var)
         _add_checkbox(layers_frame, 1, 1, "Dose colorwash", show_colorwash_var)
         _add_checkbox(layers_frame, 2, 0, "NN dose points", show_nn_points_var)
@@ -165,6 +179,9 @@ class TkDoseNNRenderControlSelectionAdapter:
                     show_lattice_points=bool(show_lattice_var.get()),
                     show_dose_colorwash=bool(show_colorwash_var.get()),
                     dose_colorwash_style=str(colorwash_style_var.get()),
+                    dose_color_scale_mode=str(color_scale_mode_var.get()),
+                    dose_color_scale_min=_parse_optional_float(color_scale_min_var.get()),
+                    dose_color_scale_max=_parse_optional_float(color_scale_max_var.get()),
                     dose_colorwash_opacity=float(opacity_var.get()),
                     dose_colorwash_point_size=float(colorwash_point_size_var.get()),
                     show_nearest_neighbour_points=bool(show_nn_points_var.get()),

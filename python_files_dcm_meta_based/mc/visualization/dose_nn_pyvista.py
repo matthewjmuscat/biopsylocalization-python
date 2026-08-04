@@ -23,6 +23,9 @@ class DoseNNPyVistaRenderSettings:
     window_size: tuple[int, int] = (1200, 900)
     background_color: str = "white"
     dose_colormap: str = "viridis"
+    dose_color_scale_mode: str = "linear"
+    dose_color_scale_min: float | None = None
+    dose_color_scale_max: float | None = None
     lattice_point_size: float = 5.0
     dose_colorwash_style: str = "points"
     dose_colorwash_point_size: float = 12.0
@@ -277,6 +280,7 @@ def _add_lattice_points(
         render_points_as_spheres=True,
         show_scalar_bar=bool(settings.show_scalar_bar),
         scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        **_dose_scalar_kwargs(settings),
     )
 
 
@@ -286,7 +290,7 @@ def _add_dose_colorwash(
     prepared_scene: DoseNNPreparedScene,
     settings: DoseNNPyVistaRenderSettings,
 ) -> None:
-    if prepared_scene.lattice_points.shape[0] == 0:
+    if prepared_scene.colorwash_lattice_points.shape[0] == 0:
         return
     resolved_style = str(settings.dose_colorwash_style).strip().lower()
     if resolved_style in ("point", "points"):
@@ -310,6 +314,8 @@ def _add_dose_point_colorwash(
     prepared_scene: DoseNNPreparedScene,
     settings: DoseNNPyVistaRenderSettings,
 ) -> None:
+    if prepared_scene.lattice_points.shape[0] == 0:
+        return
     point_cloud = pv.PolyData(prepared_scene.lattice_points)
     point_cloud["dose"] = prepared_scene.lattice_doses
     plotter.add_mesh(
@@ -322,6 +328,7 @@ def _add_dose_point_colorwash(
         render_points_as_spheres=False,
         show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
         scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        **_dose_scalar_kwargs(settings),
     )
 
 
@@ -331,7 +338,11 @@ def _add_dose_volume_colorwash(
     prepared_scene: DoseNNPreparedScene,
     settings: DoseNNPyVistaRenderSettings,
 ) -> None:
-    dose_grid = _rectilinear_dose_grid_from_lattice(pv, prepared_scene.lattice_points, prepared_scene.lattice_doses)
+    dose_grid = _rectilinear_dose_grid_from_lattice(
+        pv,
+        prepared_scene.colorwash_lattice_points,
+        prepared_scene.colorwash_lattice_doses,
+    )
     plotter.add_volume(
         dose_grid,
         scalars="dose",
@@ -340,7 +351,37 @@ def _add_dose_volume_colorwash(
         opacity=float(settings.dose_colorwash_opacity),
         show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
         scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        **_dose_scalar_kwargs(settings),
     )
+
+
+def _dose_scalar_kwargs(settings: DoseNNPyVistaRenderSettings) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    dose_color_scale_mode = _normalize_dose_color_scale_mode(settings.dose_color_scale_mode)
+    dose_color_scale_min = settings.dose_color_scale_min
+    dose_color_scale_max = settings.dose_color_scale_max
+    if dose_color_scale_min is not None or dose_color_scale_max is not None:
+        if dose_color_scale_min is None or dose_color_scale_max is None:
+            raise ValueError("dose color scale min and max must both be set, or both blank")
+        resolved_min = float(dose_color_scale_min)
+        resolved_max = float(dose_color_scale_max)
+        if resolved_min >= resolved_max:
+            raise ValueError("dose color scale min must be less than max")
+        if dose_color_scale_mode == "log" and resolved_min <= 0.0:
+            raise ValueError("log dose color scaling requires dose color scale min > 0")
+        kwargs["clim"] = (resolved_min, resolved_max)
+    if dose_color_scale_mode == "log":
+        kwargs["log_scale"] = True
+    return kwargs
+
+
+def _normalize_dose_color_scale_mode(value: str) -> str:
+    resolved_value = str(value).strip().lower()
+    if resolved_value in ("lin", "linear"):
+        return "linear"
+    if resolved_value in ("log", "log10", "logarithmic"):
+        return "log"
+    raise ValueError("unsupported dose color scale mode: {}".format(value))
 
 
 def _rectilinear_dose_grid_from_lattice(pv: Any, lattice_points: np.ndarray, lattice_doses: np.ndarray) -> Any:

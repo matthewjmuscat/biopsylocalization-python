@@ -129,6 +129,9 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--window-size", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"), default=(1200, 900))
     parser.add_argument("--background-color", default="white")
     parser.add_argument("--dose-colormap", default="viridis")
+    parser.add_argument("--dose-color-scale-mode", choices=("linear", "log"), default="linear")
+    parser.add_argument("--dose-color-scale-min", type=float, default=None)
+    parser.add_argument("--dose-color-scale-max", type=float, default=None)
     parser.add_argument("--lattice-point-size", type=float, default=5.0)
     parser.add_argument("--dose-colorwash-style", choices=("points", "volume", "auto"), default="points")
     parser.add_argument("--dose-colorwash-point-size", type=float, default=12.0)
@@ -200,6 +203,9 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         window_size=tuple(int(value) for value in args.window_size),
         background_color=args.background_color,
         dose_colormap=args.dose_colormap,
+        dose_color_scale_mode=args.dose_color_scale_mode,
+        dose_color_scale_min=args.dose_color_scale_min,
+        dose_color_scale_max=args.dose_color_scale_max,
         lattice_point_size=args.lattice_point_size,
         dose_colorwash_style=args.dose_colorwash_style,
         dose_colorwash_point_size=args.dose_colorwash_point_size,

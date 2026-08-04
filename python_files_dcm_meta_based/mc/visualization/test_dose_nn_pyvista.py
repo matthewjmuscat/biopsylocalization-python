@@ -77,6 +77,29 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         self.assertIn("dose_colorwash_points", actor_names)
         self.assertIn("dose_nn_vectors", actor_names)
 
+    def test_build_plotter_supports_logarithmic_dose_color_scaling(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_color_scale_mode="log",
+                dose_color_scale_min=10.0,
+                dose_color_scale_max=40.0,
+                show_axes=False,
+                show_scalar_bar=False,
+            ),
+        )
+        try:
+            actor = plotter.renderer.actors["dose_lattice_points"]
+            log_scale_enabled = bool(actor.mapper.lookup_table.log_scale)
+        finally:
+            plotter.close()
+
+        self.assertTrue(log_scale_enabled)
+
     def test_build_plotter_supports_reference_biopsy_points(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
             _synthetic_scene_with_trials(),
@@ -124,6 +147,37 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
             plotter.close()
 
         self.assertNotIn("dose_colorwash_points", actor_names)
+        self.assertIn("dose_colorwash_volume", actor_names)
+
+    def test_volume_colorwash_uses_uncropped_lattice_for_spatial_radius(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_rectilinear_volume_scene(),
+            DoseNNRenderConfig(
+                show_lattice_points=False,
+                show_dose_colorwash=True,
+                spatial_radius_mm=0.1,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_colorwash_style="volume",
+                dose_color_scale_min=2.0,
+                dose_color_scale_max=6.0,
+                show_axes=False,
+                show_scalar_bar=False,
+            ),
+        )
+        try:
+            actor_names = set(plotter.renderer.actors.keys())
+        finally:
+            plotter.close()
+
+        self.assertEqual(prepared_scene.lattice_points.shape[0], 0)
+        self.assertEqual(prepared_scene.colorwash_lattice_points.shape[0], 8)
         self.assertIn("dose_colorwash_volume", actor_names)
 
     def test_volume_colorwash_requires_complete_three_dimensional_lattice(self) -> None:

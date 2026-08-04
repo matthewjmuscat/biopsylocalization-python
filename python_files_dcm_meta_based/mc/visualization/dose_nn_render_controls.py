@@ -10,6 +10,7 @@ from .dose_nn_scene import DoseNNRenderConfig
 
 
 DOSE_NN_COLORWASH_STYLES = ("points", "volume", "auto")
+DOSE_NN_DOSE_COLOR_SCALE_MODES = ("linear", "log")
 DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER = 0
 
 
@@ -30,6 +31,9 @@ class DoseNNRenderControlSelection:
     show_lattice_points: bool = True
     show_dose_colorwash: bool = False
     dose_colorwash_style: str = "points"
+    dose_color_scale_mode: str = "linear"
+    dose_color_scale_min: float | None = None
+    dose_color_scale_max: float | None = None
     dose_colorwash_opacity: float = 0.28
     dose_colorwash_point_size: float = 12.0
     show_nearest_neighbour_points: bool = True
@@ -66,6 +70,15 @@ def normalize_dose_nn_render_control_selection(
     biopsy_point_stride = _positive_int("biopsy_point_stride", resolved_selection.biopsy_point_stride)
     vector_stride = _positive_int("vector_stride", resolved_selection.vector_stride)
     dose_colorwash_style = _normalize_colorwash_style(resolved_selection.dose_colorwash_style)
+    dose_color_scale_mode = _normalize_dose_color_scale_mode(resolved_selection.dose_color_scale_mode)
+    dose_color_scale_min = _optional_float(resolved_selection.dose_color_scale_min)
+    dose_color_scale_max = _optional_float(resolved_selection.dose_color_scale_max)
+    if (dose_color_scale_min is None) != (dose_color_scale_max is None):
+        raise ValueError("dose_color_scale_min and dose_color_scale_max must both be set, or both blank")
+    if dose_color_scale_min is not None and dose_color_scale_min >= dose_color_scale_max:
+        raise ValueError("dose_color_scale_min must be less than dose_color_scale_max")
+    if dose_color_scale_mode == "log" and dose_color_scale_min is not None and dose_color_scale_min <= 0.0:
+        raise ValueError("log dose color scaling requires dose_color_scale_min > 0")
     dose_colorwash_opacity = float(resolved_selection.dose_colorwash_opacity)
     if dose_colorwash_opacity < 0.0 or dose_colorwash_opacity > 1.0:
         raise ValueError("dose_colorwash_opacity must be between 0 and 1")
@@ -88,6 +101,9 @@ def normalize_dose_nn_render_control_selection(
         show_lattice_points=bool(resolved_selection.show_lattice_points),
         show_dose_colorwash=bool(resolved_selection.show_dose_colorwash),
         dose_colorwash_style=dose_colorwash_style,
+        dose_color_scale_mode=dose_color_scale_mode,
+        dose_color_scale_min=dose_color_scale_min,
+        dose_color_scale_max=dose_color_scale_max,
         dose_colorwash_opacity=dose_colorwash_opacity,
         dose_colorwash_point_size=dose_colorwash_point_size,
         show_nearest_neighbour_points=bool(resolved_selection.show_nearest_neighbour_points),
@@ -140,6 +156,9 @@ def dose_nn_pyvista_settings_from_control_selection(
     return replace(
         resolved_base_settings,
         dose_colorwash_style=resolved_selection.dose_colorwash_style,
+        dose_color_scale_mode=resolved_selection.dose_color_scale_mode,
+        dose_color_scale_min=resolved_selection.dose_color_scale_min,
+        dose_color_scale_max=resolved_selection.dose_color_scale_max,
         dose_colorwash_point_size=resolved_selection.dose_colorwash_point_size,
         dose_colorwash_opacity=resolved_selection.dose_colorwash_opacity,
         show_axes=resolved_selection.show_axes,
@@ -175,6 +194,15 @@ def _normalize_colorwash_style(value: str) -> str:
     if resolved_value not in DOSE_NN_COLORWASH_STYLES:
         raise ValueError("unsupported dose colorwash style: {}".format(value))
     return resolved_value
+
+
+def _normalize_dose_color_scale_mode(value: str) -> str:
+    resolved_value = str(value).strip().lower()
+    if resolved_value in ("lin", "linear"):
+        return "linear"
+    if resolved_value in ("log", "log10", "logarithmic"):
+        return "log"
+    raise ValueError("unsupported dose color scale mode: {}".format(value))
 
 
 def _optional_float(value: float | None) -> float | None:

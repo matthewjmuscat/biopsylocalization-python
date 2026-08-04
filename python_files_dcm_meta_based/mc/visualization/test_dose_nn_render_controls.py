@@ -25,6 +25,9 @@ class DoseNNRenderControlTests(unittest.TestCase):
             show_lattice_points=False,
             show_dose_colorwash=True,
             dose_colorwash_style="volume",
+            dose_color_scale_mode="log",
+            dose_color_scale_min=5.0,
+            dose_color_scale_max=30.0,
             dose_colorwash_opacity=0.35,
             dose_colorwash_point_size=9.0,
             show_nearest_neighbour_points=False,
@@ -46,6 +49,9 @@ class DoseNNRenderControlTests(unittest.TestCase):
         self.assertEqual(config.vector_stride, 3)
         self.assertEqual(settings.window_size, (320, 240))
         self.assertEqual(settings.dose_colorwash_style, "volume")
+        self.assertEqual(settings.dose_color_scale_mode, "log")
+        self.assertEqual(settings.dose_color_scale_min, 5.0)
+        self.assertEqual(settings.dose_color_scale_max, 30.0)
         self.assertEqual(settings.dose_colorwash_opacity, 0.35)
         self.assertFalse(settings.show_scalar_bar)
 
@@ -55,6 +61,13 @@ class DoseNNRenderControlTests(unittest.TestCase):
         )
 
         self.assertEqual(selection.dose_colorwash_style, "points")
+
+    def test_control_selection_accepts_logarithmic_color_scale_alias(self) -> None:
+        selection = normalize_dose_nn_render_control_selection(
+            DoseNNRenderControlSelection(dose_color_scale_mode="logarithmic"),
+        )
+
+        self.assertEqual(selection.dose_color_scale_mode, "log")
 
     def test_control_selection_rejects_unavailable_trials(self) -> None:
         with self.assertRaisesRegex(ValueError, "selected_trials"):
@@ -77,6 +90,18 @@ class DoseNNRenderControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "dose_colorwash_opacity"):
             normalize_dose_nn_render_control_selection(
                 DoseNNRenderControlSelection(dose_colorwash_opacity=1.2),
+            )
+        with self.assertRaisesRegex(ValueError, "dose_color_scale_min"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(dose_color_scale_min=40.0, dose_color_scale_max=10.0),
+            )
+        with self.assertRaisesRegex(ValueError, "log dose color scaling"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(
+                    dose_color_scale_mode="log",
+                    dose_color_scale_min=0.0,
+                    dose_color_scale_max=10.0,
+                ),
             )
 
 
