@@ -479,22 +479,7 @@ Detailed next pass:
   comparing transformed MC-trial biopsy positions against a fixed nominal
   reference during figure/movie construction.
 
-### Phase 3: Plotly Sharing Renderer
-
-- Implement a Plotly backend for dose-colored lattice points, biopsy points,
-  NN points, and optional vectors.
-- Support static export settings through the existing render broker export
-  model.
-- Keep visual defaults useful for HTML inspection and lightweight exports, but
-  do not require Plotly to carry very large point clouds.
-
-### Phase 4: Optional Open3D Inspection Renderer
-
-- Implement an Open3D backend for interactive scene inspection.
-- Reuse existing view JSONs only as optional camera presets.
-- Keep Open3D imports out of scene contracts and numerical modules.
-
-### Phase 5: Broker Selector
+### Phase 3: Broker Selector And Dose GUI Controls
 
 - Build dose-specific choice groups and action handling in `dose_nn_selector.py`.
 - Keep arbitrary dose sliders and toggles in the dose selector/config layer.
@@ -526,24 +511,88 @@ Detailed next pass:
   current adapter is intentionally a boundary-setting first pass, not the final
   publication GUI.
 
+### Phase 4: Zarr-Backed Retained Scientific Context
+
+This is the scientific artifact-production and retention phase. It should not be
+deferred behind optional renderer backends. For large patient context arrays,
+Zarr-backed stores are the target implementation from the start, with JSON
+manifests carrying schema, shape, dtype, units, chunking, retention policy,
+provenance, and path entries.
+
+Initial dose-render context contracts should be code-owned datatypes rather than
+new entries appended into the legacy master structure reference dictionary. A
+minimal first set is:
+
+- dose lattice context artifact: physical lattice coordinates or regular-grid
+  model, dose values, optional gradients, coordinate frame, units, and source
+  artifact references;
+- biopsy query context artifact: patient/biopsy identifiers, trial numbers,
+  original point indices, query points by trial, and transform provenance links;
+- dose NN context artifact: nearest lattice indices, nearest distances,
+  interpolation outputs, neighbour count, algorithm/config identity, and
+  retention level;
+- patient artifact manifest entries: stable artifact IDs and relative paths
+  under the intentional per-patient subtree.
+
+These should be implemented as a family of dataclasses and artifact specs, not
+as one new all-containing patient object. A lightweight patient context/index may
+tie them together by artifact ID and path, but the large arrays should remain in
+Zarr-backed stores and be accessed through typed readers or handles. The render
+scene constructor should request the dose lattice, biopsy query, and dose NN
+contexts it needs, slice them by patient/biopsy/trial, and build a
+`DoseNNRenderScene` only for the selected view.
+
+Producer ownership should target the standalone per-patient runner and its
+stage-level output modules. Legacy pathways may call a compatibility adapter to
+write equivalent artifacts during migration or validation, but the adapter
+should construct the same typed artifacts and manifests rather than mutating the
+legacy master dictionary into a new storage API. The master/reference dict can
+remain an input/oracle source for transitional parity checks, not the durable
+artifact boundary.
+
+Validation for this phase should prove writer/reader round trips, manifest path
+and checksum integrity, shape/dtype/unit preservation, and selected parity
+against legacy localizer outputs on synthetic or user-operated sampled cases.
+
+### Phase 5: Context-To-Scene And Derived View Constructors
+
+- Build `DoseNNRenderScene` objects on demand from retained context artifacts.
+- Reconstruct nearest-neighbour coordinates by indexing the retained dose
+  lattice with retained nearest-lattice indices rather than storing repeated
+  coordinate triples as the primary context.
+- Stream or slice trial windows from Zarr stores for movie/frame workflows.
+- Add dataframe constructors for human-readable views such as selected NN rows
+  or pointwise dose tables, with constructor manifests that record source
+  artifact IDs and filters.
+- Keep compact `.npz` selected render-scene artifacts as publication/debug
+  derivatives, not as the only durable scientific context.
+
+### Phase 6: Real-Data Figure Generation And Migration
+
+- Use the retained context artifacts to generate selected real-data figures in a
+  user-operated pass.
+- For historical runs that lack context artifacts, use an existing saved scene,
+  a transitional results-pickle reconstruction utility, or an approved selected
+  inline capture hook.
+- Compare selected standalone context artifacts and derived scenes against the
+  legacy oracle during migration.
+- Expand retention-policy controls into the run profile once validation is
+  credible.
+
+### Optional Later Backends: Plotly And Open3D
+
+- Implement a Plotly backend for dose-colored lattice points, biopsy points,
+  NN points, and optional vectors when HTML sharing becomes important.
+- Implement an Open3D inspection backend only if it remains useful for point
+  cloud workflows.
+- Keep both optional backends behind the same scene/config contracts; neither is
+  a prerequisite for retained scientific context artifacts.
+
 Known render-backend asymmetry: the generic broker can now carry PyVista
 decisions and the dose surface has a PyVista backend, but optimizer-v2 still has
 only Open3D and Plotly render implementations. Adding a PyVista optimizer-v2
 renderer is feasible but should be treated as a separate future upgrade, not a
 dependency of the dose-render figure path.
-
-### Phase 6: Real-Data Capture Path
-
-- Add a controlled one-patient, one-biopsy capture path that can produce a
-  render scene artifact from existing dose-localization outputs.
-- Prefer retained context artifacts for new runs. For historical runs, prefer
-  recomputing from a results pickle or consuming an already-captured scene
-  artifact over enabling full raw NN dumps.
-- If an inline capture rerun is needed because raw NN data were not retained,
-  keep it explicit, selected, and user-operated for real patient data.
-- In this note, capture means writing the retained scene/context artifact needed
-  for post-run rendering. It does not mean opening a GUI or interactive render
-  window inside the scientific runtime loop.
 
 ## Pushback And Non-Goals
 

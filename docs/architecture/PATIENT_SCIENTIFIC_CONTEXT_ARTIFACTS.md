@@ -171,6 +171,90 @@ Markdown/CSV data dictionary for human inspection. This keeps the future audit
 documentation synchronized with the actual artifact writer instead of requiring
 manual shape notes that can drift.
 
+## Producer Placement And Legacy Parity
+
+The primary writer for new retained scientific context should live in the
+standalone per-patient runner and its stage-owned output modules. The per-patient
+runner is the target boundary because it naturally owns the patient artifact
+manifest, retention policy, run index events, and intentional per-patient output
+subtree.
+
+Legacy pathways may need a temporary compatibility writer so selected historical
+or validation runs can produce the same artifacts before the standalone runner is
+fully migrated. That compatibility path should call the same typed writer and
+produce the same manifests. It should not establish a second artifact schema,
+write to scattered legacy paths, or require post-run tools to understand legacy
+mutable dictionaries.
+
+Do not turn the master structure reference dictionary into the new artifact
+registry. It can remain a legacy in-memory source, oracle, or adapter input while
+the migration is in progress. The durable boundary should be new code-owned
+datatypes and manifests, for example dose lattice context, biopsy query context,
+dose nearest-neighbour context, transform provenance, and structure geometry
+context artifacts. These datatypes should write to the intentional per-patient
+subtree and be recorded in the patient/run manifest index.
+
+Parity should be maintained by validating that artifacts written from the
+standalone runner and artifacts written by any temporary legacy adapter preserve
+the same scientific arrays, coordinate frames, row identities, and derived table
+values for selected cases. The goal is one artifact contract with two temporary
+producer entry points, not two long-term output systems.
+
+## In-Memory Object Model
+
+The replacement for the legacy master structure reference dictionary should not
+be one large mutable object that contains everything. That would recreate the
+same coupling in a different syntax. The better plan is a small set of typed,
+stage-owned dataclasses plus a lightweight patient artifact index.
+
+Use frozen, slot-backed dataclasses for stable scientific contracts and artifact
+handles. These objects should be easy to validate, serialize to manifests, and
+adapt from legacy inputs. They should not hide large arrays in arbitrary nested
+attributes when those arrays are meant to live in Zarr or Parquet.
+
+Recommended layers:
+
+```text
+PatientArtifactIndex
+  lightweight manifest/index facade for one patient/run
+  stores artifact IDs, relative paths, schema versions, retention levels
+  does not materialize every array
+
+ArtifactRef / ArrayArtifactSpec / TableArtifactSpec
+  storage-facing dataclasses used by manifests and readers
+  records path, format, datasets, shape, dtype, units, chunking, checksums
+
+Stage context dataclasses
+  typed scientific contracts for one stage or artifact family
+  examples: CoordinateFrameRegistry, StructureGeometryContext,
+  TransformEventContext, BiopsyQueryContext, DoseLatticeContext,
+  DoseNearestNeighbourContext
+
+Legacy adapters
+  from_legacy_dict(...) / to_legacy_dict(...) only where parity requires them
+  not the durable storage API
+```
+
+The aggregate object, if one exists, should be a facade over manifests and
+artifact references, not a new master dict. For example, a
+`PatientScientificContext` object may expose convenient properties such as
+`dose_lattice`, `biopsy_queries`, or `dose_nn_context`, but those properties
+should return typed handles/readers that can lazily open Zarr arrays or construct
+requested slices. It should not load all trial-by-point tensors just because the
+patient context object was created.
+
+This means the coordination point between dataclasses and artifacts is the
+manifest, not object containment. Dataclasses define the schema and validation
+rules. Writers persist arrays/tables/manifests under the intentional per-patient
+subtree. Readers reconstruct typed handles from those manifests. GUI and
+post-run constructors consume the handles and request only the slices they need.
+
+For migration, nested legacy structure records can remain dict-backed until
+their field and mutation rules are validated. The boundary should still be
+explicit: adapters ingest legacy dicts, validate identity keys such as patient
+UID plus biopsy index or structure index, and emit typed context/artifact
+contracts. New code should use the typed contracts directly.
+
 ## Stage Retention Field Sketch
 
 The context-artifact design should be driven by what later tools need to know,
@@ -391,6 +475,12 @@ For publication figures, debugging, audit, or movie generation, retain selected
 or full NN index/distance tensors according to the requested retention policy.
 Avoid storing repeated nearest-neighbour coordinate triples when lattice indices
 and a lattice coordinate array can reconstruct the same geometry.
+
+The first implementation target for this context is Zarr-backed storage for the
+large arrays plus a JSON manifest. Compact `.npz` render scenes remain useful as
+selected publication/debug derivatives, but they should not substitute for the
+durable context store when broad trial coverage, movie generation, or dataframe
+reconstruction is required.
 
 ## Retention Policies
 
