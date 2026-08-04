@@ -307,6 +307,11 @@ Current patient-runner status at the time of this note:
 - The post-run dose NN context render service can materialize saved-scene
   artifacts from retained lattice/render-context artifact refs in a patient
   artifact index.
+- The patient-runner MC simulation stage now has an opt-in dose context artifact
+  persistence boundary. When `write_dose_context_artifacts=True`, it passes a
+  patient-runner-owned finalization callback into the per-patient convex MC
+  stage and writes retained dose context artifacts after each biopsy dose
+  localization result is finalized.
 - Runtime launching is intentionally not wired yet. When it is needed, it should
   live in the patient-runner MC dose stage after dose-localization outputs are
   finalized and retained artifacts are snapshotted. It should not be wired into

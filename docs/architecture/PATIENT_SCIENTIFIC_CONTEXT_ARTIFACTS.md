@@ -193,6 +193,15 @@ patient-runner stage-finalization hooks second. Keep legacy main as an oracle
 and compatibility source unless a migration checkpoint explicitly requires a
 shared writer to run there.
 
+The first MC dose-context producer follows this boundary: the per-patient convex
+MC stage accepts an optional finalization callback, while the concrete writer
+lives in `patient_runner.dose_context_persistence`. The callback fires only
+after the legacy biopsy record has been updated for one dose-localization result,
+so the retained artifact is a late, explicit snapshot of the finalized runtime
+objects rather than a side channel inside the nearest-neighbour calculation.
+Patient-runner config keeps this writer disabled by default through
+`PatientMCSimulationScientificConfig.write_dose_context_artifacts`.
+
 Do not turn the master structure reference dictionary into the new artifact
 registry. It can remain a legacy in-memory source, oracle, or adapter input while
 the migration is in progress. The durable boundary should be new code-owned

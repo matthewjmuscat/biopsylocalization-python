@@ -764,19 +764,31 @@ def run_patient_mc_simulation_scientific_stage(
     scientific_config: PatientRunnerScientificConfig,
 ) -> PatientStageResult:
     """Run configured patient-local MC simulation stages."""
-    del config
     stage_config = scientific_config.mc_simulation
     if stage_config is None or not stage_config.enabled:
         return PatientStageResult.skipped(PatientStageName.MC_SIMULATION, reason="mc_simulation_not_configured")
 
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     metadata.update(_prefix_mapping(_hydrate_mc_simulation_mc_info(runtime_state.master_structure_info_dict, stage_config), "mc_info_"))
+    output_paths: tuple[Any, ...] = ()
+    artifact_count = 0
     if stage_config.convex_config is not None:
         from mc.simulation.per_patient import run_patient_mc_convex_stage
 
         parallel_pool = scientific_config.resources.parallel_pool
         if stage_config.convex_config.containment.perform_mc_containment_sim:
             parallel_pool = _require_parallel_pool(scientific_config, PatientStageName.MC_SIMULATION)
+        dose_context_persister = None
+        if stage_config.write_dose_context_artifacts:
+            from patient_runner.dose_context_persistence import PatientDoseContextArtifactPersister
+
+            dose_context_persister = PatientDoseContextArtifactPersister(
+                patient_uid=runtime_state.patient_uid,
+                output_root=config.patient_output_dir(runtime_state.patient_case),
+                run_id=config.run_id,
+                localization_kinds=stage_config.dose_context_artifact_localization_kinds,
+                write_render_context=stage_config.write_dose_nn_render_context_artifacts,
+            )
         convex_result = run_patient_mc_convex_stage(
             patient_uid=runtime_state.patient_uid,
             patient_reference_dict=runtime_state.pydicom_item,
@@ -784,6 +796,11 @@ def run_patient_mc_simulation_scientific_stage(
             config=stage_config.convex_config,
             parallel_pool=parallel_pool,
             mutate_input=True,
+            dose_localization_finalization_callback=(
+                dose_context_persister.persist_localization_finalization
+                if dose_context_persister is not None
+                else None
+            ),
         )
         _merge_mc_performed_flags(runtime_state.master_structure_info_dict, convex_result.performed_flags)
         metadata["steps"].append("convex")
@@ -796,6 +813,20 @@ def run_patient_mc_simulation_scientific_stage(
             }
         )
         metadata.update(_prefix_mapping(convex_result.metadata, "convex_"))
+        if dose_context_persister is not None:
+            dose_context_summary = dose_context_persister.summary()
+            output_paths = (*output_paths, *dose_context_summary.output_paths)
+            artifact_count += len(dose_context_summary.output_paths)
+            metadata.update(
+                {
+                    "dose_context_artifact_count": len(dose_context_summary.artifact_refs),
+                    "dose_context_artifact_ids": tuple(
+                        artifact_ref.artifact_id for artifact_ref in dose_context_summary.artifact_refs
+                    ),
+                }
+            )
+            if dose_context_summary.artifact_refs:
+                metadata["dose_context_artifact_index_path"] = dose_context_summary.artifact_index_path.as_posix()
 
     if stage_config.mr_config is not None:
         from mc.simulation.per_patient import run_patient_mr_adc_localization_stage
@@ -819,7 +850,12 @@ def run_patient_mc_simulation_scientific_stage(
         )
         metadata.update(_prefix_mapping(mr_result.metadata, "mr_adc_"))
 
-    return PatientStageResult.success(PatientStageName.MC_SIMULATION, metadata=metadata)
+    return PatientStageResult.success(
+        PatientStageName.MC_SIMULATION,
+        artifact_count=artifact_count,
+        output_paths=output_paths,
+        metadata=metadata,
+    )
 
 
 def run_patient_mc_output_tables_scientific_stage(

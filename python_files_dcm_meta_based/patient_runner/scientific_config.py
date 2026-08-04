@@ -631,6 +631,9 @@ class PatientMCSimulationScientificConfig:
     convex_config: MCConvexSimulationConfig | None = None
     mr_config: MCMRSimulationConfig | None = None
     mr_adc_ref: str = ""
+    write_dose_context_artifacts: bool = False
+    write_dose_nn_render_context_artifacts: bool = True
+    dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
     num_mc_containment_simulations: int = 0
     num_mc_dose_simulations: int = 0
     num_mc_mr_simulations: int = 0
@@ -644,6 +647,19 @@ class PatientMCSimulationScientificConfig:
             "num_mc_mr_simulations",
         ):
             object.__setattr__(self, field_name, _non_negative_int(getattr(self, field_name), field_name))
+        object.__setattr__(self, "write_dose_context_artifacts", bool(self.write_dose_context_artifacts))
+        object.__setattr__(
+            self,
+            "write_dose_nn_render_context_artifacts",
+            bool(self.write_dose_nn_render_context_artifacts),
+        )
+        localization_kinds = tuple(
+            str(localization_kind).strip().lower().replace("-", "_").replace(" ", "_")
+            for localization_kind in self.dose_context_artifact_localization_kinds
+        )
+        if any(localization_kind == "" for localization_kind in localization_kinds):
+            raise ValueError("dose_context_artifact_localization_kinds cannot contain empty values")
+        object.__setattr__(self, "dose_context_artifact_localization_kinds", localization_kinds)
         object.__setattr__(
             self,
             "bx_sample_pts_lattice_spacing",
