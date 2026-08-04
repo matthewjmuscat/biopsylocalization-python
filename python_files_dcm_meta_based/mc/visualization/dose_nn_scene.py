@@ -90,6 +90,7 @@ class DoseNNPreparedScene:
     lattice_doses: np.ndarray
     colorwash_lattice_points: np.ndarray
     colorwash_lattice_doses: np.ndarray
+    colorwash_lattice_visibility_mask: np.ndarray
     original_point_indices: np.ndarray
     trial_numbers: np.ndarray
     biopsy_points: np.ndarray
@@ -223,7 +224,8 @@ def prepare_dose_nn_render_scene(
     biopsy_points = scene.biopsy_points[row_indices]
     nearest_lattice_points = scene.nearest_lattice_points[row_indices]
 
-    lattice_indices = select_lattice_point_indices(scene, resolved_config, centers=biopsy_points)
+    lattice_mask = select_lattice_point_mask(scene, resolved_config, centers=biopsy_points)
+    lattice_indices = _select_lattice_point_indices_from_mask(lattice_mask, resolved_config.max_lattice_points)
     vector_start_points, vector_end_points = build_dose_nn_vector_points(
         biopsy_points,
         nearest_lattice_points,
@@ -238,6 +240,7 @@ def prepare_dose_nn_render_scene(
         lattice_doses=scene.lattice_doses[lattice_indices],
         colorwash_lattice_points=scene.lattice_points,
         colorwash_lattice_doses=scene.lattice_doses,
+        colorwash_lattice_visibility_mask=lattice_mask,
         original_point_indices=scene.original_point_indices[row_indices],
         trial_numbers=scene.trial_numbers[row_indices],
         biopsy_points=biopsy_points,
@@ -308,6 +311,18 @@ def select_lattice_point_indices(
 ) -> np.ndarray:
     """Return deterministic lattice point indices for display."""
     resolved_config = normalize_dose_nn_render_config(config)
+    mask = select_lattice_point_mask(scene, resolved_config, centers=centers)
+    return _select_lattice_point_indices_from_mask(mask, resolved_config.max_lattice_points)
+
+
+def select_lattice_point_mask(
+    scene: DoseNNRenderScene,
+    config: DoseNNRenderConfig,
+    *,
+    centers: Any | None = None,
+) -> np.ndarray:
+    """Return a full-lattice visibility mask before display-only subsampling."""
+    resolved_config = normalize_dose_nn_render_config(config)
     mask = np.ones(scene.lattice_points.shape[0], dtype=bool)
     if resolved_config.dose_threshold_min is not None:
         mask &= scene.lattice_doses >= resolved_config.dose_threshold_min
@@ -322,12 +337,16 @@ def select_lattice_point_indices(
                 resolved_config.spatial_radius_mm,
             )
 
-    indices = np.flatnonzero(mask)
-    if resolved_config.max_lattice_points is not None and indices.shape[0] > resolved_config.max_lattice_points:
+    return mask
+
+
+def _select_lattice_point_indices_from_mask(mask: np.ndarray, max_lattice_points: int | None) -> np.ndarray:
+    indices = np.flatnonzero(np.asarray(mask, dtype=bool))
+    if max_lattice_points is not None and indices.shape[0] > max_lattice_points:
         sampled_positions = np.linspace(
             0,
             indices.shape[0] - 1,
-            num=resolved_config.max_lattice_points,
+            num=max_lattice_points,
             dtype=int,
         )
         indices = indices[sampled_positions]
@@ -387,14 +406,42 @@ def _normalize_trial_numbers(trial_numbers: tuple[int, ...] | None) -> tuple[int
 
 
 def _points_within_radius_mask(points: np.ndarray, centers: np.ndarray, radius: float) -> np.ndarray:
+    if points.shape[0] == 0 or centers.shape[0] == 0:
+        return np.zeros(points.shape[0], dtype=bool)
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        return _points_within_radius_mask_chunked(points, centers, radius)
+
+    tree = cKDTree(points)
+    mask = np.zeros(points.shape[0], dtype=bool)
+    center_chunk_size = 50_000
+    for start_index in range(0, centers.shape[0], center_chunk_size):
+        stop_index = min(start_index + center_chunk_size, centers.shape[0])
+        neighbour_lists = tree.query_ball_point(centers[start_index:stop_index], r=float(radius))
+        for neighbour_indices in neighbour_lists:
+            if len(neighbour_indices) > 0:
+                mask[np.asarray(neighbour_indices, dtype=int)] = True
+    return mask
+
+
+def _points_within_radius_mask_chunked(points: np.ndarray, centers: np.ndarray, radius: float) -> np.ndarray:
     radius_squared = float(radius) ** 2
     mask = np.zeros(points.shape[0], dtype=bool)
-    chunk_size = 100_000
-    for start_index in range(0, points.shape[0], chunk_size):
-        stop_index = min(start_index + chunk_size, points.shape[0])
-        deltas = points[start_index:stop_index, None, :] - centers[None, :, :]
-        distances_squared = np.sum(deltas * deltas, axis=2)
-        mask[start_index:stop_index] = np.any(distances_squared <= radius_squared, axis=1)
+    point_chunk_size = 4096
+    center_chunk_size = 512
+    for point_start_index in range(0, points.shape[0], point_chunk_size):
+        point_stop_index = min(point_start_index + point_chunk_size, points.shape[0])
+        point_chunk = points[point_start_index:point_stop_index]
+        chunk_mask = np.zeros(point_chunk.shape[0], dtype=bool)
+        for center_start_index in range(0, centers.shape[0], center_chunk_size):
+            center_stop_index = min(center_start_index + center_chunk_size, centers.shape[0])
+            deltas = point_chunk[:, None, :] - centers[None, center_start_index:center_stop_index, :]
+            distances_squared = np.sum(deltas * deltas, axis=2)
+            chunk_mask |= np.any(distances_squared <= radius_squared, axis=1)
+            if bool(np.all(chunk_mask)):
+                break
+        mask[point_start_index:point_stop_index] = chunk_mask
     return mask
 
 

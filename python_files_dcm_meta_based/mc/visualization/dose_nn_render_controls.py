@@ -40,6 +40,10 @@ class DoseNNRenderControlSelection:
     show_nearest_neighbour_vectors: bool = True
     show_axes: bool = True
     show_scalar_bar: bool = True
+    dose_scalar_bar_title: str = "Dose"
+    x_axis_label: str = "Left-Right x (mm)"
+    y_axis_label: str = "Posterior-Anterior y (mm)"
+    z_axis_label: str = "Inferior-Superior z (mm)"
 
 
 def normalize_dose_nn_render_control_selection(
@@ -110,6 +114,10 @@ def normalize_dose_nn_render_control_selection(
         show_nearest_neighbour_vectors=bool(resolved_selection.show_nearest_neighbour_vectors),
         show_axes=bool(resolved_selection.show_axes),
         show_scalar_bar=bool(resolved_selection.show_scalar_bar),
+        dose_scalar_bar_title=str(resolved_selection.dose_scalar_bar_title),
+        x_axis_label=str(resolved_selection.x_axis_label),
+        y_axis_label=str(resolved_selection.y_axis_label),
+        z_axis_label=str(resolved_selection.z_axis_label),
     )
 
 
@@ -163,6 +171,10 @@ def dose_nn_pyvista_settings_from_control_selection(
         dose_colorwash_opacity=resolved_selection.dose_colorwash_opacity,
         show_axes=resolved_selection.show_axes,
         show_scalar_bar=resolved_selection.show_scalar_bar,
+        dose_scalar_bar_title=resolved_selection.dose_scalar_bar_title,
+        x_axis_label=resolved_selection.x_axis_label,
+        y_axis_label=resolved_selection.y_axis_label,
+        z_axis_label=resolved_selection.z_axis_label,
     )
 
 

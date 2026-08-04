@@ -100,6 +100,34 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
 
         self.assertTrue(log_scale_enabled)
 
+    def test_build_plotter_adds_custom_world_axis_labels(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                show_axes=True,
+                show_scalar_bar=False,
+                dose_scalar_bar_title="Dose (Gy)",
+                x_axis_label="Custom X (mm)",
+                y_axis_label="Custom Y (mm)",
+                z_axis_label="Custom Z (mm)",
+            ),
+        )
+        try:
+            cube_axes_actor = plotter.renderer.cube_axes_actor
+            axis_titles = (
+                cube_axes_actor.GetXTitle(),
+                cube_axes_actor.GetYTitle(),
+                cube_axes_actor.GetZTitle(),
+            )
+        finally:
+            plotter.close()
+
+        self.assertEqual(axis_titles, ("Custom X (mm)", "Custom Y (mm)", "Custom Z (mm)"))
+
     def test_build_plotter_supports_reference_biopsy_points(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
             _synthetic_scene_with_trials(),
@@ -149,13 +177,13 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         self.assertNotIn("dose_colorwash_points", actor_names)
         self.assertIn("dose_colorwash_volume", actor_names)
 
-    def test_volume_colorwash_uses_uncropped_lattice_for_spatial_radius(self) -> None:
+    def test_volume_colorwash_masks_uncropped_lattice_for_spatial_radius(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
             _synthetic_rectilinear_volume_scene(),
             DoseNNRenderConfig(
                 show_lattice_points=False,
                 show_dose_colorwash=True,
-                spatial_radius_mm=0.1,
+                spatial_radius_mm=0.5,
             ),
         )
 
@@ -176,9 +204,38 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         finally:
             plotter.close()
 
-        self.assertEqual(prepared_scene.lattice_points.shape[0], 0)
+        self.assertEqual(prepared_scene.lattice_points.shape[0], 2)
         self.assertEqual(prepared_scene.colorwash_lattice_points.shape[0], 8)
+        self.assertEqual(int(np.count_nonzero(prepared_scene.colorwash_lattice_visibility_mask)), 2)
         self.assertIn("dose_colorwash_volume", actor_names)
+
+    def test_volume_colorwash_skips_when_spatial_radius_selects_no_lattice_points(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_rectilinear_volume_scene(),
+            DoseNNRenderConfig(
+                show_lattice_points=False,
+                show_dose_colorwash=True,
+                spatial_radius_mm=0.1,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_colorwash_style="volume",
+                show_axes=False,
+                show_scalar_bar=False,
+            ),
+        )
+        try:
+            actor_names = set(plotter.renderer.actors.keys())
+        finally:
+            plotter.close()
+
+        self.assertEqual(int(np.count_nonzero(prepared_scene.colorwash_lattice_visibility_mask)), 0)
+        self.assertNotIn("dose_colorwash_volume", actor_names)
 
     def test_volume_colorwash_requires_complete_three_dimensional_lattice(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(

@@ -142,6 +142,10 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vector-line-width", type=float, default=2.0)
     parser.add_argument("--no-axes", action="store_true")
     parser.add_argument("--no-scalar-bar", action="store_true")
+    parser.add_argument("--dose-scalar-bar-title", default="Dose")
+    parser.add_argument("--x-axis-label", default="Left-Right x (mm)")
+    parser.add_argument("--y-axis-label", default="Posterior-Anterior y (mm)")
+    parser.add_argument("--z-axis-label", default="Inferior-Superior z (mm)")
     return parser
 
 
@@ -216,6 +220,10 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         vector_line_width=args.vector_line_width,
         show_axes=not bool(args.no_axes),
         show_scalar_bar=not bool(args.no_scalar_bar),
+        dose_scalar_bar_title=args.dose_scalar_bar_title,
+        x_axis_label=args.x_axis_label,
+        y_axis_label=args.y_axis_label,
+        z_axis_label=args.z_axis_label,
     )
 
 

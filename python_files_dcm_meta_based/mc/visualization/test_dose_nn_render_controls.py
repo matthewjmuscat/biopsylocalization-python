@@ -9,6 +9,7 @@ from mc.visualization.dose_nn_render_controls import DoseNNRenderControlSelectio
 from mc.visualization.dose_nn_render_controls import dose_nn_pyvista_settings_from_control_selection
 from mc.visualization.dose_nn_render_controls import dose_nn_render_config_from_control_selection
 from mc.visualization.dose_nn_render_controls import normalize_dose_nn_render_control_selection
+from mc.visualization.dose_nn_tk_render_controls import _parse_trial_numbers
 
 
 class DoseNNRenderControlTests(unittest.TestCase):
@@ -32,6 +33,7 @@ class DoseNNRenderControlTests(unittest.TestCase):
             dose_colorwash_point_size=9.0,
             show_nearest_neighbour_points=False,
             show_scalar_bar=False,
+            dose_scalar_bar_title="Dose (Gy)",
         )
 
         config = dose_nn_render_config_from_control_selection(selection, available_trials=(0, 1, 2))
@@ -54,6 +56,7 @@ class DoseNNRenderControlTests(unittest.TestCase):
         self.assertEqual(settings.dose_color_scale_max, 30.0)
         self.assertEqual(settings.dose_colorwash_opacity, 0.35)
         self.assertFalse(settings.show_scalar_bar)
+        self.assertEqual(settings.dose_scalar_bar_title, "Dose (Gy)")
 
     def test_control_selection_accepts_point_alias(self) -> None:
         selection = normalize_dose_nn_render_control_selection(
@@ -68,6 +71,13 @@ class DoseNNRenderControlTests(unittest.TestCase):
         )
 
         self.assertEqual(selection.dose_color_scale_mode, "log")
+
+    def test_tk_trial_parser_accepts_ranges_and_lists(self) -> None:
+        self.assertEqual(_parse_trial_numbers("0-3, 10; 12"), (0, 1, 2, 3, 10, 12))
+        self.assertEqual(_parse_trial_numbers("all"), None)
+
+        with self.assertRaisesRegex(ValueError, "trial ranges must be ascending"):
+            _parse_trial_numbers("5-3")
 
     def test_control_selection_rejects_unavailable_trials(self) -> None:
         with self.assertRaisesRegex(ValueError, "selected_trials"):

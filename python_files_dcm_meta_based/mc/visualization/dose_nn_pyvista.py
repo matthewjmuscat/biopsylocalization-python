@@ -41,6 +41,15 @@ class DoseNNPyVistaRenderSettings:
     show_axes: bool = True
     show_scalar_bar: bool = True
     dose_scalar_bar_title: str = "Dose"
+    dose_scalar_bar_num_labels: int = 5
+    dose_scalar_bar_label_format: str = "%.3g"
+    dose_scalar_bar_font_family: str = "arial"
+    dose_scalar_bar_vertical: bool = True
+    x_axis_label: str = "Left-Right x (mm)"
+    y_axis_label: str = "Posterior-Anterior y (mm)"
+    z_axis_label: str = "Inferior-Superior z (mm)"
+    axes_font_family: str = "arial"
+    axes_label_font_size: int = 10
     camera_position: Any | None = None
 
 
@@ -106,7 +115,7 @@ def build_pyvista_dose_nn_plotter(
         _add_nearest_neighbour_vectors(pv, plotter, prepared_scene, resolved_settings)
 
     if resolved_settings.show_axes:
-        plotter.add_axes()
+        _add_axes(plotter, resolved_settings)
     if resolved_settings.camera_position is not None:
         plotter.camera_position = resolved_settings.camera_position
     else:
@@ -279,7 +288,7 @@ def _add_lattice_points(
         point_size=float(settings.lattice_point_size),
         render_points_as_spheres=True,
         show_scalar_bar=bool(settings.show_scalar_bar),
-        scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        scalar_bar_args=_dose_scalar_bar_args(settings),
         **_dose_scalar_kwargs(settings),
     )
 
@@ -327,7 +336,7 @@ def _add_dose_point_colorwash(
         opacity=float(settings.dose_colorwash_opacity),
         render_points_as_spheres=False,
         show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
-        scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        scalar_bar_args=_dose_scalar_bar_args(settings),
         **_dose_scalar_kwargs(settings),
     )
 
@@ -338,10 +347,13 @@ def _add_dose_volume_colorwash(
     prepared_scene: DoseNNPreparedScene,
     settings: DoseNNPyVistaRenderSettings,
 ) -> None:
+    if not bool(np.any(prepared_scene.colorwash_lattice_visibility_mask)):
+        return
     dose_grid = _rectilinear_dose_grid_from_lattice(
         pv,
         prepared_scene.colorwash_lattice_points,
         prepared_scene.colorwash_lattice_doses,
+        visible_mask=prepared_scene.colorwash_lattice_visibility_mask,
     )
     plotter.add_volume(
         dose_grid,
@@ -350,9 +362,27 @@ def _add_dose_volume_colorwash(
         cmap=settings.dose_colormap,
         opacity=float(settings.dose_colorwash_opacity),
         show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
-        scalar_bar_args={"title": settings.dose_scalar_bar_title},
+        scalar_bar_args=_dose_scalar_bar_args(settings),
         **_dose_scalar_kwargs(settings),
     )
+
+
+def _dose_scalar_bar_args(settings: DoseNNPyVistaRenderSettings) -> dict[str, Any]:
+    args: dict[str, Any] = {
+        "title": settings.dose_scalar_bar_title,
+        "n_labels": int(settings.dose_scalar_bar_num_labels),
+        "fmt": settings.dose_scalar_bar_label_format,
+        "font_family": settings.dose_scalar_bar_font_family,
+        "title_font_size": 14,
+        "label_font_size": 11,
+        "color": "black",
+        "vertical": bool(settings.dose_scalar_bar_vertical),
+    }
+    if bool(settings.dose_scalar_bar_vertical):
+        args.update({"position_x": 0.88, "position_y": 0.18, "width": 0.06, "height": 0.62})
+    else:
+        args.update({"position_x": 0.24, "position_y": 0.06, "width": 0.58, "height": 0.08})
+    return args
 
 
 def _dose_scalar_kwargs(settings: DoseNNPyVistaRenderSettings) -> dict[str, Any]:
@@ -384,13 +414,26 @@ def _normalize_dose_color_scale_mode(value: str) -> str:
     raise ValueError("unsupported dose color scale mode: {}".format(value))
 
 
-def _rectilinear_dose_grid_from_lattice(pv: Any, lattice_points: np.ndarray, lattice_doses: np.ndarray) -> Any:
+def _rectilinear_dose_grid_from_lattice(
+    pv: Any,
+    lattice_points: np.ndarray,
+    lattice_doses: np.ndarray,
+    *,
+    visible_mask: np.ndarray | None = None,
+) -> Any:
     points = np.asarray(lattice_points, dtype=float)
     doses = np.asarray(lattice_doses, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:
         raise ValueError("dose volume colorwash requires lattice_points with shape (n, 3)")
     if doses.shape != (points.shape[0],):
         raise ValueError("dose volume colorwash requires one dose value per lattice point")
+    if visible_mask is not None:
+        resolved_visible_mask = np.asarray(visible_mask, dtype=bool)
+        if resolved_visible_mask.shape != (points.shape[0],):
+            raise ValueError("dose volume colorwash visible mask must match lattice point count")
+        if not bool(np.any(resolved_visible_mask)):
+            raise ValueError("dose volume colorwash has no visible lattice points after filters")
+        doses = np.where(resolved_visible_mask, doses, np.nan)
 
     x_values = np.unique(points[:, 0])
     y_values = np.unique(points[:, 1])
@@ -418,6 +461,28 @@ def _rectilinear_dose_grid_from_lattice(pv: Any, lattice_points: np.ndarray, lat
     dose_grid = pv.RectilinearGrid(x_values, y_values, z_values)
     dose_grid.point_data["dose"] = dose_grid_values.ravel(order="F")
     return dose_grid
+
+
+def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    plotter.add_axes(
+        xlabel="X",
+        ylabel="Y",
+        zlabel="Z",
+        line_width=2,
+        viewport=(0.0, 0.0, 0.14, 0.14),
+    )
+    plotter.show_bounds(
+        xtitle=settings.x_axis_label,
+        ytitle=settings.y_axis_label,
+        ztitle=settings.z_axis_label,
+        font_size=int(settings.axes_label_font_size),
+        font_family=settings.axes_font_family,
+        color="black",
+        location="outer",
+        ticks="outside",
+        fmt="%.0f",
+        use_2d=False,
+    )
 
 
 def _add_biopsy_points(

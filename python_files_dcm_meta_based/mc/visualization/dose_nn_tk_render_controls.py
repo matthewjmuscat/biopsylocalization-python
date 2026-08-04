@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .dose_nn_render_controls import DOSE_NN_DOSE_COLOR_SCALE_MODES
@@ -99,6 +100,10 @@ class TkDoseNNRenderControlSelectionAdapter:
         opacity_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_opacity))
         colorwash_point_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_size))
         colorwash_style_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_style))
+        dose_scalar_bar_title_var = tk.StringVar(value=str(resolved_initial_selection.dose_scalar_bar_title))
+        x_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.x_axis_label))
+        y_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.y_axis_label))
+        z_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.z_axis_label))
 
         show_biopsy_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_biopsy_points))
         show_reference_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_reference_biopsy_points))
@@ -110,7 +115,7 @@ class TkDoseNNRenderControlSelectionAdapter:
         show_scalar_bar_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_scalar_bar))
 
         current_row = 2
-        current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all available")
+        current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all; use 0-100 or 0,50,100")
         current_row = _add_labeled_entry(frame, current_row, "Nominal trial", reference_trials_var, "usually 0 = non-transformed position")
         current_row = _add_labeled_entry(frame, current_row, "Dose min", dose_min_var, "blank = no lower cutoff")
         current_row = _add_labeled_entry(frame, current_row, "Dose max", dose_max_var, "blank = no upper cutoff")
@@ -145,6 +150,10 @@ class TkDoseNNRenderControlSelectionAdapter:
             colorwash_point_size_var,
             "positive number",
         )
+        current_row = _add_labeled_entry(frame, current_row, "Dose colorbar title", dose_scalar_bar_title_var, "example: Dose (Gy)")
+        current_row = _add_labeled_entry(frame, current_row, "X axis label", x_axis_label_var, "physical patient-space x")
+        current_row = _add_labeled_entry(frame, current_row, "Y axis label", y_axis_label_var, "physical patient-space y")
+        current_row = _add_labeled_entry(frame, current_row, "Z axis label", z_axis_label_var, "physical patient-space z")
 
         layers_frame = ttk.LabelFrame(frame, text="Layers", padding=8)
         layers_frame.grid(row=current_row, column=0, columnspan=2, sticky="ew", pady=(10, 8))
@@ -188,6 +197,10 @@ class TkDoseNNRenderControlSelectionAdapter:
                     show_nearest_neighbour_vectors=bool(show_vectors_var.get()),
                     show_axes=bool(show_axes_var.get()),
                     show_scalar_bar=bool(show_scalar_bar_var.get()),
+                    dose_scalar_bar_title=str(dose_scalar_bar_title_var.get()),
+                    x_axis_label=str(x_axis_label_var.get()),
+                    y_axis_label=str(y_axis_label_var.get()),
+                    z_axis_label=str(z_axis_label_var.get()),
                 )
                 result_ref["value"] = normalize_dose_nn_render_control_selection(
                     selection,
@@ -282,8 +295,20 @@ def _parse_trial_numbers(value: str) -> tuple[int, ...] | None:
     text = str(value).strip()
     if text == "" or text.lower() == "all":
         return None
-    fragments = [fragment.strip() for fragment in text.replace(";", ",").replace(" ", ",").split(",")]
-    trial_numbers = tuple(int(fragment) for fragment in fragments if fragment != "")
+    normalized_text = re.sub(r"\s*-\s*", "-", text.replace(";", ","))
+    fragments = [fragment.strip() for fragment in re.split(r"[\s,]+", normalized_text) if fragment.strip() != ""]
+    trial_numbers_list: list[int] = []
+    for fragment in fragments:
+        range_match = re.fullmatch(r"(\d+)-(\d+)", fragment)
+        if range_match is not None:
+            start_trial = int(range_match.group(1))
+            stop_trial = int(range_match.group(2))
+            if stop_trial < start_trial:
+                raise ValueError("trial ranges must be ascending")
+            trial_numbers_list.extend(range(start_trial, stop_trial + 1))
+        else:
+            trial_numbers_list.append(int(fragment))
+    trial_numbers = tuple(trial_numbers_list)
     return None if len(trial_numbers) == 0 else trial_numbers
 
 

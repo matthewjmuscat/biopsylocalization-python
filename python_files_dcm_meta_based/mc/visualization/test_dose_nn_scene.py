@@ -61,6 +61,8 @@ class DoseNNRenderSceneTests(unittest.TestCase):
         self.assertEqual(prepared_scene.biopsy_points.shape, (2, 3))
         self.assertEqual(prepared_scene.lattice_points.shape, (2, 3))
         self.assertTrue(np.all(prepared_scene.lattice_doses >= 20.0))
+        self.assertEqual(prepared_scene.colorwash_lattice_visibility_mask.shape, (5,))
+        self.assertEqual(int(np.count_nonzero(prepared_scene.colorwash_lattice_visibility_mask)), 3)
         self.assertEqual(prepared_scene.num_vectors, 2)
 
     def test_prepare_scene_keeps_reference_biopsy_points_outside_selected_trial(self):
