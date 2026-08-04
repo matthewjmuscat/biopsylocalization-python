@@ -171,6 +171,54 @@ Markdown/CSV data dictionary for human inspection. This keeps the future audit
 documentation synchronized with the actual artifact writer instead of requiring
 manual shape notes that can drift.
 
+## Stage Retention Field Sketch
+
+The context-artifact design should be driven by what later tools need to know,
+not by which legacy objects happen to exist in memory. The first pass should
+define retained fields by algorithm stage, with a short reason for each field.
+
+Suggested starting inventory:
+
+- Input identity and source inventory: patient UID, study/series/object role,
+  source path references, source checksums where practical, and run ID. Reason:
+  lets post-run tools prove which patient-local inputs produced an artifact
+  without reopening raw data by default.
+- Coordinate-frame registry: frame names, axis conventions, units, affine
+  relationships, and schema versions. Reason: gives every downstream array a
+  declared physical meaning and prevents silent frame mixing.
+- Structure preprocessing: structure IDs, source ROI names, voxelization or
+  surface parameters, sampled point arrays, masks, centroids, and source frame
+  references. Reason: allows geometry audit, rendering, and downstream distance
+  calculations without serializing one large mutable dictionary.
+- Transformation and uncertainty sampling: sampled trial IDs, random seed or
+  random-variable provenance, transformation-specific parameters, and resolved
+  per-trial maps or query coordinates. Reason: preserves both audit lineage and
+  the concrete transformed state consumed by localization stages.
+- Biopsy query generation: biopsy ID, original point indices, physical query
+  points by trial, voxel/core position metadata where available, and links to
+  transform provenance. Reason: supports dose/MR/tissue reconstruction and
+  figure generation without rerunning the biopsy localization loop.
+- Dose and MR lattice preparation: lattice coordinate model, scalar values,
+  gradient values where used, grid spacing/origin or irregular coordinates,
+  units, and source-frame references. Reason: lets nearest-neighbour and render
+  surfaces reconstruct physical context from compact array-native artifacts.
+- Nearest-neighbour localization: neighbour count, algorithm/config identity,
+  nearest lattice indices, distances, interpolation weights or power, and
+  interpolated values. Reason: replaces raw repeated-coordinate dumps with the
+  minimal complete state needed to audit and redraw interpolation behaviour.
+- Tissue containment and relative-structure metrics: sampled structure IDs,
+  containment outcomes, distances, thresholds, and summary tensors/tables.
+  Reason: keeps repeated trial geometry compact while retaining enough context
+  to rebuild selected dataframe views.
+- Output assembly and derived views: table schema versions, source artifact IDs,
+  filters, row counts, and constructor provenance. Reason: makes human-readable
+  tables reproducible derived products instead of undocumented primary state.
+
+Each entry should eventually become a code-owned artifact contract with shape,
+dtype, unit, retention level, and reader information. This section is only the
+initial scientific inventory; it should be tightened as writers and validators
+are implemented.
+
 ## Derived Dataframe Constructors
 
 Dataframes remain valuable as inspection and analysis views, but they should not

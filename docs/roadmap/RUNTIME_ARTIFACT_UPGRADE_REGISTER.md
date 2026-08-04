@@ -20,19 +20,26 @@ Validation burden scale: `small`, `medium`, `large`, `massive`.
 
 - Status: open.
 - Anchor: `biopsy_localization_convex_main.py` currently warns that
-  `raw_data_mc_dosimetry_dump_bool` may write hundreds of gigabytes.
-- Problem: the raw nearest-neighbour dataframe is convenient, but it repeats
-  geometry-heavy information and is not a storage-efficient primary artifact.
-- Recommendation: replace routine reliance on raw dataframe dumps with
-  manifest-backed context arrays: dose lattice once, query geometry,
-  nearest-lattice indices, nearest distances, interpolated dose tensors, and a
-  dataframe constructor for requested human-readable views.
+  `raw_data_mc_dosimetry_dump_bool` may write hundreds of gigabytes. The legacy
+  default and `MCOutputDumpConfig` default are both `False`, and the current
+  patient convex MC stage rejects raw dump side effects.
+- Problem: this is not an active default-output problem. The remaining issue is
+  that the old escape hatch is too heavy and too row-oriented to be the right
+  answer when a future run genuinely needs deeper retained context.
+- Recommendation: retire or quarantine the raw dataframe dump path once a
+  replacement context artifact exists. The replacement should preserve
+  equivalent or greater information in manifest-backed arrays: dose lattice
+  once, query geometry, nearest-lattice indices, nearest distances,
+  interpolated dose tensors, and stage provenance. Human-readable dataframes
+  should be reconstructed on demand for selected views.
 - Expected storage/performance benefit: massive.
 - Expected cleanliness benefit: large.
 - Validation burden: large, because reconstructed views must match legacy dose
   outputs and selected nearest-neighbour rows.
 - Touch policy: do not edit MC dose math or localizer behavior as part of the
-  renderer backend. Additive context writers should be validated first.
+  renderer backend. Additive context writers should be validated first; removal
+  or hard deprecation of the old raw dump flag should happen only after the
+  replacement artifact contract is in place.
 
 ### Master Structure Reference Dictionary As Primary Runtime Carrier
 
