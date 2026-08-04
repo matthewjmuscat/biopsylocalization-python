@@ -204,6 +204,14 @@ post-run display combines those two artifact handles. Parquet nearest-neighbour
 row tables are optional diagnostic or legacy-compatibility views, not the
 primary source for broad NN render context.
 
+The GUI-facing bridge should materialize a standard saved-scene artifact from
+those retained context handles when a post-run render session needs one. The
+existing saved-scene selector can then discover and render the materialized
+scene without learning about Zarr layout, lattice artifacts, or NN context
+artifact internals. Optional parity checks may rebuild the scene from retained
+context and compare it against the runtime scene before the runtime object is
+discarded in diagnostic or validation runs.
+
 ## GUI Controls
 
 The figure/debug workflow needs dose-domain controls beyond the current generic

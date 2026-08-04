@@ -13,11 +13,15 @@ from mc.simulation.per_patient.dose import PatientDoseLatticeContext
 from mc.simulation.per_patient.dose_context_artifacts import build_patient_dose_lattice_context_artifact_plan
 from mc.simulation.per_patient.dose_context_artifacts import patient_dose_lattice_context_array_payload
 from mc.simulation.per_patient.dose_context_artifacts import write_patient_dose_context_zarr_arrays
+from mc.visualization.dose_nn_context_bridge import assert_dose_nn_render_context_artifacts_match_scene
 from mc.visualization.dose_nn_context_bridge import build_dose_nn_render_context_artifact_plan
 from mc.visualization.dose_nn_context_bridge import build_dose_nn_render_scene_from_context_artifacts
+from mc.visualization.dose_nn_context_bridge import materialize_dose_nn_saved_scene_artifact_from_context
 from mc.visualization.dose_nn_context_bridge import write_dose_nn_render_context_zarr_artifact
 from mc.visualization.dose_nn_scene import DoseNNSceneMetadata
 from mc.visualization.dose_nn_scene import build_dose_nn_render_scene
+from mc.visualization.dose_nn_scene_artifacts import read_dose_nn_render_scene_artifact
+from mc.visualization.dose_nn_selector import discover_saved_dose_nn_scene_options
 
 
 class DoseNNContextBridgeTests(unittest.TestCase):
@@ -40,6 +44,12 @@ class DoseNNContextBridgeTests(unittest.TestCase):
                 render_context_artifact_ref=render_plan.artifact_refs[0],
                 output_root=output_root,
             )
+            parity_scene = assert_dose_nn_render_context_artifacts_match_scene(
+                runtime_scene,
+                lattice_artifact_ref=lattice_plan.artifact_refs[0],
+                render_context_artifact_ref=render_plan.artifact_refs[0],
+                output_root=output_root,
+            )
 
         self.assertIn("dose_biopsy_002_render_context", written_paths)
         self.assertEqual(rebuilt_scene.metadata.patient_uid, runtime_scene.metadata.patient_uid)
@@ -53,6 +63,7 @@ class DoseNNContextBridgeTests(unittest.TestCase):
         np.testing.assert_array_equal(rebuilt_scene.nearest_lattice_points, runtime_scene.nearest_lattice_points)
         np.testing.assert_array_equal(rebuilt_scene.nearest_lattice_doses, runtime_scene.nearest_lattice_doses)
         np.testing.assert_array_equal(rebuilt_scene.nearest_distances, runtime_scene.nearest_distances)
+        np.testing.assert_array_equal(parity_scene.nearest_distances, runtime_scene.nearest_distances)
 
     def test_render_context_plan_does_not_duplicate_lattice_arrays(self) -> None:
         plan = build_dose_nn_render_context_artifact_plan(_synthetic_runtime_scene())
@@ -61,6 +72,37 @@ class DoseNNContextBridgeTests(unittest.TestCase):
         self.assertNotIn("lattice_doses", plan.array_specs_by_dataset)
         self.assertIn("nearest_lattice_points", plan.array_specs_by_dataset)
         self.assertEqual(plan.artifact_refs[0].relative_path, "context/dosimetry/dose/biopsy_002/render_context.zarr")
+
+    def test_materialized_saved_scene_artifact_is_discoverable_by_existing_selector(self) -> None:
+        runtime_scene = _synthetic_runtime_scene()
+        lattice_context = _synthetic_lattice_context(runtime_scene)
+        lattice_plan = build_patient_dose_lattice_context_artifact_plan(lattice_context)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_root = Path(temporary_directory)
+            write_patient_dose_context_zarr_arrays(
+                lattice_plan,
+                patient_dose_lattice_context_array_payload(lattice_context),
+                output_root,
+            )
+            render_plan, _written_paths = write_dose_nn_render_context_zarr_artifact(runtime_scene, output_root)
+            scene_artifact_dir = output_root.joinpath("render_scenes", "dose_biopsy_002")
+
+            manifest = materialize_dose_nn_saved_scene_artifact_from_context(
+                lattice_artifact_ref=lattice_plan.artifact_refs[0],
+                render_context_artifact_ref=render_plan.artifact_refs[0],
+                output_root=output_root,
+                scene_artifact_dir=scene_artifact_dir,
+                scene_id="dose_biopsy_002_from_context",
+            )
+            loaded_scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+            options = discover_saved_dose_nn_scene_options(output_root)
+
+        self.assertEqual(manifest.scene_id, "dose_biopsy_002_from_context")
+        self.assertEqual(len(options), 1)
+        self.assertEqual(options[0].scene_id, "dose_biopsy_002_from_context")
+        self.assertEqual(options[0].available_trials, (0, 1))
+        np.testing.assert_array_equal(loaded_scene.nearest_lattice_points, runtime_scene.nearest_lattice_points)
 
 
 def _synthetic_runtime_scene():

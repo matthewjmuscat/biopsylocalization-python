@@ -20,6 +20,8 @@ from ..simulation.per_patient.dose_context_artifacts import write_patient_dose_c
 from .dose_nn_scene import DoseNNRenderScene
 from .dose_nn_scene import DoseNNSceneMetadata
 from .dose_nn_scene import build_dose_nn_render_scene
+from .dose_nn_scene_artifacts import DoseNNRenderSceneArtifactManifest
+from .dose_nn_scene_artifacts import write_dose_nn_render_scene_artifact
 
 
 DOSE_NN_RENDER_CONTEXT_ARTIFACT_SCHEMA_VERSION = "dose_nn_render_context_artifact_v1"
@@ -137,6 +139,60 @@ def build_dose_nn_render_scene_from_context_artifacts(
     )
 
 
+def assert_dose_nn_render_context_artifacts_match_scene(
+    scene: DoseNNRenderScene,
+    *,
+    lattice_artifact_ref: ArtifactRef,
+    render_context_artifact_ref: ArtifactRef,
+    output_root: Path | str,
+) -> DoseNNRenderScene:
+    """Rebuild a scene from retained context artifacts and compare it to a runtime scene."""
+    rebuilt_scene = build_dose_nn_render_scene_from_context_artifacts(
+        lattice_artifact_ref=lattice_artifact_ref,
+        render_context_artifact_ref=render_context_artifact_ref,
+        output_root=output_root,
+        metadata=scene.metadata,
+    )
+    for array_name in (
+        "lattice_points",
+        "lattice_doses",
+        "original_point_indices",
+        "trial_numbers",
+        "biopsy_points",
+        "interpolated_biopsy_doses",
+        "nearest_lattice_points",
+        "nearest_lattice_doses",
+        "nearest_distances",
+    ):
+        _assert_same_array(array_name, getattr(scene, array_name), getattr(rebuilt_scene, array_name))
+    return rebuilt_scene
+
+
+def materialize_dose_nn_saved_scene_artifact_from_context(
+    *,
+    lattice_artifact_ref: ArtifactRef,
+    render_context_artifact_ref: ArtifactRef,
+    output_root: Path | str,
+    scene_artifact_dir: Path | str,
+    scene_id: str,
+    metadata: DoseNNSceneMetadata | None = None,
+    overwrite: bool = False,
+) -> DoseNNRenderSceneArtifactManifest:
+    """Write a standard saved-scene artifact from retained Zarr context artifacts."""
+    scene = build_dose_nn_render_scene_from_context_artifacts(
+        lattice_artifact_ref=lattice_artifact_ref,
+        render_context_artifact_ref=render_context_artifact_ref,
+        output_root=output_root,
+        metadata=metadata,
+    )
+    return write_dose_nn_render_scene_artifact(
+        scene,
+        scene_artifact_dir,
+        scene_id=scene_id,
+        overwrite=overwrite,
+    )
+
+
 def _array_spec(
     artifact_ref: ArtifactRef,
     dataset_name: str,
@@ -174,6 +230,29 @@ def _metadata_from_render_context_ref(artifact_ref: ArtifactRef) -> DoseNNSceneM
         source_label=str(metadata.get("source_label", "retained_context")),
         extra={"render_context_artifact_id": artifact_ref.artifact_id},
     )
+
+
+def _assert_same_array(array_name: str, expected: Any, actual: Any) -> None:
+    expected_array = np.asarray(expected)
+    actual_array = np.asarray(actual)
+    if expected_array.shape != actual_array.shape:
+        raise ValueError(
+            "dose NN context artifact array '{}' has shape {}, expected {}".format(
+                array_name,
+                actual_array.shape,
+                expected_array.shape,
+            )
+        )
+    if str(expected_array.dtype) != str(actual_array.dtype):
+        raise ValueError(
+            "dose NN context artifact array '{}' has dtype {}, expected {}".format(
+                array_name,
+                actual_array.dtype,
+                expected_array.dtype,
+            )
+        )
+    if not np.array_equal(expected_array, actual_array):
+        raise ValueError("dose NN context artifact array '{}' does not match runtime scene".format(array_name))
 
 
 def _non_empty_patient_uid(patient_uid: str) -> str:
