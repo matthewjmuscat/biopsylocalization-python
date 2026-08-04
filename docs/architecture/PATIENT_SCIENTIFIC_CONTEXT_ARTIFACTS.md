@@ -186,6 +186,13 @@ produce the same manifests. It should not establish a second artifact schema,
 write to scattered legacy paths, or require post-run tools to understand legacy
 mutable dictionaries.
 
+This compatibility allowance is for explicit artifact production and validation,
+not for adding new interactive runtime behavior to the legacy oracle. For new
+debug/render workflows, prefer post-run artifact readers first and
+patient-runner stage-finalization hooks second. Keep legacy main as an oracle
+and compatibility source unless a migration checkpoint explicitly requires a
+shared writer to run there.
+
 Do not turn the master structure reference dictionary into the new artifact
 registry. It can remain a legacy in-memory source, oracle, or adapter input while
 the migration is in progress. The durable boundary should be new code-owned

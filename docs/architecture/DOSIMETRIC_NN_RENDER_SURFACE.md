@@ -304,6 +304,13 @@ Current patient-runner status at the time of this note:
 - The legacy-main live patient-scientific runner remains disabled by default.
 - The `from_legacy` bridge remains a validation adapter, not the target primary
   execution path.
+- The post-run dose NN context render service can materialize saved-scene
+  artifacts from retained lattice/render-context artifact refs in a patient
+  artifact index.
+- Runtime launching is intentionally not wired yet. When it is needed, it should
+  live in the patient-runner MC dose stage after dose-localization outputs are
+  finalized and retained artifacts are snapshotted. It should not be wired into
+  legacy main or the raw MC numerical loop.
 
 The return point after the publication render pass is the one-patient runtime
 builder and the run-profile/orchestrator boundary. The dose render work should

@@ -1,6 +1,6 @@
 # Patient-Runner Process Architecture
 
-Last updated: 2026-07-08
+Last updated: 2026-08-03
 
 This note defines the target execution architecture for moving the patient
 runner outside the legacy all-patient runtime. It is the process and memory
@@ -88,6 +88,19 @@ Current migration status:
    builder is implemented.
 - The legacy-main live patient-scientific runner default is disabled; the
    from-legacy bridge remains available as an explicit validation adapter.
+
+August 2026 checkpoint:
+
+- Retained validation evidence was audited before the next config overhaul. The
+   Jun25/Jun26 patient-runner profiles remain the main retained patient-runner
+   evidence; the Jun02/Jun03 validation-heavy legacy/cohort pair remains the
+   retained legacy regression evidence; Jun28 split-run equivalence is disabled
+   as a gate because its input folder changed mid-run.
+- The dose nearest-neighbour render work is a contained publication/debug
+   detour. The current safe path is post-run materialization from retained
+   artifacts into saved-scene artifacts. Any future runtime dose-render launch
+   should be patient-runner-only, after MC dose localization finalization and
+   artifact snapshot, not a new GUI hook inside legacy main.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
@@ -339,6 +352,12 @@ boundaries, and full validation only after behavior-capable boundaries change.
 | 7 | Migrate scientific config groups out of `main` | Medium | High if broad | One config group at a time, default-equivalence snapshots, retained legacy regression profiles |
 | 8 | GUI/product backend boundary | Medium | Low for science if kept API-driven | GUI calls public CLI/API only, JSON/TOML contract tests, no GUI dependence on `main` globals |
 
+Publication/debug render work can proceed as a bounded side pass when a figure or
+inspection need is urgent, but it should return to the same mainline sequence:
+retained context artifacts first, patient-runner finalization hooks second, and
+GUI/profile controls last. It should not pull runtime renderer state back into
+legacy main just because the legacy path can still compute the data.
+
 Phase 4 and Phase 7 are the highest-risk areas. Phase 4 can silently change
 which patient objects or input files feed the scientific stages. Phase 7 can
 silently change defaults. Both should be split into small, reviewable passes
@@ -380,6 +399,8 @@ gates once completed output folders exist.
 - Do not return dataframes, point clouds, or arrays from worker to parent.
 - Do not mix process architecture changes with scientific behavior changes.
 - Do not make post-run assembly part of one patient's scientific execution.
+- Do not wire new runtime debug/render side effects into the legacy oracle path;
+   attach them to patient-runner finalization boundaries when needed.
 - Keep the legacy oracle runnable until primary-runner parity is proven on the
   contracted output surface.
 

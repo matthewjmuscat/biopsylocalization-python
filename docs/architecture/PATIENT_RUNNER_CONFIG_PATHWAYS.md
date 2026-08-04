@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-07-08
+Last updated: 2026-08-03
 
 ## Purpose
 
@@ -135,6 +135,12 @@ resolved scientific config, but it should not copy the hundreds of loose
 The future GUI should edit this run profile and call public runner/assembly/
 validation entrypoints. It should not depend on `biopsy_localization_convex_main.py`
 locals or private in-memory dictionaries.
+
+Current TOML status: TOML profiles have started in the validation layer, where
+they select completed run folders and comparator jobs. They do not yet define
+production scientific run parameters. The production run-profile layer should
+follow the same pattern later: human TOML at the edge, typed Python config as
+the runtime authority, and JSON as generated evidence/manifest output.
 
 ## Current Config Tree By Domain
 
@@ -846,11 +852,17 @@ scientific-shadow validation gate:
   `PipelineConfig` for the legacy oracle path, but new patient-runner work
   should consume the typed config tree instead of those translated locals.
 
-Do not migrate main-facing declarations into JSON as the runtime authority before
-this validation gate. The next stable source is the typed Python `PipelineConfig`.
-JSON should be introduced as a serialization or GUI/run-plan view over that root
-config after scientific-shadow parity is credible, not as a parallel config
+Do not migrate main-facing declarations into TOML or JSON as the runtime
+authority before this validation gate. The next stable source is the typed
+Python `PipelineConfig`. TOML should remain a human-authored profile layer and
+JSON should remain generated evidence or resolved-plan output until
+scientific-shadow parity is credible. Neither should become a parallel config
 language that can drift from the Python contracts.
+
+New debug/render controls should follow the same rule. Add typed config fields
+where the patient-runner stage can consume them, then expose them through a run
+profile later. Do not add fresh render toggles to legacy main as the owning
+surface for new patient-runner behavior.
 
 The next validation sequence is:
 
