@@ -82,6 +82,13 @@ from .dose import (
     write_patient_dose_dvh_outputs_to_legacy_record,
     write_patient_dose_localization_outputs_to_legacy_record,
 )
+from .dose_context_artifacts import (
+    DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION,
+    PatientDoseContextArtifactPlan,
+    build_patient_dose_biopsy_query_context_artifact_plan,
+    build_patient_dose_lattice_context_artifact_plan,
+    build_patient_dose_localization_context_artifact_plan,
+)
 from .legacy_keys import (
     LegacyMCBiopsyIdentityKeys,
     LegacyMCBiopsyOutputKeys,
@@ -166,6 +173,7 @@ __all__ = [
     "LegacyMCMasterInfoKeys",
     "LegacyMCOutputTableKeys",
     "DEFAULT_MC_DOSE_OUTPUT_VALUE_COLUMNS",
+    "DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION",
     "PatientContainmentBiopsyContext",
     "PatientContainmentBiopsyStatisticsOutputs",
     "PatientContainmentCentroidDistanceResult",
@@ -181,6 +189,7 @@ __all__ = [
     "PatientDoseLatticeContext",
     "PatientDoseLocalizationOutputs",
     "PatientDoseOutputs",
+    "PatientDoseContextArtifactPlan",
     "PatientMCConvexStageResult",
     "PatientMRBiopsyContext",
     "PatientMRLatticeContext",
@@ -204,7 +213,10 @@ __all__ = [
     "build_patient_containment_dilated_structure_bank",
     "build_patient_containment_relative_structure_input",
     "build_patient_dose_biopsy_context",
+    "build_patient_dose_biopsy_query_context_artifact_plan",
     "build_patient_dose_lattice_context",
+    "build_patient_dose_lattice_context_artifact_plan",
+    "build_patient_dose_localization_context_artifact_plan",
     "build_patient_mr_biopsy_context",
     "build_patient_mr_lattice_context",
     "build_patient_mc_dose_output_tables",

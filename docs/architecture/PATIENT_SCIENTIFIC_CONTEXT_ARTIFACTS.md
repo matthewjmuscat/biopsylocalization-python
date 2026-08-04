@@ -210,9 +210,9 @@ output_artifacts/
 
 mc/simulation/per_patient/
   dose_context_artifacts.py
-    DoseLatticeContextArtifact, BiopsyQueryContextArtifact,
-    DoseNearestNeighbourContextArtifact, dose Zarr writers/readers,
-    legacy dose adapter inputs
+    dose-owned ArtifactRef/ArrayArtifactSpec/TableArtifactSpec builders for
+    lattice, biopsy query, and nearest-neighbour localization context;
+    next step is dose Zarr writers/readers and legacy dose adapter inputs
 
 preprocessing/ or sampling/
   structure_context_artifacts.py, transform_context_artifacts.py
