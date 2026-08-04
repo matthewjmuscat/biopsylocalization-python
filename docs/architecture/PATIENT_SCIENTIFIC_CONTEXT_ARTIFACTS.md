@@ -278,6 +278,14 @@ should return typed handles/readers that can lazily open Zarr arrays or construc
 requested slices. It should not load all trial-by-point tensors just because the
 patient context object was created.
 
+A lazy reader is a small object or function that knows where an artifact lives
+and how to read it, but does not materialize the artifact at construction time.
+For example, a dose NN lazy reader may hold a manifest entry and Zarr store path,
+then read only `trial_numbers[20:40]`, `query_points[trial_window, :, :]`, or a
+single biopsy's nearest-neighbour index tensor when the GUI or dataframe
+constructor asks for that slice. This is the opposite of loading every retained
+array into memory when a patient context object is created.
+
 This means the coordination point between dataclasses and artifacts is the
 manifest, not object containment. Dataclasses define the schema and validation
 rules. Writers persist arrays/tables/manifests under the intentional per-patient

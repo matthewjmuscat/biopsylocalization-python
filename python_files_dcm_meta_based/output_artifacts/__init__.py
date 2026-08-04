@@ -11,6 +11,15 @@ from .contracts import build_output_table_contracts
 from .contracts import normalize_legacy_table_name
 from .contracts import summarize_output_table_contracts
 from .contracts import write_output_table_contracts
+from .context_contracts import SCIENTIFIC_CONTEXT_CONTRACTS_SCHEMA_VERSION
+from .context_contracts import ArtifactRef
+from .context_contracts import ArrayArtifactSpec
+from .context_contracts import PatientArtifactIndex
+from .context_contracts import TableArtifactSpec
+from .context_contracts import artifact_ref_from_dict
+from .context_contracts import patient_artifact_index_from_dict
+from .context_contracts import read_patient_artifact_index
+from .context_contracts import write_patient_artifact_index
 from .exporters import PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION
 from .exporters import DataframeArtifact
 from .exporters import iter_biopsy_mc_artifacts
@@ -80,6 +89,7 @@ __all__ = [
     "PATIENT_ARTIFACT_MANIFEST_SCHEMA_VERSION",
     "PATIENT_STITCH_PLAN_SCHEMA_VERSION",
     "OUTPUT_TABLE_CONTRACT_SCHEMA_VERSION",
+    "SCIENTIFIC_CONTEXT_CONTRACTS_SCHEMA_VERSION",
     "OUTPUT_ASSEMBLY_PLANNER_SCHEMA_VERSION",
     "PHASE3B_DATAFRAME_EXPORT_SCHEMA_VERSION",
     "PHASE3C_OUTPUT_DIR_NAME",
@@ -92,6 +102,10 @@ __all__ = [
     "IN_MEMORY_STITCH_VALIDATION_SCHEMA_VERSION",
     "RUN_MANIFEST_INDEX_SCHEMA_VERSION",
     "DataframeArtifact",
+    "ArtifactRef",
+    "ArrayArtifactSpec",
+    "PatientArtifactIndex",
+    "TableArtifactSpec",
     "CanonicalKeySpec",
     "OutputAssemblyPlan",
     "OutputRowOrderPolicy",
@@ -116,6 +130,7 @@ __all__ = [
     "collect_phase3c_output_artifacts",
     "collect_patient_fragment_dataframes",
     "classify_expected_artifact",
+    "artifact_ref_from_dict",
     "classify_expected_assembly_plan",
     "classify_expected_table_spec",
     "expected_artifact_decision_report_fields",
@@ -129,6 +144,8 @@ __all__ = [
     "normalize_legacy_table_name",
     "output_assembly_plan_rows",
     "read_run_manifest_index",
+    "patient_artifact_index_from_dict",
+    "read_patient_artifact_index",
     "run_shadow_stitch_validation",
     "render_output_schema_data_dictionary_markdown",
     "summarize_manifest_index_entries",
@@ -148,6 +165,7 @@ __all__ = [
     "write_patient_artifact_outputs",
     "write_output_table_contracts",
     "write_run_manifest_index",
+    "write_patient_artifact_index",
     "write_phase3c_output_surface",
     "write_shadow_stitch_validation",
 ]
