@@ -94,6 +94,30 @@ Validation burden scale: `small`, `medium`, `large`, `massive`.
 - Touch policy: constructor outputs should be compared against current dataframe
   outputs before replacing any production artifact surface.
 
+### Structure Set Point Clouds And Geometry Arrays
+
+- Status: open.
+- Anchor: structure point clouds, sampled surfaces, voxelized masks, centroids,
+  and related geometry currently carried through structure-reference dictionaries
+  and downstream runtime objects.
+- Problem: these are array-native scientific geometry products, but they are
+  often bundled with mixed runtime state. That makes it hard to retain geometry
+  efficiently, audit coordinate frames, or stream selected structures without
+  loading broad patient dictionaries.
+- Recommendation: handle large structure point clouds similarly to dose/MR
+  lattices: store them as manifest-backed chunked arrays when large, with JSON
+  metadata for structure identity, coordinate frame, units, algorithm/source
+  provenance, and retention level. Unlike regular dose lattices, structure sets
+  may be ragged and multi-object, so contracts should include object indexes,
+  offsets or per-structure groups, optional topology/mask datasets, and ROI-name
+  normalization provenance.
+- Expected storage/performance benefit: medium to large.
+- Expected cleanliness benefit: large.
+- Validation burden: large for central geometry carriers, because downstream
+  containment, distance, render, and optimizer views must match legacy geometry.
+- Touch policy: treat as a context-artifact migration target, not part of the
+  current dose renderer math pass.
+
 ### Rendering Or GUI Logic Embedded In Scientific Runtime
 
 - Status: in progress.

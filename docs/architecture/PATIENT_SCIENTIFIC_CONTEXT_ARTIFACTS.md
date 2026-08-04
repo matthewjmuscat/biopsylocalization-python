@@ -594,6 +594,11 @@ Dose-specific selection layer around the generic render broker. It should build
 choice groups, hold dose-specific trial/threshold/vector options, and dispatch
 to renderer backends. The generic broker remains domain-agnostic.
 
+Initial implementation status: saved-scene catalog and PyVista dispatch helper
+complete. The selector can discover compact render-scene artifacts from their
+manifests without loading arrays, build broker-compatible scene choice options,
+and render selected options through `dose_nn_render_service.py`.
+
 ```text
 python_files_dcm_meta_based/mc/visualization/dose_nn_plotly.py
 python_files_dcm_meta_based/mc/visualization/dose_nn_open3d.py
