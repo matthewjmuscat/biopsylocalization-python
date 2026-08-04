@@ -7,6 +7,10 @@ from .dose_nn_context_bridge import build_dose_nn_render_scene_from_context_arti
 from .dose_nn_context_bridge import dose_nn_render_context_array_payload
 from .dose_nn_context_bridge import materialize_dose_nn_saved_scene_artifact_from_context
 from .dose_nn_context_bridge import write_dose_nn_render_context_zarr_artifact
+from .dose_nn_context_render_service import DoseNNContextMaterializationResult
+from .dose_nn_context_render_service import DoseNNContextSelectorSessionResult
+from .dose_nn_context_render_service import materialize_and_run_dose_nn_context_selector_session
+from .dose_nn_context_render_service import materialize_dose_nn_saved_scene_artifact_from_patient_index
 
 __all__ = [
 	"DOSE_NN_RENDER_CONTEXT_ARTIFACT_SCHEMA_VERSION",
@@ -15,5 +19,9 @@ __all__ = [
 	"build_dose_nn_render_scene_from_context_artifacts",
 	"dose_nn_render_context_array_payload",
 	"materialize_dose_nn_saved_scene_artifact_from_context",
+	"DoseNNContextMaterializationResult",
+	"DoseNNContextSelectorSessionResult",
+	"materialize_and_run_dose_nn_context_selector_session",
+	"materialize_dose_nn_saved_scene_artifact_from_patient_index",
 	"write_dose_nn_render_context_zarr_artifact",
 ]

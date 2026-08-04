@@ -212,6 +212,13 @@ artifact internals. Optional parity checks may rebuild the scene from retained
 context and compare it against the runtime scene before the runtime object is
 discarded in diagnostic or validation runs.
 
+The same materialization service should support two entry points. Post-run use
+reads a patient artifact index, resolves the retained lattice/render-context
+artifact refs, writes a standard saved-scene artifact, and launches the existing
+selector. Runtime use should call the same service only at an explicit snapshot
+boundary requested by run configuration; it should not silently render from or
+mutate live scientific objects in the middle of calculation.
+
 ## GUI Controls
 
 The figure/debug workflow needs dose-domain controls beyond the current generic

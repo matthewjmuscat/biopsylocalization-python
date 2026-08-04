@@ -332,6 +332,17 @@ or when a later process needs to reconstruct a context without rerunning the
 full pipeline; they are not the default transport mechanism between tightly
 coupled calculations that are already executing in memory.
 
+Because runtime objects may be mutable while a stage is still active, each
+artifact write must be treated as an explicit snapshot boundary. Artifacts are
+current for the state at the moment they are written; if downstream runtime code
+intentionally mutates the same scientific object afterward, either the artifact
+must be written after that mutation, rewritten, or labelled as an earlier-stage
+snapshot. Full read-back parity checks are appropriate for synthetic tests,
+diagnostic runs, and selected high-value publication/QA artifacts, but normal
+production should rely on explicit snapshot timing, schema/shape/dtype checks,
+manifest provenance, and optional hashes rather than reloading every large
+artifact before releasing memory.
+
 For migration, nested legacy structure records can remain dict-backed until
 their field and mutation rules are validated. The boundary should still be
 explicit: adapters ingest legacy dicts, validate identity keys such as patient
