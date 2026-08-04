@@ -112,7 +112,17 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--biopsy-point-stride", type=int, default=1)
     parser.add_argument("--vector-stride", type=int, default=1)
     parser.add_argument("--hide-biopsy-points", action="store_true")
-    parser.add_argument("--hide-lattice-points", action="store_true")
+    parser.add_argument("--show-reference-biopsy-points", action="store_true")
+    parser.add_argument(
+        "--reference-biopsy-trial",
+        action="append",
+        type=int,
+        default=None,
+        help="Trial whose biopsy query points should remain visible as a reference; repeatable.",
+    )
+    lattice_point_group = parser.add_mutually_exclusive_group()
+    lattice_point_group.add_argument("--show-lattice-points", action="store_true")
+    lattice_point_group.add_argument("--hide-lattice-points", action="store_true")
     parser.add_argument("--show-dose-colorwash", action="store_true")
     parser.add_argument("--hide-nearest-neighbour-points", action="store_true")
     parser.add_argument("--hide-nearest-neighbour-vectors", action="store_true")
@@ -124,6 +134,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dose-colorwash-point-size", type=float, default=12.0)
     parser.add_argument("--dose-colorwash-opacity", type=float, default=0.28)
     parser.add_argument("--biopsy-point-size", type=float, default=12.0)
+    parser.add_argument("--reference-biopsy-point-size", type=float, default=10.0)
     parser.add_argument("--nearest-point-size", type=float, default=8.0)
     parser.add_argument("--vector-line-width", type=float, default=2.0)
     parser.add_argument("--no-axes", action="store_true")
@@ -135,6 +146,7 @@ def _config_from_args(args: argparse.Namespace, *, include_selected_trials: bool
     selected_trials = _selected_trials_from_args(args) if include_selected_trials else None
     return DoseNNRenderConfig(
         selected_trials=selected_trials,
+        reference_trial_numbers=_reference_trial_numbers_from_args(args),
         dose_threshold_min=args.dose_threshold_min,
         dose_threshold_max=args.dose_threshold_max,
         max_lattice_points=args.max_lattice_points,
@@ -142,7 +154,8 @@ def _config_from_args(args: argparse.Namespace, *, include_selected_trials: bool
         biopsy_point_stride=args.biopsy_point_stride,
         vector_stride=args.vector_stride,
         show_biopsy_points=not bool(args.hide_biopsy_points),
-        show_lattice_points=not bool(args.hide_lattice_points),
+        show_reference_biopsy_points=_show_reference_biopsy_points_from_args(args),
+        show_lattice_points=_show_lattice_points_from_args(args),
         show_dose_colorwash=bool(args.show_dose_colorwash),
         show_nearest_neighbour_points=not bool(args.hide_nearest_neighbour_points),
         show_nearest_neighbour_vectors=not bool(args.hide_nearest_neighbour_vectors),
@@ -151,6 +164,28 @@ def _config_from_args(args: argparse.Namespace, *, include_selected_trials: bool
 
 def _selected_trials_from_args(args: argparse.Namespace) -> tuple[int, ...] | None:
     return None if args.trial is None else tuple(int(trial_number) for trial_number in args.trial)
+
+
+def _reference_trial_numbers_from_args(args: argparse.Namespace) -> tuple[int, ...] | None:
+    if args.reference_biopsy_trial is not None:
+        return tuple(int(trial_number) for trial_number in args.reference_biopsy_trial)
+    if bool(args.show_reference_biopsy_points):
+        return (0,)
+    return None
+
+
+def _show_reference_biopsy_points_from_args(args: argparse.Namespace) -> bool:
+    return bool(args.show_reference_biopsy_points or args.reference_biopsy_trial is not None)
+
+
+def _show_lattice_points_from_args(args: argparse.Namespace) -> bool:
+    if bool(args.show_lattice_points):
+        return True
+    if bool(args.hide_lattice_points):
+        return False
+    if bool(args.show_dose_colorwash):
+        return False
+    return True
 
 
 def _required_screenshot_output_path(args: argparse.Namespace) -> Path:
@@ -170,6 +205,7 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         dose_colorwash_point_size=args.dose_colorwash_point_size,
         dose_colorwash_opacity=args.dose_colorwash_opacity,
         biopsy_point_size=args.biopsy_point_size,
+        reference_biopsy_point_size=args.reference_biopsy_point_size,
         nearest_point_size=args.nearest_point_size,
         vector_line_width=args.vector_line_width,
         show_axes=not bool(args.no_axes),

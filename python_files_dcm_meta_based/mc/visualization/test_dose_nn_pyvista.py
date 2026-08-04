@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 import numpy as np
@@ -74,6 +75,28 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
 
         self.assertNotIn("dose_lattice_points", actor_names)
         self.assertIn("dose_colorwash_points", actor_names)
+        self.assertIn("dose_nn_vectors", actor_names)
+
+    def test_build_plotter_supports_reference_biopsy_points(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_scene_with_trials(),
+            DoseNNRenderConfig(
+                selected_trials=(1,),
+                reference_trial_numbers=(0,),
+                show_reference_biopsy_points=True,
+                show_lattice_points=False,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(prepared_scene, settings=_test_settings())
+        try:
+            actor_names = set(plotter.renderer.actors.keys())
+        finally:
+            plotter.close()
+
+        self.assertIn("biopsy_query_points", actor_names)
+        self.assertIn("reference_biopsy_points", actor_names)
+        self.assertNotIn("dose_lattice_points", actor_names)
 
     def test_build_plotter_supports_dose_volume_colorwash_layer(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
@@ -167,6 +190,8 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
                     base_config=DoseNNRenderConfig(
                         show_lattice_points=False,
                         show_dose_colorwash=True,
+                        reference_trial_numbers=(0,),
+                        show_reference_biopsy_points=True,
                         vector_stride=2,
                     ),
                     settings=_test_settings(),
@@ -177,6 +202,10 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
             self.assertEqual(len(result.frame_paths), 2)
             self.assertTrue(result.frame_paths[0].is_file())
             self.assertTrue(result.manifest_path.is_file())
+            with open(result.manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+            self.assertEqual(manifest["base_render_config"]["reference_trial_numbers"], [0])
+            self.assertTrue(manifest["base_render_config"]["show_reference_biopsy_points"])
 
     def test_export_trial_frame_sequence_fails_for_unavailable_trial(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

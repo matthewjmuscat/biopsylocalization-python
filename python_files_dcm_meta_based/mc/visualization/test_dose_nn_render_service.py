@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,6 +70,41 @@ class DoseNNRenderServiceTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue(output_path.is_file())
             self.assertTrue(output_path.with_suffix(".png.provenance.json").is_file())
+            with open(output_path.with_suffix(".png.provenance.json"), "r", encoding="utf-8") as provenance_file:
+                provenance = json.load(provenance_file)
+            self.assertFalse(provenance["render_config"]["show_lattice_points"])
+            self.assertTrue(provenance["render_config"]["show_nearest_neighbour_vectors"])
+
+    def test_cli_can_show_lattice_with_colorwash_and_reference_biopsy_points(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            output_path = Path(temporary_directory).joinpath("cli", "dose_nn.png")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+
+            exit_code = main(
+                (
+                    "--scene-dir",
+                    str(scene_dir),
+                    "--output",
+                    str(output_path),
+                    "--show-dose-colorwash",
+                    "--show-lattice-points",
+                    "--show-reference-biopsy-points",
+                    "--window-size",
+                    "320",
+                    "240",
+                    "--no-axes",
+                    "--no-scalar-bar",
+                )
+            )
+
+            self.assertEqual(exit_code, 0)
+            with open(output_path.with_suffix(".png.provenance.json"), "r", encoding="utf-8") as provenance_file:
+                provenance = json.load(provenance_file)
+            self.assertTrue(provenance["render_config"]["show_lattice_points"])
+            self.assertEqual(provenance["render_config"]["reference_trial_numbers"], [0])
+            self.assertTrue(provenance["render_config"]["show_reference_biopsy_points"])
+            self.assertEqual(provenance["prepared_scene_summary"]["reference_trials"], [0])
 
     def test_export_saved_scene_trial_frames_writes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 import re
 
 from ui.render_broker import RenderBrokerChoiceGroup
@@ -184,7 +184,7 @@ def build_saved_dose_nn_scene_broker_request(
         title="Dose NN saved-scene renderer",
         summary_lines=tuple(str(summary_line) for summary_line in tuple(summary_lines)),
         choice_groups=(build_saved_dose_nn_scene_choice_group(options),),
-        continue_button_label="Continue without rendering",
+        continue_button_label="Exit renderer",
         timeout_policy=timeout_policy,
     )
 

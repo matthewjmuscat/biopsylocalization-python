@@ -65,6 +65,7 @@ class DoseNNRenderConfig:
     """Renderer-neutral display filters for a dose nearest-neighbour scene."""
 
     selected_trials: tuple[int, ...] | None = None
+    reference_trial_numbers: tuple[int, ...] | None = None
     dose_threshold_min: float | None = None
     dose_threshold_max: float | None = None
     max_lattice_points: int | None = None
@@ -72,6 +73,7 @@ class DoseNNRenderConfig:
     biopsy_point_stride: int = 1
     vector_stride: int = 1
     show_biopsy_points: bool = True
+    show_reference_biopsy_points: bool = False
     show_lattice_points: bool = True
     show_dose_colorwash: bool = False
     show_nearest_neighbour_points: bool = True
@@ -89,6 +91,8 @@ class DoseNNPreparedScene:
     original_point_indices: np.ndarray
     trial_numbers: np.ndarray
     biopsy_points: np.ndarray
+    reference_biopsy_points: np.ndarray
+    reference_trial_numbers: np.ndarray
     interpolated_biopsy_doses: np.ndarray
     nearest_lattice_points: np.ndarray
     nearest_lattice_doses: np.ndarray
@@ -213,6 +217,7 @@ def prepare_dose_nn_render_scene(
     """Apply renderer-neutral display filters without mutating the scene."""
     resolved_config = normalize_dose_nn_render_config(config or DoseNNRenderConfig())
     row_indices = _select_query_row_indices(scene, resolved_config)
+    reference_row_indices = _select_reference_query_row_indices(scene, resolved_config)
     biopsy_points = scene.biopsy_points[row_indices]
     nearest_lattice_points = scene.nearest_lattice_points[row_indices]
 
@@ -232,6 +237,8 @@ def prepare_dose_nn_render_scene(
         original_point_indices=scene.original_point_indices[row_indices],
         trial_numbers=scene.trial_numbers[row_indices],
         biopsy_points=biopsy_points,
+        reference_biopsy_points=scene.biopsy_points[reference_row_indices],
+        reference_trial_numbers=scene.trial_numbers[reference_row_indices],
         interpolated_biopsy_doses=scene.interpolated_biopsy_doses[row_indices],
         nearest_lattice_points=nearest_lattice_points,
         nearest_lattice_doses=scene.nearest_lattice_doses[row_indices],
@@ -243,11 +250,8 @@ def prepare_dose_nn_render_scene(
 
 def normalize_dose_nn_render_config(config: DoseNNRenderConfig) -> DoseNNRenderConfig:
     """Normalize and validate renderer-neutral dose scene filters."""
-    selected_trials = config.selected_trials
-    if selected_trials is not None:
-        selected_trials = tuple(int(trial_number) for trial_number in tuple(selected_trials))
-        if len(selected_trials) == 0:
-            selected_trials = None
+    selected_trials = _normalize_trial_numbers(config.selected_trials)
+    reference_trial_numbers = _normalize_trial_numbers(config.reference_trial_numbers)
 
     biopsy_point_stride = int(config.biopsy_point_stride)
     if biopsy_point_stride <= 0:
@@ -276,6 +280,7 @@ def normalize_dose_nn_render_config(config: DoseNNRenderConfig) -> DoseNNRenderC
 
     return DoseNNRenderConfig(
         selected_trials=selected_trials,
+        reference_trial_numbers=reference_trial_numbers,
         dose_threshold_min=dose_threshold_min,
         dose_threshold_max=dose_threshold_max,
         max_lattice_points=max_lattice_points,
@@ -283,6 +288,7 @@ def normalize_dose_nn_render_config(config: DoseNNRenderConfig) -> DoseNNRenderC
         biopsy_point_stride=biopsy_point_stride,
         vector_stride=vector_stride,
         show_biopsy_points=bool(config.show_biopsy_points),
+        show_reference_biopsy_points=bool(config.show_reference_biopsy_points),
         show_lattice_points=bool(config.show_lattice_points),
         show_dose_colorwash=bool(config.show_dose_colorwash),
         show_nearest_neighbour_points=bool(config.show_nearest_neighbour_points),
@@ -357,6 +363,23 @@ def _select_query_row_indices(scene: DoseNNRenderScene, config: DoseNNRenderConf
         mask &= np.isin(scene.trial_numbers, np.asarray(config.selected_trials, dtype=int))
     row_indices = np.flatnonzero(mask)
     return row_indices[::config.biopsy_point_stride]
+
+
+def _select_reference_query_row_indices(scene: DoseNNRenderScene, config: DoseNNRenderConfig) -> np.ndarray:
+    if not bool(config.show_reference_biopsy_points) or config.reference_trial_numbers is None:
+        return np.asarray([], dtype=int)
+    mask = np.isin(scene.trial_numbers, np.asarray(config.reference_trial_numbers, dtype=int))
+    row_indices = np.flatnonzero(mask)
+    return row_indices[::config.biopsy_point_stride]
+
+
+def _normalize_trial_numbers(trial_numbers: tuple[int, ...] | None) -> tuple[int, ...] | None:
+    if trial_numbers is None:
+        return None
+    resolved_trial_numbers = tuple(int(trial_number) for trial_number in tuple(trial_numbers))
+    if len(resolved_trial_numbers) == 0:
+        return None
+    return resolved_trial_numbers
 
 
 def _points_within_radius_mask(points: np.ndarray, centers: np.ndarray, radius: float) -> np.ndarray:

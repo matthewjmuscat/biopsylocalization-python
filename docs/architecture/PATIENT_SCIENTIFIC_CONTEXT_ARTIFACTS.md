@@ -288,6 +288,10 @@ outputs should remain in place until downstream pipelines are migrated. The
 recommended migration policy is additive symmetry: create the new per-patient
 structure beside the existing outputs, keep legacy tables/CSV/parquet paths
 stable, and use manifests plus constructors to bridge old and new surfaces.
+This is the forward rule for new artifact producers: prefer the intentional
+patient-scoped structure for new context, table, render-scene, and export
+artifacts; treat legacy output layouts as compatibility surfaces to migrate
+later, not as templates for new scientific artifact families.
 
 For example, new artifacts should prefer a stable shape such as:
 
@@ -502,11 +506,13 @@ Object construction alone should not imply artifact production.
 2. Add manifest entries for new context artifacts beside existing outputs.
 3. Start with selected dose-NN scene artifacts because they solve an immediate
    figure need and test the boundary.
-4. Add dose lattice and biopsy query context artifacts for selected patients.
-5. Add transform event provenance and resolved transform arrays.
-6. Rebuild selected derived tables from context artifacts and validate against
+4. Place new artifacts under the intentional per-patient subtree from the start,
+  even while legacy consumers continue to read the old locations.
+5. Add dose lattice and biopsy query context artifacts for selected patients.
+6. Add transform event provenance and resolved transform arrays.
+7. Rebuild selected derived tables from context artifacts and validate against
    legacy outputs.
-7. Expand retention-policy controls into the run profile once validation is
+8. Expand retention-policy controls into the run profile once validation is
    credible.
 
 This sequence lets the codebase move toward durable, inspectable scientific

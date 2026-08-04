@@ -63,6 +63,27 @@ class DoseNNRenderSceneTests(unittest.TestCase):
         self.assertTrue(np.all(prepared_scene.lattice_doses >= 20.0))
         self.assertEqual(prepared_scene.num_vectors, 2)
 
+    def test_prepare_scene_keeps_reference_biopsy_points_outside_selected_trial(self):
+        scene = build_dose_nn_render_scene_from_dataframe(
+            _synthetic_nn_dataframe(),
+            lattice_points=_synthetic_lattice_points(),
+            lattice_doses=_synthetic_lattice_doses(),
+        )
+
+        prepared_scene = prepare_dose_nn_render_scene(
+            scene,
+            DoseNNRenderConfig(
+                selected_trials=(1,),
+                reference_trial_numbers=(0,),
+                show_reference_biopsy_points=True,
+            ),
+        )
+
+        self.assertTrue(np.all(prepared_scene.trial_numbers == 1))
+        self.assertTrue(np.all(prepared_scene.reference_trial_numbers == 0))
+        self.assertEqual(prepared_scene.biopsy_points.shape, (3, 3))
+        self.assertEqual(prepared_scene.reference_biopsy_points.shape, (3, 3))
+
     def test_missing_required_dataframe_column_fails_closed(self):
         dataframe = _synthetic_nn_dataframe().drop(columns=[DOSE_NN_NEAREST_DISTANCES_COLUMN])
 

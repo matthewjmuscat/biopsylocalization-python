@@ -84,6 +84,7 @@ class DoseNNSelectorTests(unittest.TestCase):
         self.assertEqual(request.title, "Dose NN saved-scene renderer")
         self.assertEqual(request.summary_lines, ("one scene",))
         self.assertEqual(request.choice_groups[0].group_key, DOSE_NN_SAVED_SCENE_GROUP_KEY)
+        self.assertEqual(request.continue_button_label, "Exit renderer")
 
     def test_render_unknown_saved_scene_option_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown dose NN saved scene option"):

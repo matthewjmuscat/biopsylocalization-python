@@ -28,9 +28,11 @@ class DoseNNPyVistaRenderSettings:
     dose_colorwash_point_size: float = 12.0
     dose_colorwash_opacity: float = 0.28
     biopsy_point_size: float = 12.0
+    reference_biopsy_point_size: float = 10.0
     nearest_point_size: float = 8.0
     vector_line_width: float = 2.0
     biopsy_color: str = "crimson"
+    reference_biopsy_color: str = "royalblue"
     nearest_point_color: str = "black"
     vector_color: str = "dimgray"
     show_axes: bool = True
@@ -91,6 +93,8 @@ def build_pyvista_dose_nn_plotter(
         _add_lattice_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_dose_colorwash:
         _add_dose_colorwash(pv, plotter, prepared_scene, resolved_settings)
+    if prepared_scene.config.show_reference_biopsy_points:
+        _add_reference_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_biopsy_points:
         _add_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_nearest_neighbour_points:
@@ -238,9 +242,13 @@ def build_pyvista_dose_nn_export_provenance(
         "prepared_scene_summary": {
             "lattice_point_count": int(prepared_scene.lattice_points.shape[0]),
             "biopsy_point_count": int(prepared_scene.biopsy_points.shape[0]),
+            "reference_biopsy_point_count": int(prepared_scene.reference_biopsy_points.shape[0]),
             "nearest_neighbour_point_count": int(np.reshape(prepared_scene.nearest_lattice_points, (-1, 3)).shape[0]),
             "vector_count": int(prepared_scene.num_vectors),
             "selected_trials": [int(trial_number) for trial_number in np.unique(prepared_scene.trial_numbers)],
+            "reference_trials": [
+                int(trial_number) for trial_number in np.unique(prepared_scene.reference_trial_numbers)
+            ],
         },
     }
     json.dumps(payload)
@@ -387,6 +395,24 @@ def _add_biopsy_points(
     )
 
 
+def _add_reference_biopsy_points(
+    pv: Any,
+    plotter: Any,
+    prepared_scene: DoseNNPreparedScene,
+    settings: DoseNNPyVistaRenderSettings,
+) -> None:
+    if prepared_scene.reference_biopsy_points.shape[0] == 0:
+        return
+    point_cloud = pv.PolyData(prepared_scene.reference_biopsy_points)
+    plotter.add_mesh(
+        point_cloud,
+        name="reference_biopsy_points",
+        color=settings.reference_biopsy_color,
+        point_size=float(settings.reference_biopsy_point_size),
+        render_points_as_spheres=True,
+    )
+
+
 def _add_nearest_neighbour_points(
     pv: Any,
     plotter: Any,
@@ -484,6 +510,7 @@ def _resolve_frame_trial_numbers(
 def _config_for_trial(base_config: DoseNNRenderConfig, trial_number: int) -> DoseNNRenderConfig:
     return DoseNNRenderConfig(
         selected_trials=(int(trial_number),),
+        reference_trial_numbers=base_config.reference_trial_numbers,
         dose_threshold_min=base_config.dose_threshold_min,
         dose_threshold_max=base_config.dose_threshold_max,
         max_lattice_points=base_config.max_lattice_points,
@@ -491,6 +518,7 @@ def _config_for_trial(base_config: DoseNNRenderConfig, trial_number: int) -> Dos
         biopsy_point_stride=base_config.biopsy_point_stride,
         vector_stride=base_config.vector_stride,
         show_biopsy_points=base_config.show_biopsy_points,
+        show_reference_biopsy_points=base_config.show_reference_biopsy_points,
         show_lattice_points=base_config.show_lattice_points,
         show_dose_colorwash=base_config.show_dose_colorwash,
         show_nearest_neighbour_points=base_config.show_nearest_neighbour_points,

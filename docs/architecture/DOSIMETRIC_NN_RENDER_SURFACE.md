@@ -191,15 +191,27 @@ across multiple domains.
 Near-term controls:
 
 - trial selection, including nominal trial 0 and selected MC trials,
+- optional reference biopsy points, especially nominal trial 0, that remain
+  visible while rendering selected MC-trial biopsy positions,
 - dose-threshold sliders or numeric bounds,
 - max displayed lattice points or spatial radius filter,
 - biopsy point thinning/stride,
 - vector thinning/stride,
-- show dose lattice points versus dose colorwash,
+- independent dose lattice point and dose colorwash toggles; a colorwash view
+  should not require drawing the full lattice point cloud, and NN vectors should
+  remain drawable from transformed biopsy positions to the background dose
+  lattice/nearest-neighbour targets,
+- colorwash style selection between point colorwash, true rectilinear volume
+  colorwash when the lattice is complete, and auto fallback,
 - show/hide biopsy query points,
 - show/hide nearest-neighbour dose points,
 - show/hide vectors from biopsy points to nearest dose-lattice points,
 - Plotly export format, size, and scale.
+
+The saved-scene render loop should reappear after each render until the user
+selects the explicit exit/continue action. This lets the figure be tuned by
+changing trial, colorwash, lattice, vector, dose-threshold, and reference-point
+settings without rerunning scientific code.
 
 If a richer GUI framework is adopted later, these controls can move into that
 adapter while preserving `DoseNNRenderScene`, `DoseNNRenderConfig`, and backend
@@ -424,6 +436,15 @@ Detailed next pass:
   frame/provenance paths. Direct MP4/GIF writing remains a later GUI/export pass
   because the local environment does not currently include a video-writer
   dependency such as `imageio`.
+9. Status: colorwash, full dose lattice points, nearest-neighbour points,
+  nearest-neighbour vectors, and biopsy points are independently selectable in
+  the renderer-neutral config. CLI colorwash renders hide the full lattice point
+  actor by default for readability, but `--show-lattice-points` can overlay it.
+  NN vectors remain drawable without full lattice points.
+10. Status: frame and screenshot renders can keep reference biopsy points visible,
+  defaulting to nominal trial 0 through the CLI when requested. This supports
+  comparing transformed MC-trial biopsy positions against a fixed nominal
+  reference during figure/movie construction.
 
 ### Phase 3: Plotly Sharing Renderer
 
@@ -450,7 +471,9 @@ Detailed next pass:
   selected saved scenes through the PyVista render service. The generic broker
   now supports PyVista as a selectable backend, preserving the existing
   Open3D/Plotly `both` alias for optimizer-v2. The remaining GUI work is richer
-  dose-specific controls and export settings, not basic backend selection.
+  dose-specific controls and export settings, not basic backend selection. The
+  loop already reopens after each render and the saved-scene selector labels the
+  terminal action as "Exit renderer".
 
 Known render-backend asymmetry: the generic broker can now carry PyVista
 decisions and the dose surface has a PyVista backend, but optimizer-v2 still has

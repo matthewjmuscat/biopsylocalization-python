@@ -112,6 +112,10 @@ The dialog returns one of two actions.
    The caller receives a group key, selected option keys, a backend choice, and optional export overrides.
 
 The caller then performs the render and re-enters the broker loop.
+For post-run figure-tuning workflows, the caller should label the `continue`
+action as an explicit exit from the render loop. That preserves the generic
+broker action while making the user-facing behavior clear: render, adjust, render
+again, or exit.
 
 ## Timeout Model
 
@@ -216,6 +220,11 @@ dose-aware:
 4. Route selected scenes to dose-owned Plotly and Open3D backend modules.
 5. Keep MC dose math, nearest-neighbour search, and patient-runner execution
    unchanged underneath.
+
+Dose controls should include independent lattice/colorwash/vector layer toggles
+and optional nominal/reference biopsy points that can stay visible between MC
+trial renders. The broker should still carry only generic choices; dose-specific
+control values belong in `DoseNNRenderConfig` and dose-owned renderer settings.
 
 Current asymmetry: the broker contract can now express PyVista decisions for
 the dose NN surface, but optimizer-v2 still implements only Open3D and Plotly
