@@ -195,6 +195,15 @@ to prefill/validate trial and dose-range controls, and returns a
 `DoseNNRenderControlSelection`. The generic broker remains unaware of dose
 thresholds, lattice/colorwash semantics, reference biopsy points, or NN vectors.
 
+The artifact-backed render bridge should keep the heavy render context
+array-first. The retained lattice context owns lattice coordinates and scalar
+dose values. A separate dose NN render context artifact owns query rows, trial
+IDs, interpolated query doses, nearest-neighbour points, nearest-neighbour
+doses, and nearest-neighbour distances. Rebuilding a `DoseNNRenderScene` for
+post-run display combines those two artifact handles. Parquet nearest-neighbour
+row tables are optional diagnostic or legacy-compatibility views, not the
+primary source for broad NN render context.
+
 ## GUI Controls
 
 The figure/debug workflow needs dose-domain controls beyond the current generic

@@ -161,7 +161,7 @@ def write_patient_dose_context_zarr_arrays(
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         group = zarr.open_group(str(artifact_path), mode="w" if overwrite else "w-")
         group.attrs["artifact_ref"] = artifact_ref.to_dict()
-        group.attrs["schema_version"] = DOSE_CONTEXT_ARTIFACT_SCHEMA_VERSION
+        group.attrs["schema_version"] = artifact_ref.schema_version
         group.attrs["array_specs"] = [array_spec.to_dict() for array_spec in grouped_specs]
         for array_spec in grouped_specs:
             array_data = _coerce_array_for_zarr(arrays_by_dataset[array_spec.dataset_name])
