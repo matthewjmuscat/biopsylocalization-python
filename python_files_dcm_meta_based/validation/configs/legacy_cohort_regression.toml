@@ -1,0 +1,33 @@
+schema_version = "validation_run_config_v1"
+description = "Focused archival interrun validation: compare final legacy cohort CSV outputs between two surviving validation-heavy main runs."
+
+[defaults]
+abs_tol = 1e-9
+rel_tol = 1e-9
+top_n = 25
+
+[runs]
+baseline = "../Data/Output data/MC_sim_out- Date-Jun-02-2026 Time-01,47,37 - validation-selected-structures-legacy_non-biopsy-structures-legacy_prostate-only-mr-adc-legacy - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+candidate = "../Data/Output data/MC_sim_out- Date-Jun-03-2026 Time-14,36,52 - validation-selected-structures-legacy_non-biopsy-structures-legacy_prostate-only-mr-adc-legacy - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4"
+
+[run_groups.legacy_cohort_regression]
+description = "Archival final-output oracle gate for legacy/cohort CSV tables using currently retained Jun02/Jun03 validation-heavy runs."
+enabled = true
+
+[[run_groups.legacy_cohort_regression.jobs]]
+name = "cohort_final_tables_vs_baseline"
+script = "compare_cohort_runs"
+baseline_run = "baseline"
+candidate_run = "candidate"
+output_dir = "validation_outputs/jun03_143652/cohort_vs_jun02_014737"
+
+[[run_groups.legacy_cohort_regression.jobs]]
+name = "recursive_manifest_and_csv_vs_baseline"
+script = "validate_run_against_baseline"
+baseline_run = "baseline"
+candidate_run = "candidate"
+output_dir = "validation_outputs/jun03_143652/recursive_vs_jun02_014737"
+diagnostic_column_regex = [
+  "^Time|time|duration|seconds$",
+  "^Memory|memory|rss|resident|peak",
+]

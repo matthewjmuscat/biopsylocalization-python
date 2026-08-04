@@ -112,6 +112,9 @@ from preprocessing.pickled_dataset_tools import rebuild_loaded_preprocessed_runt
 from preprocessing.pickled_dataset_tools import resolve_loaded_frozen_preprocessed_bundle_config
 from preprocessing.output_runtime_dirs import create_run_output_directories
 from preprocessing.output_runtime_dirs import write_run_completion_manifest
+from random_seed_policy import build_transform_generation_patient_rng
+from random_seed_policy import configure_runtime_random_seed_settings
+from random_seed_policy import runtime_random_seed_manifest_metadata
 from preprocessing.dose_grid_processing import DoseGridProcessingConfig
 from preprocessing.dose_grid_processing import build_dose_grids_for_cohort
 from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
@@ -210,33 +213,6 @@ def configure_transform_precompute_settings(master_structure_info_dict,
     mc_info = master_structure_info_dict["Global"].setdefault("MC info", {})
     mc_info[OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY] = resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config)
     mc_info[STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY] = num_stochastic_targeting_transform_samples_input
-
-
-def configure_runtime_random_seed_settings(master_structure_info_dict,
-                                           transform_generation_random_seed,
-                                           optimizer_v1_random_seed):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    random_info["Transform generation random seed"] = transform_generation_random_seed
-    random_info["Optimizer v1 random seed"] = optimizer_v1_random_seed
-
-
-def build_transform_generation_rng(master_structure_info_dict):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    transform_generation_random_seed = random_info.get("Transform generation random seed")
-    if transform_generation_random_seed is None:
-        return cp.random.RandomState()
-
-    return cp.random.RandomState(transform_generation_random_seed)
-
-
-def apply_optimizer_v1_random_seed(master_structure_info_dict):
-    random_info = master_structure_info_dict["Global"].setdefault("Random info", {})
-    optimizer_v1_random_seed = random_info.get("Optimizer v1 random seed")
-    if optimizer_v1_random_seed is None:
-        return
-
-    cp.random.seed(optimizer_v1_random_seed)
-    np.random.seed(optimizer_v1_random_seed)
 
 
 def configure_transform_generation_counts(master_structure_info_dict,
@@ -619,7 +595,7 @@ def main():
     optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
     optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # Validation sidecar OFF | impact high: Jun 03 nearest-z helper validation cost about 4.0 h on the 4-patient run; validates grouped nearest-z helper parity against ver5 during optimizer-v2 scoring.
     optimizer_v2_benchmark_isolated_winner_validation_bool = False # Validation sidecar OFF | impact high: adds one extra downstream-comparable winner-validation-like optimizer pass per target structure; validates the final optimizer-v2 winner in isolation.
-    optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # HERE # Opens one stage-switchable scene per v2 biopsy. Set False to render none.
+    optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # Opens one stage-switchable scene per v2 biopsy. Keep False for unattended dose-context artifact runs.
     optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
     optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
     optimizer_v2_render_plotly_export_bool = False # HERE # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
@@ -632,7 +608,7 @@ def main():
     optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
     optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
     optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
-    optimizer_v2_render_winner_containment_debug_bool = False # HERE # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
+    optimizer_v2_render_winner_containment_debug_bool = False # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
     optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
     optimizer_v2_render_include_target_points_bool = False # If False, omit the raw DIL point cloud and rely on contour-style target layers instead.
     optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
@@ -724,21 +700,21 @@ def main():
     write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
     write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
     write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW.value # Overnight checkpoint ON | impact medium/high: captures per-stage scientific-shadow evidence and dataframe snapshots from the fresh post-discovery state boundary.
+    patient_runner_validation_mode = PatientRunnerMainValidationMode.DISABLED.value # Overnight checkpoint ON | impact medium/high: captures per-stage scientific-shadow evidence and dataframe snapshots from the fresh post-discovery state boundary.
     patient_runner_validation_patient_uids = ()
     patient_runner_validation_final_table_names = ()
     patient_runner_validation_source_table_names = ()
     patient_runner_validation_write_outputs_bool = True # Overnight checkpoint ON | impact low/medium IO: writes patient-runner validation summaries/artifacts for post-run review.
     patient_runner_validation_write_assembled_tables_bool = True # Overnight checkpoint ON | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables.
     patient_runner_validation_scientific_shadow_pathway_name = "full_current_pipeline_shadow"
-    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = False
+    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = True
     patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = True
     patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
     patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
-    patient_scientific_runner_mode = "execute" # Overnight checkpoint ON: writes the plan, then runs the DAG-valid per-patient stage slice.
-    patient_scientific_runner_checkpoint_name = "full_current_pipeline_shadow"
-    patient_scientific_runner_pathway_name = "full_current_pipeline_shadow" # Seventh live-runner slice: adds guidance after current dosimetry.
+    patient_scientific_runner_mode = "execute" # Legacy-backed patient-scientific runner hook for persisted dose-context artifacts.
+    patient_scientific_runner_checkpoint_name = "current_dosimetry_shadow"
+    patient_scientific_runner_pathway_name = "current_dosimetry_shadow" # Dose-context artifact slice: stops after MC output tables, before guidance.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
     patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
     patient_scientific_runner_include_artifact_writing_bool = False
@@ -751,6 +727,12 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = True
     patient_scientific_runner_raise_on_stage_error_bool = False
     patient_scientific_runner_validate_dependencies_bool = True
+    patient_scientific_runner_persist_dose_context_artifacts_bool = True
+    patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = True
+    patient_scientific_runner_dose_context_artifact_localization_kinds = ("dose",)
+    patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = False
+    patient_scientific_runner_dose_nn_render_selector_biopsy_index = None
+    patient_scientific_runner_dose_nn_render_selector_localization_kind = "dose"
     # Strict mode policy:
     #   - True: fail fast on missing/invalid rank data (raises)
     #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
@@ -1118,6 +1100,14 @@ def main():
         stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
         raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
         validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
+        persist_dose_context_artifacts=patient_scientific_runner_persist_dose_context_artifacts_bool,
+        persist_dose_nn_render_context_artifacts=patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool,
+        dose_context_artifact_localization_kinds=patient_scientific_runner_dose_context_artifact_localization_kinds,
+        launch_dose_nn_render_selector_after_persisting_artifacts=(
+            patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool
+        ),
+        dose_nn_render_selector_biopsy_index=patient_scientific_runner_dose_nn_render_selector_biopsy_index,
+        dose_nn_render_selector_localization_kind=patient_scientific_runner_dose_nn_render_selector_localization_kind,
     )
     pipeline_config = PipelineConfig(
         ui=RuntimeUIConfig(
@@ -1813,6 +1803,24 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = patient_scientific_runner_config.stop_on_stage_error
     patient_scientific_runner_raise_on_stage_error_bool = patient_scientific_runner_config.raise_on_stage_error
     patient_scientific_runner_validate_dependencies_bool = patient_scientific_runner_config.validate_dependencies
+    patient_scientific_runner_persist_dose_context_artifacts_bool = (
+        patient_scientific_runner_config.persist_dose_context_artifacts
+    )
+    patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = (
+        patient_scientific_runner_config.persist_dose_nn_render_context_artifacts
+    )
+    patient_scientific_runner_dose_context_artifact_localization_kinds = (
+        patient_scientific_runner_config.dose_context_artifact_localization_kinds
+    )
+    patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = (
+        patient_scientific_runner_config.launch_dose_nn_render_selector_after_persisting_artifacts
+    )
+    patient_scientific_runner_dose_nn_render_selector_biopsy_index = (
+        patient_scientific_runner_config.dose_nn_render_selector_biopsy_index
+    )
+    patient_scientific_runner_dose_nn_render_selector_localization_kind = (
+        patient_scientific_runner_config.dose_nn_render_selector_localization_kind
+    )
     
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
@@ -4565,14 +4573,20 @@ def main():
                     indeterminate_task_generating_transforms = indeterminate_progress_main.add_task("[red]Generating transforms", total=None)
                     indeterminate_task_generating_transforms_completed = completed_progress.add_task("[green]Generating transforms", visible = False, total = 1)
 
-                    transform_sampling_rng = build_transform_generation_rng(master_structure_info_dict)
+                    def transform_sampling_rng_for_patient(patient_uid):
+                        patient_rng, _ = build_transform_generation_patient_rng(
+                            master_structure_info_dict,
+                            patient_uid,
+                        )
+                        return patient_rng
+
                     MC_prepper_funcs.generate_transformations(master_structure_reference_dict,
                                                     simulate_uniform_bx_shifts_due_to_bx_needle_compartment,
                                                     bx_ref,
                                                     biopsy_needle_compartment_length,
                                                     max_generated_transform_samples,
                                                     structs_referenced_list,
-                                                    rng=transform_sampling_rng)
+                                                    rng_by_patient=transform_sampling_rng_for_patient)
 
                     indeterminate_progress_main.update(indeterminate_task_generating_transforms, visible = False, refresh = True)
                     completed_progress.update(indeterminate_task_generating_transforms_completed, advance = 1, visible = True, refresh = True)
@@ -4590,7 +4604,11 @@ def main():
                     "Captured memory snapshot before optimizer-v1.",
                 )
                 runtime_logger.phase_start("optimizer_v1", "Starting optimizer-v1.")
-                apply_optimizer_v1_random_seed(master_structure_info_dict)
+                runtime_logger.checkpoint(
+                    "optimizer_v1.random_seed_policy",
+                    "Optimizer-v1 surrogate RNG uses configured patient-derived seed streams.",
+                    details=runtime_random_seed_manifest_metadata(master_structure_info_dict),
+                )
                 live_display = biopsy_optimizer_module_v1(master_structure_reference_dict,
                               master_structure_info_dict,
                               structs_referenced_dict,
@@ -6088,7 +6106,6 @@ def main():
                             ),
                             mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                             parallel_pool=parallel_pool,
-                            rng=build_transform_generation_rng(patient_runner_validation_info_dict),
                             runtime_logger=runtime_logger,
                             metadata={
                                 "source": "biopsy_localization_convex_main",
@@ -6216,8 +6233,23 @@ def main():
                         ),
                         mr_views_jsons_paths_list=locals().get("mr_views_jsons_paths_list", ()),
                         parallel_pool=parallel_pool,
-                        rng=build_transform_generation_rng(patient_scientific_runner_info_dict),
                         runtime_logger=runtime_logger,
+                        persist_dose_context_artifacts=patient_scientific_runner_persist_dose_context_artifacts_bool,
+                        persist_dose_nn_render_context_artifacts=(
+                            patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool
+                        ),
+                        dose_context_artifact_localization_kinds=(
+                            patient_scientific_runner_dose_context_artifact_localization_kinds
+                        ),
+                        launch_dose_nn_render_selector_after_persisting_artifacts=(
+                            patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool
+                        ),
+                        dose_nn_render_selector_biopsy_index=(
+                            patient_scientific_runner_dose_nn_render_selector_biopsy_index
+                        ),
+                        dose_nn_render_selector_localization_kind=(
+                            patient_scientific_runner_dose_nn_render_selector_localization_kind
+                        ),
                         metadata={"source": "biopsy_localization_convex_main"},
                     ),
                     output_root=patient_scientific_runner_output_root,

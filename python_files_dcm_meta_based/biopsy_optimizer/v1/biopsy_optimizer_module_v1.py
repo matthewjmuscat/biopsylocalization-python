@@ -12,6 +12,7 @@ import dataframe_builders
 import dataframe_dtype_policy
 import pandas
 import plotly.graph_objects as go
+from random_seed_policy import build_optimizer_v1_patient_rng
 
 
 def biopsy_optimizer_module_v1(master_structure_reference_dict,
@@ -63,6 +64,10 @@ def biopsy_optimizer_module_v1(master_structure_reference_dict,
     processing_patients_task_completed = completed_progress.add_task(processing_patients_task_completed_main_description, total=master_structure_info_dict["Global"]["Num cases"], visible = False)
 
     for patientUID,pydicom_item in master_structure_reference_dict.items():
+        optimizer_v1_rng, _optimizer_v1_seed_metadata = build_optimizer_v1_patient_rng(
+            master_structure_info_dict,
+            patientUID,
+        )
         processing_patients_task_main_description = "[red]Optimizing Bx location within DILs [{}]...".format(patientUID)
         patients_progress.update(processing_patients_task, description = processing_patients_task_main_description)
         #####
@@ -396,7 +401,8 @@ def biopsy_optimizer_module_v1(master_structure_reference_dict,
                                                                                             demonstrate_dil_optimization_points_inside_correctness_num_3,
                                                                                             generate_cuda_log_files_biopsy_optimizer,
                                                                                             test_lattice_arr = centered_cubic_lattice_points_contained_only_in_sp_dil_arr,
-                                                                                            all_points_to_set_to_zero_arr = centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr # This was added to make the "search" volume to include the entire volume
+                                                                                            all_points_to_set_to_zero_arr = centered_cubic_lattice_points_NOT_contained_only_in_sp_dil_arr, # This was added to make the "search" volume to include the entire volume
+                                                                                            rng = optimizer_v1_rng,
                                                                                             )
 
 

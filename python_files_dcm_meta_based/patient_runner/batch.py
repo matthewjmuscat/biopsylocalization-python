@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping, MutableMapping, Sequence
+
+from output_artifacts.manifest_index import ManifestIndexRecorder
 
 from .contracts import LegacyCohortRuntimeState
 from .contracts import PatientBatchRunConfig
@@ -16,6 +19,8 @@ from .contracts import PatientStageName
 from .contracts import PatientStageResult
 from .contracts import resolve_legacy_patient_uids
 from .legacy_bridge import carve_patient_runtime_state_by_uid
+from .manifests import PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION
+from .manifests import PATIENT_RUN_MANIFEST_SCHEMA_VERSION
 from .manifests import write_patient_batch_run_manifest
 from .manifests import write_patient_run_manifest
 from .runner import PatientStage
@@ -71,8 +76,15 @@ def run_patient_batch(legacy_cohort_state: LegacyCohortRuntimeState,
         elapsed_seconds=perf_counter() - start_time,
         metadata=_batch_result_metadata(batch_config, len(patient_uids)),
     )
+    batch_manifest_path: Path | None = None
     if batch_config.write_batch_run_manifest:
-        write_patient_batch_run_manifest(batch_result)
+        batch_manifest_path = write_patient_batch_run_manifest(batch_result)
+    if batch_config.write_run_manifest_index:
+        _write_patient_batch_run_manifest_index(
+            batch_result,
+            batch_config,
+            batch_manifest_path=batch_manifest_path,
+        )
     return batch_result
 
 
@@ -110,6 +122,55 @@ def _batch_result_metadata(batch_config: PatientBatchRunConfig, patient_count: i
     if batch_config.input_manifest_id:
         metadata["input_manifest_id"] = batch_config.input_manifest_id
     return metadata
+
+
+def _write_patient_batch_run_manifest_index(
+    batch_result: PatientBatchRunResult,
+    batch_config: PatientBatchRunConfig,
+    *,
+    batch_manifest_path: Path | None,
+) -> Path:
+    recorder = ManifestIndexRecorder(
+        batch_result.output_root,
+        run_id=batch_config.run_id,
+        metadata={
+            "source": "patient_runner.run_patient_batch",
+            "execution_backend": batch_config.execution_backend.value,
+            "patient_count": batch_result.patient_count,
+        },
+    )
+    if batch_config.patient_config.write_patient_run_manifest:
+        for patient_result in batch_result.patient_results:
+            recorder.record_written_manifest(
+                "patient_run_manifest",
+                patient_result.output_root / "patient_run_manifest.json",
+                manifest_schema_version=PATIENT_RUN_MANIFEST_SCHEMA_VERSION,
+                patient_uid=patient_result.patient_case.patient_uid,
+                stage_name="patient_runner",
+            )
+    else:
+        for patient_result in batch_result.patient_results:
+            recorder.record_skipped_manifest(
+                "patient_run_manifest",
+                patient_uid=patient_result.patient_case.patient_uid,
+                stage_name="patient_runner",
+                notes="Patient run manifest writing disabled by PatientRunConfig.write_patient_run_manifest.",
+            )
+
+    if batch_config.write_batch_run_manifest and batch_manifest_path is not None:
+        recorder.record_written_manifest(
+            "patient_batch_run_manifest",
+            batch_manifest_path,
+            manifest_schema_version=PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION,
+            stage_name="patient_batch_runner",
+        )
+    else:
+        recorder.record_skipped_manifest(
+            "patient_batch_run_manifest",
+            stage_name="patient_batch_runner",
+            notes="Batch run manifest writing disabled by PatientBatchRunConfig.write_batch_run_manifest.",
+        )
+    return recorder.write()
 
 
 def _run_patient_batch_threaded(patient_uids: Sequence[str],

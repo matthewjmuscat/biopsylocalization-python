@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from biopsy_optimizer.v1.per_patient import OptimizerV1LegacyConfig
     from biopsy_optimizer.v2.per_patient import OptimizerV2LiveConfig
     from guidance_maps.config import GuidanceMapPlanningConfig
-    from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig
+    from mc.simulation.per_patient import MCConvexSimulationConfig, MCMRSimulationConfig, PatientMCOutputTableConfig
     from preprocessing.dose_grid_processing import DoseGridProcessingConfig
     from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
     from preprocessing.structure_processing.non_biopsy_structure_processing import NonBiopsyStructurePreprocessingConfig
@@ -494,11 +494,19 @@ class PatientSamplingClassificationScientificConfig:
 
     sampled_biopsy_processing: PatientSampledBiopsyProcessingStageConfig | None = None
     double_sextant_classification: PatientDoubleSextantClassificationStageConfig | None = None
+    structs_referenced_list: Sequence[str] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.double_sextant_classification is not None and self.sampled_biopsy_processing is None:
             raise ValueError("double_sextant_classification requires sampled_biopsy_processing")
+        object.__setattr__(
+            self,
+            "structs_referenced_list",
+            _non_empty_string_tuple(self.structs_referenced_list, "structs_referenced_list")
+            if self.structs_referenced_list
+            else (),
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
@@ -547,6 +555,7 @@ class PatientMCPrepScientificConfig:
     num_generated_transform_samples: int | None = None
     max_simulations: int | None = None
     num_mc_containment_simulations: int | None = None
+    transform_generation_random_seed: int | None = None
     inspect_self_biopsy_dilate_bool: bool = False
     inspect_self_biopsy_dilate_and_rotate_bool: bool = False
     inspect_self_biopsy_dilate_and_rotate_and_translate_bool: bool = False
@@ -586,6 +595,11 @@ class PatientMCPrepScientificConfig:
             field_value = getattr(self, field_name)
             if field_value is not None:
                 object.__setattr__(self, field_name, _positive_int(field_value, field_name))
+        if self.transform_generation_random_seed is not None:
+            seed = int(self.transform_generation_random_seed)
+            if seed < 0:
+                raise ValueError("transform_generation_random_seed cannot be negative")
+            object.__setattr__(self, "transform_generation_random_seed", seed)
         inspect_count = int(self.inspect_relative_structure_rotate_and_shift_number)
         if inspect_count < 0:
             raise ValueError("inspect_relative_structure_rotate_and_shift_number cannot be negative")
@@ -617,6 +631,12 @@ class PatientMCSimulationScientificConfig:
     convex_config: MCConvexSimulationConfig | None = None
     mr_config: MCMRSimulationConfig | None = None
     mr_adc_ref: str = ""
+    persist_dose_context_artifacts: bool = False
+    persist_dose_nn_render_context_artifacts: bool = True
+    dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
+    launch_dose_nn_render_selector_after_persisting_artifacts: bool = False
+    dose_nn_render_selector_biopsy_index: int | None = None
+    dose_nn_render_selector_localization_kind: str = "dose"
     num_mc_containment_simulations: int = 0
     num_mc_dose_simulations: int = 0
     num_mc_mr_simulations: int = 0
@@ -630,6 +650,33 @@ class PatientMCSimulationScientificConfig:
             "num_mc_mr_simulations",
         ):
             object.__setattr__(self, field_name, _non_negative_int(getattr(self, field_name), field_name))
+        object.__setattr__(self, "persist_dose_context_artifacts", bool(self.persist_dose_context_artifacts))
+        object.__setattr__(
+            self,
+            "persist_dose_nn_render_context_artifacts",
+            bool(self.persist_dose_nn_render_context_artifacts),
+        )
+        localization_kinds = tuple(
+            str(localization_kind).strip().lower().replace("-", "_").replace(" ", "_")
+            for localization_kind in self.dose_context_artifact_localization_kinds
+        )
+        if any(localization_kind == "" for localization_kind in localization_kinds):
+            raise ValueError("dose_context_artifact_localization_kinds cannot contain empty values")
+        object.__setattr__(self, "dose_context_artifact_localization_kinds", localization_kinds)
+        object.__setattr__(
+            self,
+            "launch_dose_nn_render_selector_after_persisting_artifacts",
+            bool(self.launch_dose_nn_render_selector_after_persisting_artifacts),
+        )
+        biopsy_index = self.dose_nn_render_selector_biopsy_index
+        if biopsy_index is not None:
+            biopsy_index = _non_negative_int(biopsy_index, "dose_nn_render_selector_biopsy_index")
+        object.__setattr__(self, "dose_nn_render_selector_biopsy_index", biopsy_index)
+        object.__setattr__(
+            self,
+            "dose_nn_render_selector_localization_kind",
+            str(self.dose_nn_render_selector_localization_kind).strip().lower().replace("-", "_").replace(" ", "_") or "dose",
+        )
         object.__setattr__(
             self,
             "bx_sample_pts_lattice_spacing",
@@ -644,6 +691,21 @@ class PatientMCSimulationScientificConfig:
     @property
     def enabled(self) -> bool:
         return self.convex_config is not None or self.mr_config is not None
+
+
+@dataclass(frozen=True, slots=True)
+class PatientMCOutputTablesScientificConfig:
+    """Config for patient-local downstream MC output dataframe fragments."""
+
+    output_table_config: PatientMCOutputTableConfig | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+    @property
+    def enabled(self) -> bool:
+        return self.output_table_config is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -721,6 +783,7 @@ class PatientRunnerScientificConfig:
     preprocessing: PatientPreprocessingScientificConfig | None = None
     mc_prep: PatientMCPrepScientificConfig | None = None
     mc_simulation: PatientMCSimulationScientificConfig | None = None
+    mc_output_tables: PatientMCOutputTablesScientificConfig | None = None
     optimization: PatientOptimizationScientificConfig | None = None
     simulated_biopsy_finalization: PatientSimulatedBiopsyFinalizationStageConfig | None = None
     sampling_classification: PatientSamplingClassificationScientificConfig | None = None
@@ -741,6 +804,7 @@ class PatientRunnerScientificConfig:
             ("preprocessing", self.preprocessing),
             ("mc_prep", self.mc_prep),
             ("mc_simulation", self.mc_simulation),
+            ("mc_output_tables", self.mc_output_tables),
             ("optimization", self.optimization),
             ("simulated_biopsy_finalization", self.simulated_biopsy_finalization),
             ("sampling_classification", self.sampling_classification),

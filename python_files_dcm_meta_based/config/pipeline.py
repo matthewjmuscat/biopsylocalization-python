@@ -1083,6 +1083,12 @@ class PatientScientificRunnerExecutionConfig:
     stop_on_stage_error: bool = True
     raise_on_stage_error: bool = False
     validate_dependencies: bool = True
+    persist_dose_context_artifacts: bool = False
+    persist_dose_nn_render_context_artifacts: bool = True
+    dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
+    launch_dose_nn_render_selector_after_persisting_artifacts: bool = False
+    dose_nn_render_selector_biopsy_index: Optional[int] = None
+    dose_nn_render_selector_localization_kind: str = "dose"
 
     def __post_init__(self) -> None:
         mode = _non_empty_string(self.mode, "mode")
@@ -1102,6 +1108,17 @@ class PatientScientificRunnerExecutionConfig:
                 field_name,
                 tuple(str(value) for value in _tuple_from_sequence(getattr(self, field_name), field_name)),
             )
+        object.__setattr__(
+            self,
+            "dose_context_artifact_localization_kinds",
+            tuple(
+                str(value)
+                for value in _tuple_from_sequence(
+                    self.dose_context_artifact_localization_kinds,
+                    "dose_context_artifact_localization_kinds",
+                )
+            ),
+        )
         for field_name in (
             "include_artifact_writing",
             "write_patient_run_manifests",
@@ -1110,10 +1127,26 @@ class PatientScientificRunnerExecutionConfig:
             "stop_on_stage_error",
             "raise_on_stage_error",
             "validate_dependencies",
+            "persist_dose_context_artifacts",
+            "persist_dose_nn_render_context_artifacts",
+            "launch_dose_nn_render_selector_after_persisting_artifacts",
         ):
             object.__setattr__(self, field_name, bool(getattr(self, field_name)))
+        if self.dose_nn_render_selector_biopsy_index is not None:
+            biopsy_index = int(self.dose_nn_render_selector_biopsy_index)
+            if biopsy_index < 0:
+                raise ValueError("dose_nn_render_selector_biopsy_index cannot be negative")
+            object.__setattr__(self, "dose_nn_render_selector_biopsy_index", biopsy_index)
         object.__setattr__(self, "max_workers", max_workers)
         object.__setattr__(self, "execution_backend", _non_empty_string(self.execution_backend, "execution_backend"))
+        object.__setattr__(
+            self,
+            "dose_nn_render_selector_localization_kind",
+            _non_empty_string(
+                self.dose_nn_render_selector_localization_kind,
+                "dose_nn_render_selector_localization_kind",
+            ),
+        )
 
 
 @dataclass(frozen=True)

@@ -46,6 +46,7 @@ class RenderBrokerChoiceGroup:
     export_defaults: Optional[RenderBrokerExportDefaults] = None
     render_action_label: str = "Render selection"
     empty_state_message: str = "No render options are available."
+    allow_pyvista: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,7 @@ def normalize_render_broker_choice_group(
         export_defaults=normalize_render_broker_export_defaults(choice_group.export_defaults),
         render_action_label=str(choice_group.render_action_label),
         empty_state_message=str(choice_group.empty_state_message),
+        allow_pyvista=bool(choice_group.allow_pyvista),
     )
 
 
@@ -247,19 +249,54 @@ def normalize_render_backend(render_backend: str) -> str:
     resolved_render_backend = str(render_backend).strip().lower()
     if resolved_render_backend == "":
         resolved_render_backend = "none"
-    if resolved_render_backend not in ("none", "open3d", "plotly", "both"):
+    if resolved_render_backend in ("none", "open3d", "plotly", "pyvista", "both"):
+        return resolved_render_backend
+
+    requested_backend_parts = tuple(
+        backend_part.strip()
+        for backend_part in resolved_render_backend.replace(",", "+").split("+")
+        if backend_part.strip() != ""
+    )
+    supported_backend_order = ("open3d", "plotly", "pyvista")
+    requested_backend_set = set(requested_backend_parts)
+    unsupported_backend_parts = sorted(requested_backend_set.difference(supported_backend_order))
+    if unsupported_backend_parts:
         raise ValueError("unsupported render backend: {}".format(render_backend))
-    return resolved_render_backend
-
-
-def resolve_render_backend(show_open3d: bool, show_plotly: bool) -> str:
-    if bool(show_open3d) and bool(show_plotly):
+    ordered_backend_parts = tuple(
+        backend_part for backend_part in supported_backend_order if backend_part in requested_backend_set
+    )
+    if len(ordered_backend_parts) == 0:
+        return "none"
+    if ordered_backend_parts == ("open3d", "plotly"):
         return "both"
+    if len(ordered_backend_parts) == 1:
+        return ordered_backend_parts[0]
+    return "+".join(ordered_backend_parts)
+
+
+def render_backend_includes(render_backend: str, backend_key: str) -> bool:
+    resolved_render_backend = normalize_render_backend(render_backend)
+    resolved_backend_key = normalize_render_backend(backend_key)
+    if resolved_backend_key == "none":
+        return resolved_render_backend == "none"
+    if resolved_render_backend == "both":
+        return resolved_backend_key in ("open3d", "plotly")
+    return resolved_backend_key in tuple(resolved_render_backend.split("+"))
+
+
+def resolve_render_backend(show_open3d: bool, show_plotly: bool, show_pyvista: bool = False) -> str:
+    selected_backends = []
     if bool(show_open3d):
-        return "open3d"
+        selected_backends.append("open3d")
     if bool(show_plotly):
-        return "plotly"
-    return "none"
+        selected_backends.append("plotly")
+    if bool(show_pyvista):
+        selected_backends.append("pyvista")
+    if len(selected_backends) == 0:
+        return "none"
+    if tuple(selected_backends) == ("open3d", "plotly"):
+        return "both"
+    return normalize_render_backend("+".join(selected_backends))
 
 
 def normalize_plotly_export_file_formats(file_formats) -> Tuple[str, ...]:

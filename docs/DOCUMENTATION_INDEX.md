@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-06-01
+Last updated: 2026-08-03
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -36,10 +36,30 @@ Current durable docs:
 - `architecture/PATIENT_RUNNER_CONFIG_PATHWAYS.md` - current config-pathway
   inventory and debug-subgroup rewrite map for patient-runner/scientific-shadow
   config work.
+- `architecture/PATIENT_RUNNER_DEPENDENCY_GRAPH.md` - dependency graph and
+  pathway/checkpoint vocabulary for patient-runner scientific orchestration.
+- `architecture/PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md` - output-layer contract
+  for patient artifacts, manifests, post-run assembly, and parity.
+- `architecture/PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md` - durable patient
+  context-artifact strategy for retaining inspectable scientific arrays,
+  transform provenance, and post-run GUI/reanalysis context without relying on
+  pickles.
+- `architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md` - standalone
+  parent/worker process architecture for moving the patient runner outside the
+  legacy all-patient runtime.
+- `architecture/DOSIMETRIC_NN_RENDER_SURFACE.md` - additive dose
+  nearest-neighbour render surface for publication figures, debug inspection,
+  and future GUI integration without changing MC dose math or patient-runner
+  execution semantics.
 - `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
   plan.
 - `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
   contract.
+- `roadmap/PATIENT_RUNNER_MODULE_READINESS.md` - stage-by-stage patient-runner
+  readiness checklist and tranche map.
+- `roadmap/VALIDATION_HARDENING_AND_ARCHITECTURE_AUDIT.md` - Jun23 validation
+  hardening direction, split-cohort equivalence plan, typed runtime migration
+  explanation, and Markdown documentation audit.
 
 ### Module-local design docs
 
@@ -55,7 +75,10 @@ Current module-local docs:
 - `python_files_dcm_meta_based/guidance_maps/GUIDANCE_MAP_WORKFLOW.md`
 - `python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md`
 - `python_files_dcm_meta_based/patient_runner/README.md`
+- `python_files_dcm_meta_based/post_run/README.md`
 - `python_files_dcm_meta_based/deprecated/README.md`
+- `python_files_dcm_meta_based/validation/README.md`
+- `python_files_dcm_meta_based/validation/RUN_VALIDATION_CODEBOOK.md`
 - `python_files_dcm_meta_based/ui/RENDER_BROKER_DESIGN.md`
 
 ### Package extraction docs
@@ -94,15 +117,22 @@ docs/
   architecture/
     CONFIG_LAYER_REWRITE_PLAN.md
     GUI_AND_STARTUP_ARCHITECTURE_PLAN.md
-    PATIENT_RUNNER_CONFIG_PATHWAYS.md
     PATIENT_MODULE_TREE_GUIDE.md
+    PATIENT_RUNNER_CONFIG_PATHWAYS.md
+    PATIENT_RUNNER_DEPENDENCY_GRAPH.md
+    DOSIMETRIC_NN_RENDER_SURFACE.md
+    PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md
+    PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md
+    PATIENT_RUNNER_PROCESS_ARCHITECTURE.md
   boundaries/
     PICKLE_EXPORT_BOUNDARIES.md
   input/
     INPUT_DICOM_DATA_ASSESSMENT.md
     INPUT_DATA_MANIFEST_DESIGN.md
   roadmap/
+    PATIENT_RUNNER_MODULE_READINESS.md
     PATIENT_RUNNER_UPGRADE_ROADMAP.md
+    VALIDATION_HARDENING_AND_ARCHITECTURE_AUDIT.md
   runtime/
     RUNTIME_LOGGING_DESIGN.md
 ```

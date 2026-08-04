@@ -52,6 +52,7 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER = (
     PatientStageName.SAMPLING_CLASSIFICATION,
     PatientStageName.MC_PREP,
     PatientStageName.MC_SIMULATION,
+    PatientStageName.MC_OUTPUT_TABLES,
     PatientStageName.GUIDANCE,
 )
 
@@ -66,6 +67,7 @@ DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER = (
     PatientStageName.SAMPLING_CLASSIFICATION,
     PatientStageName.MC_PREP,
     PatientStageName.MC_SIMULATION,
+    PatientStageName.MC_OUTPUT_TABLES,
     PatientStageName.GUIDANCE,
 )
 
@@ -124,6 +126,11 @@ DEFAULT_PATIENT_SCIENTIFIC_STAGE_DEPENDENCIES = (
         stage_name=PatientStageName.MC_SIMULATION,
         required_stage_names=(PatientStageName.MC_PREP,),
         summary="Runs current MC/dosimetry simulation after MC transform preparation.",
+    ),
+    PatientScientificStageDependency(
+        stage_name=PatientStageName.MC_OUTPUT_TABLES,
+        required_stage_names=(PatientStageName.MC_SIMULATION,),
+        summary="Builds patient-local downstream MC output dataframe fragments after simulation.",
     ),
     PatientScientificStageDependency(
         stage_name=PatientStageName.GUIDANCE,
@@ -189,6 +196,11 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_STAGE_DEPENDENCIES = (
         summary="Runs current MC/dosimetry simulation after MC transform preparation.",
     ),
     PatientScientificStageDependency(
+        stage_name=PatientStageName.MC_OUTPUT_TABLES,
+        required_stage_names=(PatientStageName.MC_SIMULATION,),
+        summary="Builds patient-local downstream MC output dataframe fragments after simulation.",
+    ),
+    PatientScientificStageDependency(
         stage_name=PatientStageName.GUIDANCE,
         required_stage_names=(PatientStageName.ANATOMICAL_PREPROCESSING, PatientStageName.PREPROCESSING),
         summary="Builds guidance outputs from selected anatomical and biopsy products.",
@@ -240,6 +252,7 @@ DEFAULT_PATIENT_SCIENTIFIC_PATHWAYS = {
         PatientStageName.SAMPLING_CLASSIFICATION,
         PatientStageName.MC_PREP,
         PatientStageName.MC_SIMULATION,
+        PatientStageName.MC_OUTPUT_TABLES,
     ),
     PatientScientificPathwayName.FULL_CURRENT_PIPELINE_SHADOW: DEFAULT_PATIENT_SCIENTIFIC_EXECUTABLE_STAGE_ORDER,
 }
@@ -289,6 +302,7 @@ DEFAULT_PATIENT_SCIENTIFIC_GRAPH_PATHWAYS = {
         PatientStageName.SAMPLING_CLASSIFICATION,
         PatientStageName.MC_PREP,
         PatientStageName.MC_SIMULATION,
+        PatientStageName.MC_OUTPUT_TABLES,
     ),
     PatientScientificPathwayName.FULL_CURRENT_PIPELINE_SHADOW: DEFAULT_PATIENT_SCIENTIFIC_GRAPH_ORDER,
 }

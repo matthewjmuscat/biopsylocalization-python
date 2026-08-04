@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from output_artifacts.manifest_contracts import manifest_contract
+
 from .contracts import PatientBatchRunResult
 from .contracts import PatientRunResult
 from .contracts import PatientStageResult
@@ -15,6 +17,54 @@ from .contracts import PatientStageResult
 
 PATIENT_RUN_MANIFEST_SCHEMA_VERSION = "patient_run_manifest_v1"
 PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION = "patient_batch_run_manifest_v1"
+
+MANIFEST_CONTRACTS = (
+    manifest_contract(
+        "patient_run_manifest",
+        "Patient run manifest",
+        "patient",
+        "manifest",
+        "current_durable",
+        ("patients/<patient_uid>/patient_run_manifest.json", "patient_run_manifest.json"),
+        "json",
+        "patient_runner.manifests.PATIENT_RUN_MANIFEST_SCHEMA_VERSION",
+        "patient_runner.manifests.write_patient_run_manifest",
+        "Record status, stage results, artifacts, and lightweight identity for one patient run.",
+        (
+            "patient UID and label",
+            "source run and input manifest IDs",
+            "patient metadata",
+            "overall patient status",
+            "output root",
+            "elapsed time",
+            "stage statuses and warnings",
+            "artifact paths",
+        ),
+        reader="post_run.cohort_assembly.manifest_loader.load_patient_batch_result_from_manifest",
+    ),
+    manifest_contract(
+        "patient_batch_run_manifest",
+        "Patient batch run manifest",
+        "batch_run",
+        "manifest",
+        "current_durable",
+        ("patient_batch_run_manifest.json", "patient_scientific_runner/patient_batch_run_manifest.json"),
+        "json",
+        "patient_runner.manifests.PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
+        "patient_runner.manifests.write_patient_batch_run_manifest",
+        "Aggregate patient-run results and provide the primary entry point for post-run assembly.",
+        (
+            "batch status",
+            "output root",
+            "elapsed time",
+            "patient count and failed-patient count",
+            "batch artifact paths",
+            "per-patient status summaries",
+            "run metadata",
+        ),
+        reader="post_run.cohort_assembly.manifest_loader.load_patient_batch_result_from_manifest",
+    ),
+)
 
 
 def _utc_now_iso() -> str:

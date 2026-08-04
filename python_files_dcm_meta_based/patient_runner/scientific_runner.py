@@ -24,6 +24,7 @@ from .scientific_dependencies import executable_patient_scientific_pathway_stage
 from .scientific_dependencies import resolve_patient_scientific_pathway_name
 from .scientific_dependencies import resolve_patient_scientific_stage_names
 from .scientific_stages import build_patient_scientific_stages_for_pathway
+from random_seed_policy import random_seed_policy_metadata
 
 
 PATIENT_SCIENTIFIC_RUNNER_PLAN_SCHEMA_VERSION = "patient_scientific_runner_plan_v1"
@@ -117,9 +118,12 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
     PatientScientificRunnerCheckpoint(
         checkpoint_name="current_dosimetry_shadow",
         pathway_name=PatientScientificPathwayName.CURRENT_DOSIMETRY_SHADOW,
-        summary="Sixth checkpoint: extends through MC prep, dose simulation, containment simulation, and MR ADC simulation.",
+        summary=(
+            "Sixth checkpoint: extends through MC prep, dose simulation, containment simulation, "
+            "MR ADC simulation, and downstream MC output tables."
+        ),
         validation_after_run=(
-            "Inspect MC prep and MC simulation patient manifests for succeeded stage status.",
+            "Inspect MC prep, MC simulation, and MC output-table patient manifests for succeeded stage status.",
             "Run cohort CSV parity against the previous validated run output.",
             "Re-enable Phase 3B/3C output sidecars only if output schema or artifact surfaces changed.",
         ),
@@ -128,7 +132,10 @@ DEFAULT_PATIENT_SCIENTIFIC_RUNNER_CHECKPOINTS = (
     PatientScientificRunnerCheckpoint(
         checkpoint_name="full_current_pipeline_shadow",
         pathway_name=PatientScientificPathwayName.FULL_CURRENT_PIPELINE_SHADOW,
-        summary="Full current live-runner checkpoint: all current executable scientific stages, including guidance.",
+        summary=(
+            "Full current live-runner checkpoint: all current executable scientific stages, "
+            "including downstream MC output tables and guidance."
+        ),
         validation_after_run=(
             "Run full cohort CSV parity against the previous validated oracle run.",
             "Review guidance outputs and patient/cohort assembly evidence before considering any legacy deletion.",
@@ -250,6 +257,13 @@ def build_patient_scientific_run_config_from_pipeline(
         global_num_cases_key=refs.global_num_cases_key,
     )
     resolved_metadata = dict(metadata or {})
+    resolved_metadata.setdefault(
+        "random_seed_policy",
+        random_seed_policy_metadata(
+            transform_generation_random_seed=pipeline_config.random_seeds.transform_generation_random_seed,
+            optimizer_v1_random_seed=pipeline_config.random_seeds.optimizer_v1_random_seed,
+        ),
+    )
     patient_config = PatientRunConfig(
         output_root=Path(output_root),
         legacy_keys=resolved_legacy_keys,
@@ -337,7 +351,26 @@ def summarize_patient_scientific_run_config(run_config: PatientScientificRunConf
         "output_root": run_config.batch_config.output_root.as_posix(),
         "execution_backend": run_config.batch_config.execution_backend.value,
         "max_workers": run_config.batch_config.max_workers,
+        "persisting_artifacts": _persisting_artifacts_summary(run_config.scientific_config),
         "metadata": dict(run_config.metadata),
+    }
+
+
+def _persisting_artifacts_summary(scientific_config: PatientRunnerScientificConfig) -> dict[str, Any]:
+    mc_simulation = scientific_config.mc_simulation
+    if mc_simulation is None:
+        return {"dose_context": {"persist": False}}
+    return {
+        "dose_context": {
+            "persist": mc_simulation.persist_dose_context_artifacts,
+            "persist_nn_render_context": mc_simulation.persist_dose_nn_render_context_artifacts,
+            "localization_kinds": tuple(mc_simulation.dose_context_artifact_localization_kinds),
+            "launch_selector_after_persisting_artifacts": (
+                mc_simulation.launch_dose_nn_render_selector_after_persisting_artifacts
+            ),
+            "selector_biopsy_index": mc_simulation.dose_nn_render_selector_biopsy_index,
+            "selector_localization_kind": mc_simulation.dose_nn_render_selector_localization_kind,
+        }
     }
 
 

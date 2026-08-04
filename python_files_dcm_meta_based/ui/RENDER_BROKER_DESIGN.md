@@ -112,6 +112,10 @@ The dialog returns one of two actions.
    The caller receives a group key, selected option keys, a backend choice, and optional export overrides.
 
 The caller then performs the render and re-enters the broker loop.
+For post-run figure-tuning workflows, the caller should label the `continue`
+action as an explicit exit from the render loop. That preserves the generic
+broker action while making the user-facing behavior clear: render, adjust, render
+again, or exit.
 
 ## Timeout Model
 
@@ -200,6 +204,44 @@ Instead it:
 This pass does not migrate the older direct Open3D debug calls elsewhere in the repository.
 
 Those will be moved later once the broker contract has been proven stable in optimizer-v2.
+
+## Planned Dosimetric NN Adoption
+
+The next additive adoption target is the dosimetric nearest-neighbour render
+surface described in `docs/architecture/DOSIMETRIC_NN_RENDER_SURFACE.md`.
+
+That surface should follow the optimizer-v2 pattern without making the broker
+dose-aware:
+
+1. Build a replayable dose render scene from dose-localization outputs.
+2. Keep dose-specific trial, threshold, point-stride, vector, and colorwash
+   controls in the dose selector/config layer.
+3. Build broker choice groups at the dose render orchestration seam.
+4. Route selected scenes to dose-owned Plotly and Open3D backend modules.
+5. Keep MC dose math, nearest-neighbour search, and patient-runner execution
+   unchanged underneath.
+
+Dose controls should include independent lattice/colorwash/vector layer toggles
+and optional nominal/reference biopsy points that can stay visible between MC
+trial renders. The broker should still carry only generic choices; dose-specific
+control values belong in `DoseNNRenderConfig` and dose-owned renderer settings.
+The toolkit-neutral dose control handoff is `DoseNNRenderControlSelection`,
+which a dose GUI can build from saved-scene manifest summaries after the run.
+The broker continues to know only about scene options, backend selection,
+exports, and the render-again-or-exit loop.
+The current dose implementation uses a two-step UI: the generic broker selects
+the saved scene and PyVista backend, then a dose-owned Tk dialog collects
+`DoseNNRenderControlSelection` for that scene. This preserves the broker
+contract while providing real dose controls for the post-run renderer.
+
+Current asymmetry: the broker contract can now express PyVista decisions for
+the dose NN surface, but optimizer-v2 still implements only Open3D and Plotly
+renderers. A PyVista optimizer renderer is a possible later convergence task,
+not part of the current dose-render GUI completion path.
+
+The broker should not import MC modules, Plotly, Open3D, or Tk-specific dose
+controls. If a later GUI adapter replaces Tkinter, the dose scene contracts and
+renderer modules should remain reusable.
 
 ## Migration Strategy For The Rest Of The Codebase
 

@@ -346,7 +346,7 @@ def build_patient_mc_mr_output_tables(patient_uid: str,
                                       patient_reference_dict: dict[str, Any],
                                       config: PatientMCOutputTableConfig) -> PatientMCOutputTableBundle:
     """Build one patient's downstream MR ADC MC dataframe fragments."""
-    if not config.mr_adc_ref or not patient_has_mr_adc_reference(patient_reference_dict, config.mr_adc_ref):
+    if not config.mr_adc_ref or not patient_has_mr_adc_reference(patient_reference_dict, mr_adc_ref=config.mr_adc_ref):
         return collect_patient_mc_output_tables(
             patient_uid,
             patient_reference_dict,

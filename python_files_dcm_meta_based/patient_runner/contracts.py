@@ -27,6 +27,7 @@ class PatientStageName(str, Enum):
     SAMPLING_CLASSIFICATION = "sampling_classification"
     MC_PREP = "mc_prep"
     MC_SIMULATION = "mc_simulation"
+    MC_OUTPUT_TABLES = "mc_output_tables"
     PATIENT_ARTIFACT_WRITING = "patient_artifact_writing"
     GUIDANCE = "guidance"
 
@@ -210,6 +211,7 @@ class PatientBatchRunConfig:
     max_workers: int = 1
     execution_backend: PatientBatchExecutionBackend = PatientBatchExecutionBackend.SEQUENTIAL
     write_batch_run_manifest: bool = True
+    write_run_manifest_index: bool = True
     patient_labels: Mapping[str, str] = field(default_factory=dict)
     source_run_id: str = ""
     input_manifest_id: str = ""
@@ -233,6 +235,7 @@ class PatientBatchRunConfig:
         object.__setattr__(self, "max_workers", max_workers)
         object.__setattr__(self, "execution_backend", execution_backend)
         object.__setattr__(self, "write_batch_run_manifest", bool(self.write_batch_run_manifest))
+        object.__setattr__(self, "write_run_manifest_index", bool(self.write_run_manifest_index))
         object.__setattr__(self, "patient_labels", patient_labels)
         object.__setattr__(self, "source_run_id", str(self.source_run_id).strip())
         object.__setattr__(self, "input_manifest_id", str(self.input_manifest_id).strip())

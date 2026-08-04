@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 from legacy_data_keys import legacy_data_keys
+from random_seed_policy import runtime_random_seed_manifest_metadata
 
 
 DEFAULT_RAW_MC_OUTPUT_FOLDER_NAME = "Raw MC output"
@@ -78,6 +79,7 @@ def write_run_completion_manifest(
         "raw_mc_output_dir": str(global_info.get(LEGACY_MASTER_INFO_KEYS.raw_mc_output_dir_key, "")),
         "run_output_folder_label": global_info.get(LEGACY_MASTER_INFO_KEYS.run_output_folder_label_key),
         "run_output_metadata": global_info.get(LEGACY_MASTER_INFO_KEYS.run_output_metadata_key, {}),
+        "random_seed_policy": runtime_random_seed_manifest_metadata(master_structure_info_dict),
         "num_cases": global_info.get(LEGACY_MASTER_INFO_KEYS.num_cases_key),
         "num_structures": global_info.get(LEGACY_MASTER_INFO_KEYS.num_structures_key),
     }

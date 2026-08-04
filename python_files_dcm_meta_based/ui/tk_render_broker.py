@@ -14,6 +14,7 @@ from ui.render_broker import (
     RenderBrokerRequest,
     RenderBrokerSessionState,
     normalize_plotly_export_file_formats,
+    render_backend_includes,
     resolve_render_backend,
 )
 
@@ -146,10 +147,13 @@ class TkRenderBrokerDialogAdapter:
             resolved_default_backend = choice_group.default_backend
             return {
                 "open3d": tk.BooleanVar(
-                    value=(choice_group.allow_open3d and resolved_default_backend in ("open3d", "both"))
+                    value=(choice_group.allow_open3d and render_backend_includes(resolved_default_backend, "open3d"))
                 ),
                 "plotly": tk.BooleanVar(
-                    value=(choice_group.allow_plotly and resolved_default_backend in ("plotly", "both"))
+                    value=(choice_group.allow_plotly and render_backend_includes(resolved_default_backend, "plotly"))
+                ),
+                "pyvista": tk.BooleanVar(
+                    value=(choice_group.allow_pyvista and render_backend_includes(resolved_default_backend, "pyvista"))
                 ),
             }
 
@@ -208,11 +212,18 @@ class TkRenderBrokerDialogAdapter:
             ).grid(row=0, column=1, sticky="w", padx=(0, 12))
             ttk.Checkbutton(
                 backend_frame,
+                text="PyVista",
+                variable=backend_vars["pyvista"],
+                state=("normal" if choice_group.allow_pyvista else "disabled"),
+                style="RenderBroker.TCheckbutton",
+            ).grid(row=0, column=2, sticky="w", padx=(0, 12))
+            ttk.Checkbutton(
+                backend_frame,
                 text="Plotly export",
                 variable=export_enabled_var,
                 state=("normal" if choice_group.allow_plotly_export else "disabled"),
                 style="RenderBroker.TCheckbutton",
-            ).grid(row=0, column=2, sticky="w")
+            ).grid(row=0, column=3, sticky="w")
 
             option_state = {}
             option_controls_row = 2
@@ -578,6 +589,7 @@ class TkRenderBrokerDialogAdapter:
                 render_backend = resolve_render_backend(
                     bool(backend_vars["open3d"].get()),
                     bool(backend_vars["plotly"].get()),
+                    bool(backend_vars["pyvista"].get()),
                 )
                 try:
                     export_settings = parse_export_settings()
@@ -592,7 +604,7 @@ class TkRenderBrokerDialogAdapter:
                 if render_backend == "none" and export_settings is None:
                     messagebox.showwarning(
                         "No render target selected",
-                        "Enable Open3D, Plotly figures, or Plotly export before rendering.",
+                        "Enable Open3D, Plotly figures, PyVista, or Plotly export before rendering.",
                         parent=root,
                     )
                     return

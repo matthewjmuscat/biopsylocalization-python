@@ -1,0 +1,25 @@
+schema_version = "validation_run_config_v1"
+description = "Focused interrun validation: compare a full patient-runner run with split patient-runner runs for the same patient set."
+
+[defaults]
+abs_tol = 1e-8
+rel_tol = 1e-6
+
+[paths]
+full_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-25-2026 Time-20,55,40 - standard-run - inputs-dicom-457_mr-adc-1_mr-t2-0_rtdose-4_rtplan-4_rtstruct-4_us-4/patient_scientific_runner"
+split_a_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-12,36,14 - standard-run - inputs-dicom-194_mr-adc-0_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2/patient_scientific_runner"
+split_b_patient_runner = "../Data/Output data/MC_sim_out- Date-Jun-26-2026 Time-14,25,00 - standard-run - inputs-dicom-263_mr-adc-1_mr-t2-0_rtdose-2_rtplan-2_rtstruct-2_us-2/patient_scientific_runner"
+
+[run_groups.full_vs_split_reconstructed]
+description = "Patient UID sets must match by default; do not enable allow_patient_set_mismatch for the real equivalence gate."
+enabled = true
+
+[[run_groups.full_vs_split_reconstructed.jobs]]
+name = "full_vs_split_reconstructed"
+script = "compare_reconstructed_cohort_runs"
+reference_patient_runner_output_path = "full_patient_runner"
+split_patient_runner_outputs_paths = [
+  "split_a_patient_runner",
+  "split_b_patient_runner",
+]
+output_dir = "validation_outputs/jun25_205540/full_vs_split_reconstructed"

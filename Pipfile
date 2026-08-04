@@ -24,6 +24,9 @@ rich = "*"
 "stopwatch.py" = "*"
 textual = "*"
 plotly = "*"
+pyvista = "==0.44.2"
+zarr = "==2.18.7"
+numcodecs = "==0.13.1"
 statsmodels = "*"
 cubinlinker-cu11 = { index = "pypinvidia"}
 ptxcompiler-cu11 = { index = "pypinvidia"}

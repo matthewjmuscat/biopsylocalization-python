@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Mapping, Sequence
 
+from random_seed_policy import build_transform_generation_patient_rng
+
 from .contracts import LegacyPatientRuntimeState
 from .contracts import PatientRunConfig
 from .contracts import PatientStageName
@@ -44,6 +46,7 @@ def build_patient_scientific_stages(
         PatientStageName.TRANSFORM_GENERATION.value: _transform_generation_stage(scientific_config),
         PatientStageName.MC_PREP.value: _mc_prep_stage(scientific_config),
         PatientStageName.MC_SIMULATION.value: _mc_simulation_stage(scientific_config),
+        PatientStageName.MC_OUTPUT_TABLES.value: _mc_output_tables_stage(scientific_config),
         PatientStageName.OPTIMIZATION.value: _optimization_stage(scientific_config),
         PatientStageName.SIMULATED_BIOPSY_FINALIZATION.value: _simulated_biopsy_finalization_stage(scientific_config),
         PatientStageName.SAMPLING_CLASSIFICATION.value: _sampling_classification_stage(scientific_config),
@@ -463,6 +466,11 @@ def run_patient_transform_generation_scientific_stage(
         runtime_state.master_structure_info_dict,
         stage_config,
     )
+    transform_rng, transform_seed_metadata = build_transform_generation_patient_rng(
+        runtime_state.master_structure_info_dict,
+        runtime_state.patient_uid,
+        transform_generation_random_seed=stage_config.transform_generation_random_seed,
+    )
     generate_transformations_for_patient(
         patient_uid=runtime_state.patient_uid,
         pydicom_item=runtime_state.pydicom_item,
@@ -473,7 +481,7 @@ def run_patient_transform_generation_scientific_stage(
         biopsy_needle_compartment_length=stage_config.biopsy_needle_compartment_length,
         num_generated_transform_samples=num_generated_transform_samples,
         structs_referenced_list=stage_config.structs_referenced_list,
-        rng=scientific_config.resources.rng,
+        rng=transform_rng,
     )
     return PatientStageResult.success(
         PatientStageName.TRANSFORM_GENERATION,
@@ -481,6 +489,7 @@ def run_patient_transform_generation_scientific_stage(
             "patient_uid": runtime_state.patient_uid,
             "steps": ("transform_generation",),
             "num_generated_transform_samples": int(num_generated_transform_samples),
+            **transform_seed_metadata,
         },
     )
 
@@ -619,7 +628,9 @@ def run_patient_sampling_classification_scientific_stage(
 
     if stage_config.double_sextant_classification is not None:
         from preprocessing.biopsy_processing.per_patient.double_sextant_classification import (
+            assemble_biopsy_double_sextant_classification_fragments,
             build_patient_biopsy_double_sextant_sample_point_fragment,
+            store_patient_biopsy_double_sextant_voxel_fragment,
         )
 
         double_sextant_config = stage_config.double_sextant_classification
@@ -631,9 +642,45 @@ def run_patient_sampling_classification_scientific_stage(
             oar_ref=double_sextant_config.oar_ref,
             biopsy_z_voxel_length=double_sextant_config.biopsy_z_voxel_length,
         )
+        _per_sample_point_dataframe, per_voxel_dataframe = assemble_biopsy_double_sextant_classification_fragments(
+            [sample_point_dataframe]
+        )
+        store_patient_biopsy_double_sextant_voxel_fragment(
+            patient_uid=runtime_state.patient_uid,
+            pydicom_item=runtime_state.pydicom_item,
+            all_ref_key=runtime_state.all_ref_key,
+            per_voxel_dataframe=per_voxel_dataframe,
+        )
         metadata["steps"].append("double_sextant_sample_point_fragment")
         metadata["double_sextant_sample_point_row_count"] = int(len(sample_point_dataframe))
-        metadata["double_sextant_voxel_assembly_scope"] = "run_level"
+        metadata["double_sextant_per_voxel_row_count"] = int(len(per_voxel_dataframe))
+        metadata["double_sextant_voxel_assembly_scope"] = "patient"
+
+    if stage_config.structs_referenced_list:
+        import dataframe_builders
+
+        singleton_reference_dict = {runtime_state.patient_uid: runtime_state.pydicom_item}
+        nearest_dils_dataframe = dataframe_builders.bx_nearest_dils_dataframe_builder(
+            singleton_reference_dict,
+            stage_config.structs_referenced_list,
+            runtime_state.all_ref_key,
+            runtime_state.bx_ref,
+        )
+        biopsy_basic_spatial_dataframe = dataframe_builders.biopsy_basic_spatial_features_information_dataframe_builder(
+            singleton_reference_dict,
+            runtime_state.all_ref_key,
+            runtime_state.bx_ref,
+        )
+        radiomic_features_dataframe = dataframe_builders.cohort_structure_features_dataframe_builder(
+            singleton_reference_dict,
+            stage_config.structs_referenced_list,
+            runtime_state.bx_ref,
+            all_ref_key=runtime_state.all_ref_key,
+        )
+        metadata["steps"].append("preprocessing_dataframe_fragments")
+        metadata["nearest_dils_row_count"] = int(len(nearest_dils_dataframe))
+        metadata["biopsy_basic_spatial_row_count"] = int(len(biopsy_basic_spatial_dataframe))
+        metadata["radiomic_features_row_count"] = int(len(radiomic_features_dataframe))
 
     return PatientStageResult.success(PatientStageName.SAMPLING_CLASSIFICATION, metadata=metadata)
 
@@ -717,19 +764,31 @@ def run_patient_mc_simulation_scientific_stage(
     scientific_config: PatientRunnerScientificConfig,
 ) -> PatientStageResult:
     """Run configured patient-local MC simulation stages."""
-    del config
     stage_config = scientific_config.mc_simulation
     if stage_config is None or not stage_config.enabled:
         return PatientStageResult.skipped(PatientStageName.MC_SIMULATION, reason="mc_simulation_not_configured")
 
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     metadata.update(_prefix_mapping(_hydrate_mc_simulation_mc_info(runtime_state.master_structure_info_dict, stage_config), "mc_info_"))
+    output_paths: tuple[Any, ...] = ()
+    artifact_count = 0
     if stage_config.convex_config is not None:
         from mc.simulation.per_patient import run_patient_mc_convex_stage
 
         parallel_pool = scientific_config.resources.parallel_pool
         if stage_config.convex_config.containment.perform_mc_containment_sim:
             parallel_pool = _require_parallel_pool(scientific_config, PatientStageName.MC_SIMULATION)
+        dose_context_persister = None
+        if stage_config.persist_dose_context_artifacts:
+            from patient_runner.dose_context_persistence import PatientDoseContextArtifactPersister
+
+            dose_context_persister = PatientDoseContextArtifactPersister(
+                patient_uid=runtime_state.patient_uid,
+                output_root=config.patient_output_dir(runtime_state.patient_case),
+                run_id=config.run_id,
+                localization_kinds=stage_config.dose_context_artifact_localization_kinds,
+                write_render_context=stage_config.persist_dose_nn_render_context_artifacts,
+            )
         convex_result = run_patient_mc_convex_stage(
             patient_uid=runtime_state.patient_uid,
             patient_reference_dict=runtime_state.pydicom_item,
@@ -737,6 +796,11 @@ def run_patient_mc_simulation_scientific_stage(
             config=stage_config.convex_config,
             parallel_pool=parallel_pool,
             mutate_input=True,
+            dose_localization_finalization_callback=(
+                dose_context_persister.persist_localization_finalization
+                if dose_context_persister is not None
+                else None
+            ),
         )
         _merge_mc_performed_flags(runtime_state.master_structure_info_dict, convex_result.performed_flags)
         metadata["steps"].append("convex")
@@ -749,6 +813,41 @@ def run_patient_mc_simulation_scientific_stage(
             }
         )
         metadata.update(_prefix_mapping(convex_result.metadata, "convex_"))
+        if dose_context_persister is not None:
+            dose_context_summary = dose_context_persister.summary()
+            output_paths = (*output_paths, *dose_context_summary.output_paths)
+            artifact_count += len(dose_context_summary.output_paths)
+            metadata.update(
+                {
+                    "dose_context_artifact_count": len(dose_context_summary.artifact_refs),
+                    "dose_context_artifact_ids": tuple(
+                        artifact_ref.artifact_id for artifact_ref in dose_context_summary.artifact_refs
+                    ),
+                }
+            )
+            if dose_context_summary.artifact_refs:
+                metadata["dose_context_artifact_index_path"] = dose_context_summary.artifact_index_path.as_posix()
+                if stage_config.launch_dose_nn_render_selector_after_persisting_artifacts:
+                    from mc.visualization.dose_nn_context_render_service import materialize_and_run_dose_nn_context_selector_session
+
+                    patient_output_dir = config.patient_output_dir(runtime_state.patient_case)
+                    biopsy_index = stage_config.dose_nn_render_selector_biopsy_index
+                    biopsy_token = "auto" if biopsy_index is None else "{:03d}".format(int(biopsy_index))
+                    selector_result = materialize_and_run_dose_nn_context_selector_session(
+                        patient_artifact_index_path=dose_context_summary.artifact_index_path,
+                        output_root=patient_output_dir,
+                        localization_kind=stage_config.dose_nn_render_selector_localization_kind,
+                        biopsy_index=biopsy_index,
+                        scene_artifact_dir=patient_output_dir.joinpath("render_scenes", "dose_nn_context_{}".format(biopsy_token)),
+                        scene_id="dose_nn_context_{}".format(biopsy_token),
+                        export_dir=patient_output_dir.joinpath("exports", "dose_nn_context"),
+                        overwrite=True,
+                    )
+                    output_paths = (*output_paths, selector_result.materialization.scene_artifact_dir)
+                    metadata["dose_context_render_selector_launched"] = True
+                    metadata["dose_context_render_scene_artifact_dir"] = (
+                        selector_result.materialization.scene_artifact_dir.as_posix()
+                    )
 
     if stage_config.mr_config is not None:
         from mc.simulation.per_patient import run_patient_mr_adc_localization_stage
@@ -772,7 +871,49 @@ def run_patient_mc_simulation_scientific_stage(
         )
         metadata.update(_prefix_mapping(mr_result.metadata, "mr_adc_"))
 
-    return PatientStageResult.success(PatientStageName.MC_SIMULATION, metadata=metadata)
+    return PatientStageResult.success(
+        PatientStageName.MC_SIMULATION,
+        artifact_count=artifact_count,
+        output_paths=output_paths,
+        metadata=metadata,
+    )
+
+
+def run_patient_mc_output_tables_scientific_stage(
+    runtime_state: LegacyPatientRuntimeState,
+    config: PatientRunConfig,
+    *,
+    scientific_config: PatientRunnerScientificConfig,
+) -> PatientStageResult:
+    """Build patient-local downstream MC output dataframe fragments."""
+    del config
+    stage_config = scientific_config.mc_output_tables
+    if stage_config is None or not stage_config.enabled:
+        return PatientStageResult.skipped(PatientStageName.MC_OUTPUT_TABLES, reason="mc_output_tables_not_configured")
+
+    from mc.simulation.per_patient import build_patient_mc_downstream_output_tables
+
+    output_bundle = build_patient_mc_downstream_output_tables(
+        runtime_state.patient_uid,
+        runtime_state.pydicom_item,
+        stage_config.output_table_config,
+        patient_info_dict=runtime_state.master_structure_info_dict,
+    )
+    artifact_count = output_bundle.patient_table_count + output_bundle.biopsy_table_count
+    metadata = {
+        "patient_uid": runtime_state.patient_uid,
+        "patient_table_count": output_bundle.patient_table_count,
+        "biopsy_table_count": output_bundle.biopsy_table_count,
+        "patient_table_names": output_bundle.patient_table_names,
+        "biopsy_table_names": output_bundle.biopsy_table_names,
+        "returned_table_names": tuple(output_bundle.returned_dataframes.keys()),
+        "annotations_applied": output_bundle.annotations_applied,
+    }
+    return PatientStageResult.success(
+        PatientStageName.MC_OUTPUT_TABLES,
+        artifact_count=artifact_count,
+        metadata=metadata,
+    )
 
 
 def run_patient_optimization_scientific_stage(
@@ -922,6 +1063,15 @@ def _mc_simulation_stage(scientific_config: PatientRunnerScientificConfig) -> Pa
     return PatientStage(
         PatientStageName.MC_SIMULATION,
         partial(run_patient_mc_simulation_scientific_stage, scientific_config=scientific_config),
+    )
+
+
+def _mc_output_tables_stage(scientific_config: PatientRunnerScientificConfig) -> PatientStage | None:
+    if scientific_config.mc_output_tables is None or not scientific_config.mc_output_tables.enabled:
+        return None
+    return PatientStage(
+        PatientStageName.MC_OUTPUT_TABLES,
+        partial(run_patient_mc_output_tables_scientific_stage, scientific_config=scientific_config),
     )
 
 

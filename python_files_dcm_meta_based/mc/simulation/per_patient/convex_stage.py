@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .containment import (
     PatientContainmentOutputs,
@@ -20,6 +20,9 @@ from .convex_legacy_adapter import build_single_patient_mc_master_info, collect_
 from .dose import (
     MC_DOSE_LOCALIZATION_KIND_DOSE,
     MC_DOSE_LOCALIZATION_KIND_GRADIENT,
+    PatientDoseBiopsyContext,
+    PatientDoseLatticeContext,
+    PatientDoseLocalizationOutputs,
     PatientDoseOutputs,
     build_patient_dose_biopsy_context,
     build_patient_dose_lattice_context,
@@ -38,6 +41,21 @@ from .relative_structure_inventory import (
 )
 
 MC_BX_SAMPLE_PT_VOLUME_ELEMENT_KEY = "BX sample pt volume element (mm^3)"
+
+
+@dataclass(frozen=True, slots=True)
+class PatientDoseLocalizationFinalization:
+    """Callback payload emitted after one biopsy dose-localization result is finalized."""
+
+    patient_uid: str
+    localization_kind: str
+    biopsy_index: int
+    lattice_context: PatientDoseLatticeContext
+    biopsy_context: PatientDoseBiopsyContext
+    localization_outputs: PatientDoseLocalizationOutputs
+
+
+DoseLocalizationFinalizationCallback = Callable[[PatientDoseLocalizationFinalization], None]
 
 
 @dataclass(slots=True)
@@ -307,6 +325,7 @@ def _run_patient_dose_localization_kind(
     config: MCConvexSimulationConfig,
     num_mc_dose_simulations: int,
     localization_kind: str,
+    dose_localization_finalization_callback: DoseLocalizationFinalizationCallback | None = None,
 ) -> int:
     keys = config.keys
     lattice_context = build_patient_dose_lattice_context(
@@ -334,6 +353,17 @@ def _run_patient_dose_localization_kind(
             biopsy_structure,
             localization_outputs,
         )
+        if dose_localization_finalization_callback is not None:
+            dose_localization_finalization_callback(
+                PatientDoseLocalizationFinalization(
+                    patient_uid=patient_uid,
+                    localization_kind=localization_outputs.localization_kind,
+                    biopsy_index=biopsy_index,
+                    lattice_context=lattice_context,
+                    biopsy_context=biopsy_context,
+                    localization_outputs=localization_outputs,
+                )
+            )
         biopsy_count += 1
     return biopsy_count
 
@@ -374,6 +404,7 @@ def run_patient_mc_convex_stage(
     parallel_pool: Any,
     global_info: Mapping[str, Any] | None = None,
     mutate_input: bool = True,
+    dose_localization_finalization_callback: DoseLocalizationFinalizationCallback | None = None,
 ) -> PatientMCConvexStageResult:
     """Run convex MC containment/dose for one patient without oracle UI/file side effects."""
     _reject_patient_mc_convex_stage_side_effect_options(config)
@@ -439,6 +470,7 @@ def run_patient_mc_convex_stage(
             config=config,
             num_mc_dose_simulations=num_mc_dose_simulations,
             localization_kind=MC_DOSE_LOCALIZATION_KIND_DOSE,
+            dose_localization_finalization_callback=dose_localization_finalization_callback,
         )
         dose_gradient_biopsy_count = _run_patient_dose_localization_kind(
             patient_uid=patient_uid,
@@ -446,6 +478,7 @@ def run_patient_mc_convex_stage(
             config=config,
             num_mc_dose_simulations=num_mc_dose_simulations,
             localization_kind=MC_DOSE_LOCALIZATION_KIND_GRADIENT,
+            dose_localization_finalization_callback=dose_localization_finalization_callback,
         )
         dose_dvh_biopsy_count = _run_patient_dose_dvh_stage(
             patient_reference_dict=working_patient_reference_dict,

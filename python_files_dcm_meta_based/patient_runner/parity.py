@@ -12,7 +12,10 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from output_artifacts.stitch_validation import SHADOW_STITCH_PAIRS
+from output_artifacts import build_output_assembly_plans
+from output_artifacts import classify_expected_assembly_plan
+from output_artifacts import expected_artifact_decision_report_fields
+from output_artifacts.assembly_planner import OutputAssemblyPlan
 from output_artifacts.stitch_validation import ShadowStitchPair
 from validation import DEFAULT_VALIDATION_OUTPUT_ROOT
 from validation import compare_run_csv_output_dirs
@@ -30,6 +33,15 @@ ASSEMBLED_COHORT_INVENTORY_COLUMNS = [
     "final_table_name",
     "source_table_name",
     "source_output_section",
+    "final_table_id",
+    "source_table_id",
+    "retention_policy",
+    "registry_validation_status",
+    "expected_artifact_status",
+    "expected_artifact_policy_schema_version",
+    "missing_artifact_severity",
+    "missing_artifact_is_failure",
+    "expected_artifact_notes",
     "candidate_relative_path",
     "present_in_baseline",
     "present_in_candidate",
@@ -163,13 +175,13 @@ def _validate_name_filter(values: Sequence[str], source_name: str) -> tuple[str,
     return resolved_values
 
 
-def _selected_stitch_pairs(stitch_pairs: Sequence[ShadowStitchPair],
-                           final_table_names: Sequence[str]) -> tuple[ShadowStitchPair, ...]:
+def _selected_assembly_plans(plans: Sequence[OutputAssemblyPlan],
+                             final_table_names: Sequence[str]) -> tuple[OutputAssemblyPlan, ...]:
     selected_final_table_names = set(final_table_names)
     return tuple(
-        pair
-        for pair in stitch_pairs
-        if not selected_final_table_names or pair.final_table_name in selected_final_table_names
+        plan
+        for plan in plans
+        if not selected_final_table_names or plan.final_table_name in selected_final_table_names
     )
 
 
@@ -201,10 +213,15 @@ def compare_patient_runner_assembled_cohort_tables(legacy_output_dir: str | Path
                                                    final_table_names: Sequence[str] = (),
                                                    abs_tol: float = 1e-8,
                                                    rel_tol: float = 1e-6,
-                                                   stitch_pairs: Sequence[ShadowStitchPair] = SHADOW_STITCH_PAIRS) -> PatientRunnerParitySurfaceResult:
+                                                   stitch_pairs: Sequence[ShadowStitchPair] | None = None) -> PatientRunnerParitySurfaceResult:
     """Compare legacy final cohort CSVs with patient-runner assembled cohort CSVs."""
     legacy_output_dir = Path(legacy_output_dir)
     patient_runner_output_dir = Path(patient_runner_output_dir)
+    resolved_assembly_plans = (
+        build_output_assembly_plans()
+        if stitch_pairs is None
+        else build_output_assembly_plans(stitch_pairs=tuple(stitch_pairs))
+    )
     legacy_cohort_dir = legacy_output_dir.joinpath("Output CSVs", "Cohort")
     resolved_assembled_table_dir = (
         Path(assembled_table_dir)
@@ -219,19 +236,29 @@ def compare_patient_runner_assembled_cohort_tables(legacy_output_dir: str | Path
     inventory_rows: list[dict[str, object]] = []
     summary_rows: list[dict[str, object]] = []
     column_rows: list[dict[str, object]] = []
-    for pair in _selected_stitch_pairs(stitch_pairs, final_table_names):
-        relative_path = f"{pair.final_table_name}{pair.file_extension}"
+    for plan in _selected_assembly_plans(resolved_assembly_plans, final_table_names):
+        relative_path = f"{plan.final_table_name}{plan.file_extension}"
         baseline_path = legacy_cohort_dir.joinpath(relative_path)
-        candidate_file_name = f"{_safe_path_name(pair.final_table_name)}{pair.file_extension}"
+        candidate_file_name = f"{_safe_path_name(plan.final_table_name)}{plan.file_extension}"
         candidate_path = resolved_assembled_table_dir.joinpath(candidate_file_name)
         baseline_present = baseline_path.is_file()
         candidate_present = candidate_path.is_file()
+        artifact_decision = classify_expected_assembly_plan(
+            plan,
+            present_in_baseline=baseline_present,
+            present_in_candidate=candidate_present,
+        )
         inventory_rows.append(
             {
                 "relative_path": relative_path,
-                "final_table_name": pair.final_table_name,
-                "source_table_name": pair.source_table_name,
-                "source_output_section": pair.source_output_section,
+                "final_table_name": plan.final_table_name,
+                "source_table_name": plan.source_table_name,
+                "source_output_section": plan.source_output_section,
+                "final_table_id": plan.final_table_id,
+                "source_table_id": plan.source_table_id,
+                "retention_policy": plan.retention_policy,
+                "registry_validation_status": plan.validation_status,
+                **expected_artifact_decision_report_fields(artifact_decision),
                 "candidate_relative_path": candidate_file_name,
                 "present_in_baseline": baseline_present,
                 "present_in_candidate": candidate_present,
@@ -352,10 +379,19 @@ def summarize_patient_runner_parity_surface(result: PatientRunnerParitySurfaceRe
     missing_from_baseline = int((~inventory_df["present_in_baseline"]).sum()) if "present_in_baseline" in inventory_df else 0
     missing_from_candidate = int((~inventory_df["present_in_candidate"]).sum()) if "present_in_candidate" in inventory_df else 0
     status_counts = dict(Counter(summary_df["comparison_status"])) if "comparison_status" in summary_df else {}
+    expected_artifact_status_counts = (
+        dict(Counter(inventory_df["expected_artifact_status"]))
+        if "expected_artifact_status" in inventory_df
+        else {}
+    )
     compared_files = int(len(summary_df))
     non_ok_count = sum(count for status, count in status_counts.items() if status != "ok")
     missing_file_count = missing_from_baseline + missing_from_candidate
-    surface_status = "passed" if missing_file_count == 0 and non_ok_count == 0 else "failed"
+    if "missing_artifact_is_failure" in inventory_df:
+        missing_artifact_failure_count = int(inventory_df["missing_artifact_is_failure"].fillna(False).astype(bool).sum())
+    else:
+        missing_artifact_failure_count = missing_file_count
+    surface_status = "passed" if missing_artifact_failure_count == 0 and non_ok_count == 0 else "failed"
     if inventory_df.empty and summary_df.empty:
         surface_status = "skipped"
     return {
@@ -370,6 +406,8 @@ def summarize_patient_runner_parity_surface(result: PatientRunnerParitySurfaceRe
         "missing_from_baseline": missing_from_baseline,
         "missing_from_candidate": missing_from_candidate,
         "missing_file_count": missing_file_count,
+        "missing_artifact_failure_count": missing_artifact_failure_count,
+        "expected_artifact_status_counts": {str(key): int(value) for key, value in expected_artifact_status_counts.items()},
         "comparison_status_counts": {str(key): int(value) for key, value in status_counts.items()},
         "non_ok_file_count": int(non_ok_count),
     }
@@ -423,7 +461,7 @@ def format_patient_runner_post_run_parity_summary(result: PatientRunnerPostRunPa
                 surface=surface_name,
                 status=surface_summary.get("status", "unknown"),
                 compared=surface_summary.get("compared_files", 0),
-                missing=surface_summary.get("missing_file_count", 0),
+                missing=surface_summary.get("missing_artifact_failure_count", surface_summary.get("missing_file_count", 0)),
                 non_ok=surface_summary.get("non_ok_file_count", 0),
             )
         )

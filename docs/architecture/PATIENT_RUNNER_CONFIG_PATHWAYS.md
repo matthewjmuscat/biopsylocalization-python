@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-06-05
+Last updated: 2026-08-03
 
 ## Purpose
 
@@ -96,6 +96,51 @@ The highest-risk rewrite failure would be adding a patient-runner bridge that
 copies every loose local into `PatientRunnerScientificConfig` directly. That
 would make the new runner depend on the same scattered source of truth that the
 config rewrite is meant to replace.
+
+## Target Run Profile Boundary
+
+The standalone patient runner needs a run profile, but that profile should be
+the orchestration layer above scientific config, not a second source of
+scientific truth.
+
+Target flow:
+
+```text
+human TOML run profile
+  -> typed resolved run plan
+  -> input discovery or retained input manifests
+  -> standalone patient-runner jobs
+  -> optional legacy-oracle job
+  -> post-run assembly
+  -> validation
+```
+
+The run profile should choose what to execute and what evidence to produce:
+
+- input folder or input manifest source,
+- selected patients/fractions,
+- pathway and checkpoint names,
+- whether to run standalone patient workers,
+- whether to run the legacy oracle,
+- patient-first execution order when both standalone and legacy are requested,
+- post-run cohort assembly jobs,
+- validation jobs,
+- output root, run labels, failure/retry policy, and resource limits.
+
+Scientific defaults and model parameters should continue moving into
+`PipelineConfig` and domain configs. The run profile can reference or embed a
+resolved scientific config, but it should not copy the hundreds of loose
+`main` locals into a parallel TOML schema.
+
+The future GUI should edit this run profile and call public runner/assembly/
+validation entrypoints. It should not depend on `biopsy_localization_convex_main.py`
+locals or private in-memory dictionaries.
+
+Current TOML status: TOML profiles have started in the validation layer, where
+they select completed run folders and comparator jobs. They do not yet define
+production scientific run parameters. The production run-profile layer should
+follow the same pattern later: human TOML at the edge, typed Python config as
+the runtime authority, and JSON as generated evidence/manifest output.
 
 ## Current Config Tree By Domain
 
@@ -807,11 +852,17 @@ scientific-shadow validation gate:
   `PipelineConfig` for the legacy oracle path, but new patient-runner work
   should consume the typed config tree instead of those translated locals.
 
-Do not migrate main-facing declarations into JSON as the runtime authority before
-this validation gate. The next stable source is the typed Python `PipelineConfig`.
-JSON should be introduced as a serialization or GUI/run-plan view over that root
-config after scientific-shadow parity is credible, not as a parallel config
+Do not migrate main-facing declarations into TOML or JSON as the runtime
+authority before this validation gate. The next stable source is the typed
+Python `PipelineConfig`. TOML should remain a human-authored profile layer and
+JSON should remain generated evidence or resolved-plan output until
+scientific-shadow parity is credible. Neither should become a parallel config
 language that can drift from the Python contracts.
+
+New debug/render controls should follow the same rule. Add typed config fields
+where the patient-runner stage can consume them, then expose them through a run
+profile later. Do not add fresh render toggles to legacy main as the owning
+surface for new patient-runner behavior.
 
 The next validation sequence is:
 

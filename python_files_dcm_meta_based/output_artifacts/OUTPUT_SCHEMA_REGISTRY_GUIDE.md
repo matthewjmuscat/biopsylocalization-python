@@ -39,6 +39,47 @@ For each route:
 
 This keeps traceability close to the current code style: dataframe builder, named dictionary storage, manifest/export route, registry contract, validation evidence.
 
+## Registry-Driven Assembly Planner
+
+Cohort assembly should be planned from the registry contract instead of from a
+separate hardcoded stitching list. The planner belongs in `output_artifacts`
+because it is output contract policy, not scientific execution and not patient
+orchestration.
+
+Each assembly plan should make these decisions explicit:
+
+- `identity_key`: the columns that define one row for validation and joins.
+- `validation_order_policy`: the order used while proving parity against the
+   legacy cohort builder. This may intentionally preserve source-fragment order
+   when that is how the legacy table was built.
+- `production_order_policy`: the cleaner canonical order to use after parity is
+   green and downstream users accept the policy.
+- `stitch_method`: whether the table is simple concatenation, concatenation of
+   existing patient summaries, downstream recomputation, aggregation, or manifest
+   metadata.
+- `columns_policy`: whether columns must preserve legacy order, preserve
+   MultiIndex columns, or move to a cleaner schema later.
+- `validation_csv_index`: whether validation artifacts should preserve the
+   legacy pandas CSV index column. Current legacy cohort CSVs are written with
+   `DataFrame.to_csv()` defaults, so validation assembly should write the index
+   to match the legacy file surface.
+- `production_csv_index`: whether future production artifacts should include a
+   dataframe index column. The preferred clean production policy is `False`
+   unless a real row identifier is intentionally stored as a named data column.
+
+Validation order and production order are deliberately separate. The Jun 15,
+2026 patient-runner assembly showed that row order must be controlled before a
+numeric drift report can be trusted; otherwise a table can look numerically
+different simply because duplicate-key groups are aligned in a different order.
+The first planner pass should therefore preserve legacy validation order and
+only record the future production order as policy metadata.
+
+When a new durable output is added, the intended path is one registry entry for
+the final cohort table plus one registry entry for the patient or biopsy source
+fragment. The assembly planner should discover the pair from
+`source_fragment_table_id`, and any output-specific ordering override should be
+added beside the registry/planner policy, not inside the post-run service.
+
 ## How To Use The Registry During Development
 
 When adding or changing an output table:

@@ -11,6 +11,7 @@ from mc.simulation.per_patient import MCContainmentSimulationConfig
 from mc.simulation.per_patient import MCConvexSimulationConfig
 from mc.simulation.per_patient import MCDoseSimulationConfig
 from mc.simulation.per_patient import MCMRSimulationConfig
+from mc.simulation.per_patient import PatientMCOutputTableConfig
 from mc.simulation.per_patient import MCReferenceKeys
 from mc.simulation.per_patient import MCSimulationRuntimeConfig
 from preprocessing.dose_grid_processing import DoseGridProcessingConfig
@@ -24,6 +25,7 @@ from .scientific_config import PatientDoubleSextantClassificationStageConfig
 from .scientific_config import PatientGridPreprocessingScientificConfig
 from .scientific_config import PatientGuidanceScientificConfig
 from .scientific_config import PatientMCPrepScientificConfig
+from .scientific_config import PatientMCOutputTablesScientificConfig
 from .scientific_config import PatientMCSimulationScientificConfig
 from .scientific_config import PatientMRADCInputNormalizationStageConfig
 from .scientific_config import PatientOptimizationScientificConfig
@@ -45,6 +47,9 @@ from .scientific_config import PatientUncertaintyAttachmentStageConfig
 from .scientific_shadow import PatientScientificShadowConfig
 
 
+DEFAULT_D_X_DVH_TO_CALC_LIST = (2, 50, 98)
+
+
 @dataclass(frozen=True, slots=True)
 class PatientRunnerScientificConfigBuildContext:
     """Runtime/discovered values needed when building patient scientific config."""
@@ -61,6 +66,12 @@ class PatientRunnerScientificConfigBuildContext:
     runtime_logger: Any = None
     optimizer_v2_resolved_max_test_structures_per_call: int | None = None
     optimizer_v2_resolved_max_candidates_per_chunk: int | None = None
+    persist_dose_context_artifacts: bool = False
+    persist_dose_nn_render_context_artifacts: bool = True
+    dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
+    launch_dose_nn_render_selector_after_persisting_artifacts: bool = False
+    dose_nn_render_selector_biopsy_index: int | None = None
+    dose_nn_render_selector_localization_kind: str = "dose"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -86,6 +97,33 @@ class PatientRunnerScientificConfigBuildContext:
                 if resolved_value < 1:
                     raise ValueError(f"{field_name} must be positive when provided")
                 object.__setattr__(self, field_name, resolved_value)
+        object.__setattr__(self, "persist_dose_context_artifacts", bool(self.persist_dose_context_artifacts))
+        object.__setattr__(
+            self,
+            "persist_dose_nn_render_context_artifacts",
+            bool(self.persist_dose_nn_render_context_artifacts),
+        )
+        object.__setattr__(
+            self,
+            "dose_context_artifact_localization_kinds",
+            tuple(str(localization_kind).strip() for localization_kind in self.dose_context_artifact_localization_kinds),
+        )
+        object.__setattr__(
+            self,
+            "launch_dose_nn_render_selector_after_persisting_artifacts",
+            bool(self.launch_dose_nn_render_selector_after_persisting_artifacts),
+        )
+        biopsy_index = self.dose_nn_render_selector_biopsy_index
+        if biopsy_index is not None:
+            biopsy_index = int(biopsy_index)
+            if biopsy_index < 0:
+                raise ValueError("dose_nn_render_selector_biopsy_index cannot be negative")
+        object.__setattr__(self, "dose_nn_render_selector_biopsy_index", biopsy_index)
+        object.__setattr__(
+            self,
+            "dose_nn_render_selector_localization_kind",
+            str(self.dose_nn_render_selector_localization_kind).strip() or "dose",
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -122,6 +160,7 @@ def build_patient_runner_scientific_config(
         preprocessing=_build_preprocessing_config(pipeline_config, context),
         mc_prep=_build_mc_prep_config(pipeline_config),
         mc_simulation=_build_mc_simulation_config(pipeline_config, context),
+        mc_output_tables=_build_mc_output_tables_config(pipeline_config),
         optimization=_build_optimization_config(pipeline_config, context),
         simulated_biopsy_finalization=_build_simulated_biopsy_finalization_config(pipeline_config),
         sampling_classification=_build_sampling_classification_config(pipeline_config),
@@ -265,6 +304,7 @@ def _build_mc_prep_config(pipeline_config: Any) -> PatientMCPrepScientificConfig
         run_biopsy_self_transforms=mc.prep.run_biopsy_self_transforms,
         run_relative_structure_transforms=mc.prep.run_relative_structure_transforms,
         num_generated_transform_samples=max_generated_transform_samples,
+        transform_generation_random_seed=pipeline_config.random_seeds.transform_generation_random_seed,
         max_simulations=max_simulations,
         num_mc_containment_simulations=mc.counts.num_mc_containment_simulations_input,
         inspect_self_biopsy_dilate_bool=mc.debug.inspect_self_biopsy_dilate_bool,
@@ -313,6 +353,42 @@ def _build_mc_simulation_config(
         num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
         num_mc_mr_simulations=mc.counts.num_mc_mr_simulations_input,
         bx_sample_pts_lattice_spacing=mc.prep.bx_sample_pts_lattice_spacing,
+        persist_dose_context_artifacts=context.persist_dose_context_artifacts,
+        persist_dose_nn_render_context_artifacts=context.persist_dose_nn_render_context_artifacts,
+        dose_context_artifact_localization_kinds=context.dose_context_artifact_localization_kinds,
+        launch_dose_nn_render_selector_after_persisting_artifacts=(
+            context.launch_dose_nn_render_selector_after_persisting_artifacts
+        ),
+        dose_nn_render_selector_biopsy_index=context.dose_nn_render_selector_biopsy_index,
+        dose_nn_render_selector_localization_kind=context.dose_nn_render_selector_localization_kind,
+    )
+
+
+def _build_mc_output_tables_config(pipeline_config: Any) -> PatientMCOutputTablesScientificConfig:
+    mc = pipeline_config.mc
+    refs = pipeline_config.legacy_refs
+    registry = pipeline_config.structure_registry
+    max_mc_simulations = mc.counts.max_num_mc_simulations
+    return PatientMCOutputTablesScientificConfig(
+        output_table_config=PatientMCOutputTableConfig(
+            bx_ref=refs.bx_ref,
+            all_ref_key=refs.all_ref_key,
+            structs_referenced_list=registry.structs_referenced_list,
+            dose_ref=refs.dose_ref,
+            plan_ref=refs.plan_ref,
+            mr_adc_ref=refs.mr_adc_ref,
+            biopsy_z_voxel_length=mc.simulation.biopsy_z_voxel_length,
+            num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
+            d_x_DVH_to_calc_list=DEFAULT_D_X_DVH_TO_CALC_LIST,
+            v_percent_DVH_to_calc_list=mc.simulation.v_percent_dvh_to_calc_list,
+            include_transform_tables=max_mc_simulations > 0,
+            include_tissue_tables=mc.counts.perform_mc_containment_sim,
+            include_dose_tables=mc.counts.perform_mc_dose_sim,
+            include_dvh_trial_tables=mc.counts.perform_mc_dose_sim,
+            include_dvh_metric_statistics=mc.counts.perform_mc_dose_sim,
+            include_mr_tables=mc.counts.perform_mc_mr_sim,
+        ),
+        metadata={"source": "PipelineConfig.mc"},
     )
 
 
@@ -376,6 +452,7 @@ def _build_optimization_config(
             ),
             generate_cuda_log_files_biopsy_optimizer=optimizer_v1.generate_cuda_log_files_biopsy_optimizer,
             display_optimization_contour_plots_bool=optimizer_v1.display_optimization_contour_plots_bool,
+            optimizer_v1_random_seed=pipeline_config.random_seeds.optimizer_v1_random_seed,
         ),
         optimizer_v2_config=OptimizerV2LiveConfig(
             structs_referenced_dict=registry.structs_referenced_dict,
@@ -463,6 +540,7 @@ def _build_simulated_biopsy_finalization_config(pipeline_config: Any) -> Patient
 
 def _build_sampling_classification_config(pipeline_config: Any) -> PatientSamplingClassificationScientificConfig:
     refs = pipeline_config.legacy_refs
+    registry = pipeline_config.structure_registry
     return PatientSamplingClassificationScientificConfig(
         sampled_biopsy_processing=PatientSampledBiopsyProcessingStageConfig(
             bx_sample_pts_lattice_spacing=pipeline_config.mc.prep.bx_sample_pts_lattice_spacing,
@@ -474,6 +552,7 @@ def _build_sampling_classification_config(pipeline_config: Any) -> PatientSampli
             oar_ref=refs.oar_ref,
             biopsy_z_voxel_length=pipeline_config.mc.simulation.biopsy_z_voxel_length,
         ),
+        structs_referenced_list=registry.structs_referenced_list,
     )
 
 

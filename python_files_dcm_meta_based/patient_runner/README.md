@@ -62,6 +62,28 @@ The detailed recommendations and non-recommendations for patient-level
 parallelism live in `../../docs/roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md` under
 "Parallelism Opportunities and Recommendations".
 
+Standalone process architecture target:
+
+- the current `from_legacy` bridge remains a validation adapter, not the final
+  primary runner memory model,
+- `run_patient_scientific_standalone.py` is the new parent CLI surface for
+  resolving input-manifest patients into worker job packets and parent plans,
+- `run_patient_scientific_worker.py` is the new one-patient worker CLI surface;
+  it currently supports dry-run job/result validation while the patient-local
+  runtime-state builder is wired,
+- the future primary runner should use a parent orchestrator plus isolated
+  patient worker processes,
+- the parent should keep only run config, patient inventory, worker statuses,
+  manifest paths, and artifact paths,
+- each worker should build one patient-local runtime state, run the selected
+  pathway, write artifacts/manifests, and exit so Python/native/CUDA allocator
+  state is released,
+- post-run assembly should continue to read artifacts from disk rather than
+  holding cohort data in the patient execution loop.
+
+The durable target contract lives in
+`../../docs/architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md`.
+
 Current Phase D scope:
 
 The durable output architecture target is documented in
@@ -130,8 +152,8 @@ Scientific stage config boundary:
 
 - `scientific_config.py` owns the opt-in `PatientRunnerScientificConfig` bundle
   and stage-group configs for grid preprocessing, anatomical preprocessing,
-  preprocessing, MC prep, MC simulation, optimization, and guidance-map
-  precompute,
+  preprocessing, MC prep, MC simulation, downstream MC output tables,
+  optimization, and guidance-map precompute,
 - grid preprocessing is represented as its own opt-in stage before anatomical
   preprocessing; it currently wraps patient-local dose-grid runtime object
   construction, MR ADC input normalization, and MR ADC grid runtime object
@@ -172,6 +194,9 @@ Scientific stage config boundary:
   optimizer-v2 sampling audit annotation, and double-sextant sample-point
   fragments, while run-level per-voxel double-sextant assembly remains outside
   the patient stage.
+- MC output tables are now a separate executable adapter after MC simulation;
+  they build patient-local downstream MC dataframe fragments before artifact
+  writing so post-run cohort assembly can consume durable per-patient outputs.
 
 Scientific tranche direction:
 

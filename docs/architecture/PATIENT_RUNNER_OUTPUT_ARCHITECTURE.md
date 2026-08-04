@@ -13,6 +13,11 @@ compatible runs complete.
 - Preserve successful patient outputs when another patient fails.
 - Keep cohort-style outputs as derived products, not as the only durable output
   boundary.
+- Favor storage-efficient, machine-readable primary runtime artifacts for heavy
+   scientific numerical outputs; build human-readable dataframe/table views as
+   explicit post-run derived products when they are needed for QA, notebooks,
+   manuscripts, or downstream analysis. Small manifests, summaries, audit records,
+   and logs should remain directly inspectable runtime outputs.
 - Allow cohort assembly to run separately after the main algorithm completes.
 - Allow config to request automatic cohort assembly at the end of a run.
 - Let the assembly service discover what it can produce from artifact manifests
@@ -53,7 +58,14 @@ compatible runs complete.
    eligible artifact families, applies the registered assembly policy, writes
    cohort-style tables, and records assembly evidence.
 
-5. Post-run parity
+5. Post-run dataframe/table constructors
+   A separate utility layer materializes requested human-readable tables from
+   efficient primary artifacts. It should read manifests, array stores,
+   provenance records, and contracts; write Parquet/CSV views only for requested
+   slices or downstream products; and record constructor manifests that identify
+   source artifacts, schema versions, filters, and row counts.
+
+6. Post-run parity
    Validation compares assembled patient-runner cohort tables against the legacy
    final cohort outputs. This remains outside normal scientific execution.
 
@@ -62,6 +74,21 @@ compatible runs complete.
 Every durable output family should have an artifact contract. The current
 `OutputSchemaRegistry` is the seed of this contract layer, but the contract needs
 to become the single source for output planning and assembly.
+
+Tabular outputs are only one artifact family. The companion context-artifact
+direction is described in `PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md`: patient
+runs should eventually retain selected scientific arrays, resolved transforms,
+coordinate-frame registries, and transformation provenance so post-run tools can
+inspect and regenerate context without depending on pickles or legacy in-memory
+dictionaries.
+
+As more runtime outputs migrate to compact array/native artifact classes,
+dataframe-like outputs should be treated as materialized views unless they are
+already the most efficient natural representation of the data. This applies most
+strongly to large scientific numerical outputs, not small QA manifests, summaries,
+audit records, or logs that should stay directly inspectable. The stable API
+should be artifact IDs, contracts, and manifests; the dataframe constructor can
+then build human-readable tables from those sources for analysis and audit.
 
 Each contract should include:
 
@@ -73,6 +100,7 @@ Each contract should include:
 - row grain
 - primary keys and stable sort keys
 - file format and storage policy
+- artifact data class: `table`, `array`, `manifest`, `scene`, or `provenance`
 - schema version and compatibility version
 - assembly policy: `concat_patient_fragments`, `aggregate_patient_fragments`,
   `copy_run_level`, `external_source`, `validation_only`, or `not_stitchable`
@@ -82,6 +110,35 @@ Each contract should include:
 The assembly service should not need a new code path for each new table. Adding
 a new patient-stitchable artifact should usually mean adding or updating a
 contract, then relying on the generic planner and assembly engine.
+
+## Manifest Inventory Boundary
+
+Manifest governance has three separate layers.
+
+- The manifest catalog is the code-owned contract inventory. It lists manifest
+   types the codebase knows about, their purpose, producer, expected paths,
+   schema-version source, and tracked concepts. This is produced by
+   `output_artifacts.manifest_catalog` and is not evidence that a concrete run
+   wrote a given manifest. New manifest writers should define a local
+   `MANIFEST_CONTRACTS` tuple beside the writer where practical; the central
+   catalog should aggregate those producer-local contracts rather than
+   duplicating their details by hand.
+- The run manifest index is the per-run output artifact for manifest events.
+   The patient-runner batch boundary currently records patient and batch run
+   manifests as `written` or `skipped`, then writes
+   `manifests/run_manifest_index.json` through
+   `output_artifacts.manifest_index`. Other run boundaries can adopt the same
+   recorder when their manifest writers are migrated. This index is the
+   preferred answer to "what manifests did this run actually produce, and where?"
+- The post-run presence scanner is a fallback and audit utility. It inspects an
+   existing output tree against cataloged default paths, but it cannot prove that
+   an in-memory manifest object was constructed and intentionally not written.
+
+Manifest writers should not silently mutate a global file as a hidden side
+effect. The safer pattern is for the run boundary to own a recorder and pass it
+to manifest-producing services, or for a thin wrapper around each writer to
+record the returned path and schema metadata. This keeps construction localized
+while still producing one run-level index for inspection.
 
 ## Planning And Discovery
 
@@ -119,21 +176,62 @@ diagnostic report.
 
 - The live scientific runner can already append `patient_artifact_writing` when
   `include_artifact_writing=True`.
-- The Jun 06 13:51 `current_dosimetry_shadow` run validated scientific shadow
-  and live patient-scientific execution through MC simulation, but artifact
+- The Jun 08 12:59 `full_current_pipeline_shadow` run validated scientific
+  shadow and live patient-scientific execution through guidance, but artifact
   writing was intentionally disabled.
 - The current stitch registry covers 20 cohort-style patient-fragment outputs.
-- The Jun 06 legacy cohort directory contains 22 final CSVs. The uncertainty
+- The Jun 08 legacy cohort directory contains 22 final CSVs. The uncertainty
   CSVs and global sum-to-one policy still need explicit output contracts before
   they should be treated as fully reconstructed patient-runner cohort outputs.
 - `compare_patient_runner_parity.py` already compares legacy final cohort CSVs
   against assembled patient-runner cohort tables, but it expects assembled tables
   to exist before it runs.
+- `python_files_dcm_meta_based/post_run/cohort_assembly` now provides the first
+   manifest-backed post-run utility surface: JSON config loading, completed-batch
+   manifest loading, a GUI-callable service API, and a CLI wrapper around the
+   existing assembly engine.
+- Validation and assembly still assume legacy physical paths such as
+  `Output CSVs/Cohort`, `Output CSVs/Preprocessing`, and
+  `Output CSVs/MC simulation` in several places. These names should become
+  compatibility aliases, not the long-term logical artifact identifiers.
+
+## Reorganization Strategy
+
+Output cleanup should happen in layers so validation remains usable throughout
+the migration.
+
+1. Keep writing legacy-compatible paths while adding stable logical artifact IDs
+   to manifests and contracts. Existing validation scripts should continue to
+   compare `Output CSVs/Cohort` until the new manifest-aware validators are
+   proven equivalent.
+
+2. Add manifest-aware discovery APIs. Validation, parity, inventory, and assembly
+   should ask the manifest/registry for artifact locations instead of building
+   paths like `Output CSVs/Cohort` directly.
+
+3. Add post-run dataframe/table constructors for efficient primary artifacts.
+   These constructors should materialize requested views from manifest-backed
+   arrays and provenance records, rather than making large intermediate
+   dataframes the default runtime output.
+
+4. Introduce cleaner physical names as aliases after manifest-aware validation is
+   in place. For example, a future layout may use `patients/<uid>/tables/...`
+   and `cohort/tables/...`, while still emitting legacy aliases during the
+   transition.
+
+5. Rename table files only after each table has a stable `table_id`, legacy-name
+   alias, schema version, and downstream compatibility note. The stable API
+   should be the contract ID, not the filename.
+
+6. Retire legacy paths only after the validators and downstream consumers can use
+   manifest/contract IDs, and after a validation run proves old-path and new-path
+   outputs are equivalent.
 
 ## Implementation Sequence
 
 1. Validate `full_current_pipeline_shadow` with artifact writing still disabled.
    This isolates guidance behavior after the validated dosimetry checkpoint.
+   Status: complete for the Jun 08 12:59 run.
 
 2. Enable patient artifact writing for the full current pathway and validate that
    each patient writes manifests and artifacts without changing scientific
@@ -142,6 +240,9 @@ diagnostic report.
 3. Add a post-run assembly entry point that can be run from CLI/config and that
    writes `cohort_assembly/assembled_tables`, an assembly manifest, and a summary
    report.
+   Status: initial package and entry point added under
+   `python_files_dcm_meta_based/post_run/cohort_assembly`; live validation still
+   requires an artifact-writing run.
 
 4. Replace hard-coded stitch selection with contract-driven planning backed by
    manifest discovery. The existing `SHADOW_STITCH_PAIRS` can remain as the
