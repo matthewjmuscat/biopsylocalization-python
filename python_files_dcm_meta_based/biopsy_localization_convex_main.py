@@ -712,7 +712,7 @@ def main():
     patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
     patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
-    patient_scientific_runner_mode = "disabled" # Legacy-main hook OFF: standalone process runner now owns new patient-runner execution work.
+    patient_scientific_runner_mode = "execute" # Legacy-backed patient-scientific runner hook for persisted dose-context artifacts.
     patient_scientific_runner_checkpoint_name = "current_dosimetry_shadow"
     patient_scientific_runner_pathway_name = "current_dosimetry_shadow" # Dose-context artifact slice: stops after MC output tables, before guidance.
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
@@ -727,7 +727,7 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = True
     patient_scientific_runner_raise_on_stage_error_bool = False
     patient_scientific_runner_validate_dependencies_bool = True
-    patient_scientific_runner_persist_dose_context_artifacts_bool = False
+    patient_scientific_runner_persist_dose_context_artifacts_bool = True
     patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = True
     patient_scientific_runner_dose_context_artifact_localization_kinds = ("dose",)
     patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = False
