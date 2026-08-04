@@ -282,6 +282,39 @@ patients/<patient_uid>/
 The exact physical paths can change, but the manifest entries and artifact IDs
 should be stable.
 
+New retained context artifacts should start in an intentionally organized
+patient-scoped subtree rather than copying legacy output scattering. The old
+outputs should remain in place until downstream pipelines are migrated. The
+recommended migration policy is additive symmetry: create the new per-patient
+structure beside the existing outputs, keep legacy tables/CSV/parquet paths
+stable, and use manifests plus constructors to bridge old and new surfaces.
+
+For example, new artifacts should prefer a stable shape such as:
+
+```text
+patients/<patient_uid>/
+  manifest.json
+  context/
+    coordinate_frames.json
+    transforms/
+    structures/
+    dosimetry/
+    tissue_classification/
+  tables/
+    dosimetry/
+    tissue_classification/
+  render_scenes/
+    dosimetry/
+  exports/
+    figures/
+    movies/
+```
+
+This does not imply reorganizing historical artifacts immediately. It defines
+where new retained context should land so future patient folders have symmetric
+substructure while existing downstream analyses continue to see their current
+inputs.
+
 ## Transformation Artifacts
 
 Transformation models are likely to change for both biopsy and non-biopsy
@@ -418,6 +451,18 @@ The GUI should be able to:
 - export figures, movies, selected scene artifacts, and provenance summaries;
 - fail clearly when a requested scene requires a context level that was not
   retained.
+
+Initial movie support can be frame-sequence first: select trials, render one
+frame per trial with stable camera/settings, and write a manifest with FPS and
+frame/provenance paths. MP4/GIF assembly can then be added as a writer adapter
+once the dependency and publication-quality encoding settings are chosen.
+
+Saved render-scene manifests should carry lightweight GUI summaries, including
+available trials, per-trial query counts, dose ranges, and spatial bounds. These
+summaries let post-run selectors populate trial lists, range controls, and scene
+labels without loading large array payloads. Older manifests without summaries
+remain readable, but richer controls may be unavailable until the scene is
+rewritten or reconstructed.
 
 `DoseNNRenderScene` is a renderer-agnostic data object, not an exported image.
 Rendered PNGs, SVGs, HTML files, and movie frames are derived products created

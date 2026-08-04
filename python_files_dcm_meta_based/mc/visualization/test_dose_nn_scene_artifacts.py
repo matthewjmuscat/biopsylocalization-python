@@ -69,6 +69,26 @@ class DoseNNRenderSceneArtifactTests(unittest.TestCase):
 
         self.assertEqual(manifest.arrays_filename, DOSE_NN_RENDER_SCENE_ARRAYS_FILENAME)
         self.assertIn("lattice_points", manifest.array_specs_by_name)
+        self.assertEqual(manifest.summary["available_trials"], [0])
+        self.assertEqual(manifest.summary["num_lattice_points"], 3)
+        self.assertEqual(manifest.summary["num_query_points"], 2)
+        self.assertEqual(manifest.summary["lattice_dose_range"], {"min": 10.0, "max": 30.0})
+
+    def test_manifest_reader_tolerates_legacy_manifest_without_summary(self):
+        scene = _synthetic_scene()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            write_dose_nn_render_scene_artifact(scene, temporary_directory, scene_id="synthetic_scene")
+            manifest_path = _manifest_path(temporary_directory)
+            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest_payload = json.load(manifest_file)
+            manifest_payload.pop("summary")
+            with open(manifest_path, "w", encoding="utf-8") as manifest_file:
+                json.dump(manifest_payload, manifest_file)
+
+            manifest = read_dose_nn_render_scene_artifact_manifest(temporary_directory)
+
+        self.assertEqual(manifest.summary, {})
 
 
 def _synthetic_scene():

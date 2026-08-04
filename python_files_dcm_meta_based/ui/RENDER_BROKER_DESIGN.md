@@ -217,6 +217,11 @@ dose-aware:
 5. Keep MC dose math, nearest-neighbour search, and patient-runner execution
    unchanged underneath.
 
+Current asymmetry: the broker contract can now express PyVista decisions for
+the dose NN surface, but optimizer-v2 still implements only Open3D and Plotly
+renderers. A PyVista optimizer renderer is a possible later convergence task,
+not part of the current dose-render GUI completion path.
+
 The broker should not import MC modules, Plotly, Open3D, or Tk-specific dose
 controls. If a later GUI adapter replaces Tkinter, the dose scene contracts and
 renderer modules should remain reusable.

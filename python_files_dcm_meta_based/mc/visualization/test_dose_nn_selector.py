@@ -52,7 +52,10 @@ class DoseNNSelectorTests(unittest.TestCase):
         self.assertEqual(option.num_lattice_points, 4)
         self.assertEqual(option.num_query_points, 2)
         self.assertEqual(option.num_nearest_neighbours, 2)
+        self.assertEqual(option.available_trials, (0,))
+        self.assertEqual(option.lattice_dose_range, (10.0, 40.0))
         self.assertIn("query rows: 2", option.display_label)
+        self.assertIn("trials: 1", option.display_label)
         self.assertEqual(option.suggested_export_output_dir.name, "synthetic_scene")
 
     def test_choice_group_uses_saved_scene_options(self) -> None:

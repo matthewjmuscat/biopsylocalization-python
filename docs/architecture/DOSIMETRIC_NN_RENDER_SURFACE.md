@@ -363,7 +363,10 @@ sidecar should record the source scene manifest and display/export settings.
 - Write selected scene artifacts as JSON metadata plus compressed NumPy arrays.
 - Validate round-trip loading, checksum failures, existing-file protection, and
   manifest-only reads on synthetic scenes.
-- Status: complete for compact `.npz` selected scenes.
+- Status: complete for compact `.npz` selected scenes. Scene manifests now also
+  include lightweight GUI summaries such as available trials, per-trial query
+  counts, dose ranges, and spatial bounds so selectors can populate controls
+  without loading array payloads.
 
 ### Phase 1C: Manifest Accounting Boundary
 
@@ -411,6 +414,16 @@ Detailed next pass:
   context artifacts for new runs. Historical runs that lack those artifacts can
   use an existing saved scene, transitional results-pickle reconstruction, or an
   approved selected inline capture hook.
+7. Status: the PyVista backend now supports explicit point and volume colorwash
+  modes. Point colorwash is a translucent scalar-colored point layer over the
+  lattice. Volume colorwash is a true PyVista volume render and requires a
+  complete three-dimensional rectilinear lattice. Saved-scene CLI controls can
+  render lattice only, colorwash only, or both.
+8. Status: the PyVista service can export bounded per-trial screenshot frame
+  sequences plus a manifest recording selected trials, FPS, render settings, and
+  frame/provenance paths. Direct MP4/GIF writing remains a later GUI/export pass
+  because the local environment does not currently include a video-writer
+  dependency such as `imageio`.
 
 ### Phase 3: Plotly Sharing Renderer
 
@@ -439,6 +452,12 @@ Detailed next pass:
   Open3D/Plotly `both` alias for optimizer-v2. The remaining GUI work is richer
   dose-specific controls and export settings, not basic backend selection.
 
+Known render-backend asymmetry: the generic broker can now carry PyVista
+decisions and the dose surface has a PyVista backend, but optimizer-v2 still has
+only Open3D and Plotly render implementations. Adding a PyVista optimizer-v2
+renderer is feasible but should be treated as a separate future upgrade, not a
+dependency of the dose-render figure path.
+
 ### Phase 6: Real-Data Capture Path
 
 - Add a controlled one-patient, one-biopsy capture path that can produce a
@@ -448,6 +467,9 @@ Detailed next pass:
   artifact over enabling full raw NN dumps.
 - If an inline capture rerun is needed because raw NN data were not retained,
   keep it explicit, selected, and user-operated for real patient data.
+- In this note, capture means writing the retained scene/context artifact needed
+  for post-run rendering. It does not mean opening a GUI or interactive render
+  window inside the scientific runtime loop.
 
 ## Pushback And Non-Goals
 

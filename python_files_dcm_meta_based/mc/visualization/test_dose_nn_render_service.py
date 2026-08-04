@@ -10,6 +10,7 @@ import numpy as np
 
 from mc.visualization.dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from mc.visualization.dose_nn_pyvista import is_pyvista_available
+from mc.visualization.dose_nn_render_service import export_saved_dose_nn_scene_trial_frames_pyvista
 from mc.visualization.dose_nn_render_service import main
 from mc.visualization.dose_nn_render_service import render_saved_dose_nn_scene_artifact_pyvista
 from mc.visualization.dose_nn_scene import DoseNNRenderConfig, DoseNNSceneMetadata, build_dose_nn_render_scene
@@ -54,6 +55,9 @@ class DoseNNRenderServiceTests(unittest.TestCase):
                     "0",
                     "--vector-stride",
                     "2",
+                    "--show-dose-colorwash",
+                    "--dose-colorwash-opacity",
+                    "0.3",
                     "--window-size",
                     "320",
                     "240",
@@ -65,6 +69,51 @@ class DoseNNRenderServiceTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue(output_path.is_file())
             self.assertTrue(output_path.with_suffix(".png.provenance.json").is_file())
+
+    def test_export_saved_scene_trial_frames_writes_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            output_dir = Path(temporary_directory).joinpath("frames")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+
+            result = export_saved_dose_nn_scene_trial_frames_pyvista(
+                scene_dir,
+                output_dir,
+                selected_trials=(0,),
+                config=DoseNNRenderConfig(show_dose_colorwash=True),
+                settings=_test_settings(),
+            )
+
+            self.assertEqual(len(result.frame_paths), 1)
+            self.assertTrue(result.frame_paths[0].is_file())
+            self.assertTrue(result.manifest_path.is_file())
+
+    def test_cli_exports_trial_frames_without_screenshot_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            output_dir = Path(temporary_directory).joinpath("frames")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+
+            exit_code = main(
+                (
+                    "--scene-dir",
+                    str(scene_dir),
+                    "--export-trial-frames-dir",
+                    str(output_dir),
+                    "--trial",
+                    "0",
+                    "--frames-per-second",
+                    "6",
+                    "--window-size",
+                    "320",
+                    "240",
+                    "--no-axes",
+                    "--no-scalar-bar",
+                )
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_dir.joinpath("frame_sequence_manifest.json").is_file())
 
 
 def _test_settings() -> DoseNNPyVistaRenderSettings:

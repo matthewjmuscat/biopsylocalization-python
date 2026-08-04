@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 import hashlib
@@ -48,6 +48,7 @@ class DoseNNRenderSceneArtifactManifest:
     arrays_filename: str
     metadata: dict[str, Any]
     arrays: tuple[DoseNNArrayArtifactSpec, ...]
+    summary: dict[str, Any] = field(default_factory=dict)
 
     @property
     def array_specs_by_name(self) -> dict[str, DoseNNArrayArtifactSpec]:
@@ -79,13 +80,16 @@ def write_dose_nn_render_scene_artifact(
     arrays = _scene_arrays(scene)
     array_specs = tuple(_array_spec(name, array) for name, array in arrays.items())
     metadata_dict = _metadata_to_manifest_dict(scene.metadata)
+    summary_dict = _scene_summary_to_manifest_dict(scene)
     _assert_json_serializable(metadata_dict, "scene metadata")
+    _assert_json_serializable(summary_dict, "scene summary")
     manifest = DoseNNRenderSceneArtifactManifest(
         schema_version=DOSE_NN_RENDER_SCENE_ARTIFACT_SCHEMA_VERSION,
         scene_id=resolved_scene_id,
         arrays_filename=DOSE_NN_RENDER_SCENE_ARRAYS_FILENAME,
         metadata=metadata_dict,
         arrays=array_specs,
+        summary=summary_dict,
     )
 
     resolved_artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -247,6 +251,49 @@ def _metadata_from_manifest_dict(metadata: Mapping[str, Any]) -> DoseNNSceneMeta
     )
 
 
+def _scene_summary_to_manifest_dict(scene: DoseNNRenderScene) -> dict[str, Any]:
+    trial_numbers, trial_counts = np.unique(scene.trial_numbers, return_counts=True)
+    return {
+        "available_trials": [int(trial_number) for trial_number in trial_numbers],
+        "trial_query_counts": {
+            str(int(trial_number)): int(trial_count)
+            for trial_number, trial_count in zip(trial_numbers, trial_counts)
+        },
+        "num_lattice_points": int(scene.lattice_points.shape[0]),
+        "num_query_points": int(scene.biopsy_points.shape[0]),
+        "num_nearest_neighbours": int(scene.num_nearest_neighbours),
+        "lattice_bounds": _points_bounds(scene.lattice_points),
+        "biopsy_bounds": _points_bounds(scene.biopsy_points),
+        "nearest_lattice_bounds": _points_bounds(np.reshape(scene.nearest_lattice_points, (-1, 3))),
+        "lattice_dose_range": _scalar_range(scene.lattice_doses),
+        "interpolated_biopsy_dose_range": _scalar_range(scene.interpolated_biopsy_doses),
+        "nearest_lattice_dose_range": _scalar_range(np.reshape(scene.nearest_lattice_doses, (-1,))),
+        "nearest_distance_range": _scalar_range(np.reshape(scene.nearest_distances, (-1,))),
+    }
+
+
+def _points_bounds(points: Any) -> dict[str, list[float]] | None:
+    point_array = np.asarray(points, dtype=float)
+    if point_array.size == 0:
+        return None
+    if point_array.ndim != 2 or point_array.shape[1] != 3:
+        raise ValueError("point bounds require an array with shape (n, 3)")
+    return {
+        "min": [float(value) for value in np.min(point_array, axis=0)],
+        "max": [float(value) for value in np.max(point_array, axis=0)],
+    }
+
+
+def _scalar_range(values: Any) -> dict[str, float] | None:
+    value_array = np.asarray(values, dtype=float)
+    if value_array.size == 0:
+        return None
+    return {
+        "min": float(np.min(value_array)),
+        "max": float(np.max(value_array)),
+    }
+
+
 def _manifest_to_dict(manifest: DoseNNRenderSceneArtifactManifest) -> dict[str, Any]:
     return {
         "schema_version": manifest.schema_version,
@@ -262,6 +309,7 @@ def _manifest_to_dict(manifest: DoseNNRenderSceneArtifactManifest) -> dict[str, 
             }
             for array_spec in manifest.arrays
         ],
+        "summary": manifest.summary,
     }
 
 
@@ -289,6 +337,7 @@ def _manifest_from_dict(manifest: Mapping[str, Any]) -> DoseNNRenderSceneArtifac
         arrays_filename=str(manifest["arrays_filename"]),
         metadata=dict(manifest["metadata"]),
         arrays=arrays,
+        summary=dict(manifest.get("summary", {})),
     )
 
 

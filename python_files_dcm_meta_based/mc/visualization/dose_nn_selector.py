@@ -45,6 +45,8 @@ class DoseNNSavedSceneOption:
     num_lattice_points: int
     num_query_points: int
     num_nearest_neighbours: int
+    available_trials: tuple[int, ...] = ()
+    lattice_dose_range: tuple[float, float] | None = None
     suggested_export_output_dir: Path | None = None
 
 
@@ -98,9 +100,13 @@ def build_saved_dose_nn_scene_option(
         relative_scene_dir,
         used_option_keys or set(),
     )
-    num_lattice_points = _first_dimension(manifest, "lattice_points")
-    num_query_points = _first_dimension(manifest, "biopsy_points")
-    num_nearest_neighbours = _nearest_neighbour_count(manifest)
+    num_lattice_points = int(manifest.summary.get("num_lattice_points", _first_dimension(manifest, "lattice_points")))
+    num_query_points = int(manifest.summary.get("num_query_points", _first_dimension(manifest, "biopsy_points")))
+    num_nearest_neighbours = int(
+        manifest.summary.get("num_nearest_neighbours", _nearest_neighbour_count(manifest))
+    )
+    available_trials = _available_trials_from_summary(manifest.summary)
+    lattice_dose_range = _scalar_range_from_summary(manifest.summary, "lattice_dose_range")
     metadata = manifest.metadata
     patient_uid = str(metadata.get("patient_uid", ""))
     biopsy_roi = str(metadata.get("biopsy_roi", ""))
@@ -125,6 +131,8 @@ def build_saved_dose_nn_scene_option(
             num_lattice_points=num_lattice_points,
             num_query_points=num_query_points,
             num_nearest_neighbours=num_nearest_neighbours,
+            available_trials=available_trials,
+            lattice_dose_range=lattice_dose_range,
         ),
         patient_uid=patient_uid,
         biopsy_roi=biopsy_roi,
@@ -133,6 +141,8 @@ def build_saved_dose_nn_scene_option(
         num_lattice_points=num_lattice_points,
         num_query_points=num_query_points,
         num_nearest_neighbours=num_nearest_neighbours,
+        available_trials=available_trials,
+        lattice_dose_range=lattice_dose_range,
         suggested_export_output_dir=suggested_export_output_dir,
     )
 
@@ -334,20 +344,39 @@ def _format_saved_scene_label(
     num_lattice_points: int,
     num_query_points: int,
     num_nearest_neighbours: int,
+    available_trials: tuple[int, ...] = (),
+    lattice_dose_range: tuple[float, float] | None = None,
 ) -> str:
     identity_parts = [part for part in (patient_uid, biopsy_roi, _biopsy_index_label(biopsy_index)) if part != ""]
     identity_label = " / ".join(identity_parts) if identity_parts else "Unlabeled scene"
     source_suffix = "" if source_label == "" else " | {}".format(source_label)
+    trial_suffix = "" if len(available_trials) == 0 else " | trials: {}".format(len(available_trials))
+    dose_suffix = "" if lattice_dose_range is None else " | dose: {:.3g}-{:.3g}".format(*lattice_dose_range)
     return (
-        "{} | {} | lattice points: {} | query rows: {} | k: {}{}".format(
+        "{} | {} | lattice points: {} | query rows: {} | k: {}{}{}{}".format(
             identity_label,
             scene_id,
             int(num_lattice_points),
             int(num_query_points),
             int(num_nearest_neighbours),
+            trial_suffix,
+            dose_suffix,
             source_suffix,
         )
     )
+
+
+def _available_trials_from_summary(summary: Mapping[str, Any]) -> tuple[int, ...]:
+    return tuple(int(trial_number) for trial_number in tuple(summary.get("available_trials", ())))
+
+
+def _scalar_range_from_summary(summary: Mapping[str, Any], key: str) -> tuple[float, float] | None:
+    scalar_range = summary.get(key)
+    if not isinstance(scalar_range, Mapping):
+        return None
+    if "min" not in scalar_range or "max" not in scalar_range:
+        return None
+    return (float(scalar_range["min"]), float(scalar_range["max"]))
 
 
 def _biopsy_index_label(biopsy_index: int | None) -> str:

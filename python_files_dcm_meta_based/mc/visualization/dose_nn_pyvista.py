@@ -24,6 +24,9 @@ class DoseNNPyVistaRenderSettings:
     background_color: str = "white"
     dose_colormap: str = "viridis"
     lattice_point_size: float = 5.0
+    dose_colorwash_style: str = "points"
+    dose_colorwash_point_size: float = 12.0
+    dose_colorwash_opacity: float = 0.28
     biopsy_point_size: float = 12.0
     nearest_point_size: float = 8.0
     vector_line_width: float = 2.0
@@ -42,6 +45,14 @@ class DoseNNPyVistaExportResult:
 
     screenshot_path: Path
     provenance_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class DoseNNPyVistaFrameSequenceExportResult:
+    """Paths written by a PyVista per-trial frame-sequence export."""
+
+    frame_paths: tuple[Path, ...]
+    manifest_path: Path
 
 
 def is_pyvista_available() -> bool:
@@ -78,6 +89,8 @@ def build_pyvista_dose_nn_plotter(
 
     if prepared_scene.config.show_lattice_points:
         _add_lattice_points(pv, plotter, prepared_scene, resolved_settings)
+    if prepared_scene.config.show_dose_colorwash:
+        _add_dose_colorwash(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_biopsy_points:
         _add_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_nearest_neighbour_points:
@@ -135,6 +148,79 @@ def export_dose_nn_scene_pyvista(
     )
 
 
+def export_dose_nn_trial_frame_sequence_pyvista(
+    scene: DoseNNRenderScene,
+    output_dir: Path | str,
+    *,
+    selected_trials: tuple[int, ...] | None = None,
+    max_frames: int | None = None,
+    frames_per_second: float = 12.0,
+    base_config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    frame_name_prefix: str = "dose_nn_trial",
+    manifest_path: Path | str | None = None,
+    overwrite: bool = False,
+) -> DoseNNPyVistaFrameSequenceExportResult:
+    """Export one screenshot per selected trial plus a frame manifest."""
+    resolved_output_dir = Path(output_dir)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_manifest_path = Path(manifest_path) if manifest_path is not None else resolved_output_dir.joinpath(
+        "frame_sequence_manifest.json"
+    )
+    if not overwrite and resolved_manifest_path.exists():
+        raise FileExistsError("dose NN frame manifest already exists: {}".format(resolved_manifest_path))
+
+    trial_numbers = _resolve_frame_trial_numbers(scene, selected_trials, max_frames=max_frames)
+    resolved_base_config = base_config or DoseNNRenderConfig()
+    resolved_settings = settings or DoseNNPyVistaRenderSettings()
+    frame_paths: list[Path] = []
+    frame_records: list[dict[str, Any]] = []
+    for frame_index, trial_number in enumerate(trial_numbers):
+        frame_path = resolved_output_dir.joinpath(
+            "{}_{:04d}_trial_{:06d}.png".format(
+                _sanitize_output_name(frame_name_prefix),
+                int(frame_index),
+                int(trial_number),
+            )
+        )
+        if not overwrite and frame_path.exists():
+            raise FileExistsError("dose NN frame already exists: {}".format(frame_path))
+        export_dose_nn_scene_pyvista(
+            scene,
+            frame_path,
+            config=_config_for_trial(resolved_base_config, int(trial_number)),
+            settings=resolved_settings,
+            provenance_path=frame_path.with_suffix(".png.provenance.json"),
+        )
+        frame_paths.append(frame_path)
+        frame_records.append(
+            {
+                "frame_index": int(frame_index),
+                "trial_number": int(trial_number),
+                "frame_path": str(frame_path),
+                "provenance_path": str(frame_path.with_suffix(".png.provenance.json")),
+            }
+        )
+
+    _write_json(
+        resolved_manifest_path,
+        {
+            "schema_version": "dose_nn_pyvista_frame_sequence_v1",
+            "backend": PYVISTA_DOSE_NN_BACKEND_KEY,
+            "frames_per_second": float(frames_per_second),
+            "frame_count": len(frame_records),
+            "scene_metadata": _scene_metadata_from_scene(scene),
+            "base_render_config": _json_ready(asdict(resolved_base_config)),
+            "render_settings": _json_ready(asdict(resolved_settings)),
+            "frames": frame_records,
+        },
+    )
+    return DoseNNPyVistaFrameSequenceExportResult(
+        frame_paths=tuple(frame_paths),
+        manifest_path=resolved_manifest_path,
+    )
+
+
 def build_pyvista_dose_nn_export_provenance(
     prepared_scene: DoseNNPreparedScene,
     *,
@@ -181,6 +267,105 @@ def _add_lattice_points(
         show_scalar_bar=bool(settings.show_scalar_bar),
         scalar_bar_args={"title": settings.dose_scalar_bar_title},
     )
+
+
+def _add_dose_colorwash(
+    pv: Any,
+    plotter: Any,
+    prepared_scene: DoseNNPreparedScene,
+    settings: DoseNNPyVistaRenderSettings,
+) -> None:
+    if prepared_scene.lattice_points.shape[0] == 0:
+        return
+    resolved_style = str(settings.dose_colorwash_style).strip().lower()
+    if resolved_style in ("point", "points"):
+        _add_dose_point_colorwash(pv, plotter, prepared_scene, settings)
+        return
+    if resolved_style == "volume":
+        _add_dose_volume_colorwash(pv, plotter, prepared_scene, settings)
+        return
+    if resolved_style == "auto":
+        try:
+            _add_dose_volume_colorwash(pv, plotter, prepared_scene, settings)
+        except ValueError:
+            _add_dose_point_colorwash(pv, plotter, prepared_scene, settings)
+        return
+    raise ValueError("unsupported dose colorwash style: {}".format(settings.dose_colorwash_style))
+
+
+def _add_dose_point_colorwash(
+    pv: Any,
+    plotter: Any,
+    prepared_scene: DoseNNPreparedScene,
+    settings: DoseNNPyVistaRenderSettings,
+) -> None:
+    point_cloud = pv.PolyData(prepared_scene.lattice_points)
+    point_cloud["dose"] = prepared_scene.lattice_doses
+    plotter.add_mesh(
+        point_cloud,
+        name="dose_colorwash_points",
+        scalars="dose",
+        cmap=settings.dose_colormap,
+        point_size=float(settings.dose_colorwash_point_size),
+        opacity=float(settings.dose_colorwash_opacity),
+        render_points_as_spheres=False,
+        show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
+        scalar_bar_args={"title": settings.dose_scalar_bar_title},
+    )
+
+
+def _add_dose_volume_colorwash(
+    pv: Any,
+    plotter: Any,
+    prepared_scene: DoseNNPreparedScene,
+    settings: DoseNNPyVistaRenderSettings,
+) -> None:
+    dose_grid = _rectilinear_dose_grid_from_lattice(pv, prepared_scene.lattice_points, prepared_scene.lattice_doses)
+    plotter.add_volume(
+        dose_grid,
+        scalars="dose",
+        name="dose_colorwash_volume",
+        cmap=settings.dose_colormap,
+        opacity=float(settings.dose_colorwash_opacity),
+        show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
+        scalar_bar_args={"title": settings.dose_scalar_bar_title},
+    )
+
+
+def _rectilinear_dose_grid_from_lattice(pv: Any, lattice_points: np.ndarray, lattice_doses: np.ndarray) -> Any:
+    points = np.asarray(lattice_points, dtype=float)
+    doses = np.asarray(lattice_doses, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("dose volume colorwash requires lattice_points with shape (n, 3)")
+    if doses.shape != (points.shape[0],):
+        raise ValueError("dose volume colorwash requires one dose value per lattice point")
+
+    x_values = np.unique(points[:, 0])
+    y_values = np.unique(points[:, 1])
+    z_values = np.unique(points[:, 2])
+    if min(len(x_values), len(y_values), len(z_values)) < 2:
+        raise ValueError("dose volume colorwash requires at least two lattice coordinates along each axis")
+    expected_point_count = len(x_values) * len(y_values) * len(z_values)
+    if expected_point_count != points.shape[0]:
+        raise ValueError("dose volume colorwash requires a complete rectilinear dose lattice")
+
+    x_indices = np.searchsorted(x_values, points[:, 0])
+    y_indices = np.searchsorted(y_values, points[:, 1])
+    z_indices = np.searchsorted(z_values, points[:, 2])
+    dose_grid_values = np.empty((len(x_values), len(y_values), len(z_values)), dtype=float)
+    visited_grid_points = np.zeros(dose_grid_values.shape, dtype=bool)
+    for point_index, dose_value in enumerate(doses):
+        grid_index = (int(x_indices[point_index]), int(y_indices[point_index]), int(z_indices[point_index]))
+        if visited_grid_points[grid_index]:
+            raise ValueError("dose volume colorwash requires unique rectilinear lattice points")
+        dose_grid_values[grid_index] = float(dose_value)
+        visited_grid_points[grid_index] = True
+    if not bool(np.all(visited_grid_points)):
+        raise ValueError("dose volume colorwash requires a complete rectilinear dose lattice")
+
+    dose_grid = pv.RectilinearGrid(x_values, y_values, z_values)
+    dose_grid.point_data["dose"] = dose_grid_values.ravel(order="F")
+    return dose_grid
 
 
 def _add_biopsy_points(
@@ -259,7 +444,11 @@ def _line_mesh_from_start_end_points(pv: Any, start_points: np.ndarray, end_poin
 
 
 def _scene_metadata_dict(prepared_scene: DoseNNPreparedScene) -> dict[str, Any]:
-    metadata = prepared_scene.metadata
+    return _scene_metadata_from_scene(prepared_scene)
+
+
+def _scene_metadata_from_scene(scene: DoseNNPreparedScene | DoseNNRenderScene) -> dict[str, Any]:
+    metadata = scene.metadata
     return {
         "patient_uid": str(metadata.patient_uid),
         "biopsy_roi": str(metadata.biopsy_roi),
@@ -269,6 +458,52 @@ def _scene_metadata_dict(prepared_scene: DoseNNPreparedScene) -> dict[str, Any]:
         "source_label": str(metadata.source_label),
         "extra": _json_ready(dict(metadata.extra)),
     }
+
+
+def _resolve_frame_trial_numbers(
+    scene: DoseNNRenderScene,
+    selected_trials: tuple[int, ...] | None,
+    *,
+    max_frames: int | None,
+) -> tuple[int, ...]:
+    available_trials = scene.available_trials
+    if selected_trials is None:
+        resolved_trials = available_trials
+        if max_frames is not None:
+            resolved_trials = resolved_trials[: int(max_frames)]
+    else:
+        resolved_trials = tuple(int(trial_number) for trial_number in tuple(selected_trials))
+    if len(resolved_trials) == 0:
+        raise ValueError("dose NN frame export requires at least one selected trial")
+    missing_trials = sorted(set(resolved_trials).difference(set(available_trials)))
+    if missing_trials:
+        raise ValueError("dose NN frame export requested unavailable trials: {}".format(missing_trials))
+    return resolved_trials
+
+
+def _config_for_trial(base_config: DoseNNRenderConfig, trial_number: int) -> DoseNNRenderConfig:
+    return DoseNNRenderConfig(
+        selected_trials=(int(trial_number),),
+        dose_threshold_min=base_config.dose_threshold_min,
+        dose_threshold_max=base_config.dose_threshold_max,
+        max_lattice_points=base_config.max_lattice_points,
+        spatial_radius_mm=base_config.spatial_radius_mm,
+        biopsy_point_stride=base_config.biopsy_point_stride,
+        vector_stride=base_config.vector_stride,
+        show_biopsy_points=base_config.show_biopsy_points,
+        show_lattice_points=base_config.show_lattice_points,
+        show_dose_colorwash=base_config.show_dose_colorwash,
+        show_nearest_neighbour_points=base_config.show_nearest_neighbour_points,
+        show_nearest_neighbour_vectors=base_config.show_nearest_neighbour_vectors,
+    )
+
+
+def _sanitize_output_name(value: str) -> str:
+    sanitized_value = "".join(
+        character if character.isalnum() or character in ("-", "_") else "_" for character in str(value)
+    )
+    sanitized_value = sanitized_value.strip("_")
+    return sanitized_value or "dose_nn_trial"
 
 
 def _json_ready(value: Any) -> Any:

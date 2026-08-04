@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Sequence
 
 from .dose_nn_pyvista import DoseNNPyVistaExportResult
+from .dose_nn_pyvista import DoseNNPyVistaFrameSequenceExportResult
 from .dose_nn_pyvista import DoseNNPyVistaRenderSettings
+from .dose_nn_pyvista import export_dose_nn_trial_frame_sequence_pyvista
 from .dose_nn_pyvista import export_dose_nn_scene_pyvista
 from .dose_nn_scene import DoseNNRenderConfig
 from .dose_nn_scene_artifacts import read_dose_nn_render_scene_artifact
@@ -32,15 +34,55 @@ def render_saved_dose_nn_scene_artifact_pyvista(
     )
 
 
+def export_saved_dose_nn_scene_trial_frames_pyvista(
+    scene_artifact_dir: Path | str,
+    output_dir: Path | str,
+    *,
+    selected_trials: tuple[int, ...] | None = None,
+    max_frames: int | None = None,
+    frames_per_second: float = 12.0,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    overwrite: bool = False,
+) -> DoseNNPyVistaFrameSequenceExportResult:
+    """Read a saved scene artifact and export one PyVista frame per trial."""
+    scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+    return export_dose_nn_trial_frame_sequence_pyvista(
+        scene,
+        output_dir,
+        selected_trials=selected_trials,
+        max_frames=max_frames,
+        frames_per_second=frames_per_second,
+        base_config=config,
+        settings=settings,
+        overwrite=overwrite,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for rendering a saved dose NN scene artifact."""
     args = _build_argument_parser().parse_args(argv)
     if args.backend != "pyvista":
         raise ValueError("unsupported dose NN render backend: {}".format(args.backend))
 
+    if args.export_trial_frames_dir is not None:
+        result = export_saved_dose_nn_scene_trial_frames_pyvista(
+            args.scene_dir,
+            args.export_trial_frames_dir,
+            selected_trials=_selected_trials_from_args(args),
+            max_frames=args.max_trial_frames,
+            frames_per_second=args.frames_per_second,
+            config=_config_from_args(args, include_selected_trials=False),
+            settings=_pyvista_settings_from_args(args),
+            overwrite=bool(args.overwrite),
+        )
+        print("[dose-nn-render] wrote {} frame(s)".format(len(result.frame_paths)))
+        print("[dose-nn-render] wrote {}".format(result.manifest_path))
+        return 0
+
     result = render_saved_dose_nn_scene_artifact_pyvista(
         args.scene_dir,
-        args.output,
+        _required_screenshot_output_path(args),
         config=_config_from_args(args),
         settings=_pyvista_settings_from_args(args),
         provenance_path=args.provenance_path,
@@ -55,9 +97,13 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         description="Render a saved dose NN scene artifact without rerunning scientific code.",
     )
     parser.add_argument("--scene-dir", required=True, type=Path, help="Directory containing manifest.json and arrays.")
-    parser.add_argument("--output", required=True, type=Path, help="Screenshot output path, usually .png.")
+    parser.add_argument("--output", type=Path, default=None, help="Screenshot output path, usually .png.")
     parser.add_argument("--provenance-path", type=Path, default=None, help="Optional provenance JSON output path.")
     parser.add_argument("--backend", choices=("pyvista",), default="pyvista")
+    parser.add_argument("--export-trial-frames-dir", type=Path, default=None)
+    parser.add_argument("--frames-per-second", type=float, default=12.0)
+    parser.add_argument("--max-trial-frames", type=int, default=120)
+    parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--trial", action="append", type=int, default=None, help="Trial number to include; repeatable.")
     parser.add_argument("--dose-threshold-min", type=float, default=None)
     parser.add_argument("--dose-threshold-max", type=float, default=None)
@@ -67,12 +113,16 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vector-stride", type=int, default=1)
     parser.add_argument("--hide-biopsy-points", action="store_true")
     parser.add_argument("--hide-lattice-points", action="store_true")
+    parser.add_argument("--show-dose-colorwash", action="store_true")
     parser.add_argument("--hide-nearest-neighbour-points", action="store_true")
     parser.add_argument("--hide-nearest-neighbour-vectors", action="store_true")
     parser.add_argument("--window-size", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"), default=(1200, 900))
     parser.add_argument("--background-color", default="white")
     parser.add_argument("--dose-colormap", default="viridis")
     parser.add_argument("--lattice-point-size", type=float, default=5.0)
+    parser.add_argument("--dose-colorwash-style", choices=("points", "volume", "auto"), default="points")
+    parser.add_argument("--dose-colorwash-point-size", type=float, default=12.0)
+    parser.add_argument("--dose-colorwash-opacity", type=float, default=0.28)
     parser.add_argument("--biopsy-point-size", type=float, default=12.0)
     parser.add_argument("--nearest-point-size", type=float, default=8.0)
     parser.add_argument("--vector-line-width", type=float, default=2.0)
@@ -81,8 +131,8 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _config_from_args(args: argparse.Namespace) -> DoseNNRenderConfig:
-    selected_trials = None if args.trial is None else tuple(int(trial_number) for trial_number in args.trial)
+def _config_from_args(args: argparse.Namespace, *, include_selected_trials: bool = True) -> DoseNNRenderConfig:
+    selected_trials = _selected_trials_from_args(args) if include_selected_trials else None
     return DoseNNRenderConfig(
         selected_trials=selected_trials,
         dose_threshold_min=args.dose_threshold_min,
@@ -93,9 +143,20 @@ def _config_from_args(args: argparse.Namespace) -> DoseNNRenderConfig:
         vector_stride=args.vector_stride,
         show_biopsy_points=not bool(args.hide_biopsy_points),
         show_lattice_points=not bool(args.hide_lattice_points),
+        show_dose_colorwash=bool(args.show_dose_colorwash),
         show_nearest_neighbour_points=not bool(args.hide_nearest_neighbour_points),
         show_nearest_neighbour_vectors=not bool(args.hide_nearest_neighbour_vectors),
     )
+
+
+def _selected_trials_from_args(args: argparse.Namespace) -> tuple[int, ...] | None:
+    return None if args.trial is None else tuple(int(trial_number) for trial_number in args.trial)
+
+
+def _required_screenshot_output_path(args: argparse.Namespace) -> Path:
+    if args.output is None:
+        raise ValueError("--output is required unless --export-trial-frames-dir is used")
+    return args.output
 
 
 def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRenderSettings:
@@ -105,6 +166,9 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         background_color=args.background_color,
         dose_colormap=args.dose_colormap,
         lattice_point_size=args.lattice_point_size,
+        dose_colorwash_style=args.dose_colorwash_style,
+        dose_colorwash_point_size=args.dose_colorwash_point_size,
+        dose_colorwash_opacity=args.dose_colorwash_opacity,
         biopsy_point_size=args.biopsy_point_size,
         nearest_point_size=args.nearest_point_size,
         vector_line_width=args.vector_line_width,
