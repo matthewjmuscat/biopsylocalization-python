@@ -631,9 +631,12 @@ class PatientMCSimulationScientificConfig:
     convex_config: MCConvexSimulationConfig | None = None
     mr_config: MCMRSimulationConfig | None = None
     mr_adc_ref: str = ""
-    write_dose_context_artifacts: bool = False
-    write_dose_nn_render_context_artifacts: bool = True
+    persist_dose_context_artifacts: bool = False
+    persist_dose_nn_render_context_artifacts: bool = True
     dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
+    launch_dose_nn_render_selector_after_persisting_artifacts: bool = False
+    dose_nn_render_selector_biopsy_index: int | None = None
+    dose_nn_render_selector_localization_kind: str = "dose"
     num_mc_containment_simulations: int = 0
     num_mc_dose_simulations: int = 0
     num_mc_mr_simulations: int = 0
@@ -647,11 +650,11 @@ class PatientMCSimulationScientificConfig:
             "num_mc_mr_simulations",
         ):
             object.__setattr__(self, field_name, _non_negative_int(getattr(self, field_name), field_name))
-        object.__setattr__(self, "write_dose_context_artifacts", bool(self.write_dose_context_artifacts))
+        object.__setattr__(self, "persist_dose_context_artifacts", bool(self.persist_dose_context_artifacts))
         object.__setattr__(
             self,
-            "write_dose_nn_render_context_artifacts",
-            bool(self.write_dose_nn_render_context_artifacts),
+            "persist_dose_nn_render_context_artifacts",
+            bool(self.persist_dose_nn_render_context_artifacts),
         )
         localization_kinds = tuple(
             str(localization_kind).strip().lower().replace("-", "_").replace(" ", "_")
@@ -660,6 +663,20 @@ class PatientMCSimulationScientificConfig:
         if any(localization_kind == "" for localization_kind in localization_kinds):
             raise ValueError("dose_context_artifact_localization_kinds cannot contain empty values")
         object.__setattr__(self, "dose_context_artifact_localization_kinds", localization_kinds)
+        object.__setattr__(
+            self,
+            "launch_dose_nn_render_selector_after_persisting_artifacts",
+            bool(self.launch_dose_nn_render_selector_after_persisting_artifacts),
+        )
+        biopsy_index = self.dose_nn_render_selector_biopsy_index
+        if biopsy_index is not None:
+            biopsy_index = _non_negative_int(biopsy_index, "dose_nn_render_selector_biopsy_index")
+        object.__setattr__(self, "dose_nn_render_selector_biopsy_index", biopsy_index)
+        object.__setattr__(
+            self,
+            "dose_nn_render_selector_localization_kind",
+            str(self.dose_nn_render_selector_localization_kind).strip().lower().replace("-", "_").replace(" ", "_") or "dose",
+        )
         object.__setattr__(
             self,
             "bx_sample_pts_lattice_spacing",

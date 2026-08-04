@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import mc.simulation.per_patient as per_patient_mc
+import mc.visualization.dose_nn_context_render_service as context_render_service
 
 from output_artifacts.context_contracts import read_patient_artifact_index
 
@@ -93,7 +94,7 @@ class PatientDoseContextArtifactPersisterTests(unittest.TestCase):
                     scientific_config=PatientRunnerScientificConfig(
                         mc_simulation=PatientMCSimulationScientificConfig(
                             convex_config=_fake_convex_config(),
-                            write_dose_context_artifacts=True,
+                            persist_dose_context_artifacts=True,
                         ),
                     ),
                 )
@@ -118,6 +119,49 @@ class PatientDoseContextArtifactPersisterTests(unittest.TestCase):
         self.assertEqual(result.metadata["dose_context_artifact_count"], 4)
         self.assertIn("dose_biopsy_002_render_context", index.artifacts_by_id)
         self.assertEqual(loaded_scene.metadata.biopsy_index, 2)
+
+    def test_mc_simulation_stage_runtime_selector_launches_after_persisting_artifacts(self) -> None:
+        callback_seen = []
+        selector_calls = []
+        original_run_patient_mc_convex_stage = per_patient_mc.run_patient_mc_convex_stage
+        original_selector = context_render_service.materialize_and_run_dose_nn_context_selector_session
+        try:
+            per_patient_mc.run_patient_mc_convex_stage = lambda **kwargs: _fake_convex_stage_result_with_optional_callback(
+                callback_seen,
+                **kwargs,
+            )
+
+            def fake_selector(**kwargs):
+                selector_calls.append(kwargs)
+                self.assertTrue(Path(kwargs["patient_artifact_index_path"]).exists())
+                return SimpleNamespace(
+                    materialization=SimpleNamespace(scene_artifact_dir=Path(kwargs["scene_artifact_dir"])),
+                    session_state=SimpleNamespace(),
+                )
+
+            context_render_service.materialize_and_run_dose_nn_context_selector_session = fake_selector
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                result = run_patient_mc_simulation_scientific_stage(
+                    _runtime_state(),
+                    _run_config(Path(temporary_directory)),
+                    scientific_config=PatientRunnerScientificConfig(
+                        mc_simulation=PatientMCSimulationScientificConfig(
+                            convex_config=_fake_convex_config(),
+                            persist_dose_context_artifacts=True,
+                            launch_dose_nn_render_selector_after_persisting_artifacts=True,
+                            dose_nn_render_selector_biopsy_index=2,
+                        ),
+                    ),
+                )
+        finally:
+            per_patient_mc.run_patient_mc_convex_stage = original_run_patient_mc_convex_stage
+            context_render_service.materialize_and_run_dose_nn_context_selector_session = original_selector
+
+        self.assertEqual(callback_seen, [True])
+        self.assertEqual(len(selector_calls), 1)
+        self.assertEqual(selector_calls[0]["biopsy_index"], 2)
+        self.assertTrue(result.metadata["dose_context_render_selector_launched"])
+        self.assertIn(Path(result.metadata["dose_context_render_scene_artifact_dir"]), result.output_paths)
 
     def test_mc_simulation_stage_leaves_context_callback_unset_by_default(self) -> None:
         callback_seen = []

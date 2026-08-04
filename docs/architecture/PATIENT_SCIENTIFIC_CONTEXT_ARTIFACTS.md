@@ -203,7 +203,10 @@ after the legacy biopsy record has been updated for one dose-localization result
 so the retained artifact is a late, explicit snapshot of the finalized runtime
 objects rather than a side channel inside the nearest-neighbour calculation.
 Patient-runner config keeps this writer disabled by default through
-`PatientMCSimulationScientificConfig.write_dose_context_artifacts`.
+`PatientMCSimulationScientificConfig.persist_dose_context_artifacts`. Runtime
+selector launch is a separate default-off option,
+`launch_dose_nn_render_selector_after_persisting_artifacts`, and must run only
+after the persisted context artifact snapshot exists.
 
 Do not turn the master structure reference dictionary into the new artifact
 registry. It can remain a legacy in-memory source, oracle, or adapter input while

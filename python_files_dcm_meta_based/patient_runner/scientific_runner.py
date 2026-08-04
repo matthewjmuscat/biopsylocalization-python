@@ -351,7 +351,26 @@ def summarize_patient_scientific_run_config(run_config: PatientScientificRunConf
         "output_root": run_config.batch_config.output_root.as_posix(),
         "execution_backend": run_config.batch_config.execution_backend.value,
         "max_workers": run_config.batch_config.max_workers,
+        "persisting_artifacts": _persisting_artifacts_summary(run_config.scientific_config),
         "metadata": dict(run_config.metadata),
+    }
+
+
+def _persisting_artifacts_summary(scientific_config: PatientRunnerScientificConfig) -> dict[str, Any]:
+    mc_simulation = scientific_config.mc_simulation
+    if mc_simulation is None:
+        return {"dose_context": {"persist": False}}
+    return {
+        "dose_context": {
+            "persist": mc_simulation.persist_dose_context_artifacts,
+            "persist_nn_render_context": mc_simulation.persist_dose_nn_render_context_artifacts,
+            "localization_kinds": tuple(mc_simulation.dose_context_artifact_localization_kinds),
+            "launch_selector_after_persisting_artifacts": (
+                mc_simulation.launch_dose_nn_render_selector_after_persisting_artifacts
+            ),
+            "selector_biopsy_index": mc_simulation.dose_nn_render_selector_biopsy_index,
+            "selector_localization_kind": mc_simulation.dose_nn_render_selector_localization_kind,
+        }
     }
 
 

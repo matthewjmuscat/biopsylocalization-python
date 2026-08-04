@@ -779,7 +779,7 @@ def run_patient_mc_simulation_scientific_stage(
         if stage_config.convex_config.containment.perform_mc_containment_sim:
             parallel_pool = _require_parallel_pool(scientific_config, PatientStageName.MC_SIMULATION)
         dose_context_persister = None
-        if stage_config.write_dose_context_artifacts:
+        if stage_config.persist_dose_context_artifacts:
             from patient_runner.dose_context_persistence import PatientDoseContextArtifactPersister
 
             dose_context_persister = PatientDoseContextArtifactPersister(
@@ -787,7 +787,7 @@ def run_patient_mc_simulation_scientific_stage(
                 output_root=config.patient_output_dir(runtime_state.patient_case),
                 run_id=config.run_id,
                 localization_kinds=stage_config.dose_context_artifact_localization_kinds,
-                write_render_context=stage_config.write_dose_nn_render_context_artifacts,
+                write_render_context=stage_config.persist_dose_nn_render_context_artifacts,
             )
         convex_result = run_patient_mc_convex_stage(
             patient_uid=runtime_state.patient_uid,
@@ -827,6 +827,27 @@ def run_patient_mc_simulation_scientific_stage(
             )
             if dose_context_summary.artifact_refs:
                 metadata["dose_context_artifact_index_path"] = dose_context_summary.artifact_index_path.as_posix()
+                if stage_config.launch_dose_nn_render_selector_after_persisting_artifacts:
+                    from mc.visualization.dose_nn_context_render_service import materialize_and_run_dose_nn_context_selector_session
+
+                    patient_output_dir = config.patient_output_dir(runtime_state.patient_case)
+                    biopsy_index = stage_config.dose_nn_render_selector_biopsy_index
+                    biopsy_token = "auto" if biopsy_index is None else "{:03d}".format(int(biopsy_index))
+                    selector_result = materialize_and_run_dose_nn_context_selector_session(
+                        patient_artifact_index_path=dose_context_summary.artifact_index_path,
+                        output_root=patient_output_dir,
+                        localization_kind=stage_config.dose_nn_render_selector_localization_kind,
+                        biopsy_index=biopsy_index,
+                        scene_artifact_dir=patient_output_dir.joinpath("render_scenes", "dose_nn_context_{}".format(biopsy_token)),
+                        scene_id="dose_nn_context_{}".format(biopsy_token),
+                        export_dir=patient_output_dir.joinpath("exports", "dose_nn_context"),
+                        overwrite=True,
+                    )
+                    output_paths = (*output_paths, selector_result.materialization.scene_artifact_dir)
+                    metadata["dose_context_render_selector_launched"] = True
+                    metadata["dose_context_render_scene_artifact_dir"] = (
+                        selector_result.materialization.scene_artifact_dir.as_posix()
+                    )
 
     if stage_config.mr_config is not None:
         from mc.simulation.per_patient import run_patient_mr_adc_localization_stage

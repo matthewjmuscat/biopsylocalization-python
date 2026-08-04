@@ -310,17 +310,18 @@ Current patient-runner status at the time of this note:
   artifacts from retained lattice/render-context artifact refs in a patient
   artifact index.
 - The patient-runner MC simulation stage now has an opt-in dose context artifact
-  persistence boundary. When `write_dose_context_artifacts=True`, it passes a
+  persistence boundary. When `persist_dose_context_artifacts=True`, it passes a
   patient-runner-owned finalization callback into the per-patient convex MC
   stage and writes retained dose context artifacts after each biopsy dose
   localization result is finalized.
 - The opt-in is available through `PatientRunnerScientificConfigBuildContext`,
   which threads the flag into `PatientMCSimulationScientificConfig`; TOML run
   profiles are still future work.
-- Runtime launching is intentionally not wired yet. When it is needed, it should
-  live in the patient-runner MC dose stage after dose-localization outputs are
-  finalized and retained artifacts are snapshotted. It should not be wired into
-  legacy main or the raw MC numerical loop.
+- Runtime selector launching is also wired but default-off. When
+  `launch_dose_nn_render_selector_after_persisting_artifacts=True`, the
+  patient-runner MC simulation stage launches the selector only after the
+  retained artifact snapshot has been written. It is not wired into legacy main
+  or the raw MC numerical loop.
 
 The return point after the publication render pass is the one-patient runtime
 builder and the run-profile/orchestrator boundary. The dose render work should
@@ -347,15 +348,40 @@ runnable as many times as needed for figure tuning. Changing display thresholds,
 trial selections, vector thinning, camera position, or renderer backend should
 not require rerunning the main algorithm.
 
-Operationally, the current boundary is split in two:
+Operationally, the current boundary has two modes:
 
 - Inline patient-runner capture is toggleable through
-  `PatientRunnerScientificConfigBuildContext(write_dose_context_artifacts=True)`
-  or an equivalent `PatientMCSimulationScientificConfig` value. This writes the
+  `PatientRunnerScientificConfigBuildContext(persist_dose_context_artifacts=True)`
+  or an equivalent `PatientMCSimulationScientificConfig` value. This persists the
   retained dose context artifacts during the MC simulation stage finalization
   boundary.
-- Rendering remains post-run. After the run, inspect the generated patient
-  context index with:
+- Inline patient-runner selector launch is separately toggleable through
+  `launch_dose_nn_render_selector_after_persisting_artifacts=True` and should be
+  paired with `dose_nn_render_selector_biopsy_index` for real runs with multiple
+  biopsies.
+- The recommended entry point is the existing scientific-runner config builder:
+
+```python
+from patient_runner import PatientRunnerScientificConfigBuildContext
+from patient_runner import build_patient_scientific_run_config_from_pipeline
+
+context = PatientRunnerScientificConfigBuildContext(
+    persist_dose_context_artifacts=True,
+    launch_dose_nn_render_selector_after_persisting_artifacts=False,
+)
+run_config = build_patient_scientific_run_config_from_pipeline(
+    pipeline_config,
+    context,
+    output_root=output_root,
+    patient_uids=(patient_uid,),
+)
+```
+
+For an inline GUI launch after persistence, set
+`launch_dose_nn_render_selector_after_persisting_artifacts=True` and provide
+`dose_nn_render_selector_biopsy_index`.
+- Post-run rendering remains independently available. After the run, inspect the
+  generated patient context index with:
 
 ```bash
 PYTHONPATH=python_files_dcm_meta_based pipenv run python -m mc.visualization.dose_nn_context_render_service \
