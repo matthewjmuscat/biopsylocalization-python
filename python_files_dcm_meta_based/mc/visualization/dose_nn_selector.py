@@ -20,6 +20,9 @@ from ui.render_broker import run_render_broker_session
 from .dose_nn_pyvista import DoseNNPyVistaExportResult
 from .dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from .dose_nn_render_service import render_saved_dose_nn_scene_artifact_pyvista
+from .dose_nn_render_controls import DoseNNRenderControlSelection
+from .dose_nn_render_controls import dose_nn_pyvista_settings_from_control_selection
+from .dose_nn_render_controls import dose_nn_render_config_from_control_selection
 from .dose_nn_scene import DoseNNRenderConfig
 from .dose_nn_scene_artifacts import DOSE_NN_RENDER_SCENE_ARTIFACT_SCHEMA_VERSION
 from .dose_nn_scene_artifacts import DOSE_NN_RENDER_SCENE_MANIFEST_FILENAME
@@ -196,6 +199,7 @@ def handle_saved_dose_nn_scene_broker_decision_pyvista(
     *,
     config: DoseNNRenderConfig | None = None,
     settings: DoseNNPyVistaRenderSettings | None = None,
+    control_selection: DoseNNRenderControlSelection | None = None,
     overwrite: bool = False,
 ) -> tuple[DoseNNPyVistaExportResult, ...]:
     """Render selected saved scenes from a broker decision through PyVista."""
@@ -209,6 +213,7 @@ def handle_saved_dose_nn_scene_broker_decision_pyvista(
         output_dir,
         config=config,
         settings=settings,
+        control_selection=control_selection,
         overwrite=overwrite,
     )
 
@@ -220,6 +225,7 @@ def run_saved_dose_nn_scene_selector_session(
     suggested_export_root: Path | str | None = None,
     config: DoseNNRenderConfig | None = None,
     settings: DoseNNPyVistaRenderSettings | None = None,
+    control_selection: DoseNNRenderControlSelection | None = None,
     dialog_adapter: RenderBrokerDialogAdapter | None = None,
     timeout_policy: RenderBrokerTimeoutPolicy | None = None,
     initial_session_state: RenderBrokerSessionState | None = None,
@@ -249,6 +255,7 @@ def run_saved_dose_nn_scene_selector_session(
             output_dir,
             config=config,
             settings=settings,
+            control_selection=control_selection,
             overwrite=overwrite,
         )
 
@@ -267,9 +274,12 @@ def render_saved_dose_nn_scene_selection_pyvista(
     *,
     config: DoseNNRenderConfig | None = None,
     settings: DoseNNPyVistaRenderSettings | None = None,
+    control_selection: DoseNNRenderControlSelection | None = None,
     overwrite: bool = False,
 ) -> tuple[DoseNNPyVistaExportResult, ...]:
     """Render selected saved scene options through PyVista."""
+    if config is not None and control_selection is not None:
+        raise ValueError("pass either config or control_selection for dose NN rendering, not both")
     options_by_key = _options_by_key(options)
     resolved_output_dir = Path(output_dir)
     results: list[DoseNNPyVistaExportResult] = []
@@ -281,16 +291,44 @@ def render_saved_dose_nn_scene_selection_pyvista(
         provenance_path = output_path.with_suffix(".png.provenance.json")
         if not overwrite and (output_path.exists() or provenance_path.exists()):
             raise FileExistsError("dose NN render output already exists: {}".format(output_path))
+        resolved_config, resolved_settings = _resolve_render_config_and_settings(
+            option,
+            config=config,
+            settings=settings,
+            control_selection=control_selection,
+        )
         results.append(
             render_saved_dose_nn_scene_artifact_pyvista(
                 option.scene_artifact_dir,
                 output_path,
-                config=config,
-                settings=settings,
+                config=resolved_config,
+                settings=resolved_settings,
                 provenance_path=provenance_path,
             )
         )
     return tuple(results)
+
+
+def _resolve_render_config_and_settings(
+    option: DoseNNSavedSceneOption,
+    *,
+    config: DoseNNRenderConfig | None,
+    settings: DoseNNPyVistaRenderSettings | None,
+    control_selection: DoseNNRenderControlSelection | None,
+) -> tuple[DoseNNRenderConfig | None, DoseNNPyVistaRenderSettings | None]:
+    if control_selection is None:
+        return config, settings
+    return (
+        dose_nn_render_config_from_control_selection(
+            control_selection,
+            available_trials=option.available_trials,
+        ),
+        dose_nn_pyvista_settings_from_control_selection(
+            control_selection,
+            available_trials=option.available_trials,
+            base_settings=settings,
+        ),
+    )
 
 
 def _options_by_key(

@@ -181,6 +181,13 @@ broker decisions back to the dose render backend registry. It owns dose-specific
 labels, trial choices, and export suggestions. The generic broker should not
 learn what a dose lattice, biopsy voxel, trial, or NN vector is.
 
+The dose-owned GUI control contract is `DoseNNRenderControlSelection`. It is a
+toolkit-neutral object that represents what a GUI user selected, then translates
+to `DoseNNRenderConfig` and backend-specific settings. The main algorithm should
+not construct one of these objects during scientific execution. It should write
+the general retained context and manifest summaries needed for the GUI to build
+one after the run.
+
 ## GUI Controls
 
 The figure/debug workflow needs dose-domain controls beyond the current generic
@@ -212,6 +219,22 @@ The saved-scene render loop should reappear after each render until the user
 selects the explicit exit/continue action. This lets the figure be tuned by
 changing trial, colorwash, lattice, vector, dose-threshold, and reference-point
 settings without rerunning scientific code.
+
+The split is therefore:
+
+```text
+patient/runtime artifacts
+  retain dose lattice, biopsy query geometry, NN context, trial IDs, ranges, and provenance
+
+dose render controls
+  own dose-specific control names, defaults, validation, and translation to render config/settings
+
+generic broker
+  owns scene/backend selection and the render-again-or-exit loop
+
+renderer backend
+  consumes the resolved config/settings and writes figures or frames
+```
 
 If a richer GUI framework is adopted later, these controls can move into that
 adapter while preserving `DoseNNRenderScene`, `DoseNNRenderConfig`, and backend
@@ -474,6 +497,12 @@ Detailed next pass:
   dose-specific controls and export settings, not basic backend selection. The
   loop already reopens after each render and the saved-scene selector labels the
   terminal action as "Exit renderer".
+- Status: added `DoseNNRenderControlSelection` in `dose_nn_render_controls.py`.
+  This is the first dose-owned control contract for GUI-selected trials,
+  reference biopsy visibility, dose thresholds, lattice/colorwash/vector layers,
+  colorwash style, opacity, stride controls, axes, and scalar bar settings. The
+  saved-scene selector can now accept that control selection and resolve it per
+  scene using manifest trial summaries.
 
 Known render-backend asymmetry: the generic broker can now carry PyVista
 decisions and the dose surface has a PyVista backend, but optimizer-v2 still has

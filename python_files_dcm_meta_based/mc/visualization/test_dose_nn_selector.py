@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from ui.render_broker import RenderBrokerSessionState
 
 from mc.visualization.dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from mc.visualization.dose_nn_pyvista import is_pyvista_available
+from mc.visualization.dose_nn_render_controls import DoseNNRenderControlSelection
 from mc.visualization.dose_nn_scene import DoseNNRenderConfig
 from mc.visualization.dose_nn_scene import DoseNNSceneMetadata
 from mc.visualization.dose_nn_scene import build_dose_nn_render_scene
@@ -164,6 +166,75 @@ class DoseNNSelectorTests(unittest.TestCase):
                         show_axes=False,
                         show_scalar_bar=False,
                     ),
+                )
+
+    def test_render_saved_scene_selection_accepts_control_selection(self) -> None:
+        if not is_pyvista_available():
+            self.skipTest("PyVista is not available in this environment")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            output_dir = root.joinpath("exports")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            options = discover_saved_dose_nn_scene_options(root)
+
+            render_saved_dose_nn_scene_selection_pyvista(
+                options,
+                ("synthetic_scene",),
+                output_dir,
+                control_selection=DoseNNRenderControlSelection(
+                    selected_trials=(0,),
+                    show_dose_colorwash=True,
+                    show_lattice_points=False,
+                    dose_colorwash_opacity=0.2,
+                    show_scalar_bar=False,
+                ),
+                settings=DoseNNPyVistaRenderSettings(
+                    off_screen=True,
+                    window_size=(320, 240),
+                    show_axes=False,
+                ),
+            )
+
+            provenance_path = output_dir.joinpath("synthetic_scene.png.provenance.json")
+            with open(provenance_path, "r", encoding="utf-8") as provenance_file:
+                provenance = json.load(provenance_file)
+            self.assertEqual(provenance["render_config"]["selected_trials"], [0])
+            self.assertTrue(provenance["render_config"]["show_dose_colorwash"])
+            self.assertFalse(provenance["render_config"]["show_lattice_points"])
+            self.assertEqual(provenance["render_settings"]["dose_colorwash_opacity"], 0.2)
+            self.assertFalse(provenance["render_settings"]["show_scalar_bar"])
+
+    def test_render_saved_scene_selection_rejects_ambiguous_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            options = discover_saved_dose_nn_scene_options(root)
+
+            with self.assertRaisesRegex(ValueError, "config or control_selection"):
+                render_saved_dose_nn_scene_selection_pyvista(
+                    options,
+                    ("synthetic_scene",),
+                    root.joinpath("exports"),
+                    config=DoseNNRenderConfig(),
+                    control_selection=DoseNNRenderControlSelection(),
+                )
+
+    def test_render_saved_scene_selection_rejects_unavailable_control_trial(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            options = discover_saved_dose_nn_scene_options(root)
+
+            with self.assertRaisesRegex(ValueError, "unavailable trials"):
+                render_saved_dose_nn_scene_selection_pyvista(
+                    options,
+                    ("synthetic_scene",),
+                    root.joinpath("exports"),
+                    control_selection=DoseNNRenderControlSelection(selected_trials=(99,)),
                 )
 
 

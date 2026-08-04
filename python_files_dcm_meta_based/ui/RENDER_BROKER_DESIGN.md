@@ -225,6 +225,10 @@ Dose controls should include independent lattice/colorwash/vector layer toggles
 and optional nominal/reference biopsy points that can stay visible between MC
 trial renders. The broker should still carry only generic choices; dose-specific
 control values belong in `DoseNNRenderConfig` and dose-owned renderer settings.
+The toolkit-neutral dose control handoff is `DoseNNRenderControlSelection`,
+which a dose GUI can build from saved-scene manifest summaries after the run.
+The broker continues to know only about scene options, backend selection,
+exports, and the render-again-or-exit loop.
 
 Current asymmetry: the broker contract can now express PyVista decisions for
 the dose NN surface, but optimizer-v2 still implements only Open3D and Plotly
