@@ -200,6 +200,41 @@ the same scientific arrays, coordinate frames, row identities, and derived table
 values for selected cases. The goal is one artifact contract with two temporary
 producer entry points, not two long-term output systems.
 
+Concrete module placement should follow ownership:
+
+```text
+output_artifacts/
+  scientific_context.py or context_contracts.py
+    generic ArtifactRef, ArrayArtifactSpec, TableArtifactSpec,
+    PatientArtifactIndex, manifest read/write helpers
+
+mc/simulation/per_patient/
+  dose_context_artifacts.py
+    DoseLatticeContextArtifact, BiopsyQueryContextArtifact,
+    DoseNearestNeighbourContextArtifact, dose Zarr writers/readers,
+    legacy dose adapter inputs
+
+preprocessing/ or sampling/
+  structure_context_artifacts.py, transform_context_artifacts.py
+    StructureGeometryContext, TransformEventContext,
+    ragged contour/sampled point contracts, transform provenance writers
+
+patient_runner/
+  context_artifact_store.py or extend artifacts.py
+    orchestrates which stage writers run for a patient, chooses output roots,
+    records returned manifests in the patient/run manifest index
+
+post_run/ and mc/visualization/
+  context readers, dataframe constructors, and context-to-render-scene builders
+    consume manifests and typed handles; do not write scientific runtime state
+```
+
+Generic storage/index contracts belong near `output_artifacts` because they are
+shared across dosimetry, tissue, structure geometry, and future MR artifacts.
+Domain scientific contracts belong beside the stage that owns their semantics.
+The patient runner owns orchestration and retention-policy decisions, but it
+should not become the package where every domain schema is defined.
+
 ## In-Memory Object Model
 
 The replacement for the legacy master structure reference dictionary should not
@@ -248,6 +283,28 @@ manifest, not object containment. Dataclasses define the schema and validation
 rules. Writers persist arrays/tables/manifests under the intentional per-patient
 subtree. Readers reconstruct typed handles from those manifests. GUI and
 post-run constructors consume the handles and request only the slices they need.
+
+During runtime, these dataclasses should behave like explicit stage products and
+artifact write requests. They may be passed from one stage to the next and they
+may accumulate in a small per-patient runtime state while the patient is being
+processed, but they should not function like the old master structure reference
+dictionary where arbitrary stages mutate a shared nested object.
+
+The runtime accumulation pattern should be:
+
+```text
+stage computes typed context
+  -> writer persists large arrays/tables to Zarr/Parquet/JSON
+  -> writer returns ArtifactRef/manifest path
+  -> patient artifact index records the artifact event
+  -> downstream stages receive typed handles or requested slices
+```
+
+Short-lived in-memory dataclasses can contain arrays while a stage is computing
+or validating them. Durable dataclasses should usually contain metadata,
+identity keys, artifact refs, and lazy readers rather than full high-volume
+arrays. This keeps the runtime ergonomic without recreating a global mutable
+scientific dictionary.
 
 For migration, nested legacy structure records can remain dict-backed until
 their field and mutation rules are validated. The boundary should still be

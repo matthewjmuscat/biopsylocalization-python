@@ -542,6 +542,20 @@ scene constructor should request the dose lattice, biopsy query, and dose NN
 contexts it needs, slice them by patient/biopsy/trial, and build a
 `DoseNNRenderScene` only for the selected view.
 
+For placement, the shared artifact specs and patient artifact index should live
+near `output_artifacts`, the dose-specific context dataclasses/writers should
+live under `mc/simulation/per_patient/`, patient-runner orchestration should
+call those writers from its artifact-store layer, and the visualization package
+should own only the post-run context-to-scene reader/constructor. This keeps the
+scientific writer beside the dose stage and the GUI/render code downstream of
+the retained artifact boundary.
+
+At runtime, these objects may flow through the patient runner as typed stage
+outputs, but they should not be a new mutable master dict. The accumulating
+state should be the patient artifact index and manifest events. Large arrays are
+written once to Zarr-backed stores; later render or dataframe code reads slices
+through typed handles.
+
 Producer ownership should target the standalone per-patient runner and its
 stage-level output modules. Legacy pathways may call a compatibility adapter to
 write equivalent artifacts during migration or validation, but the adapter
