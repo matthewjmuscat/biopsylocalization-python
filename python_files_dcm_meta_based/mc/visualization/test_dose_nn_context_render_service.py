@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
+from dataclasses import replace
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import numpy as np
 
 from output_artifacts.context_contracts import PatientArtifactIndex
+from output_artifacts.context_contracts import read_patient_artifact_index
 from output_artifacts.context_contracts import write_patient_artifact_index
 from ui.render_broker import RenderBrokerDecision
 from ui.render_broker import RenderBrokerDialogResult
@@ -93,6 +97,65 @@ class DoseNNContextRenderServiceTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(loaded_scene.available_trials, (0, 1))
+
+    def test_cli_list_contexts_does_not_require_output_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = _write_context_fixture(Path(temporary_directory))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    (
+                        "--patient-artifact-index",
+                        str(fixture.index_path),
+                        "--list-contexts",
+                    )
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("dose_lattice_context", stdout.getvalue())
+        self.assertIn("dose_biopsy_002_render_context", stdout.getvalue())
+
+    def test_auto_resolves_context_artifacts_by_biopsy_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = _write_context_fixture(Path(temporary_directory))
+            scene_artifact_dir = fixture.output_root.joinpath("render_scenes", "scene_auto_resolved")
+
+            result = materialize_dose_nn_saved_scene_artifact_from_patient_index(
+                patient_artifact_index_path=fixture.index_path,
+                output_root=fixture.output_root,
+                biopsy_index=2,
+                scene_artifact_dir=scene_artifact_dir,
+                scene_id="scene_auto_resolved",
+            )
+            loaded_scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+
+        self.assertEqual(result.lattice_artifact_ref.artifact_id, "dose_lattice_context")
+        self.assertEqual(result.render_context_artifact_ref.artifact_id, "dose_biopsy_002_render_context")
+        self.assertEqual(loaded_scene.metadata.biopsy_index, 2)
+
+    def test_auto_resolution_fails_closed_when_render_context_is_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = _write_context_fixture(Path(temporary_directory))
+            index = read_patient_artifact_index(fixture.index_path)
+            duplicate_render_ref = replace(
+                index.artifacts_by_id["dose_biopsy_002_render_context"],
+                artifact_id="dose_biopsy_003_render_context",
+                relative_path="context/dosimetry/dose/biopsy_003/render_context.zarr",
+                metadata={
+                    **index.artifacts_by_id["dose_biopsy_002_render_context"].metadata,
+                    "biopsy_index": 3,
+                    "biopsy_roi": "ROI_3",
+                },
+            )
+            write_patient_artifact_index(index.add_artifact(duplicate_render_ref), fixture.index_path, overwrite=True)
+
+            with self.assertRaisesRegex(ValueError, "multiple matching dose NN render context"):
+                materialize_dose_nn_saved_scene_artifact_from_patient_index(
+                    patient_artifact_index_path=fixture.index_path,
+                    output_root=fixture.output_root,
+                    scene_artifact_dir=fixture.output_root.joinpath("render_scenes", "ambiguous"),
+                    scene_id="ambiguous",
+                )
 
     def test_missing_artifact_id_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

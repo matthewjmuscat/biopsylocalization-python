@@ -325,6 +325,13 @@ future GUI: choose a patient, biopsy, trial, thresholds, and backend from a
 durable output dataset or captured scene file, then render/export without
 re-entering the scientific pipeline.
 
+The post-run context utility can inspect a patient artifact index before
+materialization. `--list-contexts` lists retained dose lattice and dose NN render
+context artifact IDs without requiring output paths. Materialization can then
+resolve the lattice and render-context refs from artifact metadata when
+`--localization-kind` and, when needed, `--biopsy-index` identify a unique pair;
+explicit artifact IDs remain available for ambiguous or scripted cases.
+
 Once a scene or context artifact exists, this utility should be independently
 runnable as many times as needed for figure tuning. Changing display thresholds,
 trial selections, vector thinning, camera position, or renderer backend should

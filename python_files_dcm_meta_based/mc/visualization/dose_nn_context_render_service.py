@@ -20,6 +20,11 @@ from .dose_nn_selector import run_saved_dose_nn_scene_controlled_selector_sessio
 from .dose_nn_scene_artifacts import DoseNNRenderSceneArtifactManifest
 
 
+DOSE_NN_RENDER_CONTEXT_ARTIFACT_FAMILY = "dose_nn_render_context"
+DOSE_LATTICE_CONTEXT_ARTIFACT_FAMILY = "dose_lattice_context"
+DEFAULT_DOSE_NN_LOCALIZATION_KIND = "dose"
+
+
 @dataclass(frozen=True, slots=True)
 class DoseNNContextMaterializationResult:
     """Result of materializing a saved-scene artifact from retained context."""
@@ -42,17 +47,27 @@ def materialize_dose_nn_saved_scene_artifact_from_patient_index(
     *,
     patient_artifact_index_path: Path | str,
     output_root: Path | str,
-    lattice_artifact_id: str,
-    render_context_artifact_id: str,
+    lattice_artifact_id: str | None = None,
+    render_context_artifact_id: str | None = None,
+    localization_kind: str = DEFAULT_DOSE_NN_LOCALIZATION_KIND,
+    biopsy_index: int | None = None,
     scene_artifact_dir: Path | str,
     scene_id: str,
     overwrite: bool = False,
 ) -> DoseNNContextMaterializationResult:
     """Materialize one saved-scene artifact from refs in a patient artifact index."""
     index = read_patient_artifact_index(patient_artifact_index_path)
-    artifacts_by_id = index.artifacts_by_id
-    lattice_artifact_ref = _required_artifact_ref(artifacts_by_id, lattice_artifact_id)
-    render_context_artifact_ref = _required_artifact_ref(artifacts_by_id, render_context_artifact_id)
+    lattice_artifact_ref = _resolve_lattice_artifact_ref(
+        index.artifacts,
+        artifact_id=lattice_artifact_id,
+        localization_kind=localization_kind,
+    )
+    render_context_artifact_ref = _resolve_render_context_artifact_ref(
+        index.artifacts,
+        artifact_id=render_context_artifact_id,
+        localization_kind=localization_kind,
+        biopsy_index=biopsy_index,
+    )
     resolved_scene_artifact_dir = Path(scene_artifact_dir)
     manifest = materialize_dose_nn_saved_scene_artifact_from_context(
         lattice_artifact_ref=lattice_artifact_ref,
@@ -74,8 +89,10 @@ def materialize_and_run_dose_nn_context_selector_session(
     *,
     patient_artifact_index_path: Path | str,
     output_root: Path | str,
-    lattice_artifact_id: str,
-    render_context_artifact_id: str,
+    lattice_artifact_id: str | None = None,
+    render_context_artifact_id: str | None = None,
+    localization_kind: str = DEFAULT_DOSE_NN_LOCALIZATION_KIND,
+    biopsy_index: int | None = None,
     scene_artifact_dir: Path | str,
     scene_id: str,
     export_dir: Path | str,
@@ -94,6 +111,8 @@ def materialize_and_run_dose_nn_context_selector_session(
         output_root=output_root,
         lattice_artifact_id=lattice_artifact_id,
         render_context_artifact_id=render_context_artifact_id,
+        localization_kind=localization_kind,
+        biopsy_index=biopsy_index,
         scene_artifact_dir=scene_artifact_dir,
         scene_id=scene_id,
         overwrite=overwrite,
@@ -119,16 +138,26 @@ def materialize_and_run_dose_nn_context_selector_session(
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for materializing and optionally launching a dose NN context render."""
     args = _build_argument_parser().parse_args(argv)
+    if bool(args.list_contexts):
+        index = read_patient_artifact_index(args.patient_artifact_index)
+        _print_available_contexts(index.artifacts, localization_kind=args.localization_kind)
+        return 0
+
+    output_root = _required_cli_arg(args.output_root, "--output-root")
+    scene_artifact_dir = _required_cli_arg(args.scene_artifact_dir, "--scene-artifact-dir")
+    scene_id = _required_cli_arg(args.scene_id, "--scene-id")
     if bool(args.launch_selector):
         if args.export_dir is None:
             raise ValueError("--export-dir is required when --launch-selector is used")
         result = materialize_and_run_dose_nn_context_selector_session(
             patient_artifact_index_path=args.patient_artifact_index,
-            output_root=args.output_root,
+            output_root=output_root,
             lattice_artifact_id=args.lattice_artifact_id,
             render_context_artifact_id=args.render_context_artifact_id,
-            scene_artifact_dir=args.scene_artifact_dir,
-            scene_id=args.scene_id,
+            localization_kind=args.localization_kind,
+            biopsy_index=args.biopsy_index,
+            scene_artifact_dir=scene_artifact_dir,
+            scene_id=scene_id,
             export_dir=args.export_dir,
             scene_search_root=args.scene_search_root,
             suggested_export_root=args.suggested_export_root,
@@ -139,11 +168,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     result = materialize_dose_nn_saved_scene_artifact_from_patient_index(
         patient_artifact_index_path=args.patient_artifact_index,
-        output_root=args.output_root,
+        output_root=output_root,
         lattice_artifact_id=args.lattice_artifact_id,
         render_context_artifact_id=args.render_context_artifact_id,
-        scene_artifact_dir=args.scene_artifact_dir,
-        scene_id=args.scene_id,
+        localization_kind=args.localization_kind,
+        biopsy_index=args.biopsy_index,
+        scene_artifact_dir=scene_artifact_dir,
+        scene_id=scene_id,
         overwrite=bool(args.overwrite),
     )
     print("[dose-nn-context-render] materialized {}".format(result.scene_artifact_dir))
@@ -155,12 +186,15 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         description="Materialize a dose NN saved scene from retained context artifacts.",
     )
     parser.add_argument("--patient-artifact-index", required=True, type=Path)
-    parser.add_argument("--output-root", required=True, type=Path)
-    parser.add_argument("--lattice-artifact-id", required=True)
-    parser.add_argument("--render-context-artifact-id", required=True)
-    parser.add_argument("--scene-artifact-dir", required=True, type=Path)
-    parser.add_argument("--scene-id", required=True)
+    parser.add_argument("--output-root", required=False, type=Path)
+    parser.add_argument("--lattice-artifact-id", default=None)
+    parser.add_argument("--render-context-artifact-id", default=None)
+    parser.add_argument("--localization-kind", default=DEFAULT_DOSE_NN_LOCALIZATION_KIND)
+    parser.add_argument("--biopsy-index", type=int, default=None)
+    parser.add_argument("--scene-artifact-dir", required=False, type=Path)
+    parser.add_argument("--scene-id", required=False)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--list-contexts", action="store_true")
     parser.add_argument("--launch-selector", action="store_true")
     parser.add_argument("--export-dir", type=Path, default=None)
     parser.add_argument("--scene-search-root", type=Path, default=None)
@@ -168,11 +202,113 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _required_artifact_ref(artifacts_by_id: dict[str, ArtifactRef], artifact_id: str) -> ArtifactRef:
+def _resolve_lattice_artifact_ref(
+    artifact_refs: Sequence[ArtifactRef],
+    *,
+    artifact_id: str | None,
+    localization_kind: str,
+) -> ArtifactRef:
+    if artifact_id is not None:
+        return _required_artifact_ref(artifact_refs, artifact_id)
+    candidates = tuple(
+        artifact_ref
+        for artifact_ref in artifact_refs
+        if artifact_ref.artifact_family == DOSE_LATTICE_CONTEXT_ARTIFACT_FAMILY
+        and _normal_token(artifact_ref.metadata.get("localization_kind", "")) == _normal_token(localization_kind)
+    )
+    return _single_artifact_ref(candidates, "dose lattice context", "--lattice-artifact-id")
+
+
+def _resolve_render_context_artifact_ref(
+    artifact_refs: Sequence[ArtifactRef],
+    *,
+    artifact_id: str | None,
+    localization_kind: str,
+    biopsy_index: int | None,
+) -> ArtifactRef:
+    if artifact_id is not None:
+        return _required_artifact_ref(artifact_refs, artifact_id)
+    normalized_localization_kind = _normal_token(localization_kind)
+    candidates = tuple(
+        artifact_ref
+        for artifact_ref in artifact_refs
+        if artifact_ref.artifact_family == DOSE_NN_RENDER_CONTEXT_ARTIFACT_FAMILY
+        and _normal_token(artifact_ref.metadata.get("localization_kind", "")) == normalized_localization_kind
+        and (biopsy_index is None or _artifact_biopsy_index(artifact_ref) == int(biopsy_index))
+    )
+    return _single_artifact_ref(candidates, "dose NN render context", "--render-context-artifact-id or --biopsy-index")
+
+
+def _required_artifact_ref(artifact_refs: Sequence[ArtifactRef], artifact_id: str) -> ArtifactRef:
+    artifacts_by_id = {artifact_ref.artifact_id: artifact_ref for artifact_ref in artifact_refs}
     resolved_artifact_id = str(artifact_id).strip()
     if resolved_artifact_id in artifacts_by_id:
         return artifacts_by_id[resolved_artifact_id]
     raise ValueError("patient artifact index is missing artifact ID: {}".format(resolved_artifact_id))
+
+
+def _required_cli_arg(value: object | None, arg_name: str) -> object:
+    if value is None:
+        raise ValueError("{} is required unless --list-contexts is used".format(arg_name))
+    return value
+
+
+def _single_artifact_ref(
+    candidates: Sequence[ArtifactRef],
+    context_label: str,
+    disambiguation_arg: str,
+) -> ArtifactRef:
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) == 0:
+        raise ValueError("patient artifact index has no matching {} artifact".format(context_label))
+    candidate_ids = ", ".join(artifact_ref.artifact_id for artifact_ref in candidates)
+    raise ValueError(
+        "patient artifact index has multiple matching {} artifacts; pass {}. Candidates: {}".format(
+            context_label,
+            disambiguation_arg,
+            candidate_ids,
+        )
+    )
+
+
+def _print_available_contexts(artifact_refs: Sequence[ArtifactRef], *, localization_kind: str) -> None:
+    lattice_refs = tuple(
+        artifact_ref
+        for artifact_ref in artifact_refs
+        if artifact_ref.artifact_family == DOSE_LATTICE_CONTEXT_ARTIFACT_FAMILY
+        and _normal_token(artifact_ref.metadata.get("localization_kind", "")) == _normal_token(localization_kind)
+    )
+    render_refs = tuple(
+        artifact_ref
+        for artifact_ref in artifact_refs
+        if artifact_ref.artifact_family == DOSE_NN_RENDER_CONTEXT_ARTIFACT_FAMILY
+        and _normal_token(artifact_ref.metadata.get("localization_kind", "")) == _normal_token(localization_kind)
+    )
+    print("[dose-nn-context-render] lattice contexts:")
+    for artifact_ref in lattice_refs:
+        print("  {} localization_kind={}".format(artifact_ref.artifact_id, artifact_ref.metadata.get("localization_kind", "")))
+    print("[dose-nn-context-render] render contexts:")
+    for artifact_ref in render_refs:
+        print(
+            "  {} biopsy_index={} roi={} localization_kind={}".format(
+                artifact_ref.artifact_id,
+                artifact_ref.metadata.get("biopsy_index", ""),
+                artifact_ref.metadata.get("biopsy_roi", ""),
+                artifact_ref.metadata.get("localization_kind", ""),
+            )
+        )
+
+
+def _artifact_biopsy_index(artifact_ref: ArtifactRef) -> int | None:
+    biopsy_index = artifact_ref.metadata.get("biopsy_index")
+    if biopsy_index is None or str(biopsy_index).strip() == "":
+        return None
+    return int(biopsy_index)
+
+
+def _normal_token(value: object) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
 
 
 if __name__ == "__main__":
