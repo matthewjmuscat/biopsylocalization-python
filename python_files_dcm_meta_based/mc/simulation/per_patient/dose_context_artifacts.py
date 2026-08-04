@@ -364,15 +364,6 @@ def build_patient_dose_localization_context_artifact_plan(
         storage_format="zarr",
         metadata={"localization_kind": localization_kind, "biopsy_index": normalized_biopsy_index},
     )
-    rows_ref = _artifact_ref(
-        patient_uid=normalized_patient_uid,
-        artifact_id="{}_{}_nearest_neighbour_rows".format(localization_kind, biopsy_token),
-        title="{} biopsy {} nearest-neighbour rows".format(localization_kind.replace("_", " ").title(), normalized_biopsy_index),
-        artifact_family="dose_nearest_neighbour_rows",
-        relative_path="{}/{}/{}/nearest_neighbour_rows.parquet".format(relative_root, localization_kind, biopsy_token),
-        storage_format="parquet",
-        metadata={"localization_kind": localization_kind, "biopsy_index": normalized_biopsy_index},
-    )
     values_spec = _array_spec(
         values_ref,
         "values_by_point_nominal_and_trials",
@@ -388,22 +379,19 @@ def build_patient_dose_localization_context_artifact_plan(
         units=_sampled_value_units(localization_kind),
         coordinate_frame="biopsy_sample_point_index",
     )
-    table_spec = TableArtifactSpec(
-        artifact_ref=rows_ref,
-        table_name="nearest_neighbour_rows",
-        columns=_table_columns(localization_outputs.nearest_neighbour_dataframe),
-        row_count=_table_row_count(localization_outputs.nearest_neighbour_dataframe),
-        metadata={"localization_kind": localization_kind, "biopsy_index": normalized_biopsy_index},
-    )
     return PatientDoseContextArtifactPlan(
         patient_uid=normalized_patient_uid,
-        artifact_refs=(values_ref, rows_ref),
+        artifact_refs=(values_ref,),
         array_specs=(values_spec,),
-        table_specs=(table_spec,),
         metadata={
             "localization_kind": localization_kind,
             "biopsy_index": normalized_biopsy_index,
             "context_kind": "dose_localization",
+            "nearest_neighbour_rows_retention": "not_retained",
+            "nearest_neighbour_rows_retention_reason": (
+                "expanded row table is a diagnostic/materialized view; retained Zarr contexts keep the NN geometry "
+                "needed for post-run rendering"
+            ),
         },
     )
 

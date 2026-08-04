@@ -201,8 +201,10 @@ dose values. A separate dose NN render context artifact owns query rows, trial
 IDs, interpolated query doses, nearest-neighbour points, nearest-neighbour
 doses, and nearest-neighbour distances. Rebuilding a `DoseNNRenderScene` for
 post-run display combines those two artifact handles. Parquet nearest-neighbour
-row tables are optional diagnostic or legacy-compatibility views, not the
-primary source for broad NN render context.
+row tables are deliberately unnecessary to retain for the renderer because the
+retained Zarr contexts carry the needed NN geometry and values. If row tables are
+needed later, treat them as optional diagnostic or legacy-compatibility views
+materialized from context artifacts.
 
 The GUI-facing bridge should materialize a standard saved-scene artifact from
 those retained context handles when a post-run render session needs one. The
@@ -312,6 +314,9 @@ Current patient-runner status at the time of this note:
   patient-runner-owned finalization callback into the per-patient convex MC
   stage and writes retained dose context artifacts after each biopsy dose
   localization result is finalized.
+- The opt-in is available through `PatientRunnerScientificConfigBuildContext`,
+  which threads the flag into `PatientMCSimulationScientificConfig`; TOML run
+  profiles are still future work.
 - Runtime launching is intentionally not wired yet. When it is needed, it should
   live in the patient-runner MC dose stage after dose-localization outputs are
   finalized and retained artifacts are snapshotted. It should not be wired into

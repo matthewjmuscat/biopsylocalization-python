@@ -112,7 +112,10 @@ Use Parquet for row-oriented scientific products:
 Parquet is much better than CSV for retained outputs, but it is not the right
 primary representation for large repeated geometry tensors. Do not store giant
 nested nearest-neighbour coordinate lists in Parquet when lattice indices and
-array artifacts can represent the same information more compactly.
+array artifacts can represent the same information more compactly. The dose NN
+row dataframe is deliberately not retained for the renderer; retained Zarr
+contexts are the durable source, and row tables should be regenerated only as
+explicit diagnostic views if needed.
 
 ### Chunked Array Stores
 
@@ -229,7 +232,8 @@ mc/simulation/per_patient/
     dose-owned ArtifactRef/ArrayArtifactSpec/TableArtifactSpec builders for
     lattice, biopsy query, and nearest-neighbour localization context;
     dose Zarr array writers/readers for explicit array payloads;
-    Parquet row writers remain optional diagnostic/legacy compatibility work
+    nearest-neighbour row tables are marked not-retained for the renderer and
+    remain optional diagnostic/legacy compatibility materialized views
 
 mc/visualization/
   dose_nn_context_bridge.py

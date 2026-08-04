@@ -75,7 +75,7 @@ class DoseContextArtifactPlanTests(unittest.TestCase):
             "biopsy_coordinate_system_mm",
         )
 
-    def test_localization_context_plan_records_values_and_nn_rows(self) -> None:
+    def test_localization_context_plan_marks_nn_rows_as_not_retained(self) -> None:
         outputs = PatientDoseLocalizationOutputs(
             localization_kind="dose",
             result_column=MC_DOSE_VALUE_COLUMN,
@@ -90,15 +90,12 @@ class DoseContextArtifactPlanTests(unittest.TestCase):
             biopsy_index=2,
         )
 
-        self.assertEqual(len(plan.artifact_refs), 2)
+        self.assertEqual(len(plan.artifact_refs), 1)
         self.assertEqual(plan.artifact_refs[0].relative_path, "context/dosimetry/dose/biopsy_002/localization_values.zarr")
-        self.assertEqual(plan.artifact_refs[1].storage_format, "parquet")
         self.assertEqual(plan.array_specs_by_dataset["values_by_point_nominal_and_trials"].shape, (4, 3))
-        self.assertEqual(plan.table_specs_by_name["nearest_neighbour_rows"].row_count, 12)
-        self.assertEqual(
-            plan.to_patient_artifact_index(run_id="run_1").artifacts_by_id["dose_biopsy_002_nearest_neighbour_rows"].storage_format,
-            "parquet",
-        )
+        self.assertEqual(plan.table_specs, ())
+        self.assertEqual(plan.metadata["nearest_neighbour_rows_retention"], "not_retained")
+        self.assertNotIn("dose_biopsy_002_nearest_neighbour_rows", plan.to_patient_artifact_index(run_id="run_1").artifacts_by_id)
 
     def test_write_and_lazy_read_lattice_zarr_arrays(self) -> None:
         lattice_context = PatientDoseLatticeContext(
@@ -130,7 +127,7 @@ class DoseContextArtifactPlanTests(unittest.TestCase):
             np.testing.assert_array_equal(reader.read_array("sampled_values", np.s_[2:5]), np.array([2.0, 3.0, 4.0]))
             self.assertEqual(reader.open_group().attrs["artifact_ref"]["artifact_id"], "dose_lattice_context")
 
-    def test_write_localization_zarr_array_ignores_parquet_table_spec(self) -> None:
+    def test_write_localization_zarr_array_records_only_retained_values_artifact(self) -> None:
         outputs = PatientDoseLocalizationOutputs(
             localization_kind="dose",
             result_column=MC_DOSE_VALUE_COLUMN,

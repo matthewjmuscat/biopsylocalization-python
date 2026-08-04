@@ -66,6 +66,9 @@ class PatientRunnerScientificConfigBuildContext:
     runtime_logger: Any = None
     optimizer_v2_resolved_max_test_structures_per_call: int | None = None
     optimizer_v2_resolved_max_candidates_per_chunk: int | None = None
+    write_dose_context_artifacts: bool = False
+    write_dose_nn_render_context_artifacts: bool = True
+    dose_context_artifact_localization_kinds: Sequence[str] = ("dose",)
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -91,6 +94,17 @@ class PatientRunnerScientificConfigBuildContext:
                 if resolved_value < 1:
                     raise ValueError(f"{field_name} must be positive when provided")
                 object.__setattr__(self, field_name, resolved_value)
+        object.__setattr__(self, "write_dose_context_artifacts", bool(self.write_dose_context_artifacts))
+        object.__setattr__(
+            self,
+            "write_dose_nn_render_context_artifacts",
+            bool(self.write_dose_nn_render_context_artifacts),
+        )
+        object.__setattr__(
+            self,
+            "dose_context_artifact_localization_kinds",
+            tuple(str(localization_kind).strip() for localization_kind in self.dose_context_artifact_localization_kinds),
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -320,6 +334,9 @@ def _build_mc_simulation_config(
         num_mc_dose_simulations=mc.counts.num_mc_dose_simulations_input,
         num_mc_mr_simulations=mc.counts.num_mc_mr_simulations_input,
         bx_sample_pts_lattice_spacing=mc.prep.bx_sample_pts_lattice_spacing,
+        write_dose_context_artifacts=context.write_dose_context_artifacts,
+        write_dose_nn_render_context_artifacts=context.write_dose_nn_render_context_artifacts,
+        dose_context_artifact_localization_kinds=context.dose_context_artifact_localization_kinds,
     )
 
 
