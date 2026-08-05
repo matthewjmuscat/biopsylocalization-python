@@ -22,7 +22,7 @@ class DoseNNPyVistaRenderSettings:
     off_screen: bool = True
     window_size: tuple[int, int] = (1200, 900)
     background_color: str = "white"
-    dose_colormap: str = "viridis"
+    dose_colormap: str = "coolwarm"
     dose_color_scale_mode: str = "linear"
     dose_color_scale_min: float | None = None
     dose_color_scale_max: float | None = None
@@ -30,7 +30,9 @@ class DoseNNPyVistaRenderSettings:
     dose_colorwash_style: str = "points"
     dose_colorwash_volume_max_voxels: int | None = 250_000
     dose_colorwash_point_size: float = 12.0
-    dose_colorwash_opacity: float = 0.28
+    dose_colorwash_opacity: float = 0.08
+    dose_colorwash_point_opacity_mode: str = "constant"
+    dose_colorwash_point_opacity_min: float = 0.02
     biopsy_point_size: float = 12.0
     reference_biopsy_point_size: float = 10.0
     nearest_point_size: float = 8.0
@@ -45,6 +47,8 @@ class DoseNNPyVistaRenderSettings:
     dose_scalar_bar_num_labels: int = 5
     dose_scalar_bar_label_format: str = "%.3g"
     dose_scalar_bar_font_family: str = "arial"
+    dose_scalar_bar_title_font_size: int = 18
+    dose_scalar_bar_label_font_size: int = 14
     dose_scalar_bar_vertical: bool = True
     dose_scalar_bar_use_opacity: bool = False
     dose_scalar_bar_show_background: bool = True
@@ -52,7 +56,8 @@ class DoseNNPyVistaRenderSettings:
     y_axis_label: str = "Posterior-Anterior y (mm)"
     z_axis_label: str = "Inferior-Superior z (mm)"
     axes_font_family: str = "arial"
-    axes_label_font_size: int = 10
+    axes_title_font_size: int = 18
+    axes_tick_label_font_size: int = 14
     camera_position: Any | None = None
 
 
@@ -119,6 +124,8 @@ def build_pyvista_dose_nn_plotter(
 
     if resolved_settings.show_axes:
         _add_axes(plotter, resolved_settings)
+    if resolved_settings.show_scalar_bar and resolved_settings.dose_scalar_bar_show_background:
+        _add_scalar_bar_background_box(pv, plotter, resolved_settings)
     if resolved_settings.camera_position is not None:
         plotter.camera_position = resolved_settings.camera_position
     else:
@@ -330,13 +337,19 @@ def _add_dose_point_colorwash(
         return
     point_cloud = pv.PolyData(prepared_scene.lattice_points)
     point_cloud["dose"] = prepared_scene.lattice_doses
+    opacity_arg: float | str
+    if _normalize_colorwash_point_opacity_mode(settings.dose_colorwash_point_opacity_mode) == "center_fade":
+        point_cloud["dose_colorwash_opacity"] = _center_fade_point_opacity(prepared_scene, settings)
+        opacity_arg = "dose_colorwash_opacity"
+    else:
+        opacity_arg = float(settings.dose_colorwash_opacity)
     plotter.add_mesh(
         point_cloud,
         name="dose_colorwash_points",
         scalars="dose",
         cmap=settings.dose_colormap,
         point_size=float(settings.dose_colorwash_point_size),
-        opacity=float(settings.dose_colorwash_opacity),
+        opacity=opacity_arg,
         render_points_as_spheres=False,
         show_scalar_bar=(bool(settings.show_scalar_bar) and not bool(prepared_scene.config.show_lattice_points)),
         scalar_bar_args=_dose_scalar_bar_args(settings),
@@ -377,8 +390,8 @@ def _dose_scalar_bar_args(settings: DoseNNPyVistaRenderSettings) -> dict[str, An
         "n_labels": int(settings.dose_scalar_bar_num_labels),
         "fmt": settings.dose_scalar_bar_label_format,
         "font_family": settings.dose_scalar_bar_font_family,
-        "title_font_size": 14,
-        "label_font_size": 11,
+        "title_font_size": int(settings.dose_scalar_bar_title_font_size),
+        "label_font_size": int(settings.dose_scalar_bar_label_font_size),
         "color": "black",
         "vertical": bool(settings.dose_scalar_bar_vertical),
         "use_opacity": bool(settings.dose_scalar_bar_use_opacity),
@@ -419,6 +432,71 @@ def _normalize_dose_color_scale_mode(value: str) -> str:
     if resolved_value in ("log", "log10", "logarithmic"):
         return "log"
     raise ValueError("unsupported dose color scale mode: {}".format(value))
+
+
+def _normalize_colorwash_point_opacity_mode(value: str) -> str:
+    resolved_value = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if resolved_value in ("constant", "flat"):
+        return "constant"
+    if resolved_value in ("center", "center_fade", "central", "central_fade"):
+        return "center_fade"
+    raise ValueError("unsupported dose colorwash point opacity mode: {}".format(value))
+
+
+def _center_fade_point_opacity(
+    prepared_scene: DoseNNPreparedScene,
+    settings: DoseNNPyVistaRenderSettings,
+) -> np.ndarray:
+    points = prepared_scene.lattice_points
+    if points.shape[0] == 0:
+        return np.asarray([], dtype=float)
+    centers = prepared_scene.biopsy_points
+    if centers.shape[0] == 0:
+        return np.full(points.shape[0], float(settings.dose_colorwash_opacity), dtype=float)
+
+    max_opacity = _clamp(float(settings.dose_colorwash_opacity), 0.0, 1.0)
+    min_opacity = _clamp(float(settings.dose_colorwash_point_opacity_min), 0.0, max_opacity)
+    distances = _nearest_center_distances(points, centers)
+    if prepared_scene.config.spatial_radius_mm is not None:
+        fade_radius = max(float(prepared_scene.config.spatial_radius_mm), np.finfo(float).eps)
+    else:
+        positive_distances = distances[distances > 0.0]
+        fade_radius = float(np.percentile(positive_distances, 95)) if positive_distances.shape[0] else 1.0
+    normalized_distance = np.clip(distances / fade_radius, 0.0, 1.0)
+    return max_opacity - (max_opacity - min_opacity) * normalized_distance
+
+
+def _nearest_center_distances(points: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    if points.shape[0] == 0:
+        return np.asarray([], dtype=float)
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        return _nearest_center_distances_chunked(points, centers)
+
+    distances, _ = cKDTree(centers).query(points, k=1)
+    return np.asarray(distances, dtype=float)
+
+
+def _nearest_center_distances_chunked(points: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    distances = np.full(points.shape[0], np.inf, dtype=float)
+    point_chunk_size = 4096
+    center_chunk_size = 512
+    for point_start_index in range(0, points.shape[0], point_chunk_size):
+        point_stop_index = min(point_start_index + point_chunk_size, points.shape[0])
+        point_chunk = points[point_start_index:point_stop_index]
+        chunk_distances_squared = np.full(point_chunk.shape[0], np.inf, dtype=float)
+        for center_start_index in range(0, centers.shape[0], center_chunk_size):
+            center_stop_index = min(center_start_index + center_chunk_size, centers.shape[0])
+            deltas = point_chunk[:, None, :] - centers[None, center_start_index:center_stop_index, :]
+            distances_squared = np.sum(deltas * deltas, axis=2)
+            chunk_distances_squared = np.minimum(chunk_distances_squared, np.min(distances_squared, axis=1))
+        distances[point_start_index:point_stop_index] = np.sqrt(chunk_distances_squared)
+    return distances
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(float(minimum), min(float(maximum), float(value)))
 
 
 def _rectilinear_dose_grid_from_lattice(
@@ -588,7 +666,7 @@ def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
         xtitle=settings.x_axis_label,
         ytitle=settings.y_axis_label,
         ztitle=settings.z_axis_label,
-        font_size=int(settings.axes_label_font_size),
+        font_size=int(settings.axes_tick_label_font_size),
         font_family=settings.axes_font_family,
         color="black",
         location="outer",
@@ -596,6 +674,56 @@ def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
         fmt="%.0f",
         use_2d=False,
     )
+    cube_axes_actor = getattr(plotter.renderer, "cube_axes_actor", None)
+    if cube_axes_actor is not None:
+        for axis_index in range(3):
+            cube_axes_actor.GetTitleTextProperty(axis_index).SetFontSize(int(settings.axes_title_font_size))
+            cube_axes_actor.GetLabelTextProperty(axis_index).SetFontSize(int(settings.axes_tick_label_font_size))
+
+
+def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    try:
+        import vtk
+    except ImportError:
+        return
+
+    if bool(settings.dose_scalar_bar_vertical):
+        x_min, y_min, width, height = 0.845, 0.13, 0.135, 0.78
+    else:
+        x_min, y_min, width, height = 0.20, 0.035, 0.66, 0.15
+
+    points = vtk.vtkPoints()
+    for x_value, y_value in (
+        (x_min, y_min),
+        (x_min + width, y_min),
+        (x_min + width, y_min + height),
+        (x_min, y_min + height),
+    ):
+        points.InsertNextPoint(float(x_value), float(y_value), 0.0)
+    polygon = vtk.vtkPolygon()
+    polygon.GetPointIds().SetNumberOfIds(4)
+    for index in range(4):
+        polygon.GetPointIds().SetId(index, index)
+
+    cells = vtk.vtkCellArray()
+    cells.InsertNextCell(polygon)
+    poly_data = vtk.vtkPolyData()
+    poly_data.SetPoints(points)
+    poly_data.SetPolys(cells)
+
+    coordinate = vtk.vtkCoordinate()
+    coordinate.SetCoordinateSystemToNormalizedViewport()
+    mapper = vtk.vtkPolyDataMapper2D()
+    mapper.SetInputData(poly_data)
+    mapper.SetTransformCoordinate(coordinate)
+
+    actor = vtk.vtkActor2D()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(1.0, 1.0, 1.0)
+    actor.GetProperty().SetOpacity(0.92)
+    actor.GetProperty().SetLineWidth(1.5)
+    actor.SetLayerNumber(0)
+    plotter.renderer.AddActor2D(actor)
 
 
 def _add_biopsy_points(

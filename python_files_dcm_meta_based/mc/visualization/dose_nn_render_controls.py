@@ -11,6 +11,7 @@ from .dose_nn_scene import DoseNNRenderConfig
 
 DOSE_NN_COLORWASH_STYLES = ("points", "volume", "auto")
 DOSE_NN_DOSE_COLOR_SCALE_MODES = ("linear", "log")
+DOSE_NN_COLORWASH_POINT_OPACITY_MODES = ("constant", "center_fade")
 DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER = 0
 
 
@@ -35,17 +36,28 @@ class DoseNNRenderControlSelection:
     dose_color_scale_mode: str = "linear"
     dose_color_scale_min: float | None = None
     dose_color_scale_max: float | None = None
-    dose_colorwash_opacity: float = 0.28
+    dose_colorwash_opacity: float = 0.08
+    dose_colorwash_point_opacity_mode: str = "constant"
+    dose_colorwash_point_opacity_min: float = 0.02
     dose_colorwash_point_size: float = 12.0
+    lattice_point_size: float = 5.0
+    biopsy_point_size: float = 12.0
+    reference_biopsy_point_size: float = 10.0
+    nearest_point_size: float = 8.0
+    vector_line_width: float = 2.0
     show_nearest_neighbour_points: bool = True
     show_nearest_neighbour_vectors: bool = True
     show_axes: bool = True
     show_scalar_bar: bool = True
     dose_scalar_bar_title: str = "Dose"
     dose_scalar_bar_show_background: bool = True
+    dose_scalar_bar_title_font_size: int = 18
+    dose_scalar_bar_label_font_size: int = 14
     x_axis_label: str = "Left-Right x (mm)"
     y_axis_label: str = "Posterior-Anterior y (mm)"
     z_axis_label: str = "Inferior-Superior z (mm)"
+    axes_title_font_size: int = 18
+    axes_tick_label_font_size: int = 14
 
 
 def normalize_dose_nn_render_control_selection(
@@ -92,9 +104,36 @@ def normalize_dose_nn_render_control_selection(
     dose_colorwash_opacity = float(resolved_selection.dose_colorwash_opacity)
     if dose_colorwash_opacity < 0.0 or dose_colorwash_opacity > 1.0:
         raise ValueError("dose_colorwash_opacity must be between 0 and 1")
+    dose_colorwash_point_opacity_mode = _normalize_colorwash_point_opacity_mode(
+        resolved_selection.dose_colorwash_point_opacity_mode
+    )
+    dose_colorwash_point_opacity_min = float(resolved_selection.dose_colorwash_point_opacity_min)
+    if dose_colorwash_point_opacity_min < 0.0 or dose_colorwash_point_opacity_min > dose_colorwash_opacity:
+        raise ValueError("dose_colorwash_point_opacity_min must be between 0 and dose_colorwash_opacity")
     dose_colorwash_point_size = _positive_float(
         "dose_colorwash_point_size",
         resolved_selection.dose_colorwash_point_size,
+    )
+    lattice_point_size = _positive_float("lattice_point_size", resolved_selection.lattice_point_size)
+    biopsy_point_size = _positive_float("biopsy_point_size", resolved_selection.biopsy_point_size)
+    reference_biopsy_point_size = _positive_float(
+        "reference_biopsy_point_size",
+        resolved_selection.reference_biopsy_point_size,
+    )
+    nearest_point_size = _positive_float("nearest_point_size", resolved_selection.nearest_point_size)
+    vector_line_width = _positive_float("vector_line_width", resolved_selection.vector_line_width)
+    dose_scalar_bar_title_font_size = _positive_int(
+        "dose_scalar_bar_title_font_size",
+        resolved_selection.dose_scalar_bar_title_font_size,
+    )
+    dose_scalar_bar_label_font_size = _positive_int(
+        "dose_scalar_bar_label_font_size",
+        resolved_selection.dose_scalar_bar_label_font_size,
+    )
+    axes_title_font_size = _positive_int("axes_title_font_size", resolved_selection.axes_title_font_size)
+    axes_tick_label_font_size = _positive_int(
+        "axes_tick_label_font_size",
+        resolved_selection.axes_tick_label_font_size,
     )
 
     return DoseNNRenderControlSelection(
@@ -116,16 +155,27 @@ def normalize_dose_nn_render_control_selection(
         dose_color_scale_min=dose_color_scale_min,
         dose_color_scale_max=dose_color_scale_max,
         dose_colorwash_opacity=dose_colorwash_opacity,
+        dose_colorwash_point_opacity_mode=dose_colorwash_point_opacity_mode,
+        dose_colorwash_point_opacity_min=dose_colorwash_point_opacity_min,
         dose_colorwash_point_size=dose_colorwash_point_size,
+        lattice_point_size=lattice_point_size,
+        biopsy_point_size=biopsy_point_size,
+        reference_biopsy_point_size=reference_biopsy_point_size,
+        nearest_point_size=nearest_point_size,
+        vector_line_width=vector_line_width,
         show_nearest_neighbour_points=bool(resolved_selection.show_nearest_neighbour_points),
         show_nearest_neighbour_vectors=bool(resolved_selection.show_nearest_neighbour_vectors),
         show_axes=bool(resolved_selection.show_axes),
         show_scalar_bar=bool(resolved_selection.show_scalar_bar),
         dose_scalar_bar_title=str(resolved_selection.dose_scalar_bar_title),
         dose_scalar_bar_show_background=bool(resolved_selection.dose_scalar_bar_show_background),
+        dose_scalar_bar_title_font_size=dose_scalar_bar_title_font_size,
+        dose_scalar_bar_label_font_size=dose_scalar_bar_label_font_size,
         x_axis_label=str(resolved_selection.x_axis_label),
         y_axis_label=str(resolved_selection.y_axis_label),
         z_axis_label=str(resolved_selection.z_axis_label),
+        axes_title_font_size=axes_title_font_size,
+        axes_tick_label_font_size=axes_tick_label_font_size,
     )
 
 
@@ -178,13 +228,24 @@ def dose_nn_pyvista_settings_from_control_selection(
         dose_color_scale_max=resolved_selection.dose_color_scale_max,
         dose_colorwash_point_size=resolved_selection.dose_colorwash_point_size,
         dose_colorwash_opacity=resolved_selection.dose_colorwash_opacity,
+        dose_colorwash_point_opacity_mode=resolved_selection.dose_colorwash_point_opacity_mode,
+        dose_colorwash_point_opacity_min=resolved_selection.dose_colorwash_point_opacity_min,
+        lattice_point_size=resolved_selection.lattice_point_size,
+        biopsy_point_size=resolved_selection.biopsy_point_size,
+        reference_biopsy_point_size=resolved_selection.reference_biopsy_point_size,
+        nearest_point_size=resolved_selection.nearest_point_size,
+        vector_line_width=resolved_selection.vector_line_width,
         show_axes=resolved_selection.show_axes,
         show_scalar_bar=resolved_selection.show_scalar_bar,
         dose_scalar_bar_title=resolved_selection.dose_scalar_bar_title,
         dose_scalar_bar_show_background=resolved_selection.dose_scalar_bar_show_background,
+        dose_scalar_bar_title_font_size=resolved_selection.dose_scalar_bar_title_font_size,
+        dose_scalar_bar_label_font_size=resolved_selection.dose_scalar_bar_label_font_size,
         x_axis_label=resolved_selection.x_axis_label,
         y_axis_label=resolved_selection.y_axis_label,
         z_axis_label=resolved_selection.z_axis_label,
+        axes_title_font_size=resolved_selection.axes_title_font_size,
+        axes_tick_label_font_size=resolved_selection.axes_tick_label_font_size,
     )
 
 
@@ -225,6 +286,15 @@ def _normalize_dose_color_scale_mode(value: str) -> str:
     if resolved_value in ("log", "log10", "logarithmic"):
         return "log"
     raise ValueError("unsupported dose color scale mode: {}".format(value))
+
+
+def _normalize_colorwash_point_opacity_mode(value: str) -> str:
+    resolved_value = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if resolved_value in ("constant", "flat"):
+        return "constant"
+    if resolved_value in ("center", "center_fade", "central", "central_fade"):
+        return "center_fade"
+    raise ValueError("unsupported dose colorwash point opacity mode: {}".format(value))
 
 
 def _optional_float(value: float | None) -> float | None:

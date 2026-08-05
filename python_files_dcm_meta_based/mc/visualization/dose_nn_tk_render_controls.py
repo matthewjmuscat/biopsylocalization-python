@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .dose_nn_render_controls import DOSE_NN_COLORWASH_POINT_OPACITY_MODES
 from .dose_nn_render_controls import DOSE_NN_DOSE_COLOR_SCALE_MODES
 from .dose_nn_render_controls import DOSE_NN_COLORWASH_STYLES
 from .dose_nn_render_controls import DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER
@@ -98,15 +99,26 @@ class TkDoseNNRenderControlSelectionAdapter:
         color_scale_min_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.dose_color_scale_min))
         color_scale_max_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.dose_color_scale_max))
         opacity_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_opacity))
+        opacity_mode_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_opacity_mode))
+        opacity_min_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_opacity_min))
         colorwash_point_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_size))
+        lattice_point_size_var = tk.StringVar(value=str(resolved_initial_selection.lattice_point_size))
+        biopsy_point_size_var = tk.StringVar(value=str(resolved_initial_selection.biopsy_point_size))
+        reference_point_size_var = tk.StringVar(value=str(resolved_initial_selection.reference_biopsy_point_size))
+        nearest_point_size_var = tk.StringVar(value=str(resolved_initial_selection.nearest_point_size))
+        vector_line_width_var = tk.StringVar(value=str(resolved_initial_selection.vector_line_width))
         colorwash_volume_max_voxels_var = tk.StringVar(
             value=_format_optional_number(resolved_initial_selection.dose_colorwash_volume_max_voxels)
         )
         colorwash_style_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_style))
         dose_scalar_bar_title_var = tk.StringVar(value=str(resolved_initial_selection.dose_scalar_bar_title))
+        colorbar_title_font_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_scalar_bar_title_font_size))
+        colorbar_tick_font_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_scalar_bar_label_font_size))
         x_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.x_axis_label))
         y_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.y_axis_label))
         z_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.z_axis_label))
+        axes_title_font_size_var = tk.StringVar(value=str(resolved_initial_selection.axes_title_font_size))
+        axes_tick_font_size_var = tk.StringVar(value=str(resolved_initial_selection.axes_tick_label_font_size))
 
         show_biopsy_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_biopsy_points))
         show_reference_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_reference_biopsy_points))
@@ -149,6 +161,15 @@ class TkDoseNNRenderControlSelectionAdapter:
         ).grid(row=current_row, column=1, sticky="ew", pady=(4, 4))
         current_row += 1
         current_row = _add_labeled_entry(frame, current_row, "Colorwash opacity", opacity_var, "0 to 1")
+        ttk.Label(frame, text="Point opacity mode").grid(row=current_row, column=0, sticky="w", pady=(4, 4))
+        ttk.Combobox(
+            frame,
+            textvariable=opacity_mode_var,
+            values=DOSE_NN_COLORWASH_POINT_OPACITY_MODES,
+            state="readonly",
+        ).grid(row=current_row, column=1, sticky="ew", pady=(4, 4))
+        current_row += 1
+        current_row = _add_labeled_entry(frame, current_row, "Point opacity min", opacity_min_var, "used by center_fade")
         current_row = _add_labeled_entry(
             frame,
             current_row,
@@ -156,6 +177,11 @@ class TkDoseNNRenderControlSelectionAdapter:
             colorwash_point_size_var,
             "positive number",
         )
+        current_row = _add_labeled_entry(frame, current_row, "Dose lattice point size", lattice_point_size_var, "positive number")
+        current_row = _add_labeled_entry(frame, current_row, "Biopsy point size", biopsy_point_size_var, "positive number")
+        current_row = _add_labeled_entry(frame, current_row, "Nominal point size", reference_point_size_var, "positive number")
+        current_row = _add_labeled_entry(frame, current_row, "NN dose point size", nearest_point_size_var, "positive number")
+        current_row = _add_labeled_entry(frame, current_row, "Vector line width", vector_line_width_var, "positive number")
         current_row = _add_labeled_entry(
             frame,
             current_row,
@@ -164,9 +190,13 @@ class TkDoseNNRenderControlSelectionAdapter:
             "blank = full volume; lower = faster",
         )
         current_row = _add_labeled_entry(frame, current_row, "Dose colorbar title", dose_scalar_bar_title_var, "example: Dose (Gy)")
+        current_row = _add_labeled_entry(frame, current_row, "Colorbar title font", colorbar_title_font_size_var, "positive integer")
+        current_row = _add_labeled_entry(frame, current_row, "Colorbar tick font", colorbar_tick_font_size_var, "positive integer")
         current_row = _add_labeled_entry(frame, current_row, "X axis label", x_axis_label_var, "physical patient-space x")
         current_row = _add_labeled_entry(frame, current_row, "Y axis label", y_axis_label_var, "physical patient-space y")
         current_row = _add_labeled_entry(frame, current_row, "Z axis label", z_axis_label_var, "physical patient-space z")
+        current_row = _add_labeled_entry(frame, current_row, "Axis title font", axes_title_font_size_var, "positive integer")
+        current_row = _add_labeled_entry(frame, current_row, "Axis tick font", axes_tick_font_size_var, "positive integer")
 
         layers_frame = ttk.LabelFrame(frame, text="Layers", padding=8)
         layers_frame.grid(row=current_row, column=0, columnspan=2, sticky="ew", pady=(10, 8))
@@ -207,16 +237,27 @@ class TkDoseNNRenderControlSelectionAdapter:
                     dose_color_scale_min=_parse_optional_float(color_scale_min_var.get()),
                     dose_color_scale_max=_parse_optional_float(color_scale_max_var.get()),
                     dose_colorwash_opacity=float(opacity_var.get()),
+                    dose_colorwash_point_opacity_mode=str(opacity_mode_var.get()),
+                    dose_colorwash_point_opacity_min=float(opacity_min_var.get()),
                     dose_colorwash_point_size=float(colorwash_point_size_var.get()),
+                    lattice_point_size=float(lattice_point_size_var.get()),
+                    biopsy_point_size=float(biopsy_point_size_var.get()),
+                    reference_biopsy_point_size=float(reference_point_size_var.get()),
+                    nearest_point_size=float(nearest_point_size_var.get()),
+                    vector_line_width=float(vector_line_width_var.get()),
                     show_nearest_neighbour_points=bool(show_nn_points_var.get()),
                     show_nearest_neighbour_vectors=bool(show_vectors_var.get()),
                     show_axes=bool(show_axes_var.get()),
                     show_scalar_bar=bool(show_scalar_bar_var.get()),
                     dose_scalar_bar_title=str(dose_scalar_bar_title_var.get()),
                     dose_scalar_bar_show_background=bool(show_scalar_bar_background_var.get()),
+                    dose_scalar_bar_title_font_size=int(colorbar_title_font_size_var.get()),
+                    dose_scalar_bar_label_font_size=int(colorbar_tick_font_size_var.get()),
                     x_axis_label=str(x_axis_label_var.get()),
                     y_axis_label=str(y_axis_label_var.get()),
                     z_axis_label=str(z_axis_label_var.get()),
+                    axes_title_font_size=int(axes_title_font_size_var.get()),
+                    axes_tick_label_font_size=int(axes_tick_font_size_var.get()),
                 )
                 result_ref["value"] = normalize_dose_nn_render_control_selection(
                     selection,

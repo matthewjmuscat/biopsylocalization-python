@@ -31,11 +31,22 @@ class DoseNNRenderControlTests(unittest.TestCase):
             dose_color_scale_min=5.0,
             dose_color_scale_max=30.0,
             dose_colorwash_opacity=0.35,
+            dose_colorwash_point_opacity_mode="center_fade",
+            dose_colorwash_point_opacity_min=0.05,
             dose_colorwash_point_size=9.0,
+            lattice_point_size=7.0,
+            biopsy_point_size=14.0,
+            reference_biopsy_point_size=13.0,
+            nearest_point_size=11.0,
+            vector_line_width=4.0,
             show_nearest_neighbour_points=False,
             show_scalar_bar=False,
             dose_scalar_bar_title="Dose (Gy)",
             dose_scalar_bar_show_background=False,
+            dose_scalar_bar_title_font_size=20,
+            dose_scalar_bar_label_font_size=16,
+            axes_title_font_size=22,
+            axes_tick_label_font_size=15,
         )
 
         config = dose_nn_render_config_from_control_selection(selection, available_trials=(0, 1, 2))
@@ -58,9 +69,21 @@ class DoseNNRenderControlTests(unittest.TestCase):
         self.assertEqual(settings.dose_color_scale_min, 5.0)
         self.assertEqual(settings.dose_color_scale_max, 30.0)
         self.assertEqual(settings.dose_colorwash_opacity, 0.35)
+        self.assertEqual(settings.dose_colorwash_point_opacity_mode, "center_fade")
+        self.assertEqual(settings.dose_colorwash_point_opacity_min, 0.05)
+        self.assertEqual(settings.dose_colorwash_point_size, 9.0)
+        self.assertEqual(settings.lattice_point_size, 7.0)
+        self.assertEqual(settings.biopsy_point_size, 14.0)
+        self.assertEqual(settings.reference_biopsy_point_size, 13.0)
+        self.assertEqual(settings.nearest_point_size, 11.0)
+        self.assertEqual(settings.vector_line_width, 4.0)
         self.assertFalse(settings.show_scalar_bar)
         self.assertEqual(settings.dose_scalar_bar_title, "Dose (Gy)")
         self.assertFalse(settings.dose_scalar_bar_show_background)
+        self.assertEqual(settings.dose_scalar_bar_title_font_size, 20)
+        self.assertEqual(settings.dose_scalar_bar_label_font_size, 16)
+        self.assertEqual(settings.axes_title_font_size, 22)
+        self.assertEqual(settings.axes_tick_label_font_size, 15)
 
     def test_control_selection_accepts_point_alias(self) -> None:
         selection = normalize_dose_nn_render_control_selection(
@@ -75,6 +98,13 @@ class DoseNNRenderControlTests(unittest.TestCase):
         )
 
         self.assertEqual(selection.dose_color_scale_mode, "log")
+
+    def test_control_selection_accepts_center_fade_opacity_alias(self) -> None:
+        selection = normalize_dose_nn_render_control_selection(
+            DoseNNRenderControlSelection(dose_colorwash_point_opacity_mode="central fade"),
+        )
+
+        self.assertEqual(selection.dose_colorwash_point_opacity_mode, "center_fade")
 
     def test_tk_trial_parser_accepts_ranges_and_lists(self) -> None:
         self.assertEqual(_parse_trial_numbers("0-3, 10; 12"), (0, 1, 2, 3, 10, 12))
@@ -115,6 +145,13 @@ class DoseNNRenderControlTests(unittest.TestCase):
                     dose_color_scale_mode="log",
                     dose_color_scale_min=0.0,
                     dose_color_scale_max=10.0,
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "dose_colorwash_point_opacity_min"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(
+                    dose_colorwash_opacity=0.1,
+                    dose_colorwash_point_opacity_min=0.2,
                 ),
             )
 

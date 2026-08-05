@@ -114,6 +114,8 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
                 x_axis_label="Custom X (mm)",
                 y_axis_label="Custom Y (mm)",
                 z_axis_label="Custom Z (mm)",
+                axes_title_font_size=21,
+                axes_tick_label_font_size=13,
             ),
         )
         try:
@@ -123,10 +125,48 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
                 cube_axes_actor.GetYTitle(),
                 cube_axes_actor.GetZTitle(),
             )
+            x_title_font_size = cube_axes_actor.GetTitleTextProperty(0).GetFontSize()
+            x_tick_font_size = cube_axes_actor.GetLabelTextProperty(0).GetFontSize()
         finally:
             plotter.close()
 
         self.assertEqual(axis_titles, ("Custom X (mm)", "Custom Y (mm)", "Custom Z (mm)"))
+        self.assertEqual(x_title_font_size, 21)
+        self.assertEqual(x_tick_font_size, 13)
+
+    def test_point_colorwash_supports_center_fade_opacity(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_scene(),
+            DoseNNRenderConfig(
+                show_lattice_points=False,
+                show_dose_colorwash=True,
+                spatial_radius_mm=3.0,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_colorwash_style="points",
+                dose_colorwash_opacity=0.2,
+                dose_colorwash_point_opacity_mode="center_fade",
+                dose_colorwash_point_opacity_min=0.02,
+                show_axes=False,
+                show_scalar_bar=False,
+            ),
+        )
+        try:
+            actor = plotter.renderer.actors["dose_colorwash_points"]
+            opacity_values = actor.mapper.dataset.point_data["dose_colorwash_opacity"]
+        finally:
+            plotter.close()
+
+        self.assertEqual(opacity_values.shape[0], prepared_scene.lattice_points.shape[0])
+        self.assertGreater(float(np.max(opacity_values)), float(np.min(opacity_values)))
+        self.assertLessEqual(float(np.max(opacity_values)), 0.2)
+        self.assertGreaterEqual(float(np.min(opacity_values)), 0.02)
 
     def test_build_plotter_supports_reference_biopsy_points(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(

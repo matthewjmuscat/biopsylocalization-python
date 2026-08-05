@@ -128,7 +128,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hide-nearest-neighbour-vectors", action="store_true")
     parser.add_argument("--window-size", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"), default=(1200, 900))
     parser.add_argument("--background-color", default="white")
-    parser.add_argument("--dose-colormap", default="viridis")
+    parser.add_argument("--dose-colormap", default="coolwarm")
     parser.add_argument("--dose-color-scale-mode", choices=("linear", "log"), default="linear")
     parser.add_argument("--dose-color-scale-min", type=float, default=None)
     parser.add_argument("--dose-color-scale-max", type=float, default=None)
@@ -136,7 +136,9 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dose-colorwash-style", choices=("points", "volume", "auto"), default="points")
     parser.add_argument("--dose-colorwash-volume-max-voxels", type=int, default=250_000)
     parser.add_argument("--dose-colorwash-point-size", type=float, default=12.0)
-    parser.add_argument("--dose-colorwash-opacity", type=float, default=0.28)
+    parser.add_argument("--dose-colorwash-opacity", type=float, default=0.08)
+    parser.add_argument("--dose-colorwash-point-opacity-mode", choices=("constant", "center_fade"), default="constant")
+    parser.add_argument("--dose-colorwash-point-opacity-min", type=float, default=0.02)
     parser.add_argument("--biopsy-point-size", type=float, default=12.0)
     parser.add_argument("--reference-biopsy-point-size", type=float, default=10.0)
     parser.add_argument("--nearest-point-size", type=float, default=8.0)
@@ -144,10 +146,14 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-axes", action="store_true")
     parser.add_argument("--no-scalar-bar", action="store_true")
     parser.add_argument("--dose-scalar-bar-title", default="Dose")
+    parser.add_argument("--dose-scalar-bar-title-font-size", type=int, default=18)
+    parser.add_argument("--dose-scalar-bar-label-font-size", type=int, default=14)
     parser.add_argument("--no-scalar-bar-background", action="store_true")
     parser.add_argument("--x-axis-label", default="Left-Right x (mm)")
     parser.add_argument("--y-axis-label", default="Posterior-Anterior y (mm)")
     parser.add_argument("--z-axis-label", default="Inferior-Superior z (mm)")
+    parser.add_argument("--axes-title-font-size", type=int, default=18)
+    parser.add_argument("--axes-tick-label-font-size", type=int, default=14)
     return parser
 
 
@@ -217,6 +223,8 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         dose_colorwash_volume_max_voxels=args.dose_colorwash_volume_max_voxels,
         dose_colorwash_point_size=args.dose_colorwash_point_size,
         dose_colorwash_opacity=args.dose_colorwash_opacity,
+        dose_colorwash_point_opacity_mode=args.dose_colorwash_point_opacity_mode,
+        dose_colorwash_point_opacity_min=args.dose_colorwash_point_opacity_min,
         biopsy_point_size=args.biopsy_point_size,
         reference_biopsy_point_size=args.reference_biopsy_point_size,
         nearest_point_size=args.nearest_point_size,
@@ -224,10 +232,14 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         show_axes=not bool(args.no_axes),
         show_scalar_bar=not bool(args.no_scalar_bar),
         dose_scalar_bar_title=args.dose_scalar_bar_title,
+        dose_scalar_bar_title_font_size=args.dose_scalar_bar_title_font_size,
+        dose_scalar_bar_label_font_size=args.dose_scalar_bar_label_font_size,
         dose_scalar_bar_show_background=not bool(args.no_scalar_bar_background),
         x_axis_label=args.x_axis_label,
         y_axis_label=args.y_axis_label,
         z_axis_label=args.z_axis_label,
+        axes_title_font_size=args.axes_title_font_size,
+        axes_tick_label_font_size=args.axes_tick_label_font_size,
     )
 
 
