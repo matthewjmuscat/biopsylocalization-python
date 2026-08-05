@@ -28,6 +28,7 @@ class DoseNNPyVistaRenderSettings:
     dose_color_scale_max: float | None = None
     lattice_point_size: float = 5.0
     dose_colorwash_style: str = "points"
+    dose_colorwash_volume_max_voxels: int | None = 250_000
     dose_colorwash_point_size: float = 12.0
     dose_colorwash_opacity: float = 0.28
     biopsy_point_size: float = 12.0
@@ -45,6 +46,8 @@ class DoseNNPyVistaRenderSettings:
     dose_scalar_bar_label_format: str = "%.3g"
     dose_scalar_bar_font_family: str = "arial"
     dose_scalar_bar_vertical: bool = True
+    dose_scalar_bar_use_opacity: bool = False
+    dose_scalar_bar_show_background: bool = True
     x_axis_label: str = "Left-Right x (mm)"
     y_axis_label: str = "Posterior-Anterior y (mm)"
     z_axis_label: str = "Inferior-Superior z (mm)"
@@ -354,6 +357,7 @@ def _add_dose_volume_colorwash(
         prepared_scene.colorwash_lattice_points,
         prepared_scene.colorwash_lattice_doses,
         visible_mask=prepared_scene.colorwash_lattice_visibility_mask,
+        max_voxels=settings.dose_colorwash_volume_max_voxels,
     )
     plotter.add_volume(
         dose_grid,
@@ -377,7 +381,10 @@ def _dose_scalar_bar_args(settings: DoseNNPyVistaRenderSettings) -> dict[str, An
         "label_font_size": 11,
         "color": "black",
         "vertical": bool(settings.dose_scalar_bar_vertical),
+        "use_opacity": bool(settings.dose_scalar_bar_use_opacity),
     }
+    if bool(settings.dose_scalar_bar_show_background):
+        args.update({"background_color": "white", "fill": True, "outline": True})
     if bool(settings.dose_scalar_bar_vertical):
         args.update({"position_x": 0.88, "position_y": 0.18, "width": 0.06, "height": 0.62})
     else:
@@ -420,6 +427,7 @@ def _rectilinear_dose_grid_from_lattice(
     lattice_doses: np.ndarray,
     *,
     visible_mask: np.ndarray | None = None,
+    max_voxels: int | None = None,
 ) -> Any:
     points = np.asarray(lattice_points, dtype=float)
     doses = np.asarray(lattice_doses, dtype=float)
@@ -433,7 +441,7 @@ def _rectilinear_dose_grid_from_lattice(
             raise ValueError("dose volume colorwash visible mask must match lattice point count")
         if not bool(np.any(resolved_visible_mask)):
             raise ValueError("dose volume colorwash has no visible lattice points after filters")
-        doses = np.where(resolved_visible_mask, doses, np.nan)
+        points, doses = _crop_lattice_to_visible_rectilinear_bounds(points, doses, resolved_visible_mask)
 
     x_values = np.unique(points[:, 0])
     y_values = np.unique(points[:, 1])
@@ -459,8 +467,113 @@ def _rectilinear_dose_grid_from_lattice(
         raise ValueError("dose volume colorwash requires a complete rectilinear dose lattice")
 
     dose_grid = pv.RectilinearGrid(x_values, y_values, z_values)
+    x_values, y_values, z_values, dose_grid_values = _downsample_rectilinear_grid_values(
+        x_values,
+        y_values,
+        z_values,
+        dose_grid_values,
+        max_voxels=max_voxels,
+    )
+    dose_grid = pv.RectilinearGrid(x_values, y_values, z_values)
     dose_grid.point_data["dose"] = dose_grid_values.ravel(order="F")
     return dose_grid
+
+
+def _crop_lattice_to_visible_rectilinear_bounds(
+    points: np.ndarray,
+    doses: np.ndarray,
+    visible_mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    selected_points = points[np.asarray(visible_mask, dtype=bool)]
+    if selected_points.shape[0] == 0:
+        raise ValueError("dose volume colorwash has no visible lattice points after filters")
+
+    axis_values = (np.unique(points[:, 0]), np.unique(points[:, 1]), np.unique(points[:, 2]))
+    selected_axis_values = (
+        np.unique(selected_points[:, 0]),
+        np.unique(selected_points[:, 1]),
+        np.unique(selected_points[:, 2]),
+    )
+    axis_bounds: list[tuple[float, float]] = []
+    for full_values, visible_values in zip(axis_values, selected_axis_values):
+        min_index = int(np.searchsorted(full_values, float(np.min(visible_values))))
+        max_index = int(np.searchsorted(full_values, float(np.max(visible_values))))
+        if min_index == max_index and full_values.shape[0] > 1:
+            if max_index < full_values.shape[0] - 1:
+                max_index += 1
+            else:
+                min_index -= 1
+        axis_bounds.append((float(full_values[min_index]), float(full_values[max_index])))
+
+    crop_mask = (
+        (points[:, 0] >= axis_bounds[0][0])
+        & (points[:, 0] <= axis_bounds[0][1])
+        & (points[:, 1] >= axis_bounds[1][0])
+        & (points[:, 1] <= axis_bounds[1][1])
+        & (points[:, 2] >= axis_bounds[2][0])
+        & (points[:, 2] <= axis_bounds[2][1])
+    )
+    return points[crop_mask], doses[crop_mask]
+
+
+def _downsample_rectilinear_grid_values(
+    x_values: np.ndarray,
+    y_values: np.ndarray,
+    z_values: np.ndarray,
+    dose_grid_values: np.ndarray,
+    *,
+    max_voxels: int | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    resolved_max_voxels = _normalize_volume_max_voxels(max_voxels)
+    if resolved_max_voxels is None:
+        return x_values, y_values, z_values, dose_grid_values
+    if int(np.prod(dose_grid_values.shape)) <= resolved_max_voxels:
+        return x_values, y_values, z_values, dose_grid_values
+
+    axis_lengths = [len(x_values), len(y_values), len(z_values)]
+    strides = [1, 1, 1]
+    while _sampled_voxel_count(axis_lengths, strides) > resolved_max_voxels:
+        sampled_lengths = [_sampled_axis_length(axis_length, stride) for axis_length, stride in zip(axis_lengths, strides)]
+        candidate_axes = [axis_index for axis_index, sampled_length in enumerate(sampled_lengths) if sampled_length > 2]
+        if len(candidate_axes) == 0:
+            break
+        axis_index = max(candidate_axes, key=lambda index: sampled_lengths[index])
+        strides[axis_index] += 1
+
+    x_indices = _sample_axis_indices(len(x_values), strides[0])
+    y_indices = _sample_axis_indices(len(y_values), strides[1])
+    z_indices = _sample_axis_indices(len(z_values), strides[2])
+    return (
+        x_values[x_indices],
+        y_values[y_indices],
+        z_values[z_indices],
+        dose_grid_values[np.ix_(x_indices, y_indices, z_indices)],
+    )
+
+
+def _normalize_volume_max_voxels(value: int | None) -> int | None:
+    if value is None:
+        return None
+    resolved_value = int(value)
+    if resolved_value <= 0:
+        return None
+    return max(8, resolved_value)
+
+
+def _sampled_voxel_count(axis_lengths: list[int], strides: list[int]) -> int:
+    sampled_lengths = [_sampled_axis_length(axis_length, stride) for axis_length, stride in zip(axis_lengths, strides)]
+    return int(np.prod(sampled_lengths))
+
+
+def _sampled_axis_length(axis_length: int, stride: int) -> int:
+    return int(_sample_axis_indices(axis_length, stride).shape[0])
+
+
+def _sample_axis_indices(axis_length: int, stride: int) -> np.ndarray:
+    indices = np.arange(0, axis_length, max(1, int(stride)), dtype=int)
+    if indices[-1] != axis_length - 1:
+        indices = np.append(indices, axis_length - 1)
+    return np.unique(indices)
 
 
 def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:

@@ -134,6 +134,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dose-color-scale-max", type=float, default=None)
     parser.add_argument("--lattice-point-size", type=float, default=5.0)
     parser.add_argument("--dose-colorwash-style", choices=("points", "volume", "auto"), default="points")
+    parser.add_argument("--dose-colorwash-volume-max-voxels", type=int, default=250_000)
     parser.add_argument("--dose-colorwash-point-size", type=float, default=12.0)
     parser.add_argument("--dose-colorwash-opacity", type=float, default=0.28)
     parser.add_argument("--biopsy-point-size", type=float, default=12.0)
@@ -143,6 +144,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-axes", action="store_true")
     parser.add_argument("--no-scalar-bar", action="store_true")
     parser.add_argument("--dose-scalar-bar-title", default="Dose")
+    parser.add_argument("--no-scalar-bar-background", action="store_true")
     parser.add_argument("--x-axis-label", default="Left-Right x (mm)")
     parser.add_argument("--y-axis-label", default="Posterior-Anterior y (mm)")
     parser.add_argument("--z-axis-label", default="Inferior-Superior z (mm)")
@@ -212,6 +214,7 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         dose_color_scale_max=args.dose_color_scale_max,
         lattice_point_size=args.lattice_point_size,
         dose_colorwash_style=args.dose_colorwash_style,
+        dose_colorwash_volume_max_voxels=args.dose_colorwash_volume_max_voxels,
         dose_colorwash_point_size=args.dose_colorwash_point_size,
         dose_colorwash_opacity=args.dose_colorwash_opacity,
         biopsy_point_size=args.biopsy_point_size,
@@ -221,6 +224,7 @@ def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRender
         show_axes=not bool(args.no_axes),
         show_scalar_bar=not bool(args.no_scalar_bar),
         dose_scalar_bar_title=args.dose_scalar_bar_title,
+        dose_scalar_bar_show_background=not bool(args.no_scalar_bar_background),
         x_axis_label=args.x_axis_label,
         y_axis_label=args.y_axis_label,
         z_axis_label=args.z_axis_label,

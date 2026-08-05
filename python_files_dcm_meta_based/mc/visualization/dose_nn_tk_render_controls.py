@@ -99,6 +99,9 @@ class TkDoseNNRenderControlSelectionAdapter:
         color_scale_max_var = tk.StringVar(value=_format_optional_number(resolved_initial_selection.dose_color_scale_max))
         opacity_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_opacity))
         colorwash_point_size_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_point_size))
+        colorwash_volume_max_voxels_var = tk.StringVar(
+            value=_format_optional_number(resolved_initial_selection.dose_colorwash_volume_max_voxels)
+        )
         colorwash_style_var = tk.StringVar(value=str(resolved_initial_selection.dose_colorwash_style))
         dose_scalar_bar_title_var = tk.StringVar(value=str(resolved_initial_selection.dose_scalar_bar_title))
         x_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.x_axis_label))
@@ -113,6 +116,9 @@ class TkDoseNNRenderControlSelectionAdapter:
         show_vectors_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_nearest_neighbour_vectors))
         show_axes_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_axes))
         show_scalar_bar_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_scalar_bar))
+        show_scalar_bar_background_var = tk.BooleanVar(
+            value=bool(resolved_initial_selection.dose_scalar_bar_show_background)
+        )
 
         current_row = 2
         current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all; use 0-100 or 0,50,100")
@@ -150,6 +156,13 @@ class TkDoseNNRenderControlSelectionAdapter:
             colorwash_point_size_var,
             "positive number",
         )
+        current_row = _add_labeled_entry(
+            frame,
+            current_row,
+            "Volume max voxels",
+            colorwash_volume_max_voxels_var,
+            "blank = full volume; lower = faster",
+        )
         current_row = _add_labeled_entry(frame, current_row, "Dose colorbar title", dose_scalar_bar_title_var, "example: Dose (Gy)")
         current_row = _add_labeled_entry(frame, current_row, "X axis label", x_axis_label_var, "physical patient-space x")
         current_row = _add_labeled_entry(frame, current_row, "Y axis label", y_axis_label_var, "physical patient-space y")
@@ -167,6 +180,7 @@ class TkDoseNNRenderControlSelectionAdapter:
         _add_checkbox(layers_frame, 2, 1, "NN vectors", show_vectors_var)
         _add_checkbox(layers_frame, 3, 0, "Axes", show_axes_var)
         _add_checkbox(layers_frame, 3, 1, "Scalar bar", show_scalar_bar_var)
+        _add_checkbox(layers_frame, 4, 0, "Box scalar bar", show_scalar_bar_background_var)
         current_row += 1
 
         button_frame = ttk.Frame(frame)
@@ -188,6 +202,7 @@ class TkDoseNNRenderControlSelectionAdapter:
                     show_lattice_points=bool(show_lattice_var.get()),
                     show_dose_colorwash=bool(show_colorwash_var.get()),
                     dose_colorwash_style=str(colorwash_style_var.get()),
+                    dose_colorwash_volume_max_voxels=_parse_optional_int(colorwash_volume_max_voxels_var.get()),
                     dose_color_scale_mode=str(color_scale_mode_var.get()),
                     dose_color_scale_min=_parse_optional_float(color_scale_min_var.get()),
                     dose_color_scale_max=_parse_optional_float(color_scale_max_var.get()),
@@ -198,6 +213,7 @@ class TkDoseNNRenderControlSelectionAdapter:
                     show_axes=bool(show_axes_var.get()),
                     show_scalar_bar=bool(show_scalar_bar_var.get()),
                     dose_scalar_bar_title=str(dose_scalar_bar_title_var.get()),
+                    dose_scalar_bar_show_background=bool(show_scalar_bar_background_var.get()),
                     x_axis_label=str(x_axis_label_var.get()),
                     y_axis_label=str(y_axis_label_var.get()),
                     z_axis_label=str(z_axis_label_var.get()),

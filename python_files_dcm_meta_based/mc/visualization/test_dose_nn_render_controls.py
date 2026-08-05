@@ -26,6 +26,7 @@ class DoseNNRenderControlTests(unittest.TestCase):
             show_lattice_points=False,
             show_dose_colorwash=True,
             dose_colorwash_style="volume",
+            dose_colorwash_volume_max_voxels=125_000,
             dose_color_scale_mode="log",
             dose_color_scale_min=5.0,
             dose_color_scale_max=30.0,
@@ -34,6 +35,7 @@ class DoseNNRenderControlTests(unittest.TestCase):
             show_nearest_neighbour_points=False,
             show_scalar_bar=False,
             dose_scalar_bar_title="Dose (Gy)",
+            dose_scalar_bar_show_background=False,
         )
 
         config = dose_nn_render_config_from_control_selection(selection, available_trials=(0, 1, 2))
@@ -51,12 +53,14 @@ class DoseNNRenderControlTests(unittest.TestCase):
         self.assertEqual(config.vector_stride, 3)
         self.assertEqual(settings.window_size, (320, 240))
         self.assertEqual(settings.dose_colorwash_style, "volume")
+        self.assertEqual(settings.dose_colorwash_volume_max_voxels, 125_000)
         self.assertEqual(settings.dose_color_scale_mode, "log")
         self.assertEqual(settings.dose_color_scale_min, 5.0)
         self.assertEqual(settings.dose_color_scale_max, 30.0)
         self.assertEqual(settings.dose_colorwash_opacity, 0.35)
         self.assertFalse(settings.show_scalar_bar)
         self.assertEqual(settings.dose_scalar_bar_title, "Dose (Gy)")
+        self.assertFalse(settings.dose_scalar_bar_show_background)
 
     def test_control_selection_accepts_point_alias(self) -> None:
         selection = normalize_dose_nn_render_control_selection(

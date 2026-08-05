@@ -209,6 +209,36 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         self.assertEqual(int(np.count_nonzero(prepared_scene.colorwash_lattice_visibility_mask)), 2)
         self.assertIn("dose_colorwash_volume", actor_names)
 
+    def test_volume_colorwash_builds_cropped_rectilinear_subvolume(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_rectilinear_four_by_four_volume_scene(),
+            DoseNNRenderConfig(
+                show_lattice_points=False,
+                show_dose_colorwash=True,
+                spatial_radius_mm=0.1,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_colorwash_style="volume",
+                show_axes=False,
+                show_scalar_bar=False,
+            ),
+        )
+        try:
+            actor = plotter.renderer.actors["dose_colorwash_volume"]
+            volume_dimensions = actor.mapper.dataset.dimensions
+            volume_bounds = actor.GetBounds()
+        finally:
+            plotter.close()
+
+        self.assertEqual(volume_dimensions, (2, 2, 2))
+        self.assertEqual(volume_bounds, (0.0, 1.0, 0.0, 1.0, 0.0, 1.0))
+
     def test_volume_colorwash_skips_when_spatial_radius_selects_no_lattice_points(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
             _synthetic_rectilinear_volume_scene(),
@@ -448,6 +478,27 @@ def _synthetic_rectilinear_volume_scene():
         ),
         nearest_lattice_doses=np.array([[4.0, 5.0], [6.0, 7.0]], dtype=float),
         nearest_distances=np.array([[0.5, 0.6], [0.5, 0.6]], dtype=float),
+    )
+
+
+def _synthetic_rectilinear_four_by_four_volume_scene():
+    lattice_points = np.array([[x, y, z] for x in range(4) for y in range(4) for z in range(4)], dtype=float)
+    return build_dose_nn_render_scene(
+        metadata=DoseNNSceneMetadata(
+            patient_uid="synthetic",
+            biopsy_roi="Bx 1",
+            biopsy_index=1,
+            source_label="unit-test-volume-four-by-four",
+        ),
+        lattice_points=lattice_points,
+        lattice_doses=np.arange(lattice_points.shape[0], dtype=float),
+        original_point_indices=np.array([0], dtype=int),
+        trial_numbers=np.array([0], dtype=int),
+        biopsy_points=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        interpolated_biopsy_doses=np.array([1.0], dtype=float),
+        nearest_lattice_points=np.array([[[0.0, 0.0, 0.0]]], dtype=float),
+        nearest_lattice_doses=np.array([[1.0]], dtype=float),
+        nearest_distances=np.array([[0.0]], dtype=float),
     )
 
 

@@ -31,6 +31,7 @@ class DoseNNRenderControlSelection:
     show_lattice_points: bool = True
     show_dose_colorwash: bool = False
     dose_colorwash_style: str = "points"
+    dose_colorwash_volume_max_voxels: int | None = 250_000
     dose_color_scale_mode: str = "linear"
     dose_color_scale_min: float | None = None
     dose_color_scale_max: float | None = None
@@ -41,6 +42,7 @@ class DoseNNRenderControlSelection:
     show_axes: bool = True
     show_scalar_bar: bool = True
     dose_scalar_bar_title: str = "Dose"
+    dose_scalar_bar_show_background: bool = True
     x_axis_label: str = "Left-Right x (mm)"
     y_axis_label: str = "Posterior-Anterior y (mm)"
     z_axis_label: str = "Inferior-Superior z (mm)"
@@ -74,6 +76,10 @@ def normalize_dose_nn_render_control_selection(
     biopsy_point_stride = _positive_int("biopsy_point_stride", resolved_selection.biopsy_point_stride)
     vector_stride = _positive_int("vector_stride", resolved_selection.vector_stride)
     dose_colorwash_style = _normalize_colorwash_style(resolved_selection.dose_colorwash_style)
+    dose_colorwash_volume_max_voxels = _optional_positive_int(
+        "dose_colorwash_volume_max_voxels",
+        resolved_selection.dose_colorwash_volume_max_voxels,
+    )
     dose_color_scale_mode = _normalize_dose_color_scale_mode(resolved_selection.dose_color_scale_mode)
     dose_color_scale_min = _optional_float(resolved_selection.dose_color_scale_min)
     dose_color_scale_max = _optional_float(resolved_selection.dose_color_scale_max)
@@ -105,6 +111,7 @@ def normalize_dose_nn_render_control_selection(
         show_lattice_points=bool(resolved_selection.show_lattice_points),
         show_dose_colorwash=bool(resolved_selection.show_dose_colorwash),
         dose_colorwash_style=dose_colorwash_style,
+        dose_colorwash_volume_max_voxels=dose_colorwash_volume_max_voxels,
         dose_color_scale_mode=dose_color_scale_mode,
         dose_color_scale_min=dose_color_scale_min,
         dose_color_scale_max=dose_color_scale_max,
@@ -115,6 +122,7 @@ def normalize_dose_nn_render_control_selection(
         show_axes=bool(resolved_selection.show_axes),
         show_scalar_bar=bool(resolved_selection.show_scalar_bar),
         dose_scalar_bar_title=str(resolved_selection.dose_scalar_bar_title),
+        dose_scalar_bar_show_background=bool(resolved_selection.dose_scalar_bar_show_background),
         x_axis_label=str(resolved_selection.x_axis_label),
         y_axis_label=str(resolved_selection.y_axis_label),
         z_axis_label=str(resolved_selection.z_axis_label),
@@ -164,6 +172,7 @@ def dose_nn_pyvista_settings_from_control_selection(
     return replace(
         resolved_base_settings,
         dose_colorwash_style=resolved_selection.dose_colorwash_style,
+        dose_colorwash_volume_max_voxels=resolved_selection.dose_colorwash_volume_max_voxels,
         dose_color_scale_mode=resolved_selection.dose_color_scale_mode,
         dose_color_scale_min=resolved_selection.dose_color_scale_min,
         dose_color_scale_max=resolved_selection.dose_color_scale_max,
@@ -172,6 +181,7 @@ def dose_nn_pyvista_settings_from_control_selection(
         show_axes=resolved_selection.show_axes,
         show_scalar_bar=resolved_selection.show_scalar_bar,
         dose_scalar_bar_title=resolved_selection.dose_scalar_bar_title,
+        dose_scalar_bar_show_background=resolved_selection.dose_scalar_bar_show_background,
         x_axis_label=resolved_selection.x_axis_label,
         y_axis_label=resolved_selection.y_axis_label,
         z_axis_label=resolved_selection.z_axis_label,
