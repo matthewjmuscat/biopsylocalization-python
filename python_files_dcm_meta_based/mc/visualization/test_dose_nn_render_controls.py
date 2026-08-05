@@ -13,6 +13,13 @@ from mc.visualization.dose_nn_tk_render_controls import _parse_trial_numbers
 
 
 class DoseNNRenderControlTests(unittest.TestCase):
+    def test_default_scalar_bar_title_includes_units(self) -> None:
+        selection = normalize_dose_nn_render_control_selection()
+        settings = dose_nn_pyvista_settings_from_control_selection()
+
+        self.assertEqual(selection.dose_scalar_bar_title, "Dose (Gy)")
+        self.assertEqual(settings.dose_scalar_bar_title, "Dose (Gy)")
+
     def test_control_selection_builds_render_config_and_pyvista_settings(self) -> None:
         selection = DoseNNRenderControlSelection(
             selected_trials=(1,),

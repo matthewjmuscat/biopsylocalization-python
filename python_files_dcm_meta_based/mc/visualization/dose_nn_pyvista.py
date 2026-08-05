@@ -43,12 +43,13 @@ class DoseNNPyVistaRenderSettings:
     vector_color: str = "dimgray"
     show_axes: bool = True
     show_scalar_bar: bool = True
-    dose_scalar_bar_title: str = "Dose"
+    dose_scalar_bar_title: str = "Dose (Gy)"
     dose_scalar_bar_num_labels: int = 5
     dose_scalar_bar_label_format: str = "%.3g"
     dose_scalar_bar_font_family: str = "arial"
     dose_scalar_bar_title_font_size: int = 18
     dose_scalar_bar_label_font_size: int = 14
+    dose_scalar_bar_title_separation: int = 12
     dose_scalar_bar_vertical: bool = True
     dose_scalar_bar_use_opacity: bool = False
     dose_scalar_bar_show_background: bool = True
@@ -124,6 +125,8 @@ def build_pyvista_dose_nn_plotter(
 
     if resolved_settings.show_axes:
         _add_axes(plotter, resolved_settings)
+    if resolved_settings.show_scalar_bar:
+        _configure_scalar_bar_actors(plotter, resolved_settings)
     if resolved_settings.show_scalar_bar and resolved_settings.dose_scalar_bar_show_background:
         _add_scalar_bar_background_box(pv, plotter, resolved_settings)
     if resolved_settings.camera_position is not None:
@@ -396,8 +399,6 @@ def _dose_scalar_bar_args(settings: DoseNNPyVistaRenderSettings) -> dict[str, An
         "vertical": bool(settings.dose_scalar_bar_vertical),
         "use_opacity": bool(settings.dose_scalar_bar_use_opacity),
     }
-    if bool(settings.dose_scalar_bar_show_background):
-        args.update({"background_color": "white", "fill": True, "outline": True})
     if bool(settings.dose_scalar_bar_vertical):
         args.update({"position_x": 0.88, "position_y": 0.18, "width": 0.06, "height": 0.62})
     else:
@@ -681,6 +682,18 @@ def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
             cube_axes_actor.GetLabelTextProperty(axis_index).SetFontSize(int(settings.axes_tick_label_font_size))
 
 
+def _configure_scalar_bar_actors(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    view_props = plotter.renderer.GetViewProps()
+    view_props.InitTraversal()
+    for _ in range(view_props.GetNumberOfItems()):
+        prop = view_props.GetNextProp()
+        if prop.GetClassName() != "vtkScalarBarActor":
+            continue
+        prop.DrawFrameOff()
+        prop.DrawBackgroundOff()
+        prop.SetVerticalTitleSeparation(max(0, int(settings.dose_scalar_bar_title_separation)))
+
+
 def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
     try:
         import vtk
@@ -688,9 +701,9 @@ def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVist
         return
 
     if bool(settings.dose_scalar_bar_vertical):
-        x_min, y_min, width, height = 0.845, 0.13, 0.135, 0.78
+        x_min, y_min, width, height = 0.872, 0.155, 0.095, 0.725
     else:
-        x_min, y_min, width, height = 0.20, 0.035, 0.66, 0.15
+        x_min, y_min, width, height = 0.225, 0.045, 0.61, 0.12
 
     points = vtk.vtkPoints()
     for x_value, y_value in (
@@ -721,7 +734,6 @@ def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVist
     actor.SetMapper(mapper)
     actor.GetProperty().SetColor(1.0, 1.0, 1.0)
     actor.GetProperty().SetOpacity(0.92)
-    actor.GetProperty().SetLineWidth(1.5)
     actor.GetProperty().SetDisplayLocationToBackground()
     actor.SetLayerNumber(0)
     plotter.renderer.AddActor2D(actor)

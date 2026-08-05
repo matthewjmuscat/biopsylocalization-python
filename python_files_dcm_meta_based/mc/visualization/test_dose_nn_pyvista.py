@@ -94,14 +94,27 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
             view_props = plotter.renderer.GetViewProps()
             view_props.InitTraversal()
             display_locations = []
+            scalar_bar_titles = []
+            scalar_bar_frame_flags = []
+            scalar_bar_background_flags = []
+            scalar_bar_title_separations = []
             for _ in range(view_props.GetNumberOfItems()):
                 prop = view_props.GetNextProp()
+                if prop.GetClassName() == "vtkScalarBarActor":
+                    scalar_bar_titles.append(prop.GetTitle())
+                    scalar_bar_frame_flags.append(int(prop.GetDrawFrame()))
+                    scalar_bar_background_flags.append(int(prop.GetDrawBackground()))
+                    scalar_bar_title_separations.append(int(prop.GetVerticalTitleSeparation()))
                 prop_property = prop.GetProperty() if hasattr(prop, "GetProperty") else None
                 if prop_property is not None and hasattr(prop_property, "GetDisplayLocation"):
                     display_locations.append(int(prop_property.GetDisplayLocation()))
         finally:
             plotter.close()
 
+        self.assertIn("Dose (Gy)", scalar_bar_titles)
+        self.assertEqual(scalar_bar_frame_flags, [0])
+        self.assertEqual(scalar_bar_background_flags, [0])
+        self.assertEqual(scalar_bar_title_separations, [12])
         self.assertIn(0, display_locations)
         self.assertIn(1, display_locations)
 

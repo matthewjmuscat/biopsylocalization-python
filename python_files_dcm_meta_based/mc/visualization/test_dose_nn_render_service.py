@@ -74,6 +74,7 @@ class DoseNNRenderServiceTests(unittest.TestCase):
                 provenance = json.load(provenance_file)
             self.assertFalse(provenance["render_config"]["show_lattice_points"])
             self.assertTrue(provenance["render_config"]["show_nearest_neighbour_vectors"])
+            self.assertEqual(provenance["render_settings"]["dose_scalar_bar_title"], "Dose (Gy)")
 
     def test_cli_can_show_lattice_with_colorwash_and_reference_biopsy_points(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -145,7 +145,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vector-line-width", type=float, default=2.0)
     parser.add_argument("--no-axes", action="store_true")
     parser.add_argument("--no-scalar-bar", action="store_true")
-    parser.add_argument("--dose-scalar-bar-title", default="Dose")
+    parser.add_argument("--dose-scalar-bar-title", default="Dose (Gy)")
     parser.add_argument("--dose-scalar-bar-title-font-size", type=int, default=18)
     parser.add_argument("--dose-scalar-bar-label-font-size", type=int, default=14)
     parser.add_argument("--no-scalar-bar-background", action="store_true")

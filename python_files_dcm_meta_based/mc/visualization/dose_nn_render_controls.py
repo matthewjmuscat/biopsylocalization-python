@@ -49,7 +49,7 @@ class DoseNNRenderControlSelection:
     show_nearest_neighbour_vectors: bool = True
     show_axes: bool = True
     show_scalar_bar: bool = True
-    dose_scalar_bar_title: str = "Dose"
+    dose_scalar_bar_title: str = "Dose (Gy)"
     dose_scalar_bar_show_background: bool = True
     dose_scalar_bar_title_font_size: int = 18
     dose_scalar_bar_label_font_size: int = 14
