@@ -77,6 +77,34 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         self.assertIn("dose_colorwash_points", actor_names)
         self.assertIn("dose_nn_vectors", actor_names)
 
+    def test_scalar_bar_background_renders_behind_foreground_props(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                show_axes=False,
+                show_scalar_bar=True,
+                dose_scalar_bar_show_background=True,
+            ),
+        )
+        try:
+            view_props = plotter.renderer.GetViewProps()
+            view_props.InitTraversal()
+            display_locations = []
+            for _ in range(view_props.GetNumberOfItems()):
+                prop = view_props.GetNextProp()
+                prop_property = prop.GetProperty() if hasattr(prop, "GetProperty") else None
+                if prop_property is not None and hasattr(prop_property, "GetDisplayLocation"):
+                    display_locations.append(int(prop_property.GetDisplayLocation()))
+        finally:
+            plotter.close()
+
+        self.assertIn(0, display_locations)
+        self.assertIn(1, display_locations)
+
     def test_build_plotter_supports_logarithmic_dose_color_scaling(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
 

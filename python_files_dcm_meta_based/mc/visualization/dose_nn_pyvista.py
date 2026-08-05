@@ -722,6 +722,7 @@ def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVist
     actor.GetProperty().SetColor(1.0, 1.0, 1.0)
     actor.GetProperty().SetOpacity(0.92)
     actor.GetProperty().SetLineWidth(1.5)
+    actor.GetProperty().SetDisplayLocationToBackground()
     actor.SetLayerNumber(0)
     plotter.renderer.AddActor2D(actor)
 
