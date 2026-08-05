@@ -406,6 +406,36 @@ def _dose_scalar_bar_args(settings: DoseNNPyVistaRenderSettings) -> dict[str, An
     return args
 
 
+def _dose_scalar_bar_clipped_range_labels(settings: DoseNNPyVistaRenderSettings) -> tuple[str, str] | None:
+    if settings.dose_color_scale_min is None or settings.dose_color_scale_max is None:
+        return None
+    return (
+        "<= {}".format(_format_scalar_bar_boundary_value(settings.dose_color_scale_min, settings)),
+        ">= {}".format(_format_scalar_bar_boundary_value(settings.dose_color_scale_max, settings)),
+    )
+
+
+def _format_scalar_bar_boundary_value(value: float, settings: DoseNNPyVistaRenderSettings) -> str:
+    resolved_value = float(value)
+    try:
+        return str(settings.dose_scalar_bar_label_format % resolved_value).strip()
+    except (TypeError, ValueError):
+        return "{:.3g}".format(resolved_value)
+
+
+def _dose_scalar_bar_tick_values(settings: DoseNNPyVistaRenderSettings) -> np.ndarray | None:
+    if settings.dose_color_scale_min is None or settings.dose_color_scale_max is None:
+        return None
+    label_count = int(settings.dose_scalar_bar_num_labels)
+    if label_count <= 2:
+        return np.asarray([], dtype=float)
+    minimum = float(settings.dose_color_scale_min)
+    maximum = float(settings.dose_color_scale_max)
+    if _normalize_dose_color_scale_mode(settings.dose_color_scale_mode) == "log":
+        return np.geomspace(minimum, maximum, label_count, dtype=float)[1:-1]
+    return np.linspace(minimum, maximum, label_count, dtype=float)[1:-1]
+
+
 def _dose_scalar_kwargs(settings: DoseNNPyVistaRenderSettings) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
     dose_color_scale_mode = _normalize_dose_color_scale_mode(settings.dose_color_scale_mode)
@@ -683,15 +713,70 @@ def _add_axes(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
 
 
 def _configure_scalar_bar_actors(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    scalar_bar_found = False
     view_props = plotter.renderer.GetViewProps()
     view_props.InitTraversal()
     for _ in range(view_props.GetNumberOfItems()):
         prop = view_props.GetNextProp()
         if prop.GetClassName() != "vtkScalarBarActor":
             continue
+        scalar_bar_found = True
         prop.DrawFrameOff()
         prop.DrawBackgroundOff()
         prop.SetVerticalTitleSeparation(max(0, int(settings.dose_scalar_bar_title_separation)))
+        _configure_clipped_scalar_bar_ticks(prop, settings)
+    if scalar_bar_found:
+        _add_scalar_bar_clipped_endpoint_labels(plotter, settings)
+
+
+def _configure_clipped_scalar_bar_ticks(scalar_bar_actor: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    tick_values = _dose_scalar_bar_tick_values(settings)
+    if tick_values is None:
+        return
+    try:
+        import vtk
+    except ImportError:
+        return
+
+    custom_labels = vtk.vtkDoubleArray()
+    for tick_value in tick_values:
+        custom_labels.InsertNextValue(float(tick_value))
+    scalar_bar_actor.SetCustomLabels(custom_labels)
+    scalar_bar_actor.UseCustomLabelsOn()
+
+
+def _add_scalar_bar_clipped_endpoint_labels(plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:
+    clipped_range_labels = _dose_scalar_bar_clipped_range_labels(settings)
+    if clipped_range_labels is None:
+        return
+    try:
+        import vtk
+    except ImportError:
+        return
+
+    below_label, above_label = clipped_range_labels
+    if bool(settings.dose_scalar_bar_vertical):
+        label_specs = (
+            (below_label, 0.905, 0.18),
+            (above_label, 0.905, 0.735),
+        )
+    else:
+        label_specs = (
+            (below_label, 0.24, 0.145),
+            (above_label, 0.82, 0.145),
+        )
+    for label_text, x_value, y_value in label_specs:
+        actor = vtk.vtkTextActor()
+        actor.SetInput(str(label_text))
+        actor.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        actor.SetPosition(float(x_value), float(y_value))
+        actor.GetTextProperty().SetFontFamilyToArial()
+        actor.GetTextProperty().SetFontSize(int(settings.dose_scalar_bar_label_font_size))
+        actor.GetTextProperty().SetColor(0.0, 0.0, 0.0)
+        actor.GetTextProperty().SetJustificationToLeft()
+        actor.GetTextProperty().SetVerticalJustificationToCentered()
+        actor.GetProperty().SetDisplayLocationToForeground()
+        plotter.renderer.AddActor2D(actor)
 
 
 def _add_scalar_bar_background_box(pv: Any, plotter: Any, settings: DoseNNPyVistaRenderSettings) -> None:

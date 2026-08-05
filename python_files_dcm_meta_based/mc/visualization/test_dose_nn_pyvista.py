@@ -141,6 +141,47 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
 
         self.assertTrue(log_scale_enabled)
 
+    def test_scalar_bar_marks_clipped_display_range(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
+
+        plotter = build_pyvista_dose_nn_plotter(
+            prepared_scene,
+            settings=DoseNNPyVistaRenderSettings(
+                off_screen=True,
+                window_size=(320, 240),
+                dose_color_scale_min=13.5,
+                dose_color_scale_max=50.0,
+                show_axes=False,
+                show_scalar_bar=True,
+            ),
+        )
+        try:
+            view_props = plotter.renderer.GetViewProps()
+            view_props.InitTraversal()
+            scalar_bar_records = []
+            endpoint_labels = []
+            for _ in range(view_props.GetNumberOfItems()):
+                prop = view_props.GetNextProp()
+                if prop.GetClassName() == "vtkScalarBarActor":
+                    custom_labels = prop.GetCustomLabels()
+                    scalar_bar_records.append(
+                        (
+                            int(prop.GetDrawBelowRangeSwatch()),
+                            int(prop.GetDrawAboveRangeSwatch()),
+                            int(prop.GetUseCustomLabels()),
+                            [float(custom_labels.GetValue(index)) for index in range(custom_labels.GetNumberOfValues())],
+                        )
+                    )
+                if prop.GetClassName() == "vtkOpenGLTextActor":
+                    text = prop.GetInput()
+                    if text in ("<= 13.5", ">= 50"):
+                        endpoint_labels.append(text)
+        finally:
+            plotter.close()
+
+        self.assertEqual(scalar_bar_records, [(0, 0, 1, [22.625, 31.75, 40.875])])
+        self.assertEqual(sorted(endpoint_labels), ["<= 13.5", ">= 50"])
+
     def test_build_plotter_adds_custom_world_axis_labels(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(_synthetic_scene())
 
