@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tempfile
 import unittest
 import json
@@ -272,6 +273,25 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
         self.assertIn("reference_biopsy_points", actor_names)
         self.assertNotIn("dose_lattice_points", actor_names)
 
+    def test_build_plotter_draws_reference_biopsy_points_after_current_points(self) -> None:
+        prepared_scene = prepare_dose_nn_render_scene(
+            _synthetic_scene_with_trials(),
+            DoseNNRenderConfig(
+                selected_trials=(0,),
+                reference_trial_numbers=(0,),
+                show_reference_biopsy_points=True,
+                show_lattice_points=False,
+            ),
+        )
+
+        plotter = build_pyvista_dose_nn_plotter(prepared_scene, settings=_test_settings())
+        try:
+            actor_names = tuple(plotter.renderer.actors.keys())
+        finally:
+            plotter.close()
+
+        self.assertLess(actor_names.index("biopsy_query_points"), actor_names.index("reference_biopsy_points"))
+
     def test_build_plotter_supports_dose_volume_colorwash_layer(self) -> None:
         prepared_scene = prepare_dose_nn_render_scene(
             _synthetic_rectilinear_volume_scene(),
@@ -498,6 +518,53 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
             self.assertAlmostEqual(manifest["frames"][0]["camera_position"][0][1], -10.0)
             self.assertAlmostEqual(manifest["frames"][1]["camera_position"][0][0], 10.0)
             self.assertAlmostEqual(manifest["frames"][1]["camera_position"][0][1], 0.0, places=6)
+
+    def test_export_trial_frame_sequence_accepts_pyvista_camera_position_object(self) -> None:
+        plotter = build_pyvista_dose_nn_plotter(
+            prepare_dose_nn_render_scene(_synthetic_scene_with_trials()),
+            settings=_test_settings(),
+        )
+        try:
+            captured_camera = plotter.camera_position
+        finally:
+            plotter.close()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory).joinpath("frames")
+            result = export_dose_nn_trial_frame_sequence_pyvista(
+                _synthetic_scene_with_trials(),
+                output_dir,
+                selected_trials=(0,),
+                base_config=DoseNNRenderConfig(show_lattice_points=False),
+                settings=replace(_test_settings(), camera_position=captured_camera),
+            )
+
+            with open(result.manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+
+        self.assertEqual(len(manifest["frames"]), 1)
+        self.assertEqual(len(manifest["frames"][0]["camera_position"]), 3)
+
+    def test_export_trial_frame_sequence_keeps_reference_points_in_each_frame(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory).joinpath("frames")
+            result = export_dose_nn_trial_frame_sequence_pyvista(
+                _synthetic_scene_with_trials(),
+                output_dir,
+                selected_trials=(0, 1),
+                base_config=DoseNNRenderConfig(
+                    reference_trial_numbers=(0,),
+                    show_reference_biopsy_points=True,
+                    show_lattice_points=False,
+                ),
+                settings=_test_settings(),
+            )
+
+            for frame_path in result.frame_paths:
+                with open(frame_path.with_suffix(".png.provenance.json"), "r", encoding="utf-8") as provenance_file:
+                    provenance = json.load(provenance_file)
+                self.assertEqual(provenance["prepared_scene_summary"]["reference_trials"], [0])
+                self.assertEqual(provenance["prepared_scene_summary"]["reference_biopsy_point_count"], 2)
 
     def test_export_trial_movie_requires_camera_for_orbit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

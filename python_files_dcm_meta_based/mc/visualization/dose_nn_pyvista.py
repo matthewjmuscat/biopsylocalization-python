@@ -146,10 +146,10 @@ def build_pyvista_dose_nn_plotter(
         _add_lattice_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_dose_colorwash:
         _add_dose_colorwash(pv, plotter, prepared_scene, resolved_settings)
-    if prepared_scene.config.show_reference_biopsy_points:
-        _add_reference_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_biopsy_points:
         _add_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
+    if prepared_scene.config.show_reference_biopsy_points:
+        _add_reference_biopsy_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_nearest_neighbour_points:
         _add_nearest_neighbour_points(pv, plotter, prepared_scene, resolved_settings)
     if prepared_scene.config.show_nearest_neighbour_vectors:
@@ -1084,7 +1084,13 @@ def _camera_position_with_local_z_orbit(
 def _normalize_camera_position(
     camera_position: Any,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
-    camera_array = np.asarray(camera_position, dtype=float)
+    if all(hasattr(camera_position, attribute_name) for attribute_name in ("position", "focal_point", "viewup")):
+        camera_position = (
+            camera_position.position,
+            camera_position.focal_point,
+            camera_position.viewup,
+        )
+    camera_array = np.asarray(tuple(tuple(component) for component in tuple(camera_position)), dtype=float)
     if camera_array.shape != (3, 3):
         raise ValueError("camera_position must contain position, focal point, and view-up 3-vectors")
     return tuple(tuple(float(value) for value in row) for row in camera_array)  # type: ignore[return-value]
@@ -1291,6 +1297,8 @@ def _json_ready(value: Any) -> Any:
         return value.tolist()
     if isinstance(value, np.generic):
         return value.item()
+    if all(hasattr(value, attribute_name) for attribute_name in ("position", "focal_point", "viewup")):
+        return _json_ready(_normalize_camera_position(value))
     if isinstance(value, tuple):
         return [_json_ready(item) for item in value]
     if isinstance(value, list):
