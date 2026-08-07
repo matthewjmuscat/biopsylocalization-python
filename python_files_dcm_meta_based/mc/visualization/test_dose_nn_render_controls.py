@@ -54,6 +54,10 @@ class DoseNNRenderControlTests(unittest.TestCase):
             dose_scalar_bar_label_font_size=16,
             axes_title_font_size=22,
             axes_tick_label_font_size=15,
+            export_movie=True,
+            movie_format="webm",
+            movie_frames_per_second=24.0,
+            movie_z_orbit_degrees=180.0,
         )
 
         config = dose_nn_render_config_from_control_selection(selection, available_trials=(0, 1, 2))
@@ -91,6 +95,10 @@ class DoseNNRenderControlTests(unittest.TestCase):
         self.assertEqual(settings.dose_scalar_bar_label_font_size, 16)
         self.assertEqual(settings.axes_title_font_size, 22)
         self.assertEqual(settings.axes_tick_label_font_size, 15)
+        self.assertTrue(selection.export_movie)
+        self.assertEqual(selection.movie_format, "webm")
+        self.assertEqual(selection.movie_frames_per_second, 24.0)
+        self.assertEqual(selection.movie_z_orbit_degrees, 180.0)
 
     def test_control_selection_accepts_point_alias(self) -> None:
         selection = normalize_dose_nn_render_control_selection(
@@ -160,6 +168,18 @@ class DoseNNRenderControlTests(unittest.TestCase):
                     dose_colorwash_opacity=0.1,
                     dose_colorwash_point_opacity_min=0.2,
                 ),
+            )
+        with self.assertRaisesRegex(ValueError, "movie_frames_per_second"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(movie_frames_per_second=0.0),
+            )
+        with self.assertRaisesRegex(ValueError, "movie format"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(movie_format="avi"),
+            )
+        with self.assertRaisesRegex(ValueError, "movie export requires explicit Trials"):
+            normalize_dose_nn_render_control_selection(
+                DoseNNRenderControlSelection(export_movie=True),
             )
 
 

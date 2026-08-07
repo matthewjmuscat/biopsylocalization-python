@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ import numpy as np
 from mc.visualization.dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from mc.visualization.dose_nn_pyvista import is_pyvista_available
 from mc.visualization.dose_nn_render_service import export_saved_dose_nn_scene_trial_frames_pyvista
+from mc.visualization.dose_nn_render_service import export_saved_dose_nn_scene_trial_movie_pyvista
 from mc.visualization.dose_nn_render_service import main
 from mc.visualization.dose_nn_render_service import render_saved_dose_nn_scene_artifact_pyvista
 from mc.visualization.dose_nn_scene import DoseNNRenderConfig, DoseNNSceneMetadata, build_dose_nn_render_scene
@@ -125,6 +127,34 @@ class DoseNNRenderServiceTests(unittest.TestCase):
             self.assertTrue(result.frame_paths[0].is_file())
             self.assertTrue(result.manifest_path.is_file())
 
+    def test_export_saved_scene_trial_movie_writes_mp4_and_manifest(self) -> None:
+        if shutil.which("ffmpeg") is None:
+            self.skipTest("ffmpeg is not available in this environment")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            output_dir = Path(temporary_directory).joinpath("movie")
+            video_path = output_dir.joinpath("dose_nn.mp4")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+
+            result = export_saved_dose_nn_scene_trial_movie_pyvista(
+                scene_dir,
+                output_dir,
+                video_path=video_path,
+                selected_trials=(0,),
+                frames_per_second=2.0,
+                config=DoseNNRenderConfig(show_lattice_points=False),
+                settings=_test_settings(),
+            )
+
+            self.assertTrue(result.video_path.is_file())
+            self.assertTrue(result.manifest_path.is_file())
+            self.assertTrue(result.frame_manifest_path.is_file())
+            self.assertGreater(result.video_path.stat().st_size, 0)
+            with open(result.manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+            self.assertEqual(manifest["video_format"], "mp4")
+            self.assertEqual(manifest["frame_count"], 1)
+
     def test_cli_exports_trial_frames_without_screenshot_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             scene_dir = Path(temporary_directory).joinpath("scene")
@@ -151,6 +181,37 @@ class DoseNNRenderServiceTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertTrue(output_dir.joinpath("frame_sequence_manifest.json").is_file())
+
+    def test_cli_exports_trial_movie_without_screenshot_output(self) -> None:
+        if shutil.which("ffmpeg") is None:
+            self.skipTest("ffmpeg is not available in this environment")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            scene_dir = Path(temporary_directory).joinpath("scene")
+            output_dir = Path(temporary_directory).joinpath("movie")
+            video_path = output_dir.joinpath("dose_nn.mp4")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+
+            exit_code = main(
+                (
+                    "--scene-dir",
+                    str(scene_dir),
+                    "--export-trial-movie-path",
+                    str(video_path),
+                    "--trial",
+                    "0",
+                    "--frames-per-second",
+                    "2",
+                    "--window-size",
+                    "160",
+                    "120",
+                    "--no-axes",
+                    "--no-scalar-bar",
+                )
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(video_path.is_file())
+            self.assertTrue(video_path.with_suffix(".movie_manifest.json").is_file())
 
 
 def _test_settings() -> DoseNNPyVistaRenderSettings:

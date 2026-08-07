@@ -8,6 +8,7 @@ from typing import Any
 from .dose_nn_render_controls import DOSE_NN_COLORWASH_POINT_OPACITY_MODES
 from .dose_nn_render_controls import DOSE_NN_DOSE_COLOR_SCALE_MODES
 from .dose_nn_render_controls import DOSE_NN_COLORWASH_STYLES
+from .dose_nn_render_controls import DOSE_NN_MOVIE_FORMATS
 from .dose_nn_render_controls import DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER
 from .dose_nn_render_controls import DoseNNRenderControlSelection
 from .dose_nn_render_controls import normalize_dose_nn_render_control_selection
@@ -119,6 +120,9 @@ class TkDoseNNRenderControlSelectionAdapter:
         z_axis_label_var = tk.StringVar(value=str(resolved_initial_selection.z_axis_label))
         axes_title_font_size_var = tk.StringVar(value=str(resolved_initial_selection.axes_title_font_size))
         axes_tick_font_size_var = tk.StringVar(value=str(resolved_initial_selection.axes_tick_label_font_size))
+        movie_format_var = tk.StringVar(value=str(resolved_initial_selection.movie_format))
+        movie_fps_var = tk.StringVar(value=str(resolved_initial_selection.movie_frames_per_second))
+        movie_z_orbit_var = tk.StringVar(value=str(resolved_initial_selection.movie_z_orbit_degrees))
 
         show_biopsy_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_biopsy_points))
         show_reference_var = tk.BooleanVar(value=bool(resolved_initial_selection.show_reference_biopsy_points))
@@ -131,9 +135,10 @@ class TkDoseNNRenderControlSelectionAdapter:
         show_scalar_bar_background_var = tk.BooleanVar(
             value=bool(resolved_initial_selection.dose_scalar_bar_show_background)
         )
+        export_movie_var = tk.BooleanVar(value=bool(resolved_initial_selection.export_movie))
 
         current_row = 2
-        current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all; use 0-100 or 0,50,100")
+        current_row = _add_labeled_entry(frame, current_row, "Trials", selected_trials_var, "blank = all; movie requires 0-100 or 0,50,100")
         current_row = _add_labeled_entry(frame, current_row, "Nominal trial", reference_trials_var, "usually 0 = non-transformed position")
         current_row = _add_labeled_entry(frame, current_row, "Dose min", dose_min_var, "blank = no lower cutoff")
         current_row = _add_labeled_entry(frame, current_row, "Dose max", dose_max_var, "blank = no upper cutoff")
@@ -213,6 +218,21 @@ class TkDoseNNRenderControlSelectionAdapter:
         _add_checkbox(layers_frame, 4, 0, "Box scalar bar", show_scalar_bar_background_var)
         current_row += 1
 
+        movie_frame = ttk.LabelFrame(frame, text="Movie export", padding=8)
+        movie_frame.grid(row=current_row, column=0, columnspan=2, sticky="ew", pady=(10, 8))
+        movie_frame.columnconfigure(1, weight=1)
+        _add_checkbox(movie_frame, 0, 0, "Render selected trials as movie", export_movie_var)
+        ttk.Label(movie_frame, text="Movie format").grid(row=1, column=0, sticky="w", pady=(4, 4))
+        ttk.Combobox(
+            movie_frame,
+            textvariable=movie_format_var,
+            values=DOSE_NN_MOVIE_FORMATS,
+            state="readonly",
+        ).grid(row=1, column=1, sticky="ew", pady=(4, 4))
+        _add_labeled_entry(movie_frame, 2, "Movie FPS", movie_fps_var, "positive number")
+        _add_labeled_entry(movie_frame, 4, "Local Z orbit degrees", movie_z_orbit_var, "0 = fixed captured frame")
+        current_row += 1
+
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=current_row, column=0, columnspan=2, sticky="e", pady=(8, 0))
 
@@ -258,6 +278,10 @@ class TkDoseNNRenderControlSelectionAdapter:
                     z_axis_label=str(z_axis_label_var.get()),
                     axes_title_font_size=int(axes_title_font_size_var.get()),
                     axes_tick_label_font_size=int(axes_tick_font_size_var.get()),
+                    export_movie=bool(export_movie_var.get()),
+                    movie_format=str(movie_format_var.get()),
+                    movie_frames_per_second=float(movie_fps_var.get()),
+                    movie_z_orbit_degrees=float(movie_z_orbit_var.get()),
                 )
                 result_ref["value"] = normalize_dose_nn_render_control_selection(
                     selection,
@@ -288,10 +312,26 @@ class TkDoseNNRenderControlSelectionAdapter:
         root = tk.Tk()
         root.withdraw()
         try:
-            screenshot_paths = [str(getattr(result, "screenshot_path", result)) for result in tuple(results)]
+            output_paths = [_render_result_output_path(result) for result in tuple(results)]
             messagebox.showinfo(
                 "Dose NN render complete",
-                "Wrote render output:\n{}".format("\n".join(screenshot_paths)),
+                "Wrote render output:\n{}".format("\n".join(output_paths)),
+                parent=root,
+            )
+        finally:
+            root.destroy()
+
+    def notify_movie_camera_capture_prompt(self, option: Any, selection: DoseNNRenderControlSelection) -> None:
+        """Tell the user that the next PyVista window is the movie camera capture frame."""
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            messagebox.showinfo(
+                "Set movie camera",
+                "Adjust the PyVista view for the first movie frame, then close the window to render the selected trials.",
                 parent=root,
             )
         finally:
@@ -318,6 +358,14 @@ def _add_labeled_entry(frame: Any, row: int, label: str, variable: Any, hint: st
     entry.grid(row=row, column=1, sticky="ew", pady=(4, 4))
     ttk.Label(frame, text=hint, foreground="#526174").grid(row=row + 1, column=1, sticky="w")
     return row + 2
+
+
+def _render_result_output_path(result: Any) -> str:
+    if hasattr(result, "video_path"):
+        return str(result.video_path)
+    if hasattr(result, "screenshot_path"):
+        return str(result.screenshot_path)
+    return str(result)
 
 
 def _add_checkbox(frame: Any, row: int, column: int, label: str, variable: Any) -> None:

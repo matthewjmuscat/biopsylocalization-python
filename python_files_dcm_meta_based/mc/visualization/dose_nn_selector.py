@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 import re
@@ -18,7 +18,10 @@ from ui.render_broker import render_backend_includes
 from ui.render_broker import run_render_broker_session
 
 from .dose_nn_pyvista import DoseNNPyVistaExportResult
+from .dose_nn_pyvista import DoseNNPyVistaMovieExportResult
 from .dose_nn_pyvista import DoseNNPyVistaRenderSettings
+from .dose_nn_render_service import capture_saved_dose_nn_scene_camera_pyvista
+from .dose_nn_render_service import export_saved_dose_nn_scene_trial_movie_pyvista
 from .dose_nn_render_service import render_saved_dose_nn_scene_artifact_pyvista
 from .dose_nn_render_controls import DoseNNRenderControlSelection
 from .dose_nn_render_controls import dose_nn_pyvista_settings_from_control_selection
@@ -337,14 +340,25 @@ def run_saved_dose_nn_scene_controlled_selector_session(
                 continue
             current_control_selection["value"] = control_selection
             try:
-                results = render_saved_dose_nn_scene_selection_pyvista(
-                    options,
-                    (selected_option_key,),
-                    output_dir,
-                    settings=resolved_settings,
-                    control_selection=control_selection,
-                    overwrite=overwrite,
-                )
+                if bool(control_selection.export_movie):
+                    results = render_saved_dose_nn_scene_selection_movie_pyvista(
+                        options,
+                        (selected_option_key,),
+                        output_dir,
+                        settings=resolved_settings,
+                        control_selection=control_selection,
+                        control_dialog_adapter=resolved_control_dialog_adapter,
+                        overwrite=overwrite,
+                    )
+                else:
+                    results = render_saved_dose_nn_scene_selection_pyvista(
+                        options,
+                        (selected_option_key,),
+                        output_dir,
+                        settings=resolved_settings,
+                        control_selection=control_selection,
+                        overwrite=overwrite,
+                    )
             except Exception as exc:
                 notify_error = getattr(resolved_control_dialog_adapter, "notify_render_error", None)
                 if callable(notify_error):
@@ -405,6 +419,66 @@ def render_saved_dose_nn_scene_selection_pyvista(
     return tuple(results)
 
 
+def render_saved_dose_nn_scene_selection_movie_pyvista(
+    options: Mapping[str, DoseNNSavedSceneOption] | Sequence[DoseNNSavedSceneOption],
+    selected_option_keys: Sequence[str],
+    output_dir: Path | str,
+    *,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    control_selection: DoseNNRenderControlSelection | None = None,
+    control_dialog_adapter: DoseNNRenderControlSelectionAdapter | None = None,
+    overwrite: bool = False,
+) -> tuple[DoseNNPyVistaMovieExportResult, ...]:
+    """Render selected saved scene options as per-trial movies through PyVista."""
+    if control_selection is None:
+        raise ValueError("movie export requires dose NN render controls")
+    options_by_key = _options_by_key(options)
+    resolved_output_dir = Path(output_dir)
+    results: list[DoseNNPyVistaMovieExportResult] = []
+    for selected_option_key in tuple(selected_option_keys):
+        if selected_option_key not in options_by_key:
+            raise ValueError("unknown dose NN saved scene option: {}".format(selected_option_key))
+        option = options_by_key[selected_option_key]
+        resolved_config, resolved_settings = _resolve_render_config_and_settings(
+            option,
+            config=None,
+            settings=settings,
+            control_selection=control_selection,
+        )
+        if resolved_config is None:
+            resolved_config = DoseNNRenderConfig()
+        if resolved_settings is None:
+            resolved_settings = DoseNNPyVistaRenderSettings()
+
+        notify_camera_prompt = getattr(control_dialog_adapter, "notify_movie_camera_capture_prompt", None)
+        if callable(notify_camera_prompt):
+            notify_camera_prompt(option, control_selection)
+        camera_position = capture_saved_dose_nn_scene_camera_pyvista(
+            option.scene_artifact_dir,
+            config=_movie_camera_capture_config(resolved_config, option.available_trials),
+            settings=replace(resolved_settings, off_screen=False),
+        )
+        movie_settings = replace(resolved_settings, off_screen=True, camera_position=camera_position)
+        video_path = resolved_output_dir.joinpath(
+            "{}.{}".format(_sanitize_path_fragment(option.option_key), control_selection.movie_format)
+        )
+        results.append(
+            export_saved_dose_nn_scene_trial_movie_pyvista(
+                option.scene_artifact_dir,
+                resolved_output_dir,
+                video_path=video_path,
+                video_format=control_selection.movie_format,
+                selected_trials=resolved_config.selected_trials,
+                frames_per_second=control_selection.movie_frames_per_second,
+                camera_z_orbit_degrees=control_selection.movie_z_orbit_degrees,
+                config=resolved_config,
+                settings=movie_settings,
+                overwrite=overwrite,
+            )
+        )
+    return tuple(results)
+
+
 def _resolve_render_config_and_settings(
     option: DoseNNSavedSceneOption,
     *,
@@ -425,6 +499,17 @@ def _resolve_render_config_and_settings(
             base_settings=settings,
         ),
     )
+
+
+def _movie_camera_capture_config(
+    config: DoseNNRenderConfig,
+    available_trials: tuple[int, ...],
+) -> DoseNNRenderConfig:
+    if config.selected_trials is not None:
+        return replace(config, selected_trials=(int(config.selected_trials[0]),))
+    if len(available_trials) > 0:
+        return replace(config, selected_trials=(int(available_trials[0]),))
+    return config
 
 
 def _options_by_key(

@@ -27,6 +27,7 @@ from mc.visualization.dose_nn_selector import build_saved_dose_nn_scene_broker_r
 from mc.visualization.dose_nn_selector import build_saved_dose_nn_scene_choice_group
 from mc.visualization.dose_nn_selector import discover_saved_dose_nn_scene_options
 from mc.visualization.dose_nn_selector import handle_saved_dose_nn_scene_broker_decision_pyvista
+from mc.visualization.dose_nn_selector import render_saved_dose_nn_scene_selection_movie_pyvista
 from mc.visualization.dose_nn_selector import render_saved_dose_nn_scene_selection_pyvista
 from mc.visualization.dose_nn_selector import run_saved_dose_nn_scene_controlled_selector_session
 from mc.visualization.dose_nn_selector import run_saved_dose_nn_scene_selector_session
@@ -270,6 +271,76 @@ class DoseNNSelectorTests(unittest.TestCase):
         self.assertFalse(render_mock.call_args.kwargs["settings"].off_screen)
         self.assertFalse(render_mock.call_args.kwargs["control_selection"].show_lattice_points)
         self.assertTrue(render_mock.call_args.kwargs["control_selection"].show_dose_colorwash)
+
+    def test_controlled_selector_session_routes_movie_controls_to_movie_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            dialog_adapter = _RenderThenContinueDialogAdapter()
+            control_adapter = _ControlSelectionAdapter(
+                DoseNNRenderControlSelection(
+                    selected_trials=(0,),
+                    export_movie=True,
+                    movie_frames_per_second=6.0,
+                    movie_z_orbit_degrees=45.0,
+                )
+            )
+
+            with patch(
+                "mc.visualization.dose_nn_selector.render_saved_dose_nn_scene_selection_movie_pyvista"
+            ) as movie_mock, patch(
+                "mc.visualization.dose_nn_selector.render_saved_dose_nn_scene_selection_pyvista"
+            ) as still_mock:
+                run_saved_dose_nn_scene_controlled_selector_session(
+                    root,
+                    root.joinpath("exports"),
+                    dialog_adapter=dialog_adapter,
+                    control_dialog_adapter=control_adapter,
+                )
+
+        movie_mock.assert_called_once()
+        still_mock.assert_not_called()
+        self.assertTrue(movie_mock.call_args.kwargs["control_selection"].export_movie)
+        self.assertEqual(movie_mock.call_args.kwargs["control_selection"].movie_z_orbit_degrees, 45.0)
+
+    def test_render_saved_scene_selection_movie_uses_captured_camera(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            scene_dir = root.joinpath("scene")
+            output_dir = root.joinpath("exports")
+            write_dose_nn_render_scene_artifact(_synthetic_scene(), scene_dir, scene_id="synthetic_scene")
+            options = discover_saved_dose_nn_scene_options(root)
+            captured_camera = ((0.0, -5.0, 2.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+
+            with patch(
+                "mc.visualization.dose_nn_selector.capture_saved_dose_nn_scene_camera_pyvista",
+                return_value=captured_camera,
+            ) as capture_mock, patch(
+                "mc.visualization.dose_nn_selector.export_saved_dose_nn_scene_trial_movie_pyvista"
+            ) as export_mock:
+                render_saved_dose_nn_scene_selection_movie_pyvista(
+                    options,
+                    ("synthetic_scene",),
+                    output_dir,
+                    settings=DoseNNPyVistaRenderSettings(off_screen=False, window_size=(320, 240)),
+                    control_selection=DoseNNRenderControlSelection(
+                        selected_trials=(0,),
+                        export_movie=True,
+                        movie_format="mp4",
+                        movie_frames_per_second=6.0,
+                        movie_z_orbit_degrees=45.0,
+                    ),
+                )
+
+        capture_mock.assert_called_once()
+        export_mock.assert_called_once()
+        self.assertFalse(capture_mock.call_args.kwargs["settings"].off_screen)
+        self.assertTrue(export_mock.call_args.kwargs["settings"].off_screen)
+        self.assertEqual(export_mock.call_args.kwargs["settings"].camera_position, captured_camera)
+        self.assertEqual(export_mock.call_args.kwargs["selected_trials"], (0,))
+        self.assertEqual(export_mock.call_args.kwargs["frames_per_second"], 6.0)
+        self.assertEqual(export_mock.call_args.kwargs["camera_z_orbit_degrees"], 45.0)
 
     def test_controlled_selector_session_skips_render_when_controls_cancelled(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

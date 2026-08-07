@@ -13,6 +13,7 @@ from mc.visualization.dose_nn_pyvista import DoseNNPyVistaRenderSettings
 from mc.visualization.dose_nn_pyvista import build_pyvista_dose_nn_export_provenance
 from mc.visualization.dose_nn_pyvista import build_pyvista_dose_nn_plotter
 from mc.visualization.dose_nn_pyvista import export_dose_nn_trial_frame_sequence_pyvista
+from mc.visualization.dose_nn_pyvista import export_dose_nn_trial_movie_pyvista
 from mc.visualization.dose_nn_pyvista import export_dose_nn_scene_pyvista
 from mc.visualization.dose_nn_pyvista import is_pyvista_available
 from mc.visualization.dose_nn_scene import DoseNNRenderConfig, DoseNNSceneMetadata, build_dose_nn_render_scene
@@ -469,6 +470,45 @@ class DoseNNPyVistaRendererTests(unittest.TestCase):
                 manifest = json.load(manifest_file)
             self.assertEqual(manifest["base_render_config"]["reference_trial_numbers"], [0])
             self.assertTrue(manifest["base_render_config"]["show_reference_biopsy_points"])
+
+    def test_export_trial_frame_sequence_supports_camera_z_orbit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory).joinpath("frames")
+            result = export_dose_nn_trial_frame_sequence_pyvista(
+                _synthetic_scene_with_trials(),
+                output_dir,
+                selected_trials=(0, 1),
+                base_config=DoseNNRenderConfig(show_lattice_points=False),
+                settings=DoseNNPyVistaRenderSettings(
+                    off_screen=True,
+                    window_size=(320, 240),
+                    show_axes=False,
+                    show_scalar_bar=False,
+                    camera_position=((0.0, -10.0, 2.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+                ),
+                camera_z_orbit_degrees=90.0,
+            )
+
+            with open(result.manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+
+            self.assertEqual(manifest["camera_z_orbit_degrees"], 90.0)
+            self.assertEqual(len(manifest["frames"]), 2)
+            self.assertAlmostEqual(manifest["frames"][0]["camera_position"][0][0], 0.0)
+            self.assertAlmostEqual(manifest["frames"][0]["camera_position"][0][1], -10.0)
+            self.assertAlmostEqual(manifest["frames"][1]["camera_position"][0][0], 10.0)
+            self.assertAlmostEqual(manifest["frames"][1]["camera_position"][0][1], 0.0, places=6)
+
+    def test_export_trial_movie_requires_camera_for_orbit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaisesRegex(ValueError, "camera_z_orbit_degrees"):
+                export_dose_nn_trial_movie_pyvista(
+                    _synthetic_scene_with_trials(),
+                    temporary_directory,
+                    selected_trials=(0, 1),
+                    camera_z_orbit_degrees=45.0,
+                    settings=_test_settings(),
+                )
 
     def test_export_trial_frame_sequence_fails_for_unavailable_trial(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

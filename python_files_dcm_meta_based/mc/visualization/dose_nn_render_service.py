@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
+from .dose_nn_pyvista import DoseNNPyVistaMovieExportResult
 from .dose_nn_pyvista import DoseNNPyVistaExportResult
 from .dose_nn_pyvista import DoseNNPyVistaFrameSequenceExportResult
 from .dose_nn_pyvista import DoseNNPyVistaRenderSettings
+from .dose_nn_pyvista import capture_dose_nn_scene_camera_pyvista
+from .dose_nn_pyvista import export_dose_nn_trial_movie_pyvista
 from .dose_nn_pyvista import export_dose_nn_trial_frame_sequence_pyvista
 from .dose_nn_pyvista import export_dose_nn_scene_pyvista
 from .dose_nn_scene import DoseNNRenderConfig
@@ -32,6 +36,17 @@ def render_saved_dose_nn_scene_artifact_pyvista(
         settings=settings,
         provenance_path=provenance_path,
     )
+
+
+def capture_saved_dose_nn_scene_camera_pyvista(
+    scene_artifact_dir: Path | str,
+    *,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """Open a saved scene interactively and return the user-selected PyVista camera."""
+    scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+    return capture_dose_nn_scene_camera_pyvista(scene, config=config, settings=settings)
 
 
 def export_saved_dose_nn_scene_trial_frames_pyvista(
@@ -59,11 +74,71 @@ def export_saved_dose_nn_scene_trial_frames_pyvista(
     )
 
 
+def export_saved_dose_nn_scene_trial_movie_pyvista(
+    scene_artifact_dir: Path | str,
+    output_dir: Path | str,
+    *,
+    video_path: Path | str | None = None,
+    video_format: str | None = None,
+    selected_trials: tuple[int, ...] | None = None,
+    max_frames: int | None = None,
+    frames_per_second: float = 12.0,
+    camera_z_orbit_degrees: float = 0.0,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    overwrite: bool = False,
+) -> DoseNNPyVistaMovieExportResult:
+    """Read a saved scene artifact, render per-trial frames, and encode a movie."""
+    scene = read_dose_nn_render_scene_artifact(scene_artifact_dir)
+    return export_dose_nn_trial_movie_pyvista(
+        scene,
+        output_dir,
+        video_path=video_path,
+        video_format=video_format,
+        selected_trials=selected_trials,
+        max_frames=max_frames,
+        frames_per_second=frames_per_second,
+        camera_z_orbit_degrees=camera_z_orbit_degrees,
+        base_config=config,
+        settings=settings,
+        overwrite=overwrite,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for rendering a saved dose NN scene artifact."""
     args = _build_argument_parser().parse_args(argv)
     if args.backend != "pyvista":
         raise ValueError("unsupported dose NN render backend: {}".format(args.backend))
+
+    if args.export_trial_movie_path is not None:
+        settings = _pyvista_settings_from_args(args)
+        if bool(args.capture_camera):
+            settings = replace(
+                settings,
+                camera_position=capture_saved_dose_nn_scene_camera_pyvista(
+                    args.scene_dir,
+                    config=_config_from_args(args),
+                    settings=settings,
+                ),
+            )
+        result = export_saved_dose_nn_scene_trial_movie_pyvista(
+            args.scene_dir,
+            _movie_output_dir_from_args(args),
+            video_path=args.export_trial_movie_path,
+            video_format=args.movie_format,
+            selected_trials=_selected_trials_from_args(args),
+            max_frames=args.max_trial_frames,
+            frames_per_second=args.frames_per_second,
+            camera_z_orbit_degrees=args.camera_z_orbit_degrees,
+            config=_config_from_args(args, include_selected_trials=False),
+            settings=settings,
+            overwrite=bool(args.overwrite),
+        )
+        print("[dose-nn-render] wrote {} frame(s)".format(len(result.frame_paths)))
+        print("[dose-nn-render] wrote {}".format(result.video_path))
+        print("[dose-nn-render] wrote {}".format(result.manifest_path))
+        return 0
 
     if args.export_trial_frames_dir is not None:
         result = export_saved_dose_nn_scene_trial_frames_pyvista(
@@ -101,6 +176,10 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provenance-path", type=Path, default=None, help="Optional provenance JSON output path.")
     parser.add_argument("--backend", choices=("pyvista",), default="pyvista")
     parser.add_argument("--export-trial-frames-dir", type=Path, default=None)
+    parser.add_argument("--export-trial-movie-path", type=Path, default=None)
+    parser.add_argument("--movie-format", choices=("mp4", "webm"), default=None)
+    parser.add_argument("--camera-z-orbit-degrees", type=float, default=0.0)
+    parser.add_argument("--capture-camera", action="store_true")
     parser.add_argument("--frames-per-second", type=float, default=12.0)
     parser.add_argument("--max-trial-frames", type=int, default=120)
     parser.add_argument("--overwrite", action="store_true")
@@ -205,8 +284,14 @@ def _show_lattice_points_from_args(args: argparse.Namespace) -> bool:
 
 def _required_screenshot_output_path(args: argparse.Namespace) -> Path:
     if args.output is None:
-        raise ValueError("--output is required unless --export-trial-frames-dir is used")
+        raise ValueError("--output is required unless a frame/movie export option is used")
     return args.output
+
+
+def _movie_output_dir_from_args(args: argparse.Namespace) -> Path:
+    if args.export_trial_frames_dir is not None:
+        return args.export_trial_frames_dir
+    return args.export_trial_movie_path.parent
 
 
 def _pyvista_settings_from_args(args: argparse.Namespace) -> DoseNNPyVistaRenderSettings:

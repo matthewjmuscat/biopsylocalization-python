@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from typing import Any, Mapping
 
 import numpy as np
@@ -78,6 +82,16 @@ class DoseNNPyVistaFrameSequenceExportResult:
     manifest_path: Path
 
 
+@dataclass(frozen=True, slots=True)
+class DoseNNPyVistaMovieExportResult:
+    """Paths written by a PyVista per-trial movie export."""
+
+    frame_paths: tuple[Path, ...]
+    frame_manifest_path: Path
+    video_path: Path
+    manifest_path: Path
+
+
 def is_pyvista_available() -> bool:
     """Return whether PyVista can be imported in the current environment."""
     try:
@@ -95,6 +109,24 @@ def render_dose_nn_scene_pyvista(
     """Prepare a dose NN scene and return a configured PyVista plotter."""
     prepared_scene = prepare_dose_nn_render_scene(scene, config)
     return build_pyvista_dose_nn_plotter(prepared_scene, settings=settings)
+
+
+def capture_dose_nn_scene_camera_pyvista(
+    scene: DoseNNRenderScene,
+    config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """Open an interactive PyVista scene and return the camera chosen by the user."""
+    resolved_settings = replace(settings or DoseNNPyVistaRenderSettings(), off_screen=False)
+    prepared_scene = prepare_dose_nn_render_scene(scene, config)
+    plotter = build_pyvista_dose_nn_plotter(prepared_scene, settings=resolved_settings)
+    try:
+        camera_position = plotter.show(return_cpos=True, auto_close=True)
+        if camera_position is None:
+            camera_position = plotter.camera_position
+    finally:
+        plotter.close()
+    return _normalize_camera_position(camera_position)
 
 
 def build_pyvista_dose_nn_plotter(
@@ -191,6 +223,7 @@ def export_dose_nn_trial_frame_sequence_pyvista(
     settings: DoseNNPyVistaRenderSettings | None = None,
     frame_name_prefix: str = "dose_nn_trial",
     manifest_path: Path | str | None = None,
+    camera_z_orbit_degrees: float = 0.0,
     overwrite: bool = False,
 ) -> DoseNNPyVistaFrameSequenceExportResult:
     """Export one screenshot per selected trial plus a frame manifest."""
@@ -205,9 +238,16 @@ def export_dose_nn_trial_frame_sequence_pyvista(
     trial_numbers = _resolve_frame_trial_numbers(scene, selected_trials, max_frames=max_frames)
     resolved_base_config = base_config or DoseNNRenderConfig()
     resolved_settings = settings or DoseNNPyVistaRenderSettings()
+    _validate_camera_orbit_settings(resolved_settings, camera_z_orbit_degrees)
     frame_paths: list[Path] = []
     frame_records: list[dict[str, Any]] = []
     for frame_index, trial_number in enumerate(trial_numbers):
+        frame_settings = _settings_for_movie_frame(
+            resolved_settings,
+            frame_index=frame_index,
+            frame_count=len(trial_numbers),
+            camera_z_orbit_degrees=camera_z_orbit_degrees,
+        )
         frame_path = resolved_output_dir.joinpath(
             "{}_{:04d}_trial_{:06d}.png".format(
                 _sanitize_output_name(frame_name_prefix),
@@ -221,7 +261,7 @@ def export_dose_nn_trial_frame_sequence_pyvista(
             scene,
             frame_path,
             config=_config_for_trial(resolved_base_config, int(trial_number)),
-            settings=resolved_settings,
+            settings=frame_settings,
             provenance_path=frame_path.with_suffix(".png.provenance.json"),
         )
         frame_paths.append(frame_path)
@@ -231,6 +271,9 @@ def export_dose_nn_trial_frame_sequence_pyvista(
                 "trial_number": int(trial_number),
                 "frame_path": str(frame_path),
                 "provenance_path": str(frame_path.with_suffix(".png.provenance.json")),
+                "camera_position": _json_ready(_normalize_camera_position(frame_settings.camera_position))
+                if frame_settings.camera_position is not None
+                else None,
             }
         )
 
@@ -244,12 +287,84 @@ def export_dose_nn_trial_frame_sequence_pyvista(
             "scene_metadata": _scene_metadata_from_scene(scene),
             "base_render_config": _json_ready(asdict(resolved_base_config)),
             "render_settings": _json_ready(asdict(resolved_settings)),
+            "camera_z_orbit_degrees": float(camera_z_orbit_degrees),
             "frames": frame_records,
         },
     )
     return DoseNNPyVistaFrameSequenceExportResult(
         frame_paths=tuple(frame_paths),
         manifest_path=resolved_manifest_path,
+    )
+
+
+def export_dose_nn_trial_movie_pyvista(
+    scene: DoseNNRenderScene,
+    output_dir: Path | str,
+    *,
+    video_path: Path | str | None = None,
+    video_format: str | None = None,
+    selected_trials: tuple[int, ...] | None = None,
+    max_frames: int | None = None,
+    frames_per_second: float = 12.0,
+    base_config: DoseNNRenderConfig | None = None,
+    settings: DoseNNPyVistaRenderSettings | None = None,
+    camera_z_orbit_degrees: float = 0.0,
+    overwrite: bool = False,
+) -> DoseNNPyVistaMovieExportResult:
+    """Export one frame per trial and encode them into an MP4 or WebM movie."""
+    resolved_output_dir = Path(output_dir)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_video_path = _resolve_movie_video_path(
+        resolved_output_dir,
+        video_path=video_path,
+        video_format=video_format,
+    )
+    resolved_video_format = _resolve_movie_video_format(resolved_video_path, video_format=video_format)
+    movie_manifest_path = resolved_video_path.with_suffix(".movie_manifest.json")
+    if not overwrite and (resolved_video_path.exists() or movie_manifest_path.exists()):
+        raise FileExistsError("dose NN movie output already exists: {}".format(resolved_video_path))
+
+    frame_dir = resolved_output_dir.joinpath("{}_frames".format(_sanitize_output_name(resolved_video_path.stem)))
+    frame_manifest_path = frame_dir.joinpath("frame_sequence_manifest.json")
+    frame_result = export_dose_nn_trial_frame_sequence_pyvista(
+        scene,
+        frame_dir,
+        selected_trials=selected_trials,
+        max_frames=max_frames,
+        frames_per_second=frames_per_second,
+        base_config=base_config,
+        settings=settings,
+        frame_name_prefix="{}_frame".format(_sanitize_output_name(resolved_video_path.stem)),
+        manifest_path=frame_manifest_path,
+        camera_z_orbit_degrees=camera_z_orbit_degrees,
+        overwrite=overwrite,
+    )
+    encoder_metadata = _encode_frame_sequence_with_ffmpeg(
+        frame_result.frame_paths,
+        resolved_video_path,
+        frames_per_second=frames_per_second,
+        video_format=resolved_video_format,
+        overwrite=overwrite,
+    )
+    _write_json(
+        movie_manifest_path,
+        {
+            "schema_version": "dose_nn_pyvista_trial_movie_v1",
+            "backend": PYVISTA_DOSE_NN_BACKEND_KEY,
+            "video_path": str(resolved_video_path),
+            "video_format": resolved_video_format,
+            "frames_per_second": float(frames_per_second),
+            "camera_z_orbit_degrees": float(camera_z_orbit_degrees),
+            "frame_count": len(frame_result.frame_paths),
+            "frame_manifest_path": str(frame_result.manifest_path),
+            "encoder": encoder_metadata,
+        },
+    )
+    return DoseNNPyVistaMovieExportResult(
+        frame_paths=frame_result.frame_paths,
+        frame_manifest_path=frame_result.manifest_path,
+        video_path=resolved_video_path,
+        manifest_path=movie_manifest_path,
     )
 
 
@@ -915,6 +1030,193 @@ def _line_mesh_from_start_end_points(pv: Any, start_points: np.ndarray, end_poin
     mesh = pv.PolyData(points)
     mesh.lines = lines
     return mesh
+
+
+def _settings_for_movie_frame(
+    settings: DoseNNPyVistaRenderSettings,
+    *,
+    frame_index: int,
+    frame_count: int,
+    camera_z_orbit_degrees: float,
+) -> DoseNNPyVistaRenderSettings:
+    if float(camera_z_orbit_degrees) == 0.0:
+        return settings
+    return replace(
+        settings,
+        camera_position=_camera_position_with_local_z_orbit(
+            settings.camera_position,
+            frame_index=frame_index,
+            frame_count=frame_count,
+            camera_z_orbit_degrees=camera_z_orbit_degrees,
+        ),
+    )
+
+
+def _validate_camera_orbit_settings(settings: DoseNNPyVistaRenderSettings, camera_z_orbit_degrees: float) -> None:
+    if float(camera_z_orbit_degrees) != 0.0 and settings.camera_position is None:
+        raise ValueError("camera_z_orbit_degrees requires a captured camera_position")
+
+
+def _camera_position_with_local_z_orbit(
+    camera_position: Any,
+    *,
+    frame_index: int,
+    frame_count: int,
+    camera_z_orbit_degrees: float,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    position, focal_point, view_up = _normalize_camera_position(camera_position)
+    if int(frame_count) <= 1:
+        orbit_fraction = 0.0
+    else:
+        orbit_fraction = float(frame_index) / float(int(frame_count) - 1)
+    angle_radians = np.deg2rad(float(camera_z_orbit_degrees) * orbit_fraction)
+    orbit_axis = _normalized_vector(np.asarray(view_up, dtype=float))
+    focal_array = np.asarray(focal_point, dtype=float)
+    rotated_offset = _rotate_vector_around_axis(
+        np.asarray(position, dtype=float) - focal_array,
+        orbit_axis,
+        angle_radians,
+    )
+    rotated_view_up = _rotate_vector_around_axis(np.asarray(view_up, dtype=float), orbit_axis, angle_radians)
+    return _normalize_camera_position((focal_array + rotated_offset, focal_array, rotated_view_up))
+
+
+def _normalize_camera_position(
+    camera_position: Any,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    camera_array = np.asarray(camera_position, dtype=float)
+    if camera_array.shape != (3, 3):
+        raise ValueError("camera_position must contain position, focal point, and view-up 3-vectors")
+    return tuple(tuple(float(value) for value in row) for row in camera_array)  # type: ignore[return-value]
+
+
+def _normalized_vector(vector: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if norm <= 0.0:
+        raise ValueError("camera orbit axis must be non-zero")
+    return np.asarray(vector, dtype=float) / norm
+
+
+def _rotate_vector_around_axis(vector: np.ndarray, axis: np.ndarray, angle_radians: float) -> np.ndarray:
+    resolved_vector = np.asarray(vector, dtype=float)
+    resolved_axis = _normalized_vector(axis)
+    cos_angle = float(np.cos(angle_radians))
+    sin_angle = float(np.sin(angle_radians))
+    return (
+        resolved_vector * cos_angle
+        + np.cross(resolved_axis, resolved_vector) * sin_angle
+        + resolved_axis * float(np.dot(resolved_axis, resolved_vector)) * (1.0 - cos_angle)
+    )
+
+
+def _resolve_movie_video_path(
+    output_dir: Path,
+    *,
+    video_path: Path | str | None,
+    video_format: str | None,
+) -> Path:
+    if video_path is None:
+        resolved_format = _normalize_movie_video_format(video_format or "mp4")
+        return output_dir.joinpath("dose_nn_trial_movie.{}".format(resolved_format))
+    resolved_video_path = Path(video_path)
+    if resolved_video_path.suffix == "":
+        resolved_video_path = resolved_video_path.with_suffix(
+            ".{}".format(_normalize_movie_video_format(video_format or "mp4"))
+        )
+    return resolved_video_path
+
+
+def _resolve_movie_video_format(video_path: Path, *, video_format: str | None) -> str:
+    if video_format is not None:
+        return _normalize_movie_video_format(video_format)
+    suffix = video_path.suffix.lower().lstrip(".")
+    if suffix in ("m4v", "mov"):
+        return "mp4"
+    return _normalize_movie_video_format(suffix or "mp4")
+
+
+def _normalize_movie_video_format(video_format: str) -> str:
+    resolved_format = str(video_format).strip().lower().lstrip(".")
+    if resolved_format in ("m4v", "mov"):
+        return "mp4"
+    if resolved_format not in ("mp4", "webm"):
+        raise ValueError("movie video format must be mp4 or webm")
+    return resolved_format
+
+
+def _encode_frame_sequence_with_ffmpeg(
+    frame_paths: tuple[Path, ...],
+    video_path: Path,
+    *,
+    frames_per_second: float,
+    video_format: str,
+    overwrite: bool,
+) -> dict[str, Any]:
+    if len(frame_paths) == 0:
+        raise ValueError("movie export requires at least one rendered frame")
+    resolved_fps = float(frames_per_second)
+    if resolved_fps <= 0.0:
+        raise ValueError("frames_per_second must be positive")
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        raise RuntimeError("ffmpeg is required to encode dose NN movies")
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    if video_path.exists() and not overwrite:
+        raise FileExistsError("dose NN movie output already exists: {}".format(video_path))
+
+    with tempfile.TemporaryDirectory(prefix="dose_nn_ffmpeg_frames_", dir=str(video_path.parent)) as temporary_dir:
+        temporary_path = Path(temporary_dir)
+        for frame_index, frame_path in enumerate(tuple(frame_paths)):
+            sequential_path = temporary_path.joinpath("frame_{:06d}.png".format(int(frame_index)))
+            try:
+                os.link(frame_path, sequential_path)
+            except OSError:
+                shutil.copy2(frame_path, sequential_path)
+        command = _ffmpeg_encode_command(
+            ffmpeg_path,
+            temporary_path.joinpath("frame_%06d.png"),
+            video_path,
+            frames_per_second=resolved_fps,
+            video_format=video_format,
+            overwrite=overwrite,
+        )
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if process.returncode != 0:
+        stderr_tail = "\n".join(process.stderr.splitlines()[-20:])
+        raise RuntimeError("ffmpeg movie encoding failed:\n{}".format(stderr_tail))
+    return {
+        "ffmpeg_path": ffmpeg_path,
+        "command": command,
+        "stdout_tail": "\n".join(process.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(process.stderr.splitlines()[-20:]),
+    }
+
+
+def _ffmpeg_encode_command(
+    ffmpeg_path: str,
+    input_pattern: Path,
+    video_path: Path,
+    *,
+    frames_per_second: float,
+    video_format: str,
+    overwrite: bool,
+) -> list[str]:
+    command = [
+        ffmpeg_path,
+        "-y" if bool(overwrite) else "-n",
+        "-framerate",
+        "{:.12g}".format(float(frames_per_second)),
+        "-i",
+        str(input_pattern),
+        "-vf",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p",
+    ]
+    if _normalize_movie_video_format(video_format) == "webm":
+        command.extend(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "28", "-row-mt", "1"])
+    else:
+        command.extend(["-c:v", "libx264", "-preset", "slow", "-crf", "18", "-movflags", "+faststart"])
+    command.append(str(video_path))
+    return command
 
 
 def _scene_metadata_dict(prepared_scene: DoseNNPreparedScene) -> dict[str, Any]:

@@ -12,6 +12,7 @@ from .dose_nn_scene import DoseNNRenderConfig
 DOSE_NN_COLORWASH_STYLES = ("points", "volume", "auto")
 DOSE_NN_DOSE_COLOR_SCALE_MODES = ("linear", "log")
 DOSE_NN_COLORWASH_POINT_OPACITY_MODES = ("constant", "center_fade")
+DOSE_NN_MOVIE_FORMATS = ("mp4", "webm")
 DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER = 0
 
 
@@ -58,6 +59,10 @@ class DoseNNRenderControlSelection:
     z_axis_label: str = "Inferior-Superior z (mm)"
     axes_title_font_size: int = 18
     axes_tick_label_font_size: int = 14
+    export_movie: bool = False
+    movie_format: str = "mp4"
+    movie_frames_per_second: float = 12.0
+    movie_z_orbit_degrees: float = 0.0
 
 
 def normalize_dose_nn_render_control_selection(
@@ -70,6 +75,9 @@ def normalize_dose_nn_render_control_selection(
     resolved_available_trials = _normalize_trial_numbers(tuple(available_trials)) or ()
     selected_trials = _normalize_trial_numbers(resolved_selection.selected_trials)
     reference_trial_numbers = _normalize_trial_numbers(resolved_selection.reference_trial_numbers)
+    export_movie = bool(resolved_selection.export_movie)
+    if export_movie and selected_trials is None:
+        raise ValueError("movie export requires explicit Trials values or a trial range")
 
     if bool(resolved_selection.show_reference_biopsy_points) and reference_trial_numbers is None:
         reference_trial_numbers = (DEFAULT_DOSE_NN_REFERENCE_TRIAL_NUMBER,)
@@ -135,6 +143,12 @@ def normalize_dose_nn_render_control_selection(
         "axes_tick_label_font_size",
         resolved_selection.axes_tick_label_font_size,
     )
+    movie_format = _normalize_movie_format(resolved_selection.movie_format)
+    movie_frames_per_second = _positive_float(
+        "movie_frames_per_second",
+        resolved_selection.movie_frames_per_second,
+    )
+    movie_z_orbit_degrees = float(resolved_selection.movie_z_orbit_degrees)
 
     return DoseNNRenderControlSelection(
         selected_trials=selected_trials,
@@ -176,6 +190,10 @@ def normalize_dose_nn_render_control_selection(
         z_axis_label=str(resolved_selection.z_axis_label),
         axes_title_font_size=axes_title_font_size,
         axes_tick_label_font_size=axes_tick_label_font_size,
+        export_movie=export_movie,
+        movie_format=movie_format,
+        movie_frames_per_second=movie_frames_per_second,
+        movie_z_orbit_degrees=movie_z_orbit_degrees,
     )
 
 
@@ -295,6 +313,15 @@ def _normalize_colorwash_point_opacity_mode(value: str) -> str:
     if resolved_value in ("center", "center_fade", "central", "central_fade"):
         return "center_fade"
     raise ValueError("unsupported dose colorwash point opacity mode: {}".format(value))
+
+
+def _normalize_movie_format(value: str) -> str:
+    resolved_value = str(value).strip().lower().lstrip(".")
+    if resolved_value in ("m4v", "mov"):
+        return "mp4"
+    if resolved_value not in DOSE_NN_MOVIE_FORMATS:
+        raise ValueError("unsupported dose NN movie format: {}".format(value))
+    return resolved_value
 
 
 def _optional_float(value: float | None) -> float | None:
