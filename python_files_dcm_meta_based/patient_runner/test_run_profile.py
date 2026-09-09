@@ -9,6 +9,9 @@ import unittest
 from pathlib import Path
 
 from .run_profile import load_patient_orchestration_profile
+from config.snapshots import PipelineConfigSnapshot
+from config.snapshots import canonical_sha256
+from config.snapshots import write_pipeline_config_snapshot
 
 
 _CASE_MANIFEST_COLUMNS = (
@@ -38,7 +41,15 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
             root = Path(temporary_directory)
             manifest_path = _write_case_manifest(root, ("P001", "P002"))
             config_snapshot_path = root.joinpath("scientific_config.json")
-            config_snapshot_path.write_text('{"schema_version": "placeholder"}\n', encoding="utf-8")
+            config_payload = {"mc": {"trials": 10}}
+            write_pipeline_config_snapshot(
+                PipelineConfigSnapshot(
+                    config_type="config.PipelineConfig.scientific",
+                    config=config_payload,
+                    config_sha256=canonical_sha256(config_payload),
+                ),
+                config_snapshot_path,
+            )
             profile_path = _write_profile(
                 root,
                 execution_mode="plan_only",
@@ -59,6 +70,7 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
         self.assertEqual(len(payload["metadata"]["profile_source_fingerprint_sha256"]), 64)
         self.assertEqual(len(payload["metadata"]["input_case_manifest_fingerprint_sha256"]), 64)
         self.assertEqual(len(payload["metadata"]["scientific_config_snapshot_fingerprint_sha256"]), 64)
+        self.assertEqual(len(payload["metadata"]["scientific_config_snapshot_file_sha256"]), 64)
         self.assertEqual(len(payload["worker_commands"]), 1)
         self.assertNotIn("--dry-run", payload["worker_commands"][0])
 
@@ -122,6 +134,19 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "unsupported fields"):
+                load_patient_orchestration_profile(profile_path)
+
+    def test_live_profile_requires_scientific_config_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _write_case_manifest(root, ("P001",))
+            profile_path = _write_profile(
+                root,
+                execution_mode="live_workers",
+                patient_uids=("P001",),
+            )
+
+            with self.assertRaisesRegex(ValueError, "requires scientific_config.snapshot"):
                 load_patient_orchestration_profile(profile_path)
 
     def test_profile_cli_runs_cpu_only_dry_run_workers(self) -> None:

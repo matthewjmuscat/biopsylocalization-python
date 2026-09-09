@@ -54,7 +54,7 @@ def run_patient_case(runtime_state: LegacyPatientRuntimeState,
         config.patient_output_dir(runtime_state.patient_case),
         stage_results,
         elapsed_seconds=perf_counter() - start_time,
-        metadata={"run_id": config.run_id},
+        metadata={**runtime_state.metadata, "run_id": config.run_id},
     )
     if config.write_patient_run_manifest:
         write_patient_run_manifest(patient_result)

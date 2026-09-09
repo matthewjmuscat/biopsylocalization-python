@@ -79,6 +79,12 @@ Standalone process architecture target:
   example profile; it does not yet replace typed scientific `PipelineConfig`,
 - help, plan-only, and dry-run worker paths are designed to remain CPU-only;
   scientific execution modules are loaded only after worker preflight,
+- worker job v2 contains a typed `PatientInputPaths` object with RTSTRUCT,
+  RTDOSE, RTPLAN, US, MR T2, and MR ADC role paths plus an input-assignment
+  fingerprint; legacy v1 packets are translated when loaded,
+- fresh-input runs emit resolved scientific config, effective code-state, and
+  strict run-compatibility provenance that propagates into patient/batch
+  manifests,
 - the future primary runner should use a parent orchestrator plus isolated
   patient worker processes,
 - the parent should keep only run config, patient inventory, worker statuses,

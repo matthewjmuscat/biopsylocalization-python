@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 import csv
 import json
 from pathlib import Path
-import re
 import time
 from typing import Any, Mapping, Optional, Sequence
 
 import pydicom
+
+from preprocessing.dicom_identity import extract_fraction_number
 
 from .dicom_routing_profile import DicomRoutingProfile
 from .dicom_routing_profile import build_legacy_variseed_mim_routing_profile
@@ -77,16 +78,6 @@ def _build_generated_patient_uid(patient_name: Any, patient_id: Any) -> Optional
     if patient_name in (None, "") or patient_id in (None, ""):
         return None
     return f"{str(patient_name)} ({str(patient_id)})"
-
-
-def _extract_number_from_string(value: str, allowed_prefixes: Sequence[str]) -> Optional[int]:
-    if not value or not allowed_prefixes:
-        return None
-    prefix_pattern = "|".join(re.escape(prefix) for prefix in allowed_prefixes)
-    match = re.search(rf"(?:{prefix_pattern})\s*(\d+)", value, re.IGNORECASE)
-    if match is None:
-        return None
-    return int(match.group(1))
 
 
 def _iter_role_paths(role_dict: Mapping[str, Any]):
@@ -376,7 +367,7 @@ def _build_case_manifest_rows(
             "Patient UID (generated)": patient_uid,
             "Patient Name": _safe_str(first_metadata.get("Patient Name")),
             "Patient ID (from dicom)": patient_id,
-            "Fraction number (legacy parsed)": _extract_number_from_string(patient_id, fraction_prefixes),
+            "Fraction number (legacy parsed)": extract_fraction_number(patient_id, fraction_prefixes),
             "Has RTSTRUCT": has_rtstruct,
             "Has RTDOSE": has_rtdose,
             "Has RTPLAN": has_rtplan,

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence, TYPE_CHECKING
 
 from biopsy_optimizer.v2.config import OptimizerV2SearchConfig
 from guidance_maps.config import GuidanceMapPlanningConfig
-from preprocessing.structure_processing.non_biopsy_structure_processing import (
-    NonBiopsyStructurePreprocessingConfig,
-)
-from startup.guidance_map_workflow import GuidanceMapRenderConfig
+from guidance_maps.config import GuidanceMapRenderConfig
+
+from .bootstrap import PatientBootstrapConfig
+
+if TYPE_CHECKING:
+    from preprocessing.structure_processing.non_biopsy_structure_processing import (
+        NonBiopsyStructurePreprocessingConfig,
+    )
 
 
 def _non_empty_string(value: Any, field_name: str) -> str:
@@ -426,6 +430,10 @@ class PreprocessingConfig:
         dil_ref: str,
         mr_adc_ref: str,
     ) -> NonBiopsyStructurePreprocessingConfig:
+        from preprocessing.structure_processing.non_biopsy_structure_processing import (
+            NonBiopsyStructurePreprocessingConfig,
+        )
+
         return NonBiopsyStructurePreprocessingConfig(
             all_ref_key=all_ref_key,
             oar_ref=oar_ref,
@@ -1165,5 +1173,6 @@ class PipelineConfig:
     mc: MonteCarloConfig = field(default_factory=MonteCarloConfig)
     legacy_refs: LegacyReferenceConfig = field(default_factory=LegacyReferenceConfig)
     structure_registry: StructureRegistryConfig = field(default_factory=StructureRegistryConfig)
+    bootstrap: PatientBootstrapConfig = field(default_factory=PatientBootstrapConfig)
     grid_preprocessing: GridPreprocessingConfig = field(default_factory=GridPreprocessingConfig)
     biopsy: BiopsyRuntimeConfig = field(default_factory=BiopsyRuntimeConfig)

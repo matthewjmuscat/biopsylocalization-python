@@ -141,6 +141,7 @@ from biopsy_optimizer.v2.live_integration import (
 from config import ArtifactConfig
 from config import BiopsyGeometryConfig
 from config import BiopsyRuntimeConfig
+from config import PatientBootstrapConfig
 from config import GuidanceMapConfig
 from config import GridPreprocessingConfig
 from config import LegacyReferenceConfig
@@ -173,6 +174,9 @@ from config import RuntimeReplayConfig
 from config import RuntimeUIConfig
 from config import SamplingClassificationConfig
 from config import SimulatedBiopsyConfig
+from config import SimulatedBiopsyBootstrapPolicy
+from config import StructureContourPolicy
+from config import StructureDataRemovalPolicy
 from config import StructureRegistryConfig
 from config import ValidationSidecarConfig
 from guidance_maps.config import GuidanceMapPlanningConfig
@@ -183,6 +187,7 @@ from output_artifacts import PHASE3C_OUTPUT_DIR_NAME
 from output_artifacts import summarize_in_memory_stitch_validation
 from output_artifacts import write_in_memory_stitch_validation_outputs
 from output_artifacts import write_phase3c_output_surface
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
 from patient_runner import LegacyRuntimeKeys
 from patient_runner import DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
 from patient_runner import PatientRunnerMainValidationConfig
@@ -197,11 +202,12 @@ from patient_runner import summarize_patient_runner_main_validation
 from patient_runner import summarize_patient_scientific_run_config
 from patient_runner import write_patient_scientific_run_plan_summary
 from patient_runner.state_isolation import copy_isolated_legacy_runtime_state_from_snapshot
-from startup.guidance_map_workflow import GuidanceMapRenderConfig
+from guidance_maps.config import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 from startup.runtime_logging import RuntimeLogger
 from startup.runtime_logging import install_runtime_logger
+from startup.run_provenance import write_run_provenance_artifacts
 
 
 def resolve_optimizer_v2_transform_sample_count(optimizer_v2_search_config):
@@ -1139,6 +1145,27 @@ def main():
                 structs_referenced_list_generalized_unique_structs
             ),
         ),
+        bootstrap=PatientBootstrapConfig(
+            removals=StructureDataRemovalPolicy(
+                biopsy=data_removals_dict_bx,
+                prostate=data_removals_dict_prostate,
+                dil=data_removals_dict_dil,
+                urethra=data_removals_dict_urethra,
+                rectum=data_removals_dict_rectum,
+            ),
+            contours=StructureContourPolicy(
+                oar=oaroi_contour_names,
+                dil=dil_contour_names,
+                biopsy=biopsy_contour_names,
+                rectum=rectum_contour_names,
+                urethra=urethra_contour_names,
+            ),
+            simulated_biopsies=SimulatedBiopsyBootstrapPolicy(
+                locations=bx_sim_locations_dict,
+                fraction_numbers_to_create=simulated_biopsy_fraction_numbers_to_create,
+                fraction_prefixes=fraction_prefixes,
+            ),
+        ),
         grid_preprocessing=GridPreprocessingConfig(
             show_3d_dose_renderings=show_3d_dose_renderings,
             show_3d_dose_renderings_thresholded=show_3d_dose_renderings_thresholded,
@@ -1467,6 +1494,7 @@ def main():
     # locals now come from PipelineConfig so file/GUI config can enter at one boundary.
     legacy_ref_config = pipeline_config.legacy_refs
     structure_registry_config = pipeline_config.structure_registry
+    bootstrap_config = pipeline_config.bootstrap
     preprocessing_config = pipeline_config.preprocessing
     grid_preprocessing_config = pipeline_config.grid_preprocessing
     biopsy_geometry_config = pipeline_config.biopsy.geometry
@@ -1494,6 +1522,23 @@ def main():
     structs_referenced_list_generalized_unique_structs = list(
         structure_registry_config.structs_referenced_list_generalized_unique_structs
     )
+    data_removals_dict_bx = bootstrap_config.removals.biopsy
+    data_removals_dict_prostate = bootstrap_config.removals.prostate
+    data_removals_dict_dil = bootstrap_config.removals.dil
+    data_removals_dict_urethra = bootstrap_config.removals.urethra
+    data_removals_dict_rectum = bootstrap_config.removals.rectum
+    oaroi_contour_names = bootstrap_config.contours.oar
+    dil_contour_names = bootstrap_config.contours.dil
+    biopsy_contour_names = bootstrap_config.contours.biopsy
+    rectum_contour_names = bootstrap_config.contours.rectum
+    urethra_contour_names = bootstrap_config.contours.urethra
+    bx_sim_locations_dict = bootstrap_config.simulated_biopsies.locations
+    simulated_biopsy_fraction_numbers_to_create = (
+        bootstrap_config.simulated_biopsies.fraction_numbers_to_create
+    )
+    fraction_prefixes = bootstrap_config.simulated_biopsies.fraction_prefixes
+    mr_global_multi_structure_output_dataframe_str = bootstrap_config.mr_global_structure_table_name
+    mr_global_by_voxel_multi_structure_output_dataframe_str = bootstrap_config.mr_global_voxel_table_name
 
     interp_inter_slice_dist = preprocessing_config.interp_inter_slice_dist
     interp_intra_slice_dist = preprocessing_config.interp_intra_slice_dist
@@ -1831,9 +1876,6 @@ def main():
 
 
     # create a dict for cohort data and dataframes
-    mr_global_multi_structure_output_dataframe_str = "Global MR ADC statistics"
-    mr_global_by_voxel_multi_structure_output_dataframe_str = "Global by voxel MR ADC statistics"
-
     master_cohort_patient_data_and_dataframes = {"Data": {},
                                                  "Dataframes": {"Uncertainties dataframe (unedited)": None,
                                                                 "Uncertainties dataframe (final)": None,
@@ -1950,6 +1992,8 @@ def main():
             patient_scientific_runner_post_discovery_reference_dict = None
             patient_scientific_runner_post_discovery_info_dict = None
             patient_scientific_runner_runtime_state_source = "legacy_current_runtime_state"
+            patient_runner_run_compatibility_identity = None
+            patient_runner_provenance_paths = {}
     
             if pipeline_config.artifacts.skip_preprocessing == False:
                 runtime_logger.phase_start(
@@ -2276,6 +2320,26 @@ def main():
                         "Input manifest warnings: " + str(input_manifest_result.warning_count),
                         live_display,
                     )
+
+                run_provenance = write_run_provenance_artifacts(
+                    pipeline_config=pipeline_config,
+                    routing_profile_path=input_manifest_result.routing_profile_path,
+                    manifest_dir=input_manifest_result.manifest_dir,
+                    repository_path=pathlib.Path(__file__),
+                    overwrite=True,
+                )
+                patient_runner_run_compatibility_identity = run_provenance.compatibility_identity
+                patient_runner_provenance_paths = run_provenance.manifest_metadata()["provenance_paths"]
+                runtime_logger.checkpoint(
+                    "run.provenance.ready",
+                    "Recorded strict code, scientific-config, and input-policy provenance.",
+                    details={
+                        **patient_runner_provenance_paths,
+                        "run_compatibility_identity_sha256": (
+                            patient_runner_run_compatibility_identity.identity_sha256
+                        ),
+                    },
+                )
 
                 validate_and_normalize_mr_adc_inputs_for_cohort(
                     master_structure_reference_dict=master_structure_reference_dict,
@@ -6078,6 +6142,10 @@ def main():
                         },
                     )
                 if patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
+                    if patient_runner_run_compatibility_identity is None:
+                        raise RuntimeError(
+                            "patient-runner scientific-shadow validation requires strict run compatibility provenance"
+                        )
                     isolated_validation_state = copy_isolated_legacy_runtime_state_from_snapshot(
                         patient_scientific_runner_post_discovery_reference_dict,
                         patient_scientific_runner_post_discovery_info_dict,
@@ -6111,6 +6179,8 @@ def main():
                             metadata={
                                 "source": "biopsy_localization_convex_main",
                                 "runtime_state_source": patient_runner_validation_runtime_state_source,
+                                RUN_COMPATIBILITY_METADATA_KEY: patient_runner_run_compatibility_identity.to_dict(),
+                                "provenance_paths": patient_runner_provenance_paths,
                             },
                         ),
                         patient_uids=patient_runner_validation_patient_uids,
@@ -6123,6 +6193,8 @@ def main():
                         metadata={
                             "source": "biopsy_localization_convex_main",
                             "runtime_state_source": patient_runner_validation_runtime_state_source,
+                            RUN_COMPATIBILITY_METADATA_KEY: patient_runner_run_compatibility_identity.to_dict(),
+                            "provenance_paths": patient_runner_provenance_paths,
                         },
                     )
                 patient_runner_validation_result = run_patient_runner_main_validation(
@@ -6190,6 +6262,10 @@ def main():
                     patient_scientific_runner_output_dir_name,
                 )
                 if patient_scientific_runner_mode == "execute":
+                    if patient_runner_run_compatibility_identity is None:
+                        raise RuntimeError(
+                            "legacy-backed patient scientific execution requires strict run compatibility provenance"
+                        )
                     isolated_scientific_runner_state = copy_isolated_legacy_runtime_state_from_snapshot(
                         patient_scientific_runner_post_discovery_reference_dict,
                         patient_scientific_runner_post_discovery_info_dict,
@@ -6281,6 +6357,14 @@ def main():
                         "source": "biopsy_localization_convex_main",
                         "mode": patient_scientific_runner_mode,
                         "runtime_state_source": patient_scientific_runner_runtime_state_source,
+                        **(
+                            {
+                                RUN_COMPATIBILITY_METADATA_KEY: patient_runner_run_compatibility_identity.to_dict(),
+                                "provenance_paths": patient_runner_provenance_paths,
+                            }
+                            if patient_runner_run_compatibility_identity is not None
+                            else {}
+                        ),
                     },
                 )
                 patient_scientific_run_plan_summary = summarize_patient_scientific_run_config(

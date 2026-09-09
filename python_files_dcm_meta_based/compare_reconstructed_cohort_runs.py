@@ -36,6 +36,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--abs-tol", type=float, default=1e-8)
     parser.add_argument("--rel-tol", type=float, default=1e-6)
     parser.add_argument(
+        "--compatibility-mode",
+        choices=("strict", "legacy_allow_missing"),
+        default="strict",
+        help="Strict provenance is required by default; legacy mode is only for explicitly historical runs.",
+    )
+    parser.add_argument(
         "--allow-patient-set-mismatch",
         action="store_true",
         help="Do not raise when reference and split patient UID sets differ; summary will still report the mismatch.",
@@ -54,6 +60,7 @@ def main() -> int:
             abs_tol=args.abs_tol,
             rel_tol=args.rel_tol,
             require_patient_uid_match=not args.allow_patient_set_mismatch,
+            compatibility_mode=args.compatibility_mode,
         )
     )
     print(f"[reconstructed-cohort] wrote outputs to {result.output_dir}")

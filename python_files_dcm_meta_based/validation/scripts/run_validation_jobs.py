@@ -196,6 +196,8 @@ def _build_reconstructed_cohort_args(config: Mapping[str, Any], job: Mapping[str
         args.extend(["--final-table-name", str(table_name)])
     if bool(job.get("allow_patient_set_mismatch", False)):
         args.append("--allow-patient-set-mismatch")
+    compatibility_mode = job.get("compatibility_mode", defaults.get("compatibility_mode", "strict"))
+    args.extend(["--compatibility-mode", str(compatibility_mode)])
     return args
 
 

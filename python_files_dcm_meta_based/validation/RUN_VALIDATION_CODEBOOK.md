@@ -179,6 +179,7 @@ Relevant TOML fields:
 [[run_groups.full_vs_split_reconstructed.jobs]]
 name = "full_vs_split_reconstructed"
 script = "compare_reconstructed_cohort_runs"
+compatibility_mode = "strict"
 reference_patient_runner_output_path = "full_patient_runner"
 split_patient_runner_outputs_paths = [
   "split_a_patient_runner",
@@ -189,6 +190,12 @@ output_dir = "validation_outputs/<run_key>/full_vs_split_reconstructed"
 
 Do not enable `allow_patient_set_mismatch` for the real equivalence gate. The
 full run's patient UID set should match the union of the split runs.
+
+Strict mode requires matching scientific config SHA, effective source-tree SHA,
+input/bootstrap policy SHA, runtime environment SHA, and output schema registry
+version before any artifacts are combined. Retained historical runs that predate these identities
+must state `compatibility_mode = "legacy_allow_missing"`; identified and
+unidentified runs cannot be mixed.
 
 Main summary to inspect:
 

@@ -144,6 +144,11 @@ JSON provenance. It deliberately does not define production scientific
 parameters yet. Human TOML remains at the edge, typed `PipelineConfig` remains
 the scientific runtime authority, and JSON remains generated evidence.
 
+Resolved scientific snapshots are now canonical and fingerprinted, but they are
+provenance artifacts rather than a general `PipelineConfig` loader. The next
+config slice must extract reusable defaults/construction from main and add typed
+snapshot rehydration before live standalone workers consume them.
+
 ## Current Config Tree By Domain
 
 ### Startup, Inputs, And Legacy Keys
@@ -178,6 +183,12 @@ PipelineConfig
 Rewrite note: key names should continue to use existing typed key bundles at
 runner boundaries. Do not duplicate `Global`, `By patient`, `All ref`, `Bx ref`,
 or `Num cases` string literals in new runner/config code.
+
+September 2026 status: `PipelineConfig.bootstrap` now owns typed structure
+removal rules, contour matching names, fraction parsing policy,
+simulated-biopsy bootstrap policy, and legacy MR output-table names. Existing
+main locals still feed this config during compatibility validation, but the
+standalone bootstrap adapter no longer needs those loose values duplicated.
 
 ### Structure Registry And Tissue Labels
 

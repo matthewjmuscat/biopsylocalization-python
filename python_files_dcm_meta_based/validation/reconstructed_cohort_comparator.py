@@ -11,6 +11,10 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_MODES
+from output_artifacts.run_compatibility import RunCompatibilityValidation
+from output_artifacts.run_compatibility import validate_run_metadata_compatibility
 from patient_runner.cohort_assembly import PatientBatchCohortAssemblyConfig
 from patient_runner.cohort_assembly import PatientBatchCohortAssemblyResult
 from patient_runner.cohort_assembly import run_patient_batch_cohort_assembly
@@ -40,6 +44,7 @@ class ReconstructedCohortComparisonConfig:
     abs_tol: float = 1e-8
     rel_tol: float = 1e-6
     require_patient_uid_match: bool = True
+    compatibility_mode: str = "strict"
     write_outputs: bool = True
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -61,6 +66,12 @@ class ReconstructedCohortComparisonConfig:
         object.__setattr__(self, "abs_tol", abs_tol)
         object.__setattr__(self, "rel_tol", rel_tol)
         object.__setattr__(self, "require_patient_uid_match", bool(self.require_patient_uid_match))
+        compatibility_mode = str(self.compatibility_mode).strip().lower()
+        if compatibility_mode not in RUN_COMPATIBILITY_MODES:
+            raise ValueError(
+                "compatibility_mode must be one of: {}".format(", ".join(sorted(RUN_COMPATIBILITY_MODES)))
+            )
+        object.__setattr__(self, "compatibility_mode", compatibility_mode)
         object.__setattr__(self, "write_outputs", bool(self.write_outputs))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -75,12 +86,15 @@ class ReconstructedCohortSurface:
     assembly_result: PatientBatchCohortAssemblyResult
     output_root: Path
     cohort_csv_root: Path
+    compatibility_validation: RunCompatibilityValidation
     written_paths: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_output_dirs", tuple(Path(path) for path in self.source_output_dirs))
         object.__setattr__(self, "output_root", Path(self.output_root))
         object.__setattr__(self, "cohort_csv_root", Path(self.cohort_csv_root))
+        if not isinstance(self.compatibility_validation, RunCompatibilityValidation):
+            raise TypeError("compatibility_validation must be a RunCompatibilityValidation")
         object.__setattr__(self, "written_paths", tuple(Path(path) for path in self.written_paths))
 
     @property
@@ -168,7 +182,8 @@ def _combine_batch_results(*,
                            label: str,
                            source_output_dirs: Sequence[Path],
                            batch_results: Sequence[PatientBatchRunResult],
-                           output_root: Path) -> PatientBatchRunResult:
+                           output_root: Path,
+                           compatibility_validation: RunCompatibilityValidation) -> PatientBatchRunResult:
     patient_results_by_uid: dict[str, PatientRunResult] = {}
     duplicate_patient_uids: list[str] = []
     for batch_result in batch_results:
@@ -185,6 +200,11 @@ def _combine_batch_results(*,
         patient_results_by_uid[patient_uid]
         for patient_uid in sorted(patient_results_by_uid)
     )
+    compatibility_metadata = {}
+    if compatibility_validation.status == "compatible":
+        compatibility_metadata[RUN_COMPATIBILITY_METADATA_KEY] = batch_results[0].metadata[
+            RUN_COMPATIBILITY_METADATA_KEY
+        ]
     return PatientBatchRunResult.from_patient_results(
         output_root=output_root,
         patient_results=sorted_patient_results,
@@ -194,6 +214,8 @@ def _combine_batch_results(*,
             "reconstruction_label": label,
             "source_output_dirs": [Path(path).as_posix() for path in source_output_dirs],
             "source_batch_count": len(batch_results),
+            "source_compatibility": compatibility_validation.to_dict(),
+            **compatibility_metadata,
         },
     )
 
@@ -250,6 +272,7 @@ def reconstruct_patient_runner_cohort_surface(label: str,
                                               *,
                                               output_root: str | Path,
                                               final_table_names: Sequence[str] = (),
+                                              compatibility_mode: str = "strict",
                                               write_outputs: bool = True) -> ReconstructedCohortSurface:
     """Load patient-runner manifests and reconstruct one cohort CSV surface."""
 
@@ -260,12 +283,21 @@ def reconstruct_patient_runner_cohort_surface(label: str,
         resolved_sources.append(resolved_path)
         batch_results.append(batch_result)
 
+    compatibility_validation = validate_run_metadata_compatibility(
+        {
+            "{}:{}".format(label, source_path.as_posix()): batch_result.metadata
+            for source_path, batch_result in zip(resolved_sources, batch_results)
+        },
+        mode=compatibility_mode,
+    )
+
     surface_output_root = Path(output_root).joinpath(label)
     combined_batch = _combine_batch_results(
         label=label,
         source_output_dirs=resolved_sources,
         batch_results=batch_results,
         output_root=surface_output_root.joinpath("combined_patient_batch"),
+        compatibility_validation=compatibility_validation,
     )
     assembly_config = PatientBatchCohortAssemblyConfig(
         final_table_names=final_table_names,
@@ -284,6 +316,7 @@ def reconstruct_patient_runner_cohort_surface(label: str,
         assembly_result=assembly_result,
         output_root=surface_output_root,
         cohort_csv_root=surface_output_root.joinpath("cohort_csv_surface"),
+        compatibility_validation=compatibility_validation,
         written_paths=tuple(assembly_written_paths),
     )
     if write_outputs:
@@ -299,6 +332,7 @@ def reconstruct_patient_runner_cohort_surface(label: str,
         assembly_result=surface.assembly_result,
         output_root=surface.output_root,
         cohort_csv_root=surface.cohort_csv_root,
+        compatibility_validation=surface.compatibility_validation,
         written_paths=(*surface.written_paths, *report_written_paths, *reconstructed_written_paths),
     )
 
@@ -338,6 +372,7 @@ def _build_summary(*,
                    output_dir: Path,
                    reference_surface: ReconstructedCohortSurface,
                    split_surface: ReconstructedCohortSurface,
+                   cross_surface_compatibility: RunCompatibilityValidation,
                    inventory_df: pd.DataFrame,
                    summary_df: pd.DataFrame) -> dict[str, Any]:
     patient_summary = _patient_set_summary(reference_surface, split_surface)
@@ -363,6 +398,10 @@ def _build_summary(*,
         "reference_patient_runner_output_dir": config.reference_patient_runner_output_dir.as_posix(),
         "split_patient_runner_output_dirs": [Path(path).as_posix() for path in config.split_patient_runner_output_dirs],
         "require_patient_uid_match": config.require_patient_uid_match,
+        "compatibility_mode": config.compatibility_mode,
+        "reference_source_compatibility": reference_surface.compatibility_validation.to_dict(),
+        "split_source_compatibility": split_surface.compatibility_validation.to_dict(),
+        "cross_surface_compatibility": cross_surface_compatibility.to_dict(),
         "patient_sets": patient_summary,
         "compared_files": int(len(summary_df)),
         "missing_file_count": missing_file_count,
@@ -393,6 +432,7 @@ def run_reconstructed_cohort_comparison(config: ReconstructedCohortComparisonCon
         (reference_resolved,),
         output_root=output_dir,
         final_table_names=config.final_table_names,
+        compatibility_mode=config.compatibility_mode,
         write_outputs=config.write_outputs,
     )
     split_surface = reconstruct_patient_runner_cohort_surface(
@@ -400,7 +440,15 @@ def run_reconstructed_cohort_comparison(config: ReconstructedCohortComparisonCon
         split_resolved,
         output_root=output_dir,
         final_table_names=config.final_table_names,
+        compatibility_mode=config.compatibility_mode,
         write_outputs=config.write_outputs,
+    )
+    cross_surface_compatibility = validate_run_metadata_compatibility(
+        {
+            "reference": reference_surface.batch_result.metadata,
+            "split": split_surface.batch_result.metadata,
+        },
+        mode=config.compatibility_mode,
     )
     patient_summary = _patient_set_summary(reference_surface, split_surface)
     if config.require_patient_uid_match and not patient_summary["patient_uid_sets_match"]:
@@ -441,6 +489,7 @@ def run_reconstructed_cohort_comparison(config: ReconstructedCohortComparisonCon
         output_dir=Path(output_dir),
         reference_surface=reference_surface,
         split_surface=split_surface,
+        cross_surface_compatibility=cross_surface_compatibility,
         inventory_df=inventory_df,
         summary_df=summary_df,
     )

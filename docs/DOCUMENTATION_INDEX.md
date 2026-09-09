@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-08-03
+Last updated: 2026-09-09
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -53,6 +53,9 @@ Current durable docs:
   execution semantics.
 - `architecture/GUI_AND_STARTUP_ARCHITECTURE_PLAN.md` - GUI/startup boundary
   plan.
+- `architecture/SCIENTIFIC_CODEBASE_STANDARDS.md` - code documentation,
+  ownership, validation, artifact compatibility, and open-core product boundary
+  standards for research-grade development.
 - `boundaries/PICKLE_EXPORT_BOUNDARIES.md` - pickle export/load boundary
   contract.
 - `roadmap/PATIENT_RUNNER_MODULE_READINESS.md` - stage-by-stage patient-runner
@@ -124,6 +127,7 @@ docs/
     PATIENT_SCIENTIFIC_CONTEXT_ARTIFACTS.md
     PATIENT_RUNNER_OUTPUT_ARCHITECTURE.md
     PATIENT_RUNNER_PROCESS_ARCHITECTURE.md
+    SCIENTIFIC_CODEBASE_STANDARDS.md
   boundaries/
     PICKLE_EXPORT_BOUNDARIES.md
   input/

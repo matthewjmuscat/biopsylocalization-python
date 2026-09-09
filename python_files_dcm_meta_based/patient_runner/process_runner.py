@@ -16,6 +16,8 @@ from typing import Any, Mapping, Sequence
 from .contracts import PatientCase
 from .contracts import PatientStageStatus
 from .contracts import validate_patient_uids
+from .inputs import PatientInputPaths
+from config.snapshots import read_pipeline_config_snapshot
 
 
 PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION = "patient_process_run_plan_v2"
@@ -126,49 +128,10 @@ def _case_row_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
-def _case_row_path(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _case_row_path_exists(value: Any) -> bool:
-    path_text = _case_row_path(value)
-    return bool(path_text) and Path(path_text).expanduser().is_file()
-
-
-def _core_input_path_metadata(row: Mapping[str, str]) -> dict[str, Any]:
-    core_input_paths = {
-        "rtstruct": _case_row_path(row.get("RTSTRUCT path")),
-        "rtdose": _case_row_path(row.get("RTDOSE path")),
-        "rtplan": _case_row_path(row.get("RTPLAN path")),
-    }
-    core_input_paths_exist = {
-        role: _case_row_path_exists(path)
-        for role, path in core_input_paths.items()
-    }
-    return {
-        "core_input_paths": core_input_paths,
-        "core_input_paths_exist": core_input_paths_exist,
-        "core_input_paths_all_present": all(core_input_paths_exist.values()),
-    }
-
-
-def _missing_core_input_roles(patient_case: PatientCase) -> tuple[str, ...]:
-    if "core_input_paths_exist" not in patient_case.metadata:
-        return ()
-    paths_exist = patient_case.metadata.get("core_input_paths_exist", {})
-    if not isinstance(paths_exist, Mapping):
-        return ()
-    return tuple(
-        role
-        for role in ("rtstruct", "rtdose", "rtplan")
-        if not bool(paths_exist.get(role, False))
-    )
-
-
-def _patient_cases_from_input_case_manifest(
+def _patient_cases_and_inputs_from_manifest(
     input_case_manifest_path: Path,
     patient_uids: Sequence[str] = (),
-) -> tuple[PatientCase, ...]:
+) -> tuple[tuple[PatientCase, PatientInputPaths], ...]:
     requested_patient_uids = validate_patient_uids(patient_uids, "patient_uids")
     requested_set = set(requested_patient_uids)
     rows_by_patient_uid: dict[str, Mapping[str, str]] = {}
@@ -189,13 +152,15 @@ def _patient_cases_from_input_case_manifest(
     else:
         ordered_patient_uids = tuple(rows_by_patient_uid.keys())
 
-    patient_cases: list[PatientCase] = []
+    patient_cases_and_inputs: list[tuple[PatientCase, PatientInputPaths]] = []
     for patient_uid in ordered_patient_uids:
         if requested_set and patient_uid not in requested_set:
             continue
         row = rows_by_patient_uid[patient_uid]
-        patient_cases.append(
-            PatientCase(
+        patient_inputs = PatientInputPaths.from_case_manifest_row(row)
+        patient_cases_and_inputs.append(
+            (
+                PatientCase(
                 patient_uid=patient_uid,
                 patient_label=patient_uid,
                 input_manifest_id=Path(input_case_manifest_path).as_posix(),
@@ -210,11 +175,13 @@ def _patient_cases_from_input_case_manifest(
                     "num_us_files": row.get("Num US files", ""),
                     "num_mr_t2_files": row.get("Num MR T2 files", ""),
                     "num_mr_adc_files": row.get("Num MR ADC files", ""),
-                    **_core_input_path_metadata(row),
+                    "patient_input_manifest_identity_sha256": patient_inputs.manifest_identity_sha256,
                 },
+                ),
+                patient_inputs,
             )
         )
-    return tuple(patient_cases)
+    return tuple(patient_cases_and_inputs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +190,7 @@ class PatientWorkerJob:
 
     job_id: str
     patient_case: PatientCase
+    patient_inputs: PatientInputPaths
     input_case_manifest_path: Path
     output_root: Path
     pathway_name: str
@@ -236,6 +204,10 @@ class PatientWorkerJob:
     def __post_init__(self) -> None:
         if not isinstance(self.patient_case, PatientCase):
             raise TypeError("patient_case must be a PatientCase instance")
+        if not isinstance(self.patient_inputs, PatientInputPaths):
+            raise TypeError("patient_inputs must be a PatientInputPaths instance")
+        if self.patient_inputs.patient_uid != self.patient_case.patient_uid:
+            raise ValueError("patient_inputs.patient_uid must match patient_case.patient_uid")
         object.__setattr__(self, "job_id", _non_empty_string(self.job_id, "job_id"))
         object.__setattr__(self, "input_case_manifest_path", Path(self.input_case_manifest_path))
         object.__setattr__(self, "output_root", Path(self.output_root))
@@ -275,6 +247,7 @@ class PatientWorkerJob:
                 "input_manifest_id": self.patient_case.input_manifest_id,
                 "metadata": dict(self.patient_case.metadata),
             },
+            "patient_inputs": self.patient_inputs.to_dict(),
             "input_case_manifest_path": self.input_case_manifest_path.as_posix(),
             "output_root": self.output_root.as_posix(),
             "patient_output_root": self.patient_output_root.as_posix(),
@@ -302,17 +275,31 @@ class PatientWorkerJob:
         patient_case_payload = payload.get("patient_case", {})
         if not isinstance(patient_case_payload, Mapping):
             raise TypeError("patient_case must be an object")
+        patient_uid = str(patient_case_payload.get("patient_uid", ""))
+        patient_metadata = patient_case_payload.get("metadata", {})
+        patient_inputs_payload = payload.get("patient_inputs")
+        if isinstance(patient_inputs_payload, Mapping):
+            patient_inputs = PatientInputPaths.from_dict(patient_inputs_payload)
+        else:
+            legacy_core_paths = patient_metadata.get("core_input_paths", {}) if isinstance(patient_metadata, Mapping) else {}
+            patient_inputs = PatientInputPaths(
+                patient_uid=patient_uid,
+                rtstruct=_optional_path(legacy_core_paths.get("rtstruct")) if isinstance(legacy_core_paths, Mapping) else None,
+                rtdose=_optional_path(legacy_core_paths.get("rtdose")) if isinstance(legacy_core_paths, Mapping) else None,
+                rtplan=_optional_path(legacy_core_paths.get("rtplan")) if isinstance(legacy_core_paths, Mapping) else None,
+            )
         return cls(
             job_id=str(payload.get("job_id", "")),
             attempt_number=int(payload.get("attempt_number", 1)),
             run_id=str(payload.get("run_id", "")),
             patient_case=PatientCase(
-                patient_uid=str(patient_case_payload.get("patient_uid", "")),
+                patient_uid=patient_uid,
                 patient_label=str(patient_case_payload.get("patient_label", "")),
                 source_run_id=str(patient_case_payload.get("source_run_id", "")),
                 input_manifest_id=str(patient_case_payload.get("input_manifest_id", "")),
-                metadata=patient_case_payload.get("metadata", {}),
+                metadata=patient_metadata,
             ),
+            patient_inputs=patient_inputs,
             input_case_manifest_path=Path(str(payload.get("input_case_manifest_path", ""))),
             output_root=Path(str(payload.get("output_root", ""))),
             pathway_name=str(payload.get("pathway_name", "")),
@@ -473,11 +460,12 @@ def build_patient_process_run_plan(
 ) -> PatientProcessRunPlan:
     """Build a standalone process plan from the DICOM input case manifest."""
     resolved_output_root = Path(output_root)
-    patient_cases = _patient_cases_from_input_case_manifest(Path(input_case_manifest_path), patient_uids)
+    patient_cases_and_inputs = _patient_cases_and_inputs_from_manifest(Path(input_case_manifest_path), patient_uids)
     worker_jobs = tuple(
         PatientWorkerJob(
             job_id=f"patient_{index:04d}_{patient_case.safe_patient_uid}",
             patient_case=patient_case,
+            patient_inputs=patient_inputs,
             input_case_manifest_path=Path(input_case_manifest_path),
             output_root=resolved_output_root,
             pathway_name=pathway_name,
@@ -487,7 +475,7 @@ def build_patient_process_run_plan(
             retention_level=retention_level,
             metadata={"patient_index": index},
         )
-        for index, patient_case in enumerate(patient_cases, start=1)
+        for index, (patient_case, patient_inputs) in enumerate(patient_cases_and_inputs, start=1)
     )
     return PatientProcessRunPlan(
         output_root=resolved_output_root,
@@ -536,10 +524,20 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
     keeping the one-patient runtime builder explicit.
     """
     start_time = perf_counter()
-    missing_core_input_roles = _missing_core_input_roles(job.patient_case)
+    missing_core_input_roles = job.patient_inputs.missing_core_roles
+    config_snapshot_available = (
+        job.scientific_config_snapshot_path is not None
+        and job.scientific_config_snapshot_path.is_file()
+    )
     input_preflight_metadata = {
         "core_input_paths_all_present": not missing_core_input_roles,
         "missing_core_input_roles": missing_core_input_roles,
+        "scientific_config_snapshot_path": (
+            ""
+            if job.scientific_config_snapshot_path is None
+            else job.scientific_config_snapshot_path.as_posix()
+        ),
+        "scientific_config_snapshot_available": config_snapshot_available,
     }
     if dry_run:
         warnings = ["dry-run worker did not build runtime state or execute scientific stages"]
@@ -547,6 +545,8 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
             warnings.append(
                 "input preflight found missing core input files: " + ", ".join(missing_core_input_roles)
             )
+        if not config_snapshot_available:
+            warnings.append("scientific config snapshot is not available")
         return PatientWorkerResult(
             worker_job=job,
             status=PatientStageStatus.SKIPPED,
@@ -576,6 +576,39 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
                 "input_preflight": input_preflight_metadata,
             },
         )
+
+    if not config_snapshot_available:
+        return PatientWorkerResult(
+            worker_job=job,
+            status=PatientStageStatus.FAILED,
+            elapsed_seconds=perf_counter() - start_time,
+            exit_code=2,
+            dry_run=False,
+            warnings=("standalone live worker requires a scientific config snapshot",),
+            metadata={
+                "worker_boundary": "standalone_patient_process_runner",
+                "failed_boundary": "scientific_config_snapshot_preflight",
+                "input_preflight": input_preflight_metadata,
+            },
+        )
+
+    try:
+        config_snapshot = read_pipeline_config_snapshot(job.scientific_config_snapshot_path)
+    except Exception as exc:
+        return PatientWorkerResult(
+            worker_job=job,
+            status=PatientStageStatus.FAILED,
+            elapsed_seconds=perf_counter() - start_time,
+            exit_code=2,
+            dry_run=False,
+            warnings=("invalid scientific config snapshot: {}".format(exc),),
+            metadata={
+                "worker_boundary": "standalone_patient_process_runner",
+                "failed_boundary": "scientific_config_snapshot_preflight",
+                "input_preflight": input_preflight_metadata,
+            },
+        )
+    input_preflight_metadata["scientific_config_sha256"] = config_snapshot.config_sha256
 
     return PatientWorkerResult(
         worker_job=job,

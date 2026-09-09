@@ -172,6 +172,33 @@ strict compatibility check:
 If compatibility cannot be proven, assembly must fail closed and write a clear
 diagnostic report.
 
+### Initial Strict Cross-Run Policy
+
+Newly produced patient-runner outputs use `strict_exact_v1` before artifacts
+from separate runs are combined. The following identities must match exactly:
+
+- resolved scientific `PipelineConfig` fingerprint;
+- effective source-tree fingerprint, including tracked changes and non-ignored
+   untracked source files in addition to the Git commit;
+- input routing/bootstrap policy fingerprint;
+- Python/platform/installed-package/Pipfile.lock environment fingerprint;
+- output schema registry version.
+
+The full input case-manifest hash and patient selection are recorded as
+provenance but are not equality dimensions because split runs intentionally
+contain different patients. Duplicate patient UIDs remain forbidden. A later
+patient-input identity contract should verify repeated patient sources before
+any overlap-aware merge is introduced.
+
+Historical runs that predate strict identities may be reconstructed only when a
+validation profile explicitly selects `legacy_allow_missing`. Every source in
+that comparison must lack the identity; identified and unidentified runs cannot
+be mixed. New run profiles default to strict compatibility.
+
+This policy is intentionally more restrictive than the eventual target. It may
+later distinguish scientifically relevant config from presentation or resource
+settings, but relaxation must be versioned and validated rather than inferred.
+
 ## Current State
 
 - The live scientific runner can already append `patient_artifact_writing` when

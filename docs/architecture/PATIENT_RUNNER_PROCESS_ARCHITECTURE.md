@@ -128,6 +128,30 @@ September 2026 Phase 1 checkpoint:
    unimplemented one-patient runtime builder; Phase 1 does not claim scientific
    worker execution is complete.
 
+September 2026 Phase 2A checkpoint:
+
+- Scientific `PipelineConfig` values can be serialized to deterministic,
+   schema-versioned JSON. Compatibility uses an explicit scientific field view
+   that excludes patient selection, scheduling, UI state, validation toggles,
+   and output locations.
+- Fresh-input runs write `resolved_scientific_config.json`,
+  `code_identity.json`, `runtime_environment_identity.json`, and
+  `run_compatibility_identity.json`. Effective source identity covers the Git
+  commit, tracked diff, and non-ignored untracked files; environment identity
+  covers Python, platform, installed packages, and `Pipfile.lock`.
+- `strict_exact_v1` requires matching scientific config, effective source,
+   input/bootstrap policy, runtime environment, and output schema registry before
+   cross-run artifacts are reconstructed together. Historical profiles must explicitly select
+   `legacy_allow_missing`; identified and unidentified runs cannot be mixed.
+- Worker job v2 carries typed DICOM role paths through `PatientInputPaths`
+   rather than hiding them in generic metadata. Version-1 packets remain readable.
+- `PipelineConfig.bootstrap` owns structure-removal, contour matching, fraction
+   parsing, and simulated-biopsy bootstrap policy. A typed adapter calls the
+   existing patient bootstrap and has synthetic parity coverage.
+- Remaining Phase 2 work is reusable default config construction/rehydration,
+   worker-local resource ownership, live one-patient runtime composition, and
+   `anatomical_qa` parity against the isolated from-legacy path.
+
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
 execution to the standalone parent/worker entrypoint. Third, keep the

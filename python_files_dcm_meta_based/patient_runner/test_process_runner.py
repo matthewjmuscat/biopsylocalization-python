@@ -8,6 +8,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from config.snapshots import PipelineConfigSnapshot
+from config.snapshots import canonical_sha256
+from config.snapshots import write_pipeline_config_snapshot
 from . import process_runner as process_runner_module
 from .contracts import PatientStageStatus
 from .process_runner import PatientProcessFailurePolicy
@@ -57,10 +60,35 @@ class PatientProcessRunnerTests(unittest.TestCase):
 
             job_paths = write_patient_worker_job_packets(plan)
             loaded_job = load_patient_worker_job(job_paths[0])
+            inputs_present = loaded_job.patient_inputs.core_paths_all_present
+            input_identity = loaded_job.patient_inputs.manifest_identity_sha256
 
         self.assertEqual(tuple(job.patient_case.patient_uid for job in plan.worker_jobs), ("P002", "P001"))
         self.assertEqual(loaded_job, plan.worker_jobs[0])
-        self.assertTrue(loaded_job.patient_case.metadata["core_input_paths_all_present"])
+        self.assertTrue(inputs_present)
+        self.assertEqual(len(input_identity), 64)
+
+    def test_legacy_v1_job_hydrates_explicit_patient_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            manifest_path = _write_case_manifest(root, ("P001",), create_core_files=True)
+            job = build_patient_process_run_plan(
+                input_case_manifest_path=manifest_path,
+                output_root=root.joinpath("output"),
+                pathway_name="anatomical_qa",
+                checkpoint_name="anatomical_qa",
+            ).worker_jobs[0]
+            payload = job.as_mapping()
+            payload["schema_version"] = "patient_worker_job_v1"
+            payload.pop("patient_inputs")
+            payload["patient_case"]["metadata"]["core_input_paths"] = {
+                role: path.as_posix() if path is not None else ""
+                for role, path in job.patient_inputs.core_paths.items()
+            }
+
+            loaded = process_runner_module.PatientWorkerJob.from_mapping(payload)
+
+        self.assertEqual(loaded.patient_inputs, job.patient_inputs)
 
     def test_dry_run_reports_missing_inputs_without_failing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -103,6 +131,24 @@ class PatientProcessRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             manifest_path = _write_case_manifest(root, ("P001",), create_core_files=True)
+            config_snapshot_path = _write_config_snapshot(root)
+            job = build_patient_process_run_plan(
+                input_case_manifest_path=manifest_path,
+                output_root=root.joinpath("output"),
+                pathway_name="anatomical_qa",
+                checkpoint_name="anatomical_qa",
+                scientific_config_snapshot_path=config_snapshot_path,
+            ).worker_jobs[0]
+
+            result = run_patient_worker_job(job)
+
+        self.assertFalse(result.succeeded)
+        self.assertEqual(result.metadata["missing_boundary"], "one_patient_runtime_state_builder")
+
+    def test_live_worker_requires_scientific_config_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            manifest_path = _write_case_manifest(root, ("P001",), create_core_files=True)
             job = build_patient_process_run_plan(
                 input_case_manifest_path=manifest_path,
                 output_root=root.joinpath("output"),
@@ -113,7 +159,7 @@ class PatientProcessRunnerTests(unittest.TestCase):
             result = run_patient_worker_job(job)
 
         self.assertFalse(result.succeeded)
-        self.assertEqual(result.metadata["missing_boundary"], "one_patient_runtime_state_builder")
+        self.assertEqual(result.metadata["failed_boundary"], "scientific_config_snapshot_preflight")
 
     def test_process_plan_launches_cpu_only_dry_run_worker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -295,6 +341,20 @@ def _write_case_manifest(
         writer.writeheader()
         writer.writerows(rows)
     return manifest_path
+
+
+def _write_config_snapshot(root: Path) -> Path:
+    payload = {"pathway": "anatomical_qa"}
+    path = root.joinpath("resolved_scientific_config.json")
+    write_pipeline_config_snapshot(
+        PipelineConfigSnapshot(
+            config_type="config.PipelineConfig.scientific",
+            config=payload,
+            config_sha256=canonical_sha256(payload),
+        ),
+        path,
+    )
+    return path
 
 
 if __name__ == "__main__":

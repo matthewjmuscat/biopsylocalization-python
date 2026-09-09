@@ -67,6 +67,20 @@ from .phase3c_surface import Phase3COutputSurfaceResult
 from .phase3c_surface import collect_phase3c_output_artifacts
 from .phase3c_surface import summarize_phase3c_artifact_manifest
 from .phase3c_surface import write_phase3c_output_surface
+from .run_compatibility import COMPATIBILITY_DIMENSIONS
+from .run_compatibility import IncompatibleRunArtifactsError
+from .run_compatibility import RUN_COMPATIBILITY_IDENTITY_SCHEMA_VERSION
+from .run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
+from .run_compatibility import RUN_COMPATIBILITY_MODES
+from .run_compatibility import RunCompatibilityCheck
+from .run_compatibility import RunCompatibilityIdentity
+from .run_compatibility import RunCompatibilityValidation
+from .run_compatibility import build_run_compatibility_identity
+from .run_compatibility import compare_run_compatibility_identities
+from .run_compatibility import read_run_compatibility_identity
+from .run_compatibility import require_compatible_run_identities
+from .run_compatibility import validate_run_metadata_compatibility
+from .run_compatibility import write_run_compatibility_identity
 from .schema_registry import EXPECTED_CURRENT_REGISTRY_COUNT
 from .schema_registry import OUTPUT_SCHEMA_COVERAGE_SCHEMA_VERSION
 from .schema_registry import OUTPUT_SCHEMA_REGISTRY_VERSION
@@ -168,4 +182,18 @@ __all__ = [
     "write_patient_artifact_index",
     "write_phase3c_output_surface",
     "write_shadow_stitch_validation",
+    "RUN_COMPATIBILITY_IDENTITY_SCHEMA_VERSION",
+    "RUN_COMPATIBILITY_METADATA_KEY",
+    "RUN_COMPATIBILITY_MODES",
+    "COMPATIBILITY_DIMENSIONS",
+    "IncompatibleRunArtifactsError",
+    "RunCompatibilityCheck",
+    "RunCompatibilityIdentity",
+    "RunCompatibilityValidation",
+    "build_run_compatibility_identity",
+    "compare_run_compatibility_identities",
+    "read_run_compatibility_identity",
+    "require_compatible_run_identities",
+    "validate_run_metadata_compatibility",
+    "write_run_compatibility_identity",
 ]

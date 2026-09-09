@@ -88,6 +88,14 @@ The patient-runner parity group is disabled until a runner output directory is r
 
 Use `compare_reconstructed_cohort_runs.py` after a full/reference patient-runner run and two-or-more split patient-runner runs have completed with artifact writing enabled. The validator loads patient batch manifests, combines split patient results by patient UID, reconstructs both cohort surfaces through the same assembly planner, writes both reconstructed `Output CSVs/Cohort` surfaces, and then runs the standard cohort CSV comparator.
 
+New comparisons default to `--compatibility-mode strict`. Every source batch
+manifest must carry an identical identity covering scientific config, effective
+source tree, input/bootstrap policy, runtime environment, and output schema registry. Historical runs
+created before this identity require the explicit
+`--compatibility-mode legacy_allow_missing` option. That exception is valid only
+when every source lacks identity metadata; old and identified runs cannot be
+mixed.
+
 Example direct call:
 
 ```bash

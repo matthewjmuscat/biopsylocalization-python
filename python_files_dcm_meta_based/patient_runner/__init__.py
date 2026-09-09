@@ -37,6 +37,7 @@ from .contracts import validate_patient_uids
 from .legacy_bridge import build_patient_case_from_legacy
 from .legacy_bridge import carve_patient_runtime_state
 from .legacy_bridge import carve_patient_runtime_state_by_uid
+from .inputs import PatientInputPaths
 from .manifests import PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION
 from .manifests import PATIENT_RUN_MANIFEST_SCHEMA_VERSION
 from .manifests import patient_batch_run_result_manifest
@@ -237,6 +238,7 @@ __all__ = [
     "PatientDoubleSextantClassificationStageConfig",
     "PatientGridPreprocessingScientificConfig",
     "PatientGuidanceScientificConfig",
+    "PatientInputPaths",
     "PatientMCOutputTablesScientificConfig",
     "PatientMCPrepScientificConfig",
     "PatientMCSimulationScientificConfig",

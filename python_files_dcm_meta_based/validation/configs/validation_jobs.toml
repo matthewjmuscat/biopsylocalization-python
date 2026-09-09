@@ -43,6 +43,7 @@ enabled = true
 [[run_groups.jun25_full_vs_split_reconstructed.jobs]]
 name = "full_vs_split_reconstructed"
 script = "compare_reconstructed_cohort_runs"
+compatibility_mode = "legacy_allow_missing" # Historical runs predate strict run identities.
 reference_patient_runner_output_path = "jun25_205540_patient_runner"
 split_patient_runner_outputs_paths = [
   "jun26_123614_patient_runner",

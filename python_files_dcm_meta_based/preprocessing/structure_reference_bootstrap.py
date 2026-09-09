@@ -9,20 +9,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
 import numpy as np
 import pydicom
 
-import misc_tools
-from biopsy_optimizer.v2.live_integration import (
+from biopsy_optimizer.v2.output_keys import (
     TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
     TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
 )
+from config.bootstrap import PatientBootstrapConfig
 from legacy_data_keys import legacy_data_keys
 from presentation import ProgressEvent
 from presentation import ProgressSink
 from presentation import coerce_progress_sink
+from preprocessing.dicom_identity import extract_fraction_number
+
+if TYPE_CHECKING:
+    from config.pipeline import LegacyReferenceConfig
+    from config.pipeline import StructureRegistryConfig
 
 
 StructureRecord = dict[str, Any]
@@ -577,7 +582,7 @@ def build_patient_structure_reference_bootstrap_fragment(
     biopsy_ref_index_start = len(biopsy_ref)
     patient_id_from_dicom = _patient_dicom_value(structure_item, (0x0010, 0x0020))
     patient_name_from_dicom = _patient_dicom_value(structure_item, (0x0010, 0x0010))
-    patient_fraction_number = misc_tools.extract_number_from_string(patient_id_from_dicom, fraction_prefixes)
+    patient_fraction_number = extract_fraction_number(patient_id_from_dicom, fraction_prefixes)
     create_simulated_for_fraction = _should_create_simulated_biopsies(
         simulated_biopsy_fraction_numbers_to_create,
         patient_fraction_number,
@@ -728,6 +733,82 @@ def build_patient_structure_reference_bootstrap_fragment_from_path(
             patient_uid=patient_uid,
             structure_item=structure_item,
             **kwargs,
+        )
+
+
+def build_patient_structure_reference_bootstrap_fragment_from_config(
+    *,
+    patient_uid: str,
+    structure_item: Any,
+    bootstrap_config: PatientBootstrapConfig,
+    legacy_refs: LegacyReferenceConfig,
+    structure_registry: StructureRegistryConfig,
+    progress_sink: ProgressSink | None = None,
+) -> PatientStructureReferenceBootstrapFragment:
+    """Build one patient shell from typed bootstrap and root-config slices.
+
+    This adapter is the intended standalone-worker boundary. The underlying
+    builder remains independently callable for focused legacy-parity tests.
+    """
+    if not isinstance(bootstrap_config, PatientBootstrapConfig):
+        raise TypeError("bootstrap_config must be a PatientBootstrapConfig")
+    for field_name in ("all_ref_key", "bx_ref", "oar_ref", "dil_ref", "rectum_ref_key", "urethra_ref_key"):
+        if not hasattr(legacy_refs, field_name):
+            raise TypeError("legacy_refs is missing required field: {}".format(field_name))
+    if not hasattr(structure_registry, "structs_referenced_dict"):
+        raise TypeError("structure_registry is missing required field: structs_referenced_dict")
+    removals = bootstrap_config.removals
+    contours = bootstrap_config.contours
+    simulated_biopsies = bootstrap_config.simulated_biopsies
+    return build_patient_structure_reference_bootstrap_fragment(
+        patient_uid=patient_uid,
+        structure_item=structure_item,
+        data_removals_dict_bx=removals.biopsy,
+        data_removals_dict_prostate=removals.prostate,
+        data_removals_dict_dil=removals.dil,
+        data_removals_dict_urethra=removals.urethra,
+        data_removals_dict_rectum=removals.rectum,
+        OAR_list=contours.oar,
+        DIL_list=contours.dil,
+        Bx_list=contours.biopsy,
+        st_ref_list=(
+            legacy_refs.bx_ref,
+            legacy_refs.oar_ref,
+            legacy_refs.dil_ref,
+            legacy_refs.rectum_ref_key,
+            legacy_refs.urethra_ref_key,
+        ),
+        structs_referenced_dict=structure_registry.structs_referenced_dict,
+        all_ref_key=legacy_refs.all_ref_key,
+        mr_global_multi_structure_output_dataframe_str=bootstrap_config.mr_global_structure_table_name,
+        mr_global_by_voxel_multi_structure_output_dataframe_str=bootstrap_config.mr_global_voxel_table_name,
+        bx_sim_locations_dict=simulated_biopsies.locations,
+        rectum_list=contours.rectum,
+        urethra_list=contours.urethra,
+        simulated_biopsy_fraction_numbers_to_create=simulated_biopsies.fraction_numbers_to_create,
+        fraction_prefixes=simulated_biopsies.fraction_prefixes,
+        progress_sink=progress_sink,
+    )
+
+
+def build_patient_structure_reference_bootstrap_fragment_from_path_and_config(
+    *,
+    patient_uid: str,
+    structure_item_path: str | Path,
+    bootstrap_config: PatientBootstrapConfig,
+    legacy_refs: LegacyReferenceConfig,
+    structure_registry: StructureRegistryConfig,
+    progress_sink: ProgressSink | None = None,
+) -> PatientStructureReferenceBootstrapFragment:
+    """Read one RTSTRUCT and build its patient shell from typed config."""
+    with pydicom.dcmread(structure_item_path, defer_size="2 MB") as structure_item:
+        return build_patient_structure_reference_bootstrap_fragment_from_config(
+            patient_uid=patient_uid,
+            structure_item=structure_item,
+            bootstrap_config=bootstrap_config,
+            legacy_refs=legacy_refs,
+            structure_registry=structure_registry,
+            progress_sink=progress_sink,
         )
 
 

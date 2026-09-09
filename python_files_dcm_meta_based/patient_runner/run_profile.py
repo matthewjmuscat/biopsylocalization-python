@@ -21,6 +21,7 @@ from .process_runner import PATIENT_PROCESS_REQUESTED_JOB_NAMES
 from .process_runner import PatientProcessFailurePolicy
 from .process_runner import PatientProcessRunPlan
 from .process_runner import build_patient_process_run_plan
+from config.snapshots import read_pipeline_config_snapshot
 
 
 PATIENT_ORCHESTRATION_PROFILE_SCHEMA_VERSION = "patient_orchestration_profile_v1"
@@ -128,6 +129,8 @@ class PatientOrchestrationProfile:
                 raise FileNotFoundError(
                     "scientific config snapshot does not exist: {}".format(self.scientific_config_snapshot_path)
                 )
+        if execution_mode == "live_workers" and self.scientific_config_snapshot_path is None:
+            raise ValueError("live_workers requires scientific_config.snapshot")
         object.__setattr__(self, "description", str(self.description).strip())
         object.__setattr__(self, "enabled", bool(self.enabled))
         object.__setattr__(self, "metadata", dict(self.metadata))
@@ -139,6 +142,12 @@ class PatientOrchestrationProfile:
 
     @property
     def scientific_config_snapshot_fingerprint_sha256(self) -> str:
+        if self.scientific_config_snapshot_path is None or not self.scientific_config_snapshot_path.is_file():
+            return ""
+        return read_pipeline_config_snapshot(self.scientific_config_snapshot_path).config_sha256
+
+    @property
+    def scientific_config_snapshot_file_sha256(self) -> str:
         if self.scientific_config_snapshot_path is None or not self.scientific_config_snapshot_path.is_file():
             return ""
         return _sha256_file(self.scientific_config_snapshot_path)
@@ -174,6 +183,7 @@ class PatientOrchestrationProfile:
                 "scientific_config_snapshot_fingerprint_sha256": (
                     self.scientific_config_snapshot_fingerprint_sha256
                 ),
+                "scientific_config_snapshot_file_sha256": self.scientific_config_snapshot_file_sha256,
                 **self.metadata,
             },
         )

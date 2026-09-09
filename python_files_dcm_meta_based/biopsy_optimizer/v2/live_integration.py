@@ -22,6 +22,14 @@ from biopsy_optimizer.v2.output import (
     build_target_dil_ranked_candidate_output_dataframe,
     build_target_dil_tested_candidate_output_dataframe,
 )
+from biopsy_optimizer.v2.output_keys import (
+    TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY,
+    TARGET_DIL_OPTIMIZER_V2_LANE_NAME,
+    TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY,
+    TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY,
+    TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY,
+    TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY,
+)
 from biopsy_optimizer.v2.render import (
     OptimizerV2PlotlyExportConfig,
     OptimizerV2StageBoundaryRenderJob,
@@ -54,23 +62,6 @@ from ui.render_broker import (
 )
 from ui.tk_render_broker import TkRenderBrokerDialogAdapter
 
-
-TARGET_DIL_OPTIMIZER_V2_LANE_NAME = "target_dil_optimizer_v2"
-TARGET_DIL_OPTIMIZER_V2_SUMMARY_DF_KEY = (
-    "Biopsy optimization - Target DIL optimizer v2 summary dataframe"
-)
-TARGET_DIL_OPTIMIZER_V2_RANKED_DF_KEY = (
-    "Biopsy optimization - Target DIL optimizer v2 ranked candidates dataframe"
-)
-TARGET_DIL_OPTIMIZER_V2_TESTED_DF_KEY = (
-    "Biopsy optimization - Target DIL optimizer v2 tested candidates dataframe"
-)
-TARGET_DIL_OPTIMIZER_V2_STAGE_BOUNDARY_RENDER_JOBS_KEY = (
-    "Biopsy optimization - Target DIL optimizer v2 stage boundary render jobs"
-)
-TARGET_DIL_OPTIMIZER_V2_DOWNSTREAM_MC_SOURCE_DF_KEY = (
-    "Tissue class - Global tissue by structure statistics"
-)
 
 DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_SAFETY_FACTOR = 0.7
 DEFAULT_MAX_TEST_STRUCTURES_PER_CALL_CALIBRATION_EXPANSION_FACTOR = 1.25

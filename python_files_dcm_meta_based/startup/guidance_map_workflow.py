@@ -1,46 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
-import production_plots
-import rich_preambles
+from guidance_maps.config import DEFAULT_GUIDANCE_MAP_OUTPUT_DIR_NAME
+from guidance_maps.config import DEFAULT_OUTPUT_FIGURES_DIR_NAME
+from guidance_maps.config import GuidanceMapRenderConfig
 
 
 GUIDANCE_MAP_PATIENT_OUTPUT_DIR_DICT_KEY = "Patient specific guidance map figures directory dict"
 GUIDANCE_MAP_OUTPUT_DIR_KEY = "Guidance map figures dir"
-DEFAULT_OUTPUT_FIGURES_DIR_NAME = "Output figures"
-DEFAULT_GUIDANCE_MAP_OUTPUT_DIR_NAME = "Guidance maps"
-
-
-@dataclass(frozen=True)
-class GuidanceMapRenderConfig:
-    enabled: bool = False
-    plot_name: str = "guidance maps"
-    output_figures_dir_name: str = DEFAULT_OUTPUT_FIGURES_DIR_NAME
-    output_dir_name: str = DEFAULT_GUIDANCE_MAP_OUTPUT_DIR_NAME
-    save_formats: tuple[str, ...] = ("svg", "pdf", "html")
-    image_width: int = 1300
-    image_height: int = 1300
-    image_scale: float = 1.0
-    axis_title_font_size: int = 24
-    axis_tick_font_size: int = 20
-    legend_font_size: int = 20
-    annotation_font_size: int = 20
-    distance_annotation_font_size: int = 20
-    fire_annotation_font_size: int = 20
-    colorbar_tick_font_size: int = 20
-    template_label_font_size: int = 20
-    colorbar_title_font_size: int = 20
-    fire_annotation_style: str = "compact_table"
-    fire_table_position: str = "outside top center"
-    draw_orientation_diagram: bool = False
-    show_titles: bool = False
-    show_euler_annotation_box: bool = True
-    candidate_plot_rank: int | Sequence[int] | str = 1
-    validate_firing_df_builder: bool = False
-    strict_precomputed_guidance: bool = False
 
 
 def build_guidance_map_output_directories(master_structure_reference_dict,
@@ -95,6 +63,9 @@ def render_guidance_maps_for_run(master_structure_reference_dict,
                                  patients_progress=None,
                                  completed_progress=None,
                                  runtime_logger=None):
+    import production_plots
+    import rich_preambles
+
     if guidance_map_render_config.enabled is False:
         return None
 

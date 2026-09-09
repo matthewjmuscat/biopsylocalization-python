@@ -110,6 +110,11 @@ the application consumes versioned local service/CLI contracts and does not
 embed business workflow or UI state inside scientific modules. This preserves
 the option to replace the desktop shell without rewriting the scientific engine.
 
+For packaged builds, the application packaging pipeline must provide an
+immutable `BIOPSYLOCALIZATION_SOURCE_IDENTITY` release/build value because the
+installed application may not contain Git metadata. That identity becomes part
+of run provenance and cross-run compatibility checks.
+
 The public scientific repository should therefore expose typed Python contracts
 first: `PipelineConfig`, patient-runner configs, input manifests, patient
 artifacts, and validation reports. A private GUI or product repository can later

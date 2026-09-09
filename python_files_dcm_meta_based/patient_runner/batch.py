@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any, Mapping, MutableMapping, Sequence
 
 from output_artifacts.manifest_index import ManifestIndexRecorder
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
 
 from .contracts import LegacyCohortRuntimeState
 from .contracts import PatientBatchRunConfig
@@ -137,6 +138,11 @@ def _write_patient_batch_run_manifest_index(
             "source": "patient_runner.run_patient_batch",
             "execution_backend": batch_config.execution_backend.value,
             "patient_count": batch_result.patient_count,
+            **(
+                {RUN_COMPATIBILITY_METADATA_KEY: batch_result.metadata[RUN_COMPATIBILITY_METADATA_KEY]}
+                if RUN_COMPATIBILITY_METADATA_KEY in batch_result.metadata
+                else {}
+            ),
         },
     )
     if batch_config.patient_config.write_patient_run_manifest:

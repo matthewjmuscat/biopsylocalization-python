@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,8 @@ from output_artifacts.manifest_index import MANIFEST_STATUS_SKIPPED
 from output_artifacts.manifest_index import MANIFEST_STATUS_WRITTEN
 from output_artifacts.manifest_index import default_run_manifest_index_path
 from output_artifacts.manifest_index import read_run_manifest_index
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
+from output_artifacts.run_compatibility import RunCompatibilityIdentity
 
 from .batch import run_patient_batch
 from .contracts import LegacyCohortRuntimeState
@@ -30,6 +33,7 @@ class PatientRunnerManifestIndexIntegrationTests(unittest.TestCase):
                         run_id="synthetic_run",
                     ),
                     patient_uids=("P001",),
+                    metadata={RUN_COMPATIBILITY_METADATA_KEY: _compatibility_identity().to_dict()},
                 ),
                 stages=(),
             )
@@ -52,6 +56,24 @@ class PatientRunnerManifestIndexIntegrationTests(unittest.TestCase):
             self.assertEqual(entries_by_key["patient_batch_run_manifest"]["manifest_path"], "patient_batch_run_manifest.json")
             self.assertEqual(entries_by_key["run_manifest_index"]["produced_status"], MANIFEST_STATUS_WRITTEN)
             self.assertEqual(entries_by_key["run_manifest_index"]["manifest_path"], "manifests/run_manifest_index.json")
+            with run_root.joinpath("patient_batch_run_manifest.json").open("r", encoding="utf-8") as batch_file:
+                batch_manifest = json.load(batch_file)
+            with run_root.joinpath("patients", "P001", "patient_run_manifest.json").open(
+                "r", encoding="utf-8"
+            ) as patient_file:
+                patient_manifest = json.load(patient_file)
+            self.assertEqual(
+                batch_manifest["metadata"][RUN_COMPATIBILITY_METADATA_KEY]["identity_sha256"],
+                _compatibility_identity().identity_sha256,
+            )
+            self.assertEqual(
+                patient_manifest["metadata"][RUN_COMPATIBILITY_METADATA_KEY]["identity_sha256"],
+                _compatibility_identity().identity_sha256,
+            )
+            self.assertEqual(
+                index_payload["metadata"][RUN_COMPATIBILITY_METADATA_KEY]["identity_sha256"],
+                _compatibility_identity().identity_sha256,
+            )
 
     def test_patient_batch_index_records_disabled_manifest_writers(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -99,6 +121,17 @@ def _legacy_cohort_state(legacy_keys: LegacyRuntimeKeys) -> LegacyCohortRuntimeS
         master_structure_reference_dict={"P001": {legacy_keys.bx_ref: []}},
         master_structure_info_dict={},
         legacy_keys=legacy_keys,
+    )
+
+
+def _compatibility_identity() -> RunCompatibilityIdentity:
+    return RunCompatibilityIdentity(
+        scientific_config_sha256="config-sha",
+        code_source_sha256="code-sha",
+        input_policy_sha256="input-policy-sha",
+        runtime_environment_sha256="environment-sha",
+        output_schema_registry_version="registry-v1",
+        code_commit="commit-a",
     )
 
 
