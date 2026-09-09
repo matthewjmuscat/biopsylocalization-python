@@ -18,10 +18,22 @@ from .contracts import PatientStageStatus
 from .contracts import validate_patient_uids
 
 
-PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION = "patient_process_run_plan_v1"
-PATIENT_WORKER_JOB_SCHEMA_VERSION = "patient_worker_job_v1"
-PATIENT_WORKER_RESULT_SCHEMA_VERSION = "patient_worker_result_v1"
+PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION = "patient_process_run_plan_v2"
+PATIENT_WORKER_JOB_SCHEMA_VERSION = "patient_worker_job_v2"
+PATIENT_WORKER_RESULT_SCHEMA_VERSION = "patient_worker_result_v2"
+LEGACY_PATIENT_WORKER_JOB_SCHEMA_VERSIONS = frozenset({"patient_worker_job_v1"})
 DEFAULT_PATIENT_PROCESS_RUNNER_DIR_NAME = "patient_process_runner"
+STANDALONE_PATIENT_RUNNER_JOB_NAME = "standalone_patient_runner"
+PATIENT_PROCESS_REQUESTED_JOB_NAMES = frozenset(
+    {
+        STANDALONE_PATIENT_RUNNER_JOB_NAME,
+        "legacy_oracle",
+        "post_run_assembly",
+        "validation",
+    }
+)
+PATIENT_ARTIFACT_RETENTION_LEVELS = frozenset({"minimal", "context", "diagnostic", "full_debug"})
+PATIENT_PROCESS_EXECUTION_MODES = frozenset({"plan_only", "dry_run_workers", "live_workers"})
 
 
 class PatientProcessFailurePolicy(str, Enum):
@@ -70,6 +82,42 @@ def _non_empty_string(value: Any, field_name: str) -> str:
     if resolved_value == "":
         raise ValueError(f"{field_name} cannot be empty")
     return resolved_value
+
+
+def _optional_path(value: Any) -> Path | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return Path(str(value))
+
+
+def _normalize_requested_jobs(values: Sequence[str]) -> tuple[str, ...]:
+    requested_jobs = tuple(_non_empty_string(value, "requested_jobs item") for value in values)
+    if len(requested_jobs) == 0:
+        raise ValueError("requested_jobs cannot be empty")
+    if len(set(requested_jobs)) != len(requested_jobs):
+        raise ValueError("requested_jobs cannot contain duplicates")
+    unsupported_jobs = sorted(set(requested_jobs).difference(PATIENT_PROCESS_REQUESTED_JOB_NAMES))
+    if unsupported_jobs:
+        raise ValueError("unsupported requested_jobs: {}".format(unsupported_jobs))
+    return requested_jobs
+
+
+def _normalize_retention_level(value: str) -> str:
+    retention_level = _non_empty_string(value, "retention_level").lower()
+    if retention_level not in PATIENT_ARTIFACT_RETENTION_LEVELS:
+        raise ValueError(
+            "retention_level must be one of: {}".format(", ".join(sorted(PATIENT_ARTIFACT_RETENTION_LEVELS)))
+        )
+    return retention_level
+
+
+def _normalize_execution_mode(value: str) -> str:
+    execution_mode = _non_empty_string(value, "execution_mode").lower()
+    if execution_mode not in PATIENT_PROCESS_EXECUTION_MODES:
+        raise ValueError(
+            "execution_mode must be one of: {}".format(", ".join(sorted(PATIENT_PROCESS_EXECUTION_MODES)))
+        )
+    return execution_mode
 
 
 def _case_row_bool(value: Any) -> bool:
@@ -181,6 +229,8 @@ class PatientWorkerJob:
     checkpoint_name: str
     attempt_number: int = 1
     run_id: str = ""
+    scientific_config_snapshot_path: Path | None = None
+    retention_level: str = "minimal"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -196,6 +246,8 @@ class PatientWorkerJob:
             raise ValueError("attempt_number must be at least 1")
         object.__setattr__(self, "attempt_number", attempt_number)
         object.__setattr__(self, "run_id", str(self.run_id).strip())
+        object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
+        object.__setattr__(self, "retention_level", _normalize_retention_level(self.retention_level))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
@@ -205,6 +257,10 @@ class PatientWorkerJob:
     @property
     def result_path(self) -> Path:
         return self.output_root.joinpath("worker_results", f"{self.job_id}_attempt_{self.attempt_number}.json")
+
+    @property
+    def job_path(self) -> Path:
+        return self.output_root.joinpath("worker_jobs", f"{self.job_id}.json")
 
     def as_mapping(self) -> dict[str, Any]:
         return {
@@ -224,6 +280,12 @@ class PatientWorkerJob:
             "patient_output_root": self.patient_output_root.as_posix(),
             "pathway_name": self.pathway_name,
             "checkpoint_name": self.checkpoint_name,
+            "scientific_config_snapshot_path": (
+                None
+                if self.scientific_config_snapshot_path is None
+                else self.scientific_config_snapshot_path.as_posix()
+            ),
+            "retention_level": self.retention_level,
             "result_path": self.result_path.as_posix(),
             "metadata": dict(self.metadata),
         }
@@ -231,10 +293,11 @@ class PatientWorkerJob:
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "PatientWorkerJob":
         schema_version = payload.get("schema_version")
-        if schema_version != PATIENT_WORKER_JOB_SCHEMA_VERSION:
+        supported_schema_versions = {PATIENT_WORKER_JOB_SCHEMA_VERSION, *LEGACY_PATIENT_WORKER_JOB_SCHEMA_VERSIONS}
+        if schema_version not in supported_schema_versions:
             raise ValueError(
                 f"Unsupported worker job schema_version {schema_version!r}; "
-                f"expected {PATIENT_WORKER_JOB_SCHEMA_VERSION!r}"
+                f"expected one of {sorted(supported_schema_versions)!r}"
             )
         patient_case_payload = payload.get("patient_case", {})
         if not isinstance(patient_case_payload, Mapping):
@@ -254,6 +317,8 @@ class PatientWorkerJob:
             output_root=Path(str(payload.get("output_root", ""))),
             pathway_name=str(payload.get("pathway_name", "")),
             checkpoint_name=str(payload.get("checkpoint_name", "")),
+            scientific_config_snapshot_path=_optional_path(payload.get("scientific_config_snapshot_path")),
+            retention_level=str(payload.get("retention_level", "minimal")),
             metadata=payload.get("metadata", {}),
         )
 
@@ -270,6 +335,11 @@ class PatientProcessRunPlan:
     run_id: str = "patient-process-runner"
     failure_policy: PatientProcessFailurePolicy | str = PatientProcessFailurePolicy.STOP_ON_FAILURE
     max_workers: int = 1
+    timeout_seconds: float | None = None
+    execution_mode: str = "plan_only"
+    requested_jobs: Sequence[str] = (STANDALONE_PATIENT_RUNNER_JOB_NAME,)
+    scientific_config_snapshot_path: Path | None = None
+    retention_level: str = "minimal"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -286,6 +356,16 @@ class PatientProcessRunPlan:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         object.__setattr__(self, "max_workers", max_workers)
+        timeout_seconds = self.timeout_seconds
+        if timeout_seconds is not None:
+            timeout_seconds = float(timeout_seconds)
+            if timeout_seconds <= 0:
+                raise ValueError("timeout_seconds must be positive when provided")
+        object.__setattr__(self, "timeout_seconds", timeout_seconds)
+        object.__setattr__(self, "execution_mode", _normalize_execution_mode(self.execution_mode))
+        object.__setattr__(self, "requested_jobs", _normalize_requested_jobs(self.requested_jobs))
+        object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
+        object.__setattr__(self, "retention_level", _normalize_retention_level(self.retention_level))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
@@ -305,8 +385,25 @@ class PatientProcessRunPlan:
             "checkpoint_name": self.checkpoint_name,
             "failure_policy": self.failure_policy.value,
             "max_workers": self.max_workers,
+            "timeout_seconds": self.timeout_seconds,
+            "execution_mode": self.execution_mode,
+            "requested_jobs": list(self.requested_jobs),
+            "scientific_config_snapshot_path": (
+                None
+                if self.scientific_config_snapshot_path is None
+                else self.scientific_config_snapshot_path.as_posix()
+            ),
+            "retention_level": self.retention_level,
             "patient_count": len(self.worker_jobs),
             "patient_uids": [worker_job.patient_case.patient_uid for worker_job in self.worker_jobs],
+            "worker_job_paths": [worker_job.job_path.as_posix() for worker_job in self.worker_jobs],
+            "worker_commands": [
+                patient_worker_command(
+                    worker_job.job_path,
+                    dry_run=self.execution_mode == "dry_run_workers",
+                )
+                for worker_job in self.worker_jobs
+            ],
             "worker_jobs": [worker_job.as_mapping() for worker_job in self.worker_jobs],
             "metadata": dict(self.metadata),
         }
@@ -367,6 +464,11 @@ def build_patient_process_run_plan(
     run_id: str = "patient-process-runner",
     failure_policy: PatientProcessFailurePolicy | str = PatientProcessFailurePolicy.STOP_ON_FAILURE,
     max_workers: int = 1,
+    timeout_seconds: float | None = None,
+    execution_mode: str = "plan_only",
+    requested_jobs: Sequence[str] = (STANDALONE_PATIENT_RUNNER_JOB_NAME,),
+    scientific_config_snapshot_path: Path | None = None,
+    retention_level: str = "minimal",
     metadata: Mapping[str, Any] | None = None,
 ) -> PatientProcessRunPlan:
     """Build a standalone process plan from the DICOM input case manifest."""
@@ -381,6 +483,8 @@ def build_patient_process_run_plan(
             pathway_name=pathway_name,
             checkpoint_name=checkpoint_name,
             run_id=run_id,
+            scientific_config_snapshot_path=scientific_config_snapshot_path,
+            retention_level=retention_level,
             metadata={"patient_index": index},
         )
         for index, patient_case in enumerate(patient_cases, start=1)
@@ -394,14 +498,18 @@ def build_patient_process_run_plan(
         run_id=run_id,
         failure_policy=failure_policy,
         max_workers=max_workers,
+        timeout_seconds=timeout_seconds,
+        execution_mode=execution_mode,
+        requested_jobs=requested_jobs,
+        scientific_config_snapshot_path=scientific_config_snapshot_path,
+        retention_level=retention_level,
         metadata=dict(metadata or {}),
     )
 
 
 def write_patient_worker_job_packets(plan: PatientProcessRunPlan) -> tuple[Path, ...]:
     """Write one JSON job packet per patient worker."""
-    job_dir = plan.output_root.joinpath("worker_jobs")
-    return tuple(_write_json_object(job_dir.joinpath(f"{job.job_id}.json"), job.as_mapping()) for job in plan.worker_jobs)
+    return tuple(_write_json_object(job.job_path, job.as_mapping()) for job in plan.worker_jobs)
 
 
 def write_patient_process_run_plan(plan: PatientProcessRunPlan) -> Path:
@@ -492,8 +600,8 @@ def run_worker_job_file(job_path: Path, *, dry_run: bool = False) -> PatientWork
     return result
 
 
-def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_seconds: float | None = None) -> PatientWorkerResult:
-    """Launch one worker job in a subprocess and load its result JSON."""
+def patient_worker_command(job_path: Path | str, *, dry_run: bool = False) -> list[str]:
+    """Return the exact command used to launch one worker job."""
     command = [
         sys.executable,
         str(Path(__file__).resolve().parents[1] / "run_patient_scientific_worker.py"),
@@ -501,8 +609,27 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
     ]
     if dry_run:
         command.append("--dry-run")
-    completed = subprocess.run(command, check=False, timeout=timeout_seconds)
+    return command
+
+
+def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_seconds: float | None = None) -> PatientWorkerResult:
+    """Launch one worker job in a subprocess and load its result JSON."""
+    command = patient_worker_command(job_path, dry_run=dry_run)
     worker_job = load_patient_worker_job(job_path)
+    launch_start_time = perf_counter()
+    try:
+        completed = subprocess.run(command, check=False, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        return PatientWorkerResult(
+            worker_job=worker_job,
+            status=PatientStageStatus.FAILED,
+            elapsed_seconds=perf_counter() - launch_start_time,
+            exit_code=124,
+            dry_run=dry_run,
+            timed_out=True,
+            warnings=("worker exceeded timeout_seconds",),
+            metadata={"worker_command": command, "timeout_seconds": timeout_seconds},
+        )
     if worker_job.result_path.is_file():
         result_payload = _read_json_object(worker_job.result_path)
         status = PatientStageStatus(result_payload.get("status", PatientStageStatus.FAILED.value))
@@ -521,7 +648,7 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
         exit_code=int(completed.returncode),
         dry_run=dry_run,
         warnings=warnings,
-        metadata=metadata,
+        metadata={"worker_command": command, **metadata},
     )
 
 
@@ -532,11 +659,27 @@ def run_patient_process_plan(
     timeout_seconds: float | None = None,
 ) -> tuple[PatientWorkerResult, ...]:
     """Run a plan through sequential subprocess workers."""
+    if STANDALONE_PATIENT_RUNNER_JOB_NAME not in plan.requested_jobs:
+        raise ValueError("patient process plan does not request standalone_patient_runner")
+    unsupported_executable_jobs = sorted(set(plan.requested_jobs).difference({STANDALONE_PATIENT_RUNNER_JOB_NAME}))
+    if unsupported_executable_jobs:
+        raise NotImplementedError(
+            "patient process execution does not yet support requested jobs: {}".format(unsupported_executable_jobs)
+        )
+    if plan.execution_mode == "plan_only":
+        raise ValueError("plan_only process plans cannot launch workers")
+    if dry_run_workers != (plan.execution_mode == "dry_run_workers"):
+        raise ValueError("dry_run_workers must agree with plan.execution_mode")
     job_paths = write_patient_worker_job_packets(plan)
     write_patient_process_run_plan(plan)
+    resolved_timeout_seconds = plan.timeout_seconds if timeout_seconds is None else timeout_seconds
     results: list[PatientWorkerResult] = []
     for job_path in job_paths:
-        result = launch_worker_job_file(job_path, dry_run=dry_run_workers, timeout_seconds=timeout_seconds)
+        result = launch_worker_job_file(
+            job_path,
+            dry_run=dry_run_workers,
+            timeout_seconds=resolved_timeout_seconds,
+        )
         results.append(result)
         if not result.succeeded and plan.failure_policy == PatientProcessFailurePolicy.STOP_ON_FAILURE:
             break

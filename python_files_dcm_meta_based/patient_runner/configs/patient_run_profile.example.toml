@@ -1,0 +1,42 @@
+# Orchestration-only standalone patient-runner profile.
+#
+# This profile chooses jobs, patients, paths, execution policy, and artifact
+# retention. Scientific parameters do not belong here; a future resolved
+# PipelineConfig snapshot is referenced under [scientific_config].
+
+schema_version = "patient_orchestration_profile_v1"
+description = "Disabled example standalone patient-runner plan."
+enabled = false
+
+[run]
+run_id = "example-patient-run"
+output_root = "../../../../patient-run-output"
+pathway = "anatomical_qa"
+checkpoint = "anatomical_qa"
+
+[inputs]
+case_manifest = "../../../../completed-discovery-run/manifests/input_case_manifest.csv"
+
+[selection]
+# Empty means all patients in input manifest order.
+patient_uids = []
+
+[execution]
+# plan_only | dry_run_workers | live_workers
+mode = "plan_only"
+requested_jobs = ["standalone_patient_runner"]
+failure_policy = "stop_on_failure"
+max_workers = 1
+timeout_seconds = 3600
+
+[artifacts]
+# minimal | context | diagnostic | full_debug
+retention_level = "minimal"
+
+# Phase 2 will generate and consume a schema-versioned resolved PipelineConfig
+# snapshot. Uncomment only when that snapshot writer exists.
+# [scientific_config]
+# snapshot = "../../../../resolved_pipeline_config.json"
+
+[metadata]
+purpose = "standalone_patient_runner_example"

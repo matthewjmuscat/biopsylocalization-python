@@ -1,6 +1,6 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-08-03
+Last updated: 2026-09-08
 
 ## Purpose
 
@@ -136,11 +136,13 @@ The future GUI should edit this run profile and call public runner/assembly/
 validation entrypoints. It should not depend on `biopsy_localization_convex_main.py`
 locals or private in-memory dictionaries.
 
-Current TOML status: TOML profiles have started in the validation layer, where
-they select completed run folders and comparator jobs. They do not yet define
-production scientific run parameters. The production run-profile layer should
-follow the same pattern later: human TOML at the edge, typed Python config as
-the runtime authority, and JSON as generated evidence/manifest output.
+Current TOML status: validation profiles select completed run folders and
+comparator jobs. The standalone runner now also has an orchestration-only TOML
+profile in `patient_runner/run_profile.py`, with a disabled example under
+`patient_runner/configs/`. It compiles into `PatientProcessRunPlan` and generated
+JSON provenance. It deliberately does not define production scientific
+parameters yet. Human TOML remains at the edge, typed `PipelineConfig` remains
+the scientific runtime authority, and JSON remains generated evidence.
 
 ## Current Config Tree By Domain
 

@@ -71,6 +71,14 @@ Standalone process architecture target:
 - `run_patient_scientific_worker.py` is the new one-patient worker CLI surface;
   it currently supports dry-run job/result validation while the patient-local
   runtime-state builder is wired,
+- `patient_runner/run_profile.py` loads orchestration-only TOML profiles and
+  compiles them into the same `PatientProcessRunPlan` used by explicit CLI
+  arguments; the profile records paths, patient selection, pathway/checkpoint,
+  requested jobs, execution/failure policy, timeout, and retention level,
+- `patient_runner/configs/patient_run_profile.example.toml` is a disabled
+  example profile; it does not yet replace typed scientific `PipelineConfig`,
+- help, plan-only, and dry-run worker paths are designed to remain CPU-only;
+  scientific execution modules are loaded only after worker preflight,
 - the future primary runner should use a parent orchestrator plus isolated
   patient worker processes,
 - the parent should keep only run config, patient inventory, worker statuses,
@@ -80,6 +88,20 @@ Standalone process architecture target:
   state is released,
 - post-run assembly should continue to read artifacts from disk rather than
   holding cohort data in the patient execution loop.
+
+Plan from the disabled example profile with:
+
+```bash
+PYTHONPATH=python_files_dcm_meta_based pipenv run python \
+  python_files_dcm_meta_based/run_patient_scientific_standalone.py \
+  --profile python_files_dcm_meta_based/patient_runner/configs/patient_run_profile.example.toml
+```
+
+Copy the profile to a run-specific location and enable it only after replacing
+the placeholder paths. `plan_only` writes JSON plan/job provenance without
+launching scientific workers. `dry_run_workers` additionally checks the
+subprocess and input-preflight boundary. `live_workers` remains fail-closed at
+the one-patient runtime builder until Phase 2 wires that boundary.
 
 The durable target contract lives in
 `../../docs/architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md`.

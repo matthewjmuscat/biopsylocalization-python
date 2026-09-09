@@ -1,6 +1,6 @@
 # Patient-Runner Process Architecture
 
-Last updated: 2026-08-03
+Last updated: 2026-09-08
 
 This note defines the target execution architecture for moving the patient
 runner outside the legacy all-patient runtime. It is the process and memory
@@ -78,16 +78,26 @@ There are two distinct legacy-adjacent controls:
 
 Current migration status:
 
+- `patient_runner/run_profile.py` now loads a schema-versioned, orchestration-only
+  TOML profile and compiles it into the existing `PatientProcessRunPlan`.
+  Profiles choose patients, pathway/checkpoint, requested jobs, failure/timeout
+  policy, output root, and artifact retention level; they do not duplicate
+  scientific parameters from `PipelineConfig`.
 - `run_patient_scientific_standalone.py` writes a parent plan and one JSON
    worker job packet per selected manifest patient.
 - `run_patient_scientific_worker.py` loads one worker job packet and writes a
    worker result JSON. Its dry-run mode validates the process/job/result boundary
    without touching patient data.
+- Parent help, planning, TOML parsing, and dry-run workers no longer import
+  optimizer/MC execution modules or initialize CUDA merely through the patient
+  scientific config builder.
 - Non-dry-run worker execution intentionally reports the missing
    `one_patient_runtime_state_builder` boundary until the patient-local runtime
    builder is implemented.
-- The legacy-main live patient-scientific runner default is disabled; the
-   from-legacy bridge remains available as an explicit validation adapter.
+- The legacy-main live patient-scientific runner default is disabled. Legacy-backed
+  scientific execution and scientific-shadow validation now fail closed when a
+  pristine post-discovery snapshot is unavailable instead of falling back to
+  current, potentially mutated legacy state.
 
 August 2026 checkpoint:
 
@@ -101,6 +111,22 @@ August 2026 checkpoint:
    artifacts into saved-scene artifacts. Any future runtime dose-render launch
    should be patient-runner-only, after MC dose localization finalization and
    artifact snapshot, not a new GUI hook inside legacy main.
+
+September 2026 Phase 1 checkpoint:
+
+- Standalone parent/worker help, plan-only execution, and dry-run subprocesses
+   are CPU-safe; importing these orchestration paths no longer initializes
+   cuSpatial/cuDF/RMM through the scientific config builder.
+- The orchestration-only TOML profile compiles into the existing process plan,
+   records source/config fingerprints and exact worker commands, rejects unknown
+   fields, and remains separate from scientific `PipelineConfig` values.
+- Direct synthetic tests cover job serialization, patient ordering, input
+   preflight, stop/continue failure policy, timeout results, CLI startup, profile
+   compilation, and fail-closed snapshot isolation.
+- Legacy-backed execute/scientific-shadow routes require a pristine
+   post-discovery snapshot. The standalone worker still fails explicitly at the
+   unimplemented one-patient runtime builder; Phase 1 does not claim scientific
+   worker execution is complete.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner

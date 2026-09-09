@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
-from biopsy_optimizer.v1.per_patient import OptimizerV1LegacyConfig
-from biopsy_optimizer.v2.per_patient import OptimizerV2LiveConfig
-from mc.simulation.per_patient import MCContainmentSimulationConfig
-from mc.simulation.per_patient import MCConvexSimulationConfig
-from mc.simulation.per_patient import MCDoseSimulationConfig
-from mc.simulation.per_patient import MCMRSimulationConfig
-from mc.simulation.per_patient import PatientMCOutputTableConfig
-from mc.simulation.per_patient import MCReferenceKeys
-from mc.simulation.per_patient import MCSimulationRuntimeConfig
-from preprocessing.dose_grid_processing import DoseGridProcessingConfig
-from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
-from preprocessing.transform_bank import OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY
-from preprocessing.transform_bank import STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY
-from preprocessing.transform_bank import resolve_required_generated_transform_samples
+if TYPE_CHECKING:
+    from mc.simulation.per_patient.contracts import MCContainmentSimulationConfig
+    from mc.simulation.per_patient.contracts import MCDoseSimulationConfig
+    from mc.simulation.per_patient.contracts import MCReferenceKeys
+    from mc.simulation.per_patient.contracts import MCSimulationRuntimeConfig
 
 from .scientific_config import PatientAnatomicalPreprocessingScientificConfig
 from .scientific_config import PatientDoubleSextantClassificationStageConfig
@@ -173,6 +164,9 @@ def _build_grid_preprocessing_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext,
 ) -> PatientGridPreprocessingScientificConfig:
+    from preprocessing.dose_grid_processing import DoseGridProcessingConfig
+    from preprocessing.mr_adc_grid_processing import MRADCGridProcessingConfig
+
     refs = pipeline_config.legacy_refs
     replay = pipeline_config.replay
     grid = pipeline_config.grid_preprocessing
@@ -325,6 +319,8 @@ def _build_mc_simulation_config(
     mc = pipeline_config.mc
     convex_config = None
     if mc.counts.perform_mc_containment_sim or mc.counts.perform_mc_dose_sim:
+        from mc.simulation.per_patient.contracts import MCConvexSimulationConfig
+
         convex_config = MCConvexSimulationConfig(
             keys=_build_mc_reference_keys(pipeline_config),
             runtime=_build_mc_runtime_config(pipeline_config),
@@ -333,6 +329,8 @@ def _build_mc_simulation_config(
         )
     mr_config = None
     if mc.counts.perform_mc_mr_sim:
+        from mc.simulation.per_patient.contracts import MCMRSimulationConfig
+
         mr_views_jsons_paths_list = context.mr_views_jsons_paths_list or context.dose_views_jsons_paths_list
         mr_config = MCMRSimulationConfig(
             num_mr_calc_NN=mc.simulation.num_mr_calc_nn,
@@ -365,6 +363,8 @@ def _build_mc_simulation_config(
 
 
 def _build_mc_output_tables_config(pipeline_config: Any) -> PatientMCOutputTablesScientificConfig:
+    from mc.simulation.per_patient import PatientMCOutputTableConfig
+
     mc = pipeline_config.mc
     refs = pipeline_config.legacy_refs
     registry = pipeline_config.structure_registry
@@ -396,6 +396,9 @@ def _build_optimization_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext,
 ) -> PatientOptimizationScientificConfig:
+    from biopsy_optimizer.v1.per_patient.legacy_adapter import OptimizerV1LegacyConfig
+    from biopsy_optimizer.v2.per_patient.live_adapter import OptimizerV2LiveConfig
+
     refs = pipeline_config.legacy_refs
     registry = pipeline_config.structure_registry
     preprocessing = pipeline_config.preprocessing
@@ -574,6 +577,8 @@ def _build_guidance_config(pipeline_config: Any) -> PatientGuidanceScientificCon
 
 
 def _build_mc_reference_keys(pipeline_config: Any) -> MCReferenceKeys:
+    from mc.simulation.per_patient.contracts import MCReferenceKeys
+
     refs = pipeline_config.legacy_refs
     registry = pipeline_config.structure_registry
     return MCReferenceKeys(
@@ -591,6 +596,8 @@ def _build_mc_reference_keys(pipeline_config: Any) -> MCReferenceKeys:
 
 
 def _build_mc_runtime_config(pipeline_config: Any) -> MCSimulationRuntimeConfig:
+    from mc.simulation.per_patient.contracts import MCSimulationRuntimeConfig
+
     mc = pipeline_config.mc
     preprocessing = pipeline_config.preprocessing
     return MCSimulationRuntimeConfig(
@@ -614,6 +621,8 @@ def _build_mc_containment_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext,
 ) -> MCContainmentSimulationConfig:
+    from mc.simulation.per_patient.contracts import MCContainmentSimulationConfig
+
     mc = pipeline_config.mc
     preprocessing = pipeline_config.preprocessing
     return MCContainmentSimulationConfig(
@@ -667,6 +676,8 @@ def _build_mc_dose_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext,
 ) -> MCDoseSimulationConfig:
+    from mc.simulation.per_patient.contracts import MCDoseSimulationConfig
+
     mc = pipeline_config.mc
     return MCDoseSimulationConfig(
         biopsy_z_voxel_length=mc.simulation.biopsy_z_voxel_length,
@@ -690,6 +701,10 @@ def _build_mc_dose_config(
 
 
 def _resolve_explicit_transform_counts(pipeline_config: Any) -> tuple[int, int]:
+    from preprocessing.transform_bank import OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY
+    from preprocessing.transform_bank import STOCHASTIC_TARGETING_TRANSFORM_SAMPLE_COUNT_KEY
+    from preprocessing.transform_bank import resolve_required_generated_transform_samples
+
     optimizer_v2_transform_count = pipeline_config.optimizer.optimizer_v2.search_config.resolve_required_transform_bank_size()
     transform_info = {
         OPTIMIZER_V2_TRANSFORM_SAMPLE_COUNT_KEY: optimizer_v2_transform_count,

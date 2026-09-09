@@ -1,6 +1,6 @@
 # GUI And Startup Architecture Plan
 
-Last updated: 2026-05-20
+Last updated: 2026-09-08
 
 ## Purpose
 
@@ -99,6 +99,16 @@ while allowing a separate application layer to own product-specific workflow,
 deployment, visualization polish, and user interaction. Any business, licensing,
 or patent strategy belongs in private notes and counsel review; the public code
 direction is simply to keep the scientific core UI-neutral and adapter-driven.
+
+The application layer is not intended to be merely a thin collection of PyQt
+dialogs around `main()`. The target is professionally packaged, installable,
+cross-platform software for Windows and Linux, with macOS support where the
+scientific dependency stack permits it. The eventual desktop technology can be
+selected later (for example a native webview/desktop shell, Qt, or another
+cross-platform toolkit). The non-negotiable architectural requirement is that
+the application consumes versioned local service/CLI contracts and does not
+embed business workflow or UI state inside scientific modules. This preserves
+the option to replace the desktop shell without rewriting the scientific engine.
 
 The public scientific repository should therefore expose typed Python contracts
 first: `PipelineConfig`, patient-runner configs, input manifests, patient

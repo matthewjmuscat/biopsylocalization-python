@@ -196,6 +196,7 @@ from patient_runner import run_patient_scientific_runner_from_legacy
 from patient_runner import summarize_patient_runner_main_validation
 from patient_runner import summarize_patient_scientific_run_config
 from patient_runner import write_patient_scientific_run_plan_summary
+from patient_runner.state_isolation import copy_isolated_legacy_runtime_state_from_snapshot
 from startup.guidance_map_workflow import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
@@ -712,9 +713,9 @@ def main():
     patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
     patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
     patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
-    patient_scientific_runner_mode = "execute" # Legacy-backed patient-scientific runner hook for persisted dose-context artifacts.
-    patient_scientific_runner_checkpoint_name = "current_dosimetry_shadow"
-    patient_scientific_runner_pathway_name = "current_dosimetry_shadow" # Dose-context artifact slice: stops after MC output tables, before guidance.
+    patient_scientific_runner_mode = "disabled" # Keep legacy-backed modular execution opt-in until standalone patient workers are validated.
+    patient_scientific_runner_checkpoint_name = "anatomical_qa"
+    patient_scientific_runner_pathway_name = "anatomical_qa"
     patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
     patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
     patient_scientific_runner_include_artifact_writing_bool = False
@@ -727,7 +728,7 @@ def main():
     patient_scientific_runner_stop_on_stage_error_bool = True
     patient_scientific_runner_raise_on_stage_error_bool = False
     patient_scientific_runner_validate_dependencies_bool = True
-    patient_scientific_runner_persist_dose_context_artifacts_bool = True
+    patient_scientific_runner_persist_dose_context_artifacts_bool = False
     patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = True
     patient_scientific_runner_dose_context_artifact_localization_kinds = ("dose",)
     patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = False
@@ -6076,21 +6077,21 @@ def main():
                             "output_dir": patient_runner_validation_output_dir,
                         },
                     )
-                patient_runner_validation_reference_dict = master_structure_reference_dict
-                patient_runner_validation_info_dict = master_structure_info_dict
-                patient_runner_validation_runtime_state_source = "legacy_current_runtime_state"
-                if (
-                    patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW
-                    and patient_scientific_runner_post_discovery_reference_dict is not None
-                    and patient_scientific_runner_post_discovery_info_dict is not None
-                ):
-                    patient_runner_validation_reference_dict = copy.deepcopy(
+                if patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
+                    isolated_validation_state = copy_isolated_legacy_runtime_state_from_snapshot(
                         patient_scientific_runner_post_discovery_reference_dict,
-                    )
-                    patient_runner_validation_info_dict = copy.deepcopy(
                         patient_scientific_runner_post_discovery_info_dict,
+                        operation_name="patient-runner scientific-shadow validation",
                     )
-                    patient_runner_validation_runtime_state_source = "post_discovery_deepcopy"
+                    patient_runner_validation_reference_dict = (
+                        isolated_validation_state.master_structure_reference_dict
+                    )
+                    patient_runner_validation_info_dict = isolated_validation_state.master_structure_info_dict
+                    patient_runner_validation_runtime_state_source = isolated_validation_state.source
+                else:
+                    patient_runner_validation_reference_dict = master_structure_reference_dict
+                    patient_runner_validation_info_dict = master_structure_info_dict
+                    patient_runner_validation_runtime_state_source = "legacy_current_runtime_state"
                 patient_runner_scientific_shadow_config = None
                 if patient_runner_validation_resolved_mode == PatientRunnerMainValidationMode.SCIENTIFIC_SHADOW:
                     patient_runner_scientific_shadow_config = build_patient_scientific_shadow_config(
@@ -6188,20 +6189,23 @@ def main():
                 patient_scientific_runner_output_root = specific_output_dir.joinpath(
                     patient_scientific_runner_output_dir_name,
                 )
-                if (
+                if patient_scientific_runner_mode == "execute":
+                    isolated_scientific_runner_state = copy_isolated_legacy_runtime_state_from_snapshot(
+                        patient_scientific_runner_post_discovery_reference_dict,
+                        patient_scientific_runner_post_discovery_info_dict,
+                        operation_name="legacy-backed patient scientific runner",
+                    )
+                    patient_scientific_runner_reference_dict = (
+                        isolated_scientific_runner_state.master_structure_reference_dict
+                    )
+                    patient_scientific_runner_info_dict = isolated_scientific_runner_state.master_structure_info_dict
+                    patient_scientific_runner_runtime_state_source = isolated_scientific_runner_state.source
+                elif (
                     patient_scientific_runner_post_discovery_reference_dict is not None
                     and patient_scientific_runner_post_discovery_info_dict is not None
                 ):
-                    if patient_scientific_runner_mode == "execute":
-                        patient_scientific_runner_reference_dict = copy.deepcopy(
-                            patient_scientific_runner_post_discovery_reference_dict,
-                        )
-                        patient_scientific_runner_info_dict = copy.deepcopy(
-                            patient_scientific_runner_post_discovery_info_dict,
-                        )
-                    else:
-                        patient_scientific_runner_reference_dict = patient_scientific_runner_post_discovery_reference_dict
-                        patient_scientific_runner_info_dict = patient_scientific_runner_post_discovery_info_dict
+                    patient_scientific_runner_reference_dict = patient_scientific_runner_post_discovery_reference_dict
+                    patient_scientific_runner_info_dict = patient_scientific_runner_post_discovery_info_dict
                     patient_scientific_runner_runtime_state_source = "post_discovery_deepcopy"
                 else:
                     patient_scientific_runner_reference_dict = master_structure_reference_dict

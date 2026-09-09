@@ -69,7 +69,10 @@ from .parity import summarize_patient_runner_parity_surface
 from .parity import summarize_patient_runner_post_run_parity
 from .parity import summarize_patient_runner_post_run_parity_surfaces
 from .process_runner import DEFAULT_PATIENT_PROCESS_RUNNER_DIR_NAME
+from .process_runner import PATIENT_ARTIFACT_RETENTION_LEVELS
+from .process_runner import PATIENT_PROCESS_EXECUTION_MODES
 from .process_runner import PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION
+from .process_runner import PATIENT_PROCESS_REQUESTED_JOB_NAMES
 from .process_runner import PATIENT_WORKER_JOB_SCHEMA_VERSION
 from .process_runner import PATIENT_WORKER_RESULT_SCHEMA_VERSION
 from .process_runner import PatientProcessFailurePolicy
@@ -78,12 +81,17 @@ from .process_runner import PatientWorkerJob
 from .process_runner import PatientWorkerResult
 from .process_runner import build_patient_process_run_plan
 from .process_runner import load_patient_worker_job
+from .process_runner import patient_worker_command
 from .process_runner import run_patient_process_plan
 from .process_runner import run_patient_worker_job
 from .process_runner import run_worker_job_file
 from .process_runner import write_patient_process_run_plan
 from .process_runner import write_patient_worker_job_packets
 from .process_runner import write_patient_worker_result
+from .run_profile import PATIENT_ORCHESTRATION_EXECUTION_MODES
+from .run_profile import PATIENT_ORCHESTRATION_PROFILE_SCHEMA_VERSION
+from .run_profile import PatientOrchestrationProfile
+from .run_profile import load_patient_orchestration_profile
 from .runner import PatientStage
 from .runner import PatientStageRunner
 from .runner import default_patient_stages
@@ -197,7 +205,12 @@ __all__ = [
     "PatientCase",
     "PatientRunConfig",
     "PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION",
+    "PATIENT_ARTIFACT_RETENTION_LEVELS",
+    "PATIENT_ORCHESTRATION_EXECUTION_MODES",
+    "PATIENT_ORCHESTRATION_PROFILE_SCHEMA_VERSION",
+    "PATIENT_PROCESS_EXECUTION_MODES",
     "PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION",
+    "PATIENT_PROCESS_REQUESTED_JOB_NAMES",
     "PATIENT_RUNNER_MAIN_VALIDATION_SCHEMA_VERSION",
     "PATIENT_RUNNER_POST_RUN_PARITY_SCHEMA_VERSION",
     "PATIENT_SCIENTIFIC_SHADOW_SCHEMA_VERSION",
@@ -229,6 +242,7 @@ __all__ = [
     "PatientMCSimulationScientificConfig",
     "PatientMRADCInputNormalizationStageConfig",
     "PatientOptimizationScientificConfig",
+    "PatientOrchestrationProfile",
     "PatientPreprocessingScientificConfig",
     "PatientProcessFailurePolicy",
     "PatientProcessRunPlan",
@@ -300,12 +314,14 @@ __all__ = [
     "iter_patient_scientific_tranches",
     "patient_batch_run_result_manifest",
     "patient_run_result_manifest",
+    "patient_worker_command",
     "patient_scientific_shadow_stage_state_manifest",
     "patient_scientific_run_plan_summary",
     "patient_scientific_pathway_graph_stage_names",
     "patient_scientific_pathway_stage_names",
     "patient_scientific_tranche_stage_names",
     "resolve_legacy_patient_uids",
+    "load_patient_orchestration_profile",
     "resolve_patient_scientific_pathway_name",
     "resolve_patient_scientific_stage_names",
     "resolve_patient_scientific_tranche_names",
