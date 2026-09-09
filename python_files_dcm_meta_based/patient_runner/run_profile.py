@@ -46,7 +46,7 @@ _PROFILE_FIELDS = {
     "selection": frozenset({"patient_uids"}),
     "execution": frozenset({"mode", "requested_jobs", "failure_policy", "max_workers", "timeout_seconds"}),
     "artifacts": frozenset({"retention_level"}),
-    "scientific_config": frozenset({"snapshot"}),
+    "scientific_config": frozenset({"snapshot", "run_compatibility_identity"}),
 }
 
 
@@ -73,6 +73,7 @@ class PatientOrchestrationProfile:
     timeout_seconds: float | None = None
     retention_level: str = "minimal"
     scientific_config_snapshot_path: Path | None = None
+    run_compatibility_identity_path: Path | None = None
     description: str = ""
     enabled: bool = True
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -129,8 +130,16 @@ class PatientOrchestrationProfile:
                 raise FileNotFoundError(
                     "scientific config snapshot does not exist: {}".format(self.scientific_config_snapshot_path)
                 )
+        if self.run_compatibility_identity_path is not None:
+            object.__setattr__(self, "run_compatibility_identity_path", Path(self.run_compatibility_identity_path))
+            if not self.run_compatibility_identity_path.is_file():
+                raise FileNotFoundError(
+                    "run compatibility identity does not exist: {}".format(self.run_compatibility_identity_path)
+                )
         if execution_mode == "live_workers" and self.scientific_config_snapshot_path is None:
             raise ValueError("live_workers requires scientific_config.snapshot")
+        if execution_mode == "live_workers" and self.run_compatibility_identity_path is None:
+            raise ValueError("live_workers requires scientific_config.run_compatibility_identity")
         object.__setattr__(self, "description", str(self.description).strip())
         object.__setattr__(self, "enabled", bool(self.enabled))
         object.__setattr__(self, "metadata", dict(self.metadata))
@@ -171,6 +180,7 @@ class PatientOrchestrationProfile:
             execution_mode=self.execution_mode,
             requested_jobs=self.requested_jobs,
             scientific_config_snapshot_path=self.scientific_config_snapshot_path,
+            run_compatibility_identity_path=self.run_compatibility_identity_path,
             retention_level=self.retention_level,
             metadata={
                 "profile_schema_version": self.schema_version,
@@ -250,6 +260,10 @@ def load_patient_orchestration_profile(profile_path: Path | str) -> PatientOrche
         scientific_config_snapshot_path=_resolve_optional_profile_path(
             source_dir,
             scientific_config.get("snapshot"),
+        ),
+        run_compatibility_identity_path=_resolve_optional_profile_path(
+            source_dir,
+            scientific_config.get("run_compatibility_identity"),
         ),
         metadata=_mapping(payload.get("metadata", {}), "metadata"),
     )

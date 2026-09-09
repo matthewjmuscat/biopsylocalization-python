@@ -3,9 +3,6 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Mapping, MutableMapping
 
-import cupy as cp
-
-
 RANDOM_SEED_POLICY_SCHEMA_VERSION = "runtime_random_seed_policy_v2"
 RANDOM_INFO_KEY = "Random info"
 TRANSFORM_GENERATION_RANDOM_SEED_KEY = "Transform generation random seed"
@@ -19,6 +16,12 @@ RANDOM_SEED_POLICY_SCHEMA_KEY = "Random seed policy schema version"
 TRANSFORM_GENERATION_SEED_SCOPE = "patient_uid_derived"
 OPTIMIZER_V1_SEED_SCOPE = "patient_uid_derived"
 UINT32_MODULUS = 2 ** 32
+
+
+def _cupy_module() -> Any:
+    import cupy as cp
+
+    return cp
 
 
 def _global_random_info(master_structure_info_dict: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
@@ -51,13 +54,14 @@ def configure_runtime_random_seed_settings(master_structure_info_dict: MutableMa
     return random_info
 
 
-def build_transform_generation_rng(master_structure_info_dict: MutableMapping[str, Any]) -> cp.random.RandomState:
+def build_transform_generation_rng(master_structure_info_dict: MutableMapping[str, Any]) -> Any:
     """Return the legacy cohort-stream transform RNG for compatibility callers.
 
     New transform-generation code should use `build_transform_generation_patient_rng`
     so split runs and full runs resolve the same per-patient random streams.
     """
 
+    cp = _cupy_module()
     random_info = _global_random_info(master_structure_info_dict)
     transform_generation_random_seed = random_info.get(TRANSFORM_GENERATION_RANDOM_SEED_KEY)
     if transform_generation_random_seed is None:
@@ -76,7 +80,7 @@ def resolve_transform_generation_patient_seed(transform_generation_random_seed: 
 def build_transform_generation_patient_rng(master_structure_info_dict: MutableMapping[str, Any],
                                            patient_uid: str,
                                            *,
-                                           transform_generation_random_seed: int | None = None) -> tuple[cp.random.RandomState | None, dict[str, Any]]:
+                                           transform_generation_random_seed: int | None = None) -> tuple[Any | None, dict[str, Any]]:
     random_info = _global_random_info(master_structure_info_dict)
     random_info.setdefault(RANDOM_SEED_POLICY_SCHEMA_KEY, RANDOM_SEED_POLICY_SCHEMA_VERSION)
     random_info[TRANSFORM_GENERATION_SEED_SCOPE_KEY] = TRANSFORM_GENERATION_SEED_SCOPE
@@ -98,6 +102,7 @@ def build_transform_generation_patient_rng(master_structure_info_dict: MutableMa
     if resolved_seed is None:
         return None, metadata
 
+    cp = _cupy_module()
     resolved_patient_seeds = random_info.setdefault(TRANSFORM_GENERATION_RESOLVED_PATIENT_SEEDS_KEY, {})
     resolved_patient_seeds[str(patient_uid)] = int(resolved_seed)
     return cp.random.RandomState(int(resolved_seed)), metadata
@@ -114,7 +119,7 @@ def resolve_optimizer_v1_patient_seed(optimizer_v1_random_seed: int | None,
 def build_optimizer_v1_patient_rng(master_structure_info_dict: MutableMapping[str, Any],
                                    patient_uid: str,
                                    *,
-                                   optimizer_v1_random_seed: int | None = None) -> tuple[cp.random.RandomState | None, dict[str, Any]]:
+                                   optimizer_v1_random_seed: int | None = None) -> tuple[Any | None, dict[str, Any]]:
     random_info = _global_random_info(master_structure_info_dict)
     random_info.setdefault(RANDOM_SEED_POLICY_SCHEMA_KEY, RANDOM_SEED_POLICY_SCHEMA_VERSION)
     random_info.setdefault(TRANSFORM_GENERATION_SEED_SCOPE_KEY, TRANSFORM_GENERATION_SEED_SCOPE)
@@ -138,6 +143,7 @@ def build_optimizer_v1_patient_rng(master_structure_info_dict: MutableMapping[st
     if resolved_seed is None:
         return None, metadata
 
+    cp = _cupy_module()
     resolved_patient_seeds = random_info.setdefault(OPTIMIZER_V1_RESOLVED_PATIENT_SEEDS_KEY, {})
     resolved_patient_seeds[str(patient_uid)] = int(resolved_seed)
     return cp.random.RandomState(int(resolved_seed)), metadata

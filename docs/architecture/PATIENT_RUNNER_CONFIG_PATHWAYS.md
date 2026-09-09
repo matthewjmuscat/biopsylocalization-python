@@ -144,10 +144,18 @@ JSON provenance. It deliberately does not define production scientific
 parameters yet. Human TOML remains at the edge, typed `PipelineConfig` remains
 the scientific runtime authority, and JSON remains generated evidence.
 
-Resolved scientific snapshots are now canonical and fingerprinted, but they are
-provenance artifacts rather than a general `PipelineConfig` loader. The next
-config slice must extract reusable defaults/construction from main and add typed
-snapshot rehydration before live standalone workers consume them.
+Resolved scientific snapshots are canonical, fingerprinted provenance and now
+have a narrow worker rehydration path in `config/rehydration.py`. Rehydration
+rebuilds only the scientific `PipelineConfig` fields, supplies inert defaults
+for excluded UI/artifact fields, and rejects the result unless re-snapshotting
+reproduces the source scientific SHA exactly. This is deliberately not a
+general editable JSON config loader.
+
+The standalone builder also receives the resolved pathway stage set. For
+`anatomical_qa`, it constructs only grid and anatomical configs; optimizer, MC,
+sampling, and guidance configs remain absent and their modules are not imported
+through config construction. Reusable default extraction from main remains a
+separate follow-up.
 
 ## Current Config Tree By Domain
 

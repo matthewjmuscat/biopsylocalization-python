@@ -79,9 +79,9 @@ Standalone process architecture target:
   example profile; it does not yet replace typed scientific `PipelineConfig`,
 - help, plan-only, and dry-run worker paths are designed to remain CPU-only;
   scientific execution modules are loaded only after worker preflight,
-- worker job v2 contains a typed `PatientInputPaths` object with RTSTRUCT,
-  RTDOSE, RTPLAN, US, MR T2, and MR ADC role paths plus an input-assignment
-  fingerprint; legacy v1 packets are translated when loaded,
+- worker job v3 contains typed `PatientInputPaths` plus the strict compatibility
+  artifact path and planned identity; legacy v1/v2 packets are translated when
+  loaded but cannot pass current live provenance gates,
 - fresh-input runs emit resolved scientific config, effective code-state, and
   strict run-compatibility provenance that propagates into patient/batch
   manifests,
@@ -103,11 +103,36 @@ PYTHONPATH=python_files_dcm_meta_based pipenv run python \
   --profile python_files_dcm_meta_based/patient_runner/configs/patient_run_profile.example.toml
 ```
 
-Copy the profile to a run-specific location and enable it only after replacing
-the placeholder paths. `plan_only` writes JSON plan/job provenance without
-launching scientific workers. `dry_run_workers` additionally checks the
-subprocess and input-preflight boundary. `live_workers` remains fail-closed at
-the one-patient runtime builder until Phase 2 wires that boundary.
+Use a run-specific profile and enable it only after replacing the placeholder
+paths. `plan_only` writes JSON plan/job provenance without launching scientific
+workers. `dry_run_workers` additionally checks the subprocess and input-preflight
+boundary. `live_workers` currently executes only the `anatomical_qa` pathway;
+all later pathways fail closed until their checkpoint gates are implemented.
+
+The live anatomical worker:
+
+- verifies and rehydrates the resolved scientific config snapshot,
+- builds one patient-local legacy-compatible state from explicit DICOM roles,
+- uses a worker-local sequential `map`/`starmap` adapter,
+- constructs only grid and anatomical scientific configs,
+- runs through `run_patient_case`, writes the patient manifest/artifacts, and
+  returns compact stage statuses to the parent.
+
+The job packet binds each worker to the scientific config SHA, exact snapshot
+file SHA, and strict run compatibility identity captured during planning. Live
+profiles and manual launches must reference both
+`resolved_scientific_config.json` and `run_compatibility_identity.json` from the
+same generated provenance set. The worker rejects artifact drift or mismatched
+source/environment/schema identity before rehydration. Patient IDs are preserved
+exactly from the input manifest, duplicate rows fail closed, and each live setup
+failure writes both a patient failure manifest and worker result. The parent
+removes stale attempt results before launch and validates the full replacement
+result contract against the launched job.
+
+Synthetic tests validate these contracts, but they do not establish scientific
+parity. Before enabling biopsy preprocessing, run one controlled patient through
+both standalone `anatomical_qa` and the isolated from-legacy checkpoint, then
+compare stage status, structure counts, manifests, and retained artifacts.
 
 The durable target contract lives in
 `../../docs/architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md`.

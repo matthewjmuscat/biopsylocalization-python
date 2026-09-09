@@ -3,21 +3,59 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
 from patient_runner.contracts import LegacyRuntimeKeys
 from patient_runner.contracts import PatientBatchRunConfig
 from patient_runner.contracts import PatientRunConfig
+from patient_runner.contracts import PatientStageName
 from patient_runner.scientific_config import PatientMCSimulationScientificConfig
 from patient_runner.scientific_config import PatientRunnerScientificConfig
 from patient_runner.scientific_config_builder import PatientRunnerScientificConfigBuildContext
 from patient_runner.scientific_config_builder import _build_mc_simulation_config
+from patient_runner.scientific_config_builder import build_patient_runner_scientific_config
 from patient_runner.scientific_runner import PatientScientificRunConfig
 from patient_runner.scientific_runner import summarize_patient_scientific_run_config
 
 
 class PatientRunnerScientificConfigBuilderTests(unittest.TestCase):
+    def test_stage_scoped_builder_constructs_anatomical_checkpoint_only(self) -> None:
+        pipeline_config = SimpleNamespace(
+            structure_registry=SimpleNamespace(
+                structs_referenced_dict={"Prostate ref": {}},
+                structs_referenced_list=("Prostate ref",),
+                structs_referenced_list_generalized=("Prostate ref",),
+                structs_referenced_list_generalized_unique_structs=("Prostate ref",),
+            )
+        )
+        grid_config = SimpleNamespace(enabled=True)
+        anatomical_config = SimpleNamespace(enabled=True)
+
+        with patch(
+            "patient_runner.scientific_config_builder._build_grid_preprocessing_config",
+            return_value=grid_config,
+        ) as build_grid, patch(
+            "patient_runner.scientific_config_builder._build_anatomical_preprocessing_config",
+            return_value=anatomical_config,
+        ) as build_anatomical:
+            config = build_patient_runner_scientific_config(
+                pipeline_config,
+                stage_names=(
+                    PatientStageName.GRID_PREPROCESSING,
+                    PatientStageName.ANATOMICAL_PREPROCESSING,
+                ),
+            )
+
+        build_grid.assert_called_once()
+        build_anatomical.assert_called_once()
+        self.assertIs(config.grid_preprocessing, grid_config)
+        self.assertIs(config.anatomical_preprocessing, anatomical_config)
+        self.assertIsNone(config.preprocessing)
+        self.assertIsNone(config.optimization)
+        self.assertIsNone(config.mc_simulation)
+
     def test_mc_simulation_builder_threads_dose_context_artifact_options(self) -> None:
         context = PatientRunnerScientificConfigBuildContext(
             persist_dose_context_artifacts=True,

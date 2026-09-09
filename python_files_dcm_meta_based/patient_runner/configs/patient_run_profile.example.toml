@@ -33,10 +33,10 @@ timeout_seconds = 3600
 # minimal | context | diagnostic | full_debug
 retention_level = "minimal"
 
-# Phase 2 will generate and consume a schema-versioned resolved PipelineConfig
-# snapshot. Uncomment only when that snapshot writer exists.
+# Live workers require both generated provenance artifacts from the same run.
 # [scientific_config]
-# snapshot = "../../../../resolved_pipeline_config.json"
+# snapshot = "../../../../completed-run/manifests/resolved_scientific_config.json"
+# run_compatibility_identity = "../../../../completed-run/manifests/run_compatibility_identity.json"
 
 [metadata]
 purpose = "standalone_patient_runner_example"

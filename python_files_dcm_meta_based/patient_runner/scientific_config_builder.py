@@ -35,6 +35,7 @@ from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .contracts import PatientStageName
 from .scientific_shadow import PatientScientificShadowConfig
 
 
@@ -133,11 +134,22 @@ def build_patient_scientific_shadow_config(
 def build_patient_runner_scientific_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext | None = None,
+    *,
+    stage_names: Sequence[PatientStageName | str] | None = None,
 ) -> PatientRunnerScientificConfig:
-    """Build the executable patient-runner scientific config from PipelineConfig."""
+    """Build requested patient-runner stage configs from PipelineConfig.
+
+    ``stage_names=None`` preserves full historical construction. Supplying an
+    explicit stage set avoids importing or constructing unrelated scientific
+    adapters in a standalone worker.
+    """
     context = PatientRunnerScientificConfigBuildContext() if context is None else context
     registry = pipeline_config.structure_registry
     _require_structure_registry(registry)
+    requested_stage_names = None if stage_names is None else frozenset(PatientStageName(name) for name in stage_names)
+
+    def requested(*names: PatientStageName) -> bool:
+        return requested_stage_names is None or not requested_stage_names.isdisjoint(names)
 
     return PatientRunnerScientificConfig(
         resources=PatientScientificStageResources(
@@ -146,16 +158,56 @@ def build_patient_runner_scientific_config(
             runtime_logger=context.runtime_logger,
             metadata={"source": "PatientRunnerScientificConfigBuildContext", **context.metadata},
         ),
-        grid_preprocessing=_build_grid_preprocessing_config(pipeline_config, context),
-        anatomical_preprocessing=_build_anatomical_preprocessing_config(pipeline_config, context),
-        preprocessing=_build_preprocessing_config(pipeline_config, context),
-        mc_prep=_build_mc_prep_config(pipeline_config),
-        mc_simulation=_build_mc_simulation_config(pipeline_config, context),
-        mc_output_tables=_build_mc_output_tables_config(pipeline_config),
-        optimization=_build_optimization_config(pipeline_config, context),
-        simulated_biopsy_finalization=_build_simulated_biopsy_finalization_config(pipeline_config),
-        sampling_classification=_build_sampling_classification_config(pipeline_config),
-        guidance=_build_guidance_config(pipeline_config),
+        grid_preprocessing=(
+            _build_grid_preprocessing_config(pipeline_config, context)
+            if requested(PatientStageName.GRID_PREPROCESSING)
+            else None
+        ),
+        anatomical_preprocessing=(
+            _build_anatomical_preprocessing_config(pipeline_config, context)
+            if requested(PatientStageName.ANATOMICAL_PREPROCESSING)
+            else None
+        ),
+        preprocessing=(
+            _build_preprocessing_config(pipeline_config, context)
+            if requested(PatientStageName.PREPROCESSING)
+            else None
+        ),
+        mc_prep=(
+            _build_mc_prep_config(pipeline_config)
+            if requested(PatientStageName.TRANSFORM_GENERATION, PatientStageName.MC_PREP)
+            else None
+        ),
+        mc_simulation=(
+            _build_mc_simulation_config(pipeline_config, context)
+            if requested(PatientStageName.MC_SIMULATION)
+            else None
+        ),
+        mc_output_tables=(
+            _build_mc_output_tables_config(pipeline_config)
+            if requested(PatientStageName.MC_OUTPUT_TABLES)
+            else None
+        ),
+        optimization=(
+            _build_optimization_config(pipeline_config, context)
+            if requested(PatientStageName.OPTIMIZATION)
+            else None
+        ),
+        simulated_biopsy_finalization=(
+            _build_simulated_biopsy_finalization_config(pipeline_config)
+            if requested(PatientStageName.SIMULATED_BIOPSY_FINALIZATION)
+            else None
+        ),
+        sampling_classification=(
+            _build_sampling_classification_config(pipeline_config)
+            if requested(PatientStageName.SAMPLING_CLASSIFICATION)
+            else None
+        ),
+        guidance=(
+            _build_guidance_config(pipeline_config)
+            if requested(PatientStageName.GUIDANCE)
+            else None
+        ),
         metadata={"source": "PipelineConfig"},
     )
 

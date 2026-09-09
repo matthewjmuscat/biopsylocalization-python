@@ -91,9 +91,10 @@ Current migration status:
 - Parent help, planning, TOML parsing, and dry-run workers no longer import
   optimizer/MC execution modules or initialize CUDA merely through the patient
   scientific config builder.
-- Non-dry-run worker execution intentionally reports the missing
-   `one_patient_runtime_state_builder` boundary until the patient-local runtime
-   builder is implemented.
+- Non-dry-run worker execution is gated to the `anatomical_qa` checkpoint. The
+   worker rehydrates verified scientific config, builds one patient-local
+   runtime, executes the existing grid/anatomical stage adapters, writes the
+   patient manifest, and exits. Later pathways still fail closed.
 - The legacy-main live patient-scientific runner default is disabled. Legacy-backed
   scientific execution and scientific-shadow validation now fail closed when a
   pristine post-discovery snapshot is unavailable instead of falling back to
@@ -124,9 +125,9 @@ September 2026 Phase 1 checkpoint:
    preflight, stop/continue failure policy, timeout results, CLI startup, profile
    compilation, and fail-closed snapshot isolation.
 - Legacy-backed execute/scientific-shadow routes require a pristine
-   post-discovery snapshot. The standalone worker still fails explicitly at the
-   unimplemented one-patient runtime builder; Phase 1 does not claim scientific
-   worker execution is complete.
+   post-discovery snapshot. At the Phase 1 checkpoint, the standalone worker
+   stopped explicitly at the then-unimplemented one-patient runtime builder;
+   Phase 1 did not claim scientific worker execution was complete.
 
 September 2026 Phase 2A checkpoint:
 
@@ -143,14 +144,53 @@ September 2026 Phase 2A checkpoint:
    input/bootstrap policy, runtime environment, and output schema registry before
    cross-run artifacts are reconstructed together. Historical profiles must explicitly select
    `legacy_allow_missing`; identified and unidentified runs cannot be mixed.
-- Worker job v2 carries typed DICOM role paths through `PatientInputPaths`
-   rather than hiding them in generic metadata. Version-1 packets remain readable.
+- Worker job v2 introduced typed DICOM role paths through `PatientInputPaths`
+   rather than hiding them in generic metadata. Job v3 additionally carries the
+   strict run-compatibility artifact path and its planned identity; version-1 and
+   version-2 packets remain readable but cannot satisfy live v3 provenance gates.
 - `PipelineConfig.bootstrap` owns structure-removal, contour matching, fraction
    parsing, and simulated-biopsy bootstrap policy. A typed adapter calls the
    existing patient bootstrap and has synthetic parity coverage.
-- Remaining Phase 2 work is reusable default config construction/rehydration,
-   worker-local resource ownership, live one-patient runtime composition, and
-   `anatomical_qa` parity against the isolated from-legacy path.
+- Remaining Phase 2 work is reusable default config construction plus
+   user-operated `anatomical_qa` parity against the isolated from-legacy path.
+
+September 2026 Phase 2B checkpoint:
+
+- `config/rehydration.py` reconstructs nested scientific `PipelineConfig`
+   dataclasses from a verified JSON snapshot and requires an exact scientific
+   SHA round trip. Excluded UI and artifact fields receive inert defaults.
+- Scientific config construction is pathway-scoped. An `anatomical_qa` worker
+   constructs only grid and anatomical adapters instead of importing or
+   constructing optimizer and MC adapters.
+- `patient_runner/runtime_builder.py` composes one RTSTRUCT bootstrap fragment,
+   explicit RTDOSE/RTPLAN/optional MR ADC roles, exact legacy keys, and a
+   one-patient global-info view. State remains process- and patient-local.
+- `SequentialWorkerPool` supplies the legacy `map`/`starmap` call surface inside
+   each worker. The parent process remains the patient-level process boundary;
+   the first checkpoint does not create nested process pools.
+- The live worker now delegates `anatomical_qa` to the existing
+   `run_patient_case` path and returns stage statuses and manifest/artifact paths
+   in its worker result. Unsupported pathways fail before patient state is built.
+- Worker jobs carry the scientific snapshot's canonical config SHA and file
+   SHA from plan construction. Live workers verify both immediately before
+   rehydration, so a snapshot changed after planning fails closed.
+- Live v3 jobs also require `run_compatibility_identity.json` from the same
+   provenance set. The worker verifies the artifact SHA, embedded identity,
+   scientific-config binding, current effective source tree, active runtime
+   environment, and output schema registry before patient state is loaded.
+- Successful patient manifests receive pathway, planned-stage, random-seed,
+   compatibility, and worker provenance from the resolved scientific run config.
+   Pre-stage failures write a typed `legacy_bridge` failure patient manifest as
+   well as the worker-result JSON.
+- Parent launch deletes any previous result for the same job attempt and verifies
+   the new result's job ID, attempt number, status, and exit code. Missing,
+   malformed, stale, or inconsistent results become typed worker failures.
+- Synthetic contract tests cover config rehydration, pathway scoping, resource
+   semantics, runtime composition, failure boundaries, and worker delegation.
+   Fresh orchestration imports load none of CuPy, cuDF, cuSpatial, or RMM.
+- This is implementation evidence, not patient-science parity evidence. A
+   controlled user-operated patient run and comparison against the isolated
+   from-legacy checkpoint remain mandatory before enabling the next pathway.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
@@ -412,6 +452,10 @@ Phase 4 and Phase 7 are the highest-risk areas. Phase 4 can silently change
 which patient objects or input files feed the scientific stages. Phase 7 can
 silently change defaults. Both should be split into small, reviewable passes
 with explicit before/after config or manifest evidence.
+
+Phase 4 implementation now exists for `anatomical_qa`; its confidence remains
+medium until the controlled patient parity gate passes. That gate, rather than
+the presence of executable code, controls progression to biopsy preprocessing.
 
 Recommended validation cadence:
 

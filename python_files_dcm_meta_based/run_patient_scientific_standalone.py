@@ -51,6 +51,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Run ID recorded in the parent plan and worker jobs.",
     )
     parser.add_argument(
+        "--scientific-config-snapshot",
+        type=Path,
+        default=None,
+        help="Verified resolved_scientific_config.json consumed by live patient workers.",
+    )
+    parser.add_argument(
+        "--run-compatibility-identity",
+        type=Path,
+        default=None,
+        help="Verified run_compatibility_identity.json required by live patient workers.",
+    )
+    parser.add_argument(
         "--patient-uid",
         action="append",
         default=[],
@@ -76,7 +88,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--launch-workers",
         action="store_true",
-        help="Launch worker subprocesses. This currently returns a controlled not-implemented result until the one-patient runtime builder is wired.",
+        help="Launch worker subprocesses. Live execution currently supports anatomical_qa only.",
     )
     parser.add_argument(
         "--timeout-seconds",
@@ -104,17 +116,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.input_case_manifest is None or args.output_root is None:
             raise ValueError("manual mode requires --input-case-manifest and --output-root")
         execution_mode = _manual_execution_mode(args)
+        if execution_mode == "live_workers" and args.scientific_config_snapshot is None:
+            raise ValueError("manual live workers require --scientific-config-snapshot")
+        if execution_mode == "live_workers" and args.run_compatibility_identity is None:
+            raise ValueError("manual live workers require --run-compatibility-identity")
         plan = build_patient_process_run_plan(
             input_case_manifest_path=args.input_case_manifest,
             output_root=args.output_root,
-            pathway_name=args.pathway_name or "full_current_pipeline_shadow",
-            checkpoint_name=args.checkpoint_name or "full_current_pipeline_shadow",
+            pathway_name=args.pathway_name or "anatomical_qa",
+            checkpoint_name=args.checkpoint_name or "anatomical_qa",
             patient_uids=tuple(args.patient_uid),
             run_id=args.run_id or "patient-process-runner",
             failure_policy=args.failure_policy or PatientProcessFailurePolicy.STOP_ON_FAILURE.value,
             max_workers=1 if args.max_workers is None else args.max_workers,
             timeout_seconds=args.timeout_seconds,
             execution_mode=execution_mode,
+            scientific_config_snapshot_path=args.scientific_config_snapshot,
+            run_compatibility_identity_path=args.run_compatibility_identity,
             metadata={"source": "run_patient_scientific_standalone.py", "source_mode": "manual_cli"},
         )
 
@@ -161,6 +179,8 @@ def _reject_manual_args_with_profile(args: argparse.Namespace) -> None:
         "--pathway-name": args.pathway_name,
         "--checkpoint-name": args.checkpoint_name,
         "--run-id": args.run_id,
+        "--scientific-config-snapshot": args.scientific_config_snapshot,
+        "--run-compatibility-identity": args.run_compatibility_identity,
         "--patient-uid": tuple(args.patient_uid),
         "--failure-policy": args.failure_policy,
         "--max-workers": args.max_workers,

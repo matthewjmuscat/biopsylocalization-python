@@ -6,6 +6,7 @@ import csv
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -18,12 +19,14 @@ from .contracts import PatientStageStatus
 from .contracts import validate_patient_uids
 from .inputs import PatientInputPaths
 from config.snapshots import read_pipeline_config_snapshot
+from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
+from output_artifacts.run_compatibility import read_run_compatibility_identity
 
 
-PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION = "patient_process_run_plan_v2"
-PATIENT_WORKER_JOB_SCHEMA_VERSION = "patient_worker_job_v2"
+PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION = "patient_process_run_plan_v3"
+PATIENT_WORKER_JOB_SCHEMA_VERSION = "patient_worker_job_v3"
 PATIENT_WORKER_RESULT_SCHEMA_VERSION = "patient_worker_result_v2"
-LEGACY_PATIENT_WORKER_JOB_SCHEMA_VERSIONS = frozenset({"patient_worker_job_v1"})
+LEGACY_PATIENT_WORKER_JOB_SCHEMA_VERSIONS = frozenset({"patient_worker_job_v1", "patient_worker_job_v2"})
 DEFAULT_PATIENT_PROCESS_RUNNER_DIR_NAME = "patient_process_runner"
 STANDALONE_PATIENT_RUNNER_JOB_NAME = "standalone_patient_runner"
 PATIENT_PROCESS_REQUESTED_JOB_NAMES = frozenset(
@@ -36,6 +39,9 @@ PATIENT_PROCESS_REQUESTED_JOB_NAMES = frozenset(
 )
 PATIENT_ARTIFACT_RETENTION_LEVELS = frozenset({"minimal", "context", "diagnostic", "full_debug"})
 PATIENT_PROCESS_EXECUTION_MODES = frozenset({"plan_only", "dry_run_workers", "live_workers"})
+SCIENTIFIC_CONFIG_SNAPSHOT_FINGERPRINT_METADATA_KEY = "scientific_config_snapshot_fingerprint_sha256"
+SCIENTIFIC_CONFIG_SNAPSHOT_FILE_SHA256_METADATA_KEY = "scientific_config_snapshot_file_sha256"
+RUN_COMPATIBILITY_IDENTITY_FILE_SHA256_METADATA_KEY = "run_compatibility_identity_file_sha256"
 
 
 class PatientProcessFailurePolicy(str, Enum):
@@ -69,6 +75,14 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError(f"JSON root must be an object: {path}")
     return payload
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _write_json_object(path: Path, payload: Mapping[str, Any]) -> Path:
@@ -137,9 +151,11 @@ def _patient_cases_and_inputs_from_manifest(
     rows_by_patient_uid: dict[str, Mapping[str, str]] = {}
     with Path(input_case_manifest_path).open("r", encoding="utf-8", newline="") as file_obj:
         for row in csv.DictReader(file_obj):
-            patient_uid = str(row.get("Patient UID (generated)", "")).strip()
-            if patient_uid == "":
+            patient_uid = str(row.get("Patient UID (generated)", ""))
+            if patient_uid.strip() == "":
                 continue
+            if patient_uid in rows_by_patient_uid:
+                raise ValueError("input case manifest contains duplicate patient UID: {!r}".format(patient_uid))
             rows_by_patient_uid[patient_uid] = dict(row)
 
     if requested_patient_uids:
@@ -198,6 +214,7 @@ class PatientWorkerJob:
     attempt_number: int = 1
     run_id: str = ""
     scientific_config_snapshot_path: Path | None = None
+    run_compatibility_identity_path: Path | None = None
     retention_level: str = "minimal"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -219,6 +236,7 @@ class PatientWorkerJob:
         object.__setattr__(self, "attempt_number", attempt_number)
         object.__setattr__(self, "run_id", str(self.run_id).strip())
         object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
+        object.__setattr__(self, "run_compatibility_identity_path", _optional_path(self.run_compatibility_identity_path))
         object.__setattr__(self, "retention_level", _normalize_retention_level(self.retention_level))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -257,6 +275,11 @@ class PatientWorkerJob:
                 None
                 if self.scientific_config_snapshot_path is None
                 else self.scientific_config_snapshot_path.as_posix()
+            ),
+            "run_compatibility_identity_path": (
+                None
+                if self.run_compatibility_identity_path is None
+                else self.run_compatibility_identity_path.as_posix()
             ),
             "retention_level": self.retention_level,
             "result_path": self.result_path.as_posix(),
@@ -305,6 +328,7 @@ class PatientWorkerJob:
             pathway_name=str(payload.get("pathway_name", "")),
             checkpoint_name=str(payload.get("checkpoint_name", "")),
             scientific_config_snapshot_path=_optional_path(payload.get("scientific_config_snapshot_path")),
+            run_compatibility_identity_path=_optional_path(payload.get("run_compatibility_identity_path")),
             retention_level=str(payload.get("retention_level", "minimal")),
             metadata=payload.get("metadata", {}),
         )
@@ -326,6 +350,7 @@ class PatientProcessRunPlan:
     execution_mode: str = "plan_only"
     requested_jobs: Sequence[str] = (STANDALONE_PATIENT_RUNNER_JOB_NAME,)
     scientific_config_snapshot_path: Path | None = None
+    run_compatibility_identity_path: Path | None = None
     retention_level: str = "minimal"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -350,8 +375,17 @@ class PatientProcessRunPlan:
                 raise ValueError("timeout_seconds must be positive when provided")
         object.__setattr__(self, "timeout_seconds", timeout_seconds)
         object.__setattr__(self, "execution_mode", _normalize_execution_mode(self.execution_mode))
+        if self.execution_mode == "live_workers" and (
+            self.pathway_name != "anatomical_qa" or self.checkpoint_name != "anatomical_qa"
+        ):
+            raise ValueError("live_workers currently supports anatomical_qa pathway/checkpoint only")
         object.__setattr__(self, "requested_jobs", _normalize_requested_jobs(self.requested_jobs))
         object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
+        object.__setattr__(self, "run_compatibility_identity_path", _optional_path(self.run_compatibility_identity_path))
+        if self.execution_mode == "live_workers" and self.scientific_config_snapshot_path is None:
+            raise ValueError("live_workers requires a scientific config snapshot")
+        if self.execution_mode == "live_workers" and self.run_compatibility_identity_path is None:
+            raise ValueError("live_workers requires a run compatibility identity")
         object.__setattr__(self, "retention_level", _normalize_retention_level(self.retention_level))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -379,6 +413,11 @@ class PatientProcessRunPlan:
                 None
                 if self.scientific_config_snapshot_path is None
                 else self.scientific_config_snapshot_path.as_posix()
+            ),
+            "run_compatibility_identity_path": (
+                None
+                if self.run_compatibility_identity_path is None
+                else self.run_compatibility_identity_path.as_posix()
             ),
             "retention_level": self.retention_level,
             "patient_count": len(self.worker_jobs),
@@ -455,11 +494,65 @@ def build_patient_process_run_plan(
     execution_mode: str = "plan_only",
     requested_jobs: Sequence[str] = (STANDALONE_PATIENT_RUNNER_JOB_NAME,),
     scientific_config_snapshot_path: Path | None = None,
+    run_compatibility_identity_path: Path | None = None,
     retention_level: str = "minimal",
     metadata: Mapping[str, Any] | None = None,
 ) -> PatientProcessRunPlan:
     """Build a standalone process plan from the DICOM input case manifest."""
     resolved_output_root = Path(output_root)
+    resolved_metadata = dict(metadata or {})
+    resolved_snapshot_path = _optional_path(scientific_config_snapshot_path)
+    resolved_compatibility_path = _optional_path(run_compatibility_identity_path)
+    resolved_execution_mode = _normalize_execution_mode(execution_mode)
+    if resolved_execution_mode == "live_workers":
+        if pathway_name != "anatomical_qa" or checkpoint_name != "anatomical_qa":
+            raise ValueError("live_workers currently supports anatomical_qa pathway/checkpoint only")
+        if resolved_snapshot_path is None or not resolved_snapshot_path.is_file():
+            raise FileNotFoundError("live_workers scientific config snapshot does not exist: {}".format(resolved_snapshot_path))
+        if resolved_compatibility_path is None or not resolved_compatibility_path.is_file():
+            raise FileNotFoundError(
+                "live_workers run compatibility identity does not exist: {}".format(resolved_compatibility_path)
+            )
+    resolved_snapshot = None
+    if resolved_snapshot_path is not None and resolved_snapshot_path.is_file():
+        resolved_snapshot = read_pipeline_config_snapshot(resolved_snapshot_path)
+        resolved_metadata.update(
+            {
+                SCIENTIFIC_CONFIG_SNAPSHOT_FINGERPRINT_METADATA_KEY: resolved_snapshot.config_sha256,
+                SCIENTIFIC_CONFIG_SNAPSHOT_FILE_SHA256_METADATA_KEY: _sha256_file(resolved_snapshot_path),
+            }
+        )
+    if resolved_compatibility_path is not None and resolved_compatibility_path.is_file():
+        compatibility_identity = read_run_compatibility_identity(resolved_compatibility_path)
+        if resolved_snapshot is None:
+            raise ValueError("run compatibility identity requires an available scientific config snapshot")
+        if compatibility_identity.scientific_config_sha256 != resolved_snapshot.config_sha256:
+            raise ValueError("run compatibility identity scientific config SHA does not match snapshot")
+        resolved_metadata.update(
+            {
+                RUN_COMPATIBILITY_METADATA_KEY: compatibility_identity.to_dict(),
+                RUN_COMPATIBILITY_IDENTITY_FILE_SHA256_METADATA_KEY: _sha256_file(resolved_compatibility_path),
+            }
+        )
+    resolved_metadata.update(
+        {
+            "pathway_name": pathway_name,
+            "checkpoint_name": checkpoint_name,
+            "planned_stage_names": [
+                "grid_preprocessing",
+                "anatomical_preprocessing",
+            ] if pathway_name == "anatomical_qa" else [],
+        }
+    )
+    if resolved_snapshot is not None:
+        random_seed_config = resolved_snapshot.config.get("random_seeds", {})
+        if isinstance(random_seed_config, Mapping):
+            from random_seed_policy import random_seed_policy_metadata
+
+            resolved_metadata["random_seed_policy"] = random_seed_policy_metadata(
+                transform_generation_random_seed=random_seed_config.get("transform_generation_random_seed"),
+                optimizer_v1_random_seed=random_seed_config.get("optimizer_v1_random_seed"),
+            )
     patient_cases_and_inputs = _patient_cases_and_inputs_from_manifest(Path(input_case_manifest_path), patient_uids)
     worker_jobs = tuple(
         PatientWorkerJob(
@@ -471,9 +564,10 @@ def build_patient_process_run_plan(
             pathway_name=pathway_name,
             checkpoint_name=checkpoint_name,
             run_id=run_id,
-            scientific_config_snapshot_path=scientific_config_snapshot_path,
+            scientific_config_snapshot_path=resolved_snapshot_path,
+            run_compatibility_identity_path=resolved_compatibility_path,
             retention_level=retention_level,
-            metadata={"patient_index": index},
+            metadata={**resolved_metadata, "patient_index": index},
         )
         for index, (patient_case, patient_inputs) in enumerate(patient_cases_and_inputs, start=1)
     )
@@ -487,11 +581,12 @@ def build_patient_process_run_plan(
         failure_policy=failure_policy,
         max_workers=max_workers,
         timeout_seconds=timeout_seconds,
-        execution_mode=execution_mode,
+        execution_mode=resolved_execution_mode,
         requested_jobs=requested_jobs,
-        scientific_config_snapshot_path=scientific_config_snapshot_path,
+        scientific_config_snapshot_path=resolved_snapshot_path,
+        run_compatibility_identity_path=resolved_compatibility_path,
         retention_level=retention_level,
-        metadata=dict(metadata or {}),
+        metadata=resolved_metadata,
     )
 
 
@@ -516,18 +611,124 @@ def write_patient_worker_result(result: PatientWorkerResult, output_path: Path |
     return _write_json_object(resolved_output_path, result.as_mapping())
 
 
+def _worker_setup_failure_result(
+    job: PatientWorkerJob,
+    *,
+    start_time: float,
+    exit_code: int,
+    warning: str,
+    failed_boundary: str,
+    input_preflight_metadata: Mapping[str, Any],
+) -> PatientWorkerResult:
+    elapsed_seconds = perf_counter() - start_time
+    warnings = [warning]
+    metadata: dict[str, Any] = {
+        **job.metadata,
+        "worker_boundary": "standalone_patient_process_runner",
+        "failed_boundary": failed_boundary,
+        "input_preflight": dict(input_preflight_metadata),
+    }
+    try:
+        from .contracts import PatientRunResult
+        from .contracts import PatientStageName
+        from .contracts import PatientStageResult
+        from .manifests import write_patient_run_manifest
+
+        stage_result = PatientStageResult.failure(
+            PatientStageName.LEGACY_BRIDGE,
+            elapsed_seconds=elapsed_seconds,
+            warnings=(warning,),
+            metadata={"patient_uid": job.patient_case.patient_uid, "failed_boundary": failed_boundary},
+        )
+        patient_result = PatientRunResult.from_stage_results(
+            job.patient_case,
+            job.patient_output_root,
+            (stage_result,),
+            elapsed_seconds=elapsed_seconds,
+            metadata=metadata,
+        )
+        metadata["patient_run_manifest_path"] = write_patient_run_manifest(patient_result).as_posix()
+    except Exception as exc:
+        warnings.append("failed to write patient setup-failure manifest: {}".format(exc))
+        metadata["patient_run_manifest_error"] = str(exc)
+    return PatientWorkerResult(
+        worker_job=job,
+        status=PatientStageStatus.FAILED,
+        elapsed_seconds=elapsed_seconds,
+        exit_code=exit_code,
+        dry_run=False,
+        warnings=tuple(warnings),
+        metadata=metadata,
+    )
+
+
+def _validate_worker_compatibility_identity(
+    job: PatientWorkerJob,
+    *,
+    scientific_config_sha256: str,
+) -> dict[str, Any]:
+    if job.run_compatibility_identity_path is None or not job.run_compatibility_identity_path.is_file():
+        raise FileNotFoundError("standalone live worker requires a run compatibility identity")
+    compatibility_identity = read_run_compatibility_identity(job.run_compatibility_identity_path)
+    expected_payload = job.metadata.get(RUN_COMPATIBILITY_METADATA_KEY)
+    if not isinstance(expected_payload, Mapping):
+        raise ValueError("worker job is missing embedded run compatibility identity")
+    expected_identity = type(compatibility_identity).from_dict(expected_payload)
+    if compatibility_identity != expected_identity:
+        raise ValueError("run compatibility identity file differs from planned worker identity")
+    expected_file_sha256 = str(
+        job.metadata.get(RUN_COMPATIBILITY_IDENTITY_FILE_SHA256_METADATA_KEY, "")
+    )
+    current_file_sha256 = _sha256_file(job.run_compatibility_identity_path)
+    if expected_file_sha256 == "" or current_file_sha256 != expected_file_sha256:
+        raise ValueError("run compatibility identity file SHA differs from planned worker identity")
+    if compatibility_identity.scientific_config_sha256 != scientific_config_sha256:
+        raise ValueError("run compatibility identity scientific config SHA differs from worker snapshot")
+
+    from output_artifacts.schema_registry import OUTPUT_SCHEMA_REGISTRY_VERSION
+    from startup.code_identity import capture_code_identity
+    from startup.runtime_environment import capture_runtime_environment_identity
+
+    repository_root = Path(__file__).resolve().parents[2]
+    current_code_identity = capture_code_identity(repository_root)
+    current_environment_identity = capture_runtime_environment_identity(repository_root)
+    mismatches = {}
+    for field_name, current_value in (
+        ("code_source_sha256", current_code_identity.source_tree_sha256),
+        ("runtime_environment_sha256", current_environment_identity.identity_sha256),
+        ("output_schema_registry_version", OUTPUT_SCHEMA_REGISTRY_VERSION),
+    ):
+        expected_value = str(getattr(compatibility_identity, field_name))
+        if str(current_value) != expected_value:
+            mismatches[field_name] = {"planned": expected_value, "worker": str(current_value)}
+    if mismatches:
+        raise ValueError("worker runtime differs from run compatibility identity: {}".format(mismatches))
+    return {
+        "run_compatibility_identity_path": job.run_compatibility_identity_path.as_posix(),
+        RUN_COMPATIBILITY_IDENTITY_FILE_SHA256_METADATA_KEY: current_file_sha256,
+        "run_compatibility_identity_sha256": compatibility_identity.identity_sha256,
+        "code_source_sha256": current_code_identity.source_tree_sha256,
+        "runtime_environment_sha256": current_environment_identity.identity_sha256,
+        "output_schema_registry_version": OUTPUT_SCHEMA_REGISTRY_VERSION,
+    }
+
+
 def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> PatientWorkerResult:
     """Run one patient worker job.
 
-    Scientific execution is intentionally not wired here yet. The current
-    standalone scaffold can prove process/job/result wiring in dry-run mode while
-    keeping the one-patient runtime builder explicit.
+    Live execution is currently gated to the first ``anatomical_qa`` checkpoint.
+    Later pathways fail closed until their standalone input/resource boundaries
+    have independent parity evidence.
     """
     start_time = perf_counter()
     missing_core_input_roles = job.patient_inputs.missing_core_roles
     config_snapshot_available = (
         job.scientific_config_snapshot_path is not None
         and job.scientific_config_snapshot_path.is_file()
+    )
+    compatibility_identity_available = (
+        job.run_compatibility_identity_path is not None
+        and job.run_compatibility_identity_path.is_file()
     )
     input_preflight_metadata = {
         "core_input_paths_all_present": not missing_core_input_roles,
@@ -538,6 +739,12 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
             else job.scientific_config_snapshot_path.as_posix()
         ),
         "scientific_config_snapshot_available": config_snapshot_available,
+        "run_compatibility_identity_path": (
+            ""
+            if job.run_compatibility_identity_path is None
+            else job.run_compatibility_identity_path.as_posix()
+        ),
+        "run_compatibility_identity_available": compatibility_identity_available,
     }
     if dry_run:
         warnings = ["dry-run worker did not build runtime state or execute scientific stages"]
@@ -547,6 +754,8 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
             )
         if not config_snapshot_available:
             warnings.append("scientific config snapshot is not available")
+        if not compatibility_identity_available:
+            warnings.append("run compatibility identity is not available")
         return PatientWorkerResult(
             worker_job=job,
             status=PatientStageStatus.SKIPPED,
@@ -561,66 +770,201 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
         )
 
     if missing_core_input_roles:
-        return PatientWorkerResult(
-            worker_job=job,
-            status=PatientStageStatus.FAILED,
-            elapsed_seconds=perf_counter() - start_time,
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
             exit_code=2,
-            dry_run=False,
-            warnings=(
-                "input preflight found missing core input files: " + ", ".join(missing_core_input_roles),
-            ),
-            metadata={
-                "worker_boundary": "standalone_patient_process_runner",
-                "failed_boundary": "core_input_path_preflight",
-                "input_preflight": input_preflight_metadata,
-            },
+            warning="input preflight found missing core input files: " + ", ".join(missing_core_input_roles),
+            failed_boundary="core_input_path_preflight",
+            input_preflight_metadata=input_preflight_metadata,
         )
 
     if not config_snapshot_available:
-        return PatientWorkerResult(
-            worker_job=job,
-            status=PatientStageStatus.FAILED,
-            elapsed_seconds=perf_counter() - start_time,
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
             exit_code=2,
-            dry_run=False,
-            warnings=("standalone live worker requires a scientific config snapshot",),
-            metadata={
-                "worker_boundary": "standalone_patient_process_runner",
-                "failed_boundary": "scientific_config_snapshot_preflight",
-                "input_preflight": input_preflight_metadata,
-            },
+            warning="standalone live worker requires a scientific config snapshot",
+            failed_boundary="scientific_config_snapshot_preflight",
+            input_preflight_metadata=input_preflight_metadata,
         )
 
     try:
         config_snapshot = read_pipeline_config_snapshot(job.scientific_config_snapshot_path)
     except Exception as exc:
-        return PatientWorkerResult(
-            worker_job=job,
-            status=PatientStageStatus.FAILED,
-            elapsed_seconds=perf_counter() - start_time,
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
             exit_code=2,
-            dry_run=False,
-            warnings=("invalid scientific config snapshot: {}".format(exc),),
-            metadata={
-                "worker_boundary": "standalone_patient_process_runner",
-                "failed_boundary": "scientific_config_snapshot_preflight",
-                "input_preflight": input_preflight_metadata,
-            },
+            warning="invalid scientific config snapshot: {}".format(exc),
+            failed_boundary="scientific_config_snapshot_preflight",
+            input_preflight_metadata=input_preflight_metadata,
         )
-    input_preflight_metadata["scientific_config_sha256"] = config_snapshot.config_sha256
+    current_snapshot_file_sha256 = _sha256_file(job.scientific_config_snapshot_path)
+    expected_snapshot_fingerprint = str(
+        job.metadata.get(SCIENTIFIC_CONFIG_SNAPSHOT_FINGERPRINT_METADATA_KEY, "")
+    )
+    expected_snapshot_file_sha256 = str(
+        job.metadata.get(SCIENTIFIC_CONFIG_SNAPSHOT_FILE_SHA256_METADATA_KEY, "")
+    )
+    input_preflight_metadata.update(
+        {
+            "scientific_config_sha256": config_snapshot.config_sha256,
+            SCIENTIFIC_CONFIG_SNAPSHOT_FINGERPRINT_METADATA_KEY: expected_snapshot_fingerprint,
+            SCIENTIFIC_CONFIG_SNAPSHOT_FILE_SHA256_METADATA_KEY: expected_snapshot_file_sha256,
+            "scientific_config_snapshot_current_file_sha256": current_snapshot_file_sha256,
+        }
+    )
+    if (
+        expected_snapshot_fingerprint == ""
+        or expected_snapshot_file_sha256 == ""
+        or config_snapshot.config_sha256 != expected_snapshot_fingerprint
+        or current_snapshot_file_sha256 != expected_snapshot_file_sha256
+    ):
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=2,
+            warning="scientific config snapshot differs from the planned worker identity",
+            failed_boundary="scientific_config_snapshot_identity_preflight",
+            input_preflight_metadata=input_preflight_metadata,
+        )
 
+    try:
+        compatibility_preflight = _validate_worker_compatibility_identity(
+            job,
+            scientific_config_sha256=config_snapshot.config_sha256,
+        )
+        input_preflight_metadata.update(compatibility_preflight)
+    except Exception as exc:
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=2,
+            warning="run compatibility preflight failed: {}".format(exc),
+            failed_boundary="run_compatibility_identity_preflight",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    if job.pathway_name != "anatomical_qa" or job.checkpoint_name != "anatomical_qa":
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=2,
+            warning="standalone live worker currently supports anatomical_qa only",
+            failed_boundary="standalone_pathway_support",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    try:
+        from config.rehydration import rehydrate_pipeline_scientific_config_snapshot
+
+        pipeline_config = rehydrate_pipeline_scientific_config_snapshot(config_snapshot)
+    except Exception as exc:
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=2,
+            warning="scientific config rehydration failed: {}".format(exc),
+            failed_boundary="scientific_config_rehydration",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    runtime_metadata = {
+        **job.metadata,
+        "worker_boundary": "standalone_patient_process_runner",
+        "worker_job_id": job.job_id,
+        "run_id": job.run_id,
+        "retention_level": job.retention_level,
+        "scientific_config_sha256": config_snapshot.config_sha256,
+        "patient_input_manifest_identity_sha256": job.patient_inputs.manifest_identity_sha256,
+    }
+    try:
+        from .runtime_builder import build_standalone_patient_runtime
+
+        standalone_runtime = build_standalone_patient_runtime(
+            patient_case=job.patient_case,
+            patient_inputs=job.patient_inputs,
+            pipeline_config=pipeline_config,
+            metadata=runtime_metadata,
+        )
+    except Exception as exc:
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=2,
+            warning="one-patient runtime build failed: {}".format(exc),
+            failed_boundary="one_patient_runtime_state_builder",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    try:
+        from .runner import run_patient_case
+        from .scientific_runner import build_patient_scientific_run_config_from_pipeline
+        from .scientific_runner import build_patient_scientific_runner_stages
+
+        scientific_run_config = build_patient_scientific_run_config_from_pipeline(
+            pipeline_config,
+            standalone_runtime.config_build_context,
+            output_root=job.output_root,
+            pathway_name=job.pathway_name,
+            checkpoint_name=job.checkpoint_name,
+            patient_uids=(job.patient_case.patient_uid,),
+            run_id=job.run_id or job.job_id,
+            max_workers=1,
+            execution_backend="sequential",
+            metadata=runtime_metadata,
+        )
+        standalone_runtime.runtime_state.metadata.update(
+            {
+                **scientific_run_config.batch_config.metadata,
+                **scientific_run_config.metadata,
+                "pathway_name": scientific_run_config.pathway_name.value,
+                "planned_stage_names": tuple(
+                    stage_name.value for stage_name in scientific_run_config.planned_stage_names
+                ),
+            }
+        )
+        stages = build_patient_scientific_runner_stages(scientific_run_config)
+        patient_result = run_patient_case(
+            standalone_runtime.runtime_state,
+            scientific_run_config.batch_config.patient_config,
+            stages=stages,
+        )
+    except Exception as exc:
+        return _worker_setup_failure_result(
+            job,
+            start_time=start_time,
+            exit_code=1,
+            warning="standalone scientific execution setup failed: {}".format(exc),
+            failed_boundary="scientific_execution_setup",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    stage_statuses = {
+        stage_result.stage_name: stage_result.status.value
+        for stage_result in patient_result.stage_results
+    }
+    stage_warnings = tuple(
+        warning
+        for stage_result in patient_result.stage_results
+        for warning in stage_result.warnings
+    )
     return PatientWorkerResult(
         worker_job=job,
-        status=PatientStageStatus.FAILED,
+        status=patient_result.status,
         elapsed_seconds=perf_counter() - start_time,
-        exit_code=2,
+        exit_code=0 if patient_result.succeeded else 1,
         dry_run=False,
-        warnings=("standalone one-patient runtime builder is not implemented yet",),
+        warnings=stage_warnings,
         metadata={
             "worker_boundary": "standalone_patient_process_runner",
-            "missing_boundary": "one_patient_runtime_state_builder",
+            "executed_boundary": "anatomical_qa",
             "input_preflight": input_preflight_metadata,
+            "patient_output_root": patient_result.output_root.as_posix(),
+            "patient_run_manifest_path": patient_result.output_root.joinpath("patient_run_manifest.json").as_posix(),
+            "artifact_paths": tuple(path.as_posix() for path in patient_result.artifact_paths),
+            "stage_statuses": stage_statuses,
         },
     )
 
@@ -650,6 +994,8 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
     command = patient_worker_command(job_path, dry_run=dry_run)
     worker_job = load_patient_worker_job(job_path)
     launch_start_time = perf_counter()
+    if worker_job.result_path.is_file():
+        worker_job.result_path.unlink()
     try:
         completed = subprocess.run(command, check=False, timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
@@ -664,21 +1010,56 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
             metadata={"worker_command": command, "timeout_seconds": timeout_seconds},
         )
     if worker_job.result_path.is_file():
-        result_payload = _read_json_object(worker_job.result_path)
-        status = PatientStageStatus(result_payload.get("status", PatientStageStatus.FAILED.value))
-        elapsed_seconds = float(result_payload.get("elapsed_seconds", 0.0) or 0.0)
-        warnings = result_payload.get("warnings", ())
-        metadata = result_payload.get("metadata", {})
+        try:
+            result_payload = _read_json_object(worker_job.result_path)
+            if result_payload.get("schema_version") != PATIENT_WORKER_RESULT_SCHEMA_VERSION:
+                raise ValueError("worker result schema_version is unsupported")
+            result_job_payload = result_payload.get("job", {})
+            if not isinstance(result_job_payload, Mapping):
+                raise TypeError("worker result job must be an object")
+            result_worker_job = PatientWorkerJob.from_mapping(result_job_payload)
+            if result_worker_job != worker_job:
+                raise ValueError("worker result identity does not match launched job")
+            result_exit_code = int(result_payload.get("exit_code", completed.returncode))
+            if result_exit_code != int(completed.returncode):
+                raise ValueError("worker result exit_code does not match subprocess exit code")
+            status = PatientStageStatus(result_payload.get("status", PatientStageStatus.FAILED.value))
+            elapsed_seconds = float(result_payload.get("elapsed_seconds", 0.0) or 0.0)
+            warnings_payload = result_payload.get("warnings", ())
+            if isinstance(warnings_payload, (str, bytes)) or not isinstance(warnings_payload, Sequence):
+                raise TypeError("worker result warnings must be an array")
+            metadata_payload = result_payload.get("metadata", {})
+            if not isinstance(metadata_payload, Mapping):
+                raise TypeError("worker result metadata must be an object")
+            if str(result_payload.get("patient_uid", "")) != worker_job.patient_case.patient_uid:
+                raise ValueError("worker result patient_uid does not match launched job")
+            if bool(result_payload.get("dry_run", False)) != bool(dry_run):
+                raise ValueError("worker result dry_run does not match launched command")
+            expected_succeeded = result_exit_code == 0 and status in {
+                PatientStageStatus.SUCCEEDED,
+                PatientStageStatus.SKIPPED,
+            }
+            if bool(result_payload.get("succeeded", False)) != expected_succeeded:
+                raise ValueError("worker result succeeded flag is inconsistent")
+            warnings = tuple(str(warning) for warning in warnings_payload)
+            metadata = dict(metadata_payload)
+        except Exception as exc:
+            status = PatientStageStatus.FAILED
+            elapsed_seconds = perf_counter() - launch_start_time
+            warnings = ("worker wrote an invalid result JSON: {}".format(exc),)
+            metadata = {"failed_boundary": "worker_result_validation"}
+            result_exit_code = int(completed.returncode) or 1
     else:
         status = PatientStageStatus.FAILED
         elapsed_seconds = 0.0
         warnings = ("worker did not write a result JSON",)
         metadata = {}
+        result_exit_code = int(completed.returncode) or 1
     return PatientWorkerResult(
         worker_job=worker_job,
         status=status,
         elapsed_seconds=elapsed_seconds,
-        exit_code=int(completed.returncode),
+        exit_code=result_exit_code,
         dry_run=dry_run,
         warnings=warnings,
         metadata={"worker_command": command, **metadata},

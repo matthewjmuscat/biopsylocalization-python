@@ -11,7 +11,10 @@ from pathlib import Path
 from .run_profile import load_patient_orchestration_profile
 from config.snapshots import PipelineConfigSnapshot
 from config.snapshots import canonical_sha256
+from config.snapshots import read_pipeline_config_snapshot
 from config.snapshots import write_pipeline_config_snapshot
+from output_artifacts.run_compatibility import RunCompatibilityIdentity
+from output_artifacts.run_compatibility import write_run_compatibility_identity
 
 
 _CASE_MANIFEST_COLUMNS = (
@@ -50,11 +53,13 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
                 ),
                 config_snapshot_path,
             )
+            compatibility_identity_path = _write_compatibility_identity(root, config_snapshot_path)
             profile_path = _write_profile(
                 root,
                 execution_mode="plan_only",
                 patient_uids=("P002",),
                 scientific_config_snapshot="scientific_config.json",
+                run_compatibility_identity="run_compatibility_identity.json",
             )
 
             profile = load_patient_orchestration_profile(profile_path)
@@ -67,6 +72,7 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
         self.assertEqual(plan.retention_level, "context")
         self.assertEqual(plan.timeout_seconds, 30.0)
         self.assertEqual(plan.scientific_config_snapshot_path, config_snapshot_path)
+        self.assertEqual(plan.run_compatibility_identity_path, compatibility_identity_path)
         self.assertEqual(len(payload["metadata"]["profile_source_fingerprint_sha256"]), 64)
         self.assertEqual(len(payload["metadata"]["input_case_manifest_fingerprint_sha256"]), 64)
         self.assertEqual(len(payload["metadata"]["scientific_config_snapshot_fingerprint_sha256"]), 64)
@@ -149,6 +155,30 @@ class PatientOrchestrationProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "requires scientific_config.snapshot"):
                 load_patient_orchestration_profile(profile_path)
 
+    def test_live_profile_requires_run_compatibility_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _write_case_manifest(root, ("P001",))
+            config_snapshot_path = root.joinpath("scientific_config.json")
+            config_payload = {"mc": {"trials": 10}}
+            write_pipeline_config_snapshot(
+                PipelineConfigSnapshot(
+                    config_type="config.PipelineConfig.scientific",
+                    config=config_payload,
+                    config_sha256=canonical_sha256(config_payload),
+                ),
+                config_snapshot_path,
+            )
+            profile_path = _write_profile(
+                root,
+                execution_mode="live_workers",
+                patient_uids=("P001",),
+                scientific_config_snapshot="scientific_config.json",
+            )
+
+            with self.assertRaisesRegex(ValueError, "requires scientific_config.run_compatibility_identity"):
+                load_patient_orchestration_profile(profile_path)
+
     def test_profile_cli_runs_cpu_only_dry_run_workers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -185,12 +215,20 @@ def _write_profile(
     pathway_name: str = "anatomical_qa",
     checkpoint_name: str = "anatomical_qa",
     scientific_config_snapshot: str = "",
+    run_compatibility_identity: str = "",
 ) -> Path:
     profile_path = root.joinpath("patient_run.toml")
     patient_values = ", ".join('"{}"'.format(patient_uid) for patient_uid in patient_uids)
     snapshot_section = ""
+    scientific_config_lines = []
     if scientific_config_snapshot:
-        snapshot_section = '\n[scientific_config]\nsnapshot = "{}"\n'.format(scientific_config_snapshot)
+        scientific_config_lines.append('snapshot = "{}"'.format(scientific_config_snapshot))
+    if run_compatibility_identity:
+        scientific_config_lines.append(
+            'run_compatibility_identity = "{}"'.format(run_compatibility_identity)
+        )
+    if scientific_config_lines:
+        snapshot_section = "\n[scientific_config]\n{}\n".format("\n".join(scientific_config_lines))
     profile_path.write_text(
         """schema_version = "patient_orchestration_profile_v1"
 description = "Synthetic standalone profile"
@@ -230,6 +268,22 @@ purpose = "unit_test"
         encoding="utf-8",
     )
     return profile_path
+
+
+def _write_compatibility_identity(root: Path, config_snapshot_path: Path) -> Path:
+    snapshot = read_pipeline_config_snapshot(config_snapshot_path)
+    path = root.joinpath("run_compatibility_identity.json")
+    write_run_compatibility_identity(
+        RunCompatibilityIdentity(
+            scientific_config_sha256=snapshot.config_sha256,
+            code_source_sha256="synthetic-code-source",
+            input_policy_sha256=canonical_sha256({"policy": "synthetic"}),
+            runtime_environment_sha256="synthetic-runtime-environment",
+            output_schema_registry_version="synthetic-output-schema",
+        ),
+        path,
+    )
+    return path
 
 
 def _write_case_manifest(root: Path, patient_uids: tuple[str, ...]) -> Path:

@@ -282,7 +282,14 @@ def build_patient_scientific_run_config_from_pipeline(
     )
     return PatientScientificRunConfig(
         batch_config=batch_config,
-        scientific_config=build_patient_runner_scientific_config(pipeline_config, context),
+        scientific_config=build_patient_runner_scientific_config(
+            pipeline_config,
+            context,
+            stage_names=executable_patient_scientific_pathway_stage_names(
+                resolved_pathway_name,
+                satisfied_stage_names=satisfied_stage_names,
+            ),
+        ),
         pathway_name=resolved_pathway_name,
         checkpoint_name=checkpoint.checkpoint_name,
         checkpoint_summary=checkpoint.summary,
