@@ -192,6 +192,24 @@ September 2026 Phase 2B checkpoint:
    controlled user-operated patient run and comparison against the isolated
    from-legacy checkpoint remain mandatory before enabling the next pathway.
 
+September 2026 Phase 2C checkpoint:
+
+- Headless preparation reuses a verified scientific snapshot and records new
+   execution provenance without changing historical sources. A transitional
+   export-only main option produces the first snapshot before input discovery;
+   it still requires legacy import dependencies and does not duplicate defaults.
+- `process_finalization.py` validates worker/patient evidence and writes existing
+   batch/index contracts. Failed, unlaunched, and dry-run states are explicit and
+   block assembly. Existing run outputs/indexes are protected; resume is deferred.
+- Quantitative anatomical NPZ/JSON checkpoints preserve unit-labelled numeric
+   fields and table values with explicit coverage. The paired CLI runs standalone
+   and unchanged legacy singleton input construction in separate subprocesses,
+   followed by the same scientific adapters. It checks migration, not independent
+   algorithm truth or full legacy-main parity.
+- The user-operated recipe and limitations are in
+   `../runtime/ANATOMICAL_VALIDATION_RUNBOOK.md`. No real-patient numerical parity
+   has yet been established; later scientific pathways remain gated.
+
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
 execution to the standalone parent/worker entrypoint. Third, keep the

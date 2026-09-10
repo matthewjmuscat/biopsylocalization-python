@@ -27,6 +27,8 @@ Current durable docs:
   a validated per-patient runner.
 - `runtime/RUNTIME_LOGGING_DESIGN.md` - runtime logging, crash localization, and
   failure evidence policy.
+- `runtime/ANATOMICAL_VALIDATION_RUNBOOK.md` - Phase 2C preparation, two-process
+  anatomical input-migration comparison, numerical evidence, and remaining gates.
 - `input/INPUT_DICOM_DATA_ASSESSMENT.md` - current and future input-data
   assumptions.
 - `input/INPUT_DATA_MANIFEST_DESIGN.md` - provenance/manifest design for input

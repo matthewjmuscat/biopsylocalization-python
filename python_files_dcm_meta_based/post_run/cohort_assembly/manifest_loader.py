@@ -152,8 +152,8 @@ def _patient_result_from_manifest_record(record: Mapping[str, Any],
         fallback_root=batch_output_root,
     )
     _, patient_manifest = _load_patient_manifest(patient_output_root)
-    patient_uid = str(patient_manifest.get("patient_uid") or record.get("patient_uid") or "").strip()
-    if not patient_uid:
+    patient_uid = str(patient_manifest.get("patient_uid") or record.get("patient_uid") or "")
+    if not patient_uid.strip():
         raise ValueError(f"Patient manifest record is missing patient_uid under {patient_output_root}")
 
     artifact_paths = _paths_from_manifest(patient_manifest, patient_output_root) if patient_manifest else ()
@@ -178,6 +178,29 @@ def _patient_result_from_manifest_record(record: Mapping[str, Any],
     )
 
 
+def load_patient_result_from_manifest(manifest_path: str | Path) -> PatientRunResult:
+    """Read one complete patient manifest without scanning a run directory.
+
+    Unlike historical batch fallback loading, this requires an explicit current
+    patient schema and preserves the exact patient UID. Artifact existence and
+    compatibility with the requesting job are validated by the caller.
+    """
+    path = Path(manifest_path).expanduser().resolve()
+    if path.name != PATIENT_MANIFEST_FILE_NAME:
+        raise ValueError(f"Expected {PATIENT_MANIFEST_FILE_NAME}, got: {path.name}")
+    payload = _read_json_object(path)
+    if payload.get("schema_version") != PATIENT_RUN_MANIFEST_SCHEMA_VERSION:
+        raise ValueError("unsupported or missing patient manifest schema_version")
+    if _path_from_manifest(payload.get("output_root"), fallback_root=path.parent).resolve() != path.parent:
+        raise ValueError("patient manifest output_root does not match its directory")
+    return _patient_result_from_manifest_record(
+        {**payload, "output_root": path.parent.as_posix()},
+        batch_output_root=path.parent,
+        batch_metadata={},
+        batch_artifact_paths=(),
+    )
+
+
 def load_patient_batch_result_from_manifest(manifest_path_or_output_dir: str | Path) -> PatientBatchRunResult:
     """Reconstruct the lightweight batch result needed by post-run assembly."""
     manifest_path = resolve_patient_batch_manifest_path(manifest_path_or_output_dir)
@@ -185,6 +208,8 @@ def load_patient_batch_result_from_manifest(manifest_path_or_output_dir: str | P
     _validate_schema(batch_manifest, PATIENT_BATCH_RUN_MANIFEST_SCHEMA_VERSION, manifest_path)
     batch_output_root = _path_from_manifest(batch_manifest.get("output_root"), fallback_root=manifest_path.parent)
     batch_metadata = dict(batch_manifest.get("metadata", {}))
+    if batch_metadata.get("assembly_ready") is False:
+        raise ValueError("batch is not assembly-ready: dry-run, failed, or unlaunched patients remain")
     batch_artifact_paths = _paths_from_manifest(batch_manifest, batch_output_root)
     patient_records = batch_manifest.get("patients", ())
     if not isinstance(patient_records, list):

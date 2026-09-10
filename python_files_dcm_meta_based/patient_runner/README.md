@@ -137,6 +137,13 @@ compare stage status, structure counts, manifests, and retained artifacts.
 The durable target contract lives in
 `../../docs/architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md`.
 
+Phase 2C adds disk-only process finalization: ordinary standalone execution writes
+the existing batch manifest and run index, including explicit failed/unlaunched
+patients. Non-complete and dry-run batches cannot be assembled, and existing run
+outputs/indexes cannot be overwritten. See
+[the anatomical validation runbook](../../docs/runtime/ANATOMICAL_VALIDATION_RUNBOOK.md)
+for fresh provenance preparation and the paired numerical input-migration gate.
+
 Current Phase D scope:
 
 The durable output architecture target is documented in

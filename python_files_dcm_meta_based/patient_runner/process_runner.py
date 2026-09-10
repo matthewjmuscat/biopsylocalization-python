@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -499,7 +500,7 @@ def build_patient_process_run_plan(
     metadata: Mapping[str, Any] | None = None,
 ) -> PatientProcessRunPlan:
     """Build a standalone process plan from the DICOM input case manifest."""
-    resolved_output_root = Path(output_root)
+    resolved_output_root = Path(output_root).expanduser().resolve()
     resolved_metadata = dict(metadata or {})
     resolved_snapshot_path = _optional_path(scientific_config_snapshot_path)
     resolved_compatibility_path = _optional_path(run_compatibility_identity_path)
@@ -713,12 +714,14 @@ def _validate_worker_compatibility_identity(
     }
 
 
-def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> PatientWorkerResult:
+def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runtime_builder=None) -> PatientWorkerResult:
     """Run one patient worker job.
 
     Live execution is currently gated to the first ``anatomical_qa`` checkpoint.
     Later pathways fail closed until their standalone input/resource boundaries
-    have independent parity evidence.
+    have independent parity evidence. ``runtime_builder`` is a Python-only
+    validation injection; serialized jobs and the normal worker CLI cannot select
+    executable code. The default always constructs fresh standalone input state.
     """
     start_time = perf_counter()
     missing_core_input_roles = job.patient_inputs.missing_core_roles
@@ -882,7 +885,8 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
     try:
         from .runtime_builder import build_standalone_patient_runtime
 
-        standalone_runtime = build_standalone_patient_runtime(
+        build_runtime = build_standalone_patient_runtime if runtime_builder is None else runtime_builder
+        standalone_runtime = build_runtime(
             patient_case=job.patient_case,
             patient_inputs=job.patient_inputs,
             pipeline_config=pipeline_config,
@@ -926,6 +930,13 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False) -> P
             }
         )
         stages = build_patient_scientific_runner_stages(scientific_run_config)
+        capture_checkpoint = job.metadata.get("capture_anatomical_checkpoint", False)
+        if not isinstance(capture_checkpoint, bool):
+            raise TypeError("capture_anatomical_checkpoint must be a boolean")
+        if capture_checkpoint:
+            from validation.anatomical_execution import with_anatomical_checkpoint
+
+            stages = with_anatomical_checkpoint(stages, pipeline_config)
         patient_result = run_patient_case(
             standalone_runtime.runtime_state,
             scientific_run_config.batch_config.patient_config,
@@ -977,11 +988,11 @@ def run_worker_job_file(job_path: Path, *, dry_run: bool = False) -> PatientWork
     return result
 
 
-def patient_worker_command(job_path: Path | str, *, dry_run: bool = False) -> list[str]:
+def patient_worker_command(job_path: Path | str, *, dry_run: bool = False, worker_script_path: Path | None = None) -> list[str]:
     """Return the exact command used to launch one worker job."""
     command = [
         sys.executable,
-        str(Path(__file__).resolve().parents[1] / "run_patient_scientific_worker.py"),
+        str(worker_script_path or (Path(__file__).resolve().parents[1] / "run_patient_scientific_worker.py")),
         str(job_path),
     ]
     if dry_run:
@@ -989,15 +1000,21 @@ def patient_worker_command(job_path: Path | str, *, dry_run: bool = False) -> li
     return command
 
 
-def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_seconds: float | None = None) -> PatientWorkerResult:
+def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_seconds: float | None = None, worker_script_path: Path | None = None, log_path: Path | None = None) -> PatientWorkerResult:
     """Launch one worker job in a subprocess and load its result JSON."""
-    command = patient_worker_command(job_path, dry_run=dry_run)
+    command = patient_worker_command(job_path, dry_run=dry_run, worker_script_path=worker_script_path)
     worker_job = load_patient_worker_job(job_path)
     launch_start_time = perf_counter()
     if worker_job.result_path.is_file():
         worker_job.result_path.unlink()
     try:
-        completed = subprocess.run(command, check=False, timeout=timeout_seconds)
+        with ExitStack() as resources:
+            output_options = {}
+            if log_path is not None:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_file = resources.enter_context(log_path.open("x", encoding="utf-8"))
+                output_options = {"stdout": log_file, "stderr": subprocess.STDOUT}
+            completed = subprocess.run(command, check=False, timeout=timeout_seconds, **output_options)
     except subprocess.TimeoutExpired:
         return PatientWorkerResult(
             worker_job=worker_job,
@@ -1008,6 +1025,13 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
             timed_out=True,
             warnings=("worker exceeded timeout_seconds",),
             metadata={"worker_command": command, "timeout_seconds": timeout_seconds},
+        )
+    except OSError as exc:
+        return PatientWorkerResult(
+            worker_job=worker_job, status=PatientStageStatus.FAILED,
+            elapsed_seconds=perf_counter() - launch_start_time, exit_code=1, dry_run=dry_run,
+            warnings=("worker launch failed: {}".format(exc),),
+            metadata={"worker_command": command, "failed_boundary": "worker_launch"},
         )
     if worker_job.result_path.is_file():
         try:
@@ -1053,7 +1077,7 @@ def launch_worker_job_file(job_path: Path, *, dry_run: bool = False, timeout_sec
         status = PatientStageStatus.FAILED
         elapsed_seconds = 0.0
         warnings = ("worker did not write a result JSON",)
-        metadata = {}
+        metadata = {"failed_boundary": "worker_result_missing"}
         result_exit_code = int(completed.returncode) or 1
     return PatientWorkerResult(
         worker_job=worker_job,
@@ -1084,6 +1108,14 @@ def run_patient_process_plan(
         raise ValueError("plan_only process plans cannot launch workers")
     if dry_run_workers != (plan.execution_mode == "dry_run_workers"):
         raise ValueError("dry_run_workers must agree with plan.execution_mode")
+    patient_root = plan.output_root / "patients"
+    from output_artifacts.manifest_index import default_run_manifest_index_path
+
+    if default_run_manifest_index_path(plan.output_root).exists() or (plan.output_root / "patient_batch_run_manifest.json").exists() or (patient_root.exists() and any(patient_root.iterdir())):
+        raise FileExistsError("process execution requires a fresh patient output root; resume is not implemented")
+    safe_names = [job.patient_case.safe_patient_uid for job in plan.worker_jobs]
+    if len(safe_names) != len(set(safe_names)):
+        raise ValueError("patient UIDs collide after filesystem normalization")
     job_paths = write_patient_worker_job_packets(plan)
     write_patient_process_run_plan(plan)
     resolved_timeout_seconds = plan.timeout_seconds if timeout_seconds is None else timeout_seconds
@@ -1097,4 +1129,6 @@ def run_patient_process_plan(
         results.append(result)
         if not result.succeeded and plan.failure_policy == PatientProcessFailurePolicy.STOP_ON_FAILURE:
             break
-    return tuple(results)
+    from .process_finalization import finalize_patient_process_run
+
+    return finalize_patient_process_run(plan, tuple(results)).worker_results

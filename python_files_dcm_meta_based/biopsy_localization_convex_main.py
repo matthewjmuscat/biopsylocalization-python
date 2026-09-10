@@ -248,7 +248,7 @@ def configure_transform_generation_counts(master_structure_info_dict,
     return max_num_mc_simulations, max_generated_transform_samples
 
 
-def main():
+def main(*, scientific_config_export_path=None):
     
     """
     A programme designed to receive dicom data consisting of prostate 
@@ -1489,6 +1489,14 @@ def main():
         patient_runner_validation=patient_runner_validation_defaults,
         patient_scientific_runner=patient_scientific_runner_defaults,
     )
+
+    if scientific_config_export_path is not None:
+        from config.snapshots import build_pipeline_scientific_config_snapshot, write_pipeline_config_snapshot
+
+        snapshot = build_pipeline_scientific_config_snapshot(pipeline_config)
+        export_path = write_pipeline_config_snapshot(snapshot, scientific_config_export_path)
+        print("Scientific config exported before input discovery: {}".format(export_path))
+        return
 
     # Transitional bridge: legacy code below still consumes flat locals, but those
     # locals now come from PipelineConfig so file/GUI config can enter at one boundary.
@@ -6476,6 +6484,11 @@ def main():
     sys.exit("> Programme complete.")
 
 
-if __name__ == '__main__':    
-    main()
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Legacy pipeline or configured scientific snapshot export.")
+    parser.add_argument("--export-scientific-config", type=pathlib.Path, help="Export configured science and exit before input discovery. Requires legacy dependencies.")
+    args = parser.parse_args()
+    main(scientific_config_export_path=args.export_scientific_config)
     

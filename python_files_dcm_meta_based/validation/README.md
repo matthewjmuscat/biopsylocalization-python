@@ -4,6 +4,12 @@ This folder contains the reusable validation package plus config-driven launcher
 
 For the current TOML-driven workflow and intrarun/interrun examples, start with `RUN_VALIDATION_CODEBOOK.md`.
 
+For the new standalone anatomical gate, use
+[ANATOMICAL_VALIDATION_RUNBOOK.md](../../docs/runtime/ANATOMICAL_VALIDATION_RUNBOOK.md).
+It covers headless provenance preparation, the two-process `validate_patient_anatomical.py`
+command, numerical checkpoint coverage, and why this input-migration gate does not
+replace independent scientific sidecars or full legacy/cohort comparisons.
+
 ## Quick Start
 
 From the repository root:
