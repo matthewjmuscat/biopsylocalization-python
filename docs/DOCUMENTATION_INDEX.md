@@ -20,6 +20,12 @@ this index.
 
 Current durable docs:
 
+- `architecture/PROJECT_NORTH_STARS.md` - durable scientific/platform direction,
+  composable capabilities, convergent migration, and active stewardship; root
+  `AGENTS.md` points coding agents here.
+- `runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` - forward/reverse/split
+  qualification, input content identity, and isolated legacy dose characterization.
+
 - `architecture/PATIENT_MODULE_TREE_GUIDE.md` - canonical ownership and
   placement guide for patient-level scientific modules and the
   science-orchestration split.

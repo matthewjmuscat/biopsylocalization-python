@@ -497,9 +497,17 @@ def build_patient_process_run_plan(
     scientific_config_snapshot_path: Path | None = None,
     run_compatibility_identity_path: Path | None = None,
     retention_level: str = "minimal",
+    capture_input_content: bool = False,
     metadata: Mapping[str, Any] | None = None,
 ) -> PatientProcessRunPlan:
-    """Build a standalone process plan from the DICOM input case manifest."""
+    """Build a lightweight process plan with optional patient byte identities.
+
+    ``capture_input_content`` streams every declared file before execution and
+    binds its role/path/bytes to the job. It decodes no DICOM and changes no
+    scientific defaults. Missing files or hashing failures reject planning.
+    """
+    if not isinstance(capture_input_content, bool):
+        raise TypeError("capture_input_content must be boolean")
     resolved_output_root = Path(output_root).expanduser().resolve()
     resolved_metadata = dict(metadata or {})
     resolved_snapshot_path = _optional_path(scientific_config_snapshot_path)
@@ -572,6 +580,13 @@ def build_patient_process_run_plan(
         )
         for index, (patient_case, patient_inputs) in enumerate(patient_cases_and_inputs, start=1)
     )
+    if capture_input_content:
+        from dataclasses import replace
+        from input_data.content_identity import capture_patient_input_content, INPUT_CONTENT_KEY
+
+        worker_jobs = tuple(replace(job, metadata={
+            **job.metadata, INPUT_CONTENT_KEY: capture_patient_input_content(job.patient_inputs),
+        }) for job in worker_jobs)
     return PatientProcessRunPlan(
         output_root=resolved_output_root,
         input_case_manifest_path=Path(input_case_manifest_path),
@@ -882,6 +897,18 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
         "scientific_config_sha256": config_snapshot.config_sha256,
         "patient_input_manifest_identity_sha256": job.patient_inputs.manifest_identity_sha256,
     }
+    from input_data.content_identity import INPUT_CONTENT_KEY, verify_patient_input_content
+
+    if INPUT_CONTENT_KEY in job.metadata:
+        try:
+            verify_patient_input_content(job.metadata[INPUT_CONTENT_KEY], job.patient_inputs)
+            runtime_metadata["input_content_verified_before"] = True
+        except Exception as exc:
+            return _worker_setup_failure_result(
+                job, start_time=start_time, exit_code=2,
+                warning="input content preflight failed: {}".format(exc),
+                failed_boundary="input_content_preflight", input_preflight_metadata=input_preflight_metadata,
+            )
     try:
         from .runtime_builder import build_standalone_patient_runtime
 
@@ -937,6 +964,8 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             from validation.anatomical_execution import with_anatomical_checkpoint
 
             stages = with_anatomical_checkpoint(stages, pipeline_config)
+        if INPUT_CONTENT_KEY in job.metadata:
+            stages = _with_input_content_verification(stages, job)
         patient_result = run_patient_case(
             standalone_runtime.runtime_state,
             scientific_run_config.batch_config.patient_config,
@@ -978,6 +1007,25 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             "stage_statuses": stage_statuses,
         },
     )
+
+
+def _with_input_content_verification(stages: tuple, job: PatientWorkerJob) -> tuple:
+    """Verify immutable inputs after computation/export, before success is sealed."""
+    from .runner import PatientStage
+    from input_data.content_identity import INPUT_CONTENT_KEY, verify_patient_input_content
+
+    if not stages or stages[-1].stage_name != "patient_artifact_writing":
+        raise ValueError("input verification requires final patient artifact writing stage")
+    original = stages[-1].runner
+
+    def verify_after(runtime_state, config):
+        result = original(runtime_state, config)
+        if result.succeeded:
+            verify_patient_input_content(job.metadata[INPUT_CONTENT_KEY], job.patient_inputs)
+            runtime_state.metadata["input_content_verified_after"] = True
+        return result
+
+    return (*stages[:-1], PatientStage(stages[-1].stage_name, verify_after))
 
 
 def run_worker_job_file(job_path: Path, *, dry_run: bool = False) -> PatientWorkerResult:
@@ -1120,11 +1168,12 @@ def run_patient_process_plan(
     write_patient_process_run_plan(plan)
     resolved_timeout_seconds = plan.timeout_seconds if timeout_seconds is None else timeout_seconds
     results: list[PatientWorkerResult] = []
-    for job_path in job_paths:
+    for job, job_path in zip(plan.worker_jobs, job_paths):
         result = launch_worker_job_file(
             job_path,
             dry_run=dry_run_workers,
             timeout_seconds=resolved_timeout_seconds,
+            log_path=plan.output_root / "worker_logs" / f"{job.job_id}_attempt_{job.attempt_number}.log",
         )
         results.append(result)
         if not result.succeeded and plan.failure_policy == PatientProcessFailurePolicy.STOP_ON_FAILURE:

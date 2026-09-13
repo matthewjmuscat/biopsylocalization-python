@@ -7,6 +7,35 @@ legacy all-patient monolith toward a validated per-patient runner. It should hol
 accepted direction and upgrade sequencing. Private notes can still exist for
 scratch reasoning, but stable decisions should graduate here.
 
+## September 2026 priorities
+
+Read [Project North Stars](../architecture/PROJECT_NORTH_STARS.md) alongside this
+historical stage inventory. The destination is composable scientific capability,
+not permanent reproduction of the main sequence.
+
+- **Validated:** five-case standalone versus legacy singleton anatomical input
+  construction at exact 0/0 under `0f2a636`, including F1/F2, dose and ADC.
+- **Implemented, user gate pending:** the bounded anatomical forward/reverse/split
+  qualification and separate unchanged legacy dose-state characterization. See
+  [the runbook](../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md).
+- **Next independent architecture slice:** extract production config/default
+  construction from main with exact snapshot equivalence. Avoid a second config
+  model and avoid treating patient validation as a reason to postpone all cleanup.
+- **Next scientific boundary after qualification:** standalone biopsy-facing
+  preprocessing inputs/products, then optimizer and realization/sampling in
+  dependency-valid increments. Reuse existing modular science.
+- **Continuing state/main migration:** replace master reference/info dictionary
+  access with typed grid/geometry and later biopsy products at validated
+  boundaries; delete replaced main responsibilities rather than maintaining two
+  permanent execution systems.
+- **Pathway opportunity:** specify guidance target/core producer contracts and
+  remove unrelated coarse prerequisites before exposing prospective guidance.
+  Existing one-patient planning and rendering separation should be reused.
+
+Permanent input identity, stage evidence, and completed-patient matching should
+outlive this gate. Legacy singleton/probe adapters remain disposable; retire them
+only when replacement numerical/output gates cover their purpose.
+
 ## Documentation Policy
 
 Use `../DOCUMENTATION_INDEX.md` as the public map for durable documentation.

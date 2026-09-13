@@ -2,6 +2,27 @@
 
 Last updated: 2026-05-12
 
+## September 2026 status and next boundary
+
+The sections below retain the May planning context; their proposed full-cohort
+prerequisites and baseline choices do not override the current standalone process
+architecture and [project north stars](PROJECT_NORTH_STARS.md).
+Scientific snapshots, strict provenance, and typed rehydration now exist. The
+five-case singleton anatomical migration gate passed under `0f2a636`; order/split
+qualification is the next user-operated gate. Defaults still originate in main,
+and the export-only option is transitional.
+
+The next config slice should extract existing production default/config
+construction into its proper owner, with exact snapshot equivalence and no
+duplicated parameters. This can proceed separately from patient qualification;
+it need not await full MC validation. Main and future CLI/API callers should
+consume that owner. Narrow domain configs remain scientific authority;
+master-info dictionaries must progressively stop acting as config storage.
+
+The independence phase adds no scientific parameters or alternate config
+authority. Input ledgers belong to input provenance, and resolved thresholds
+belong to stage evidence; neither substitutes for completing config extraction.
+
 ## Purpose
 
 Define the next config pass as part of the repo-wide config rewrite rather than as a narrow pickle-load fix.

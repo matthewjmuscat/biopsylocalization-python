@@ -118,6 +118,14 @@ assignment only. It does not hash patient DICOM bytes. Any future content-level
 input identity must be designed explicitly with privacy, cost, and DICOM
 de-identification requirements in mind.
 
+The additive `patient_input_content_v1` ledger now provides opt-in per-patient
+byte identity via `input_data/content_identity.py`. Qualification jobs require
+before/after worker verification for all declared files. It retains local paths
+and hashes complete file bytes without decoding or anonymizing them. Existing
+role/path identities retain their original meaning; cohort selection remains
+outside strict merge dimensions. Normal profile adoption remains separate from
+the anatomical qualification recipe.
+
 Historical runs without strict identities may be compared only through an
 explicit `legacy_allow_missing` mode. Identified and unidentified runs must never
 be mixed. Compatibility relaxation must later be based on named scientifically

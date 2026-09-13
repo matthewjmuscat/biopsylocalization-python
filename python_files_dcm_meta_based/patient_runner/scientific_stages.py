@@ -126,11 +126,18 @@ def run_patient_grid_preprocessing_scientific_stage(
 
     metadata: dict[str, Any] = {"patient_uid": runtime_state.patient_uid, "steps": []}
     pydicom_item = runtime_state.pydicom_item
+    resolved_state: dict[str, Any] = {"schema_version": "patient_grid_state_v1"}
+    metadata["resolved_scientific_state"] = resolved_state
 
     if stage_config.dose_grid_config is not None:
         from preprocessing.dose_grid_processing import build_dose_grid_runtime_objects_for_patient
 
         dose_config = stage_config.dose_grid_config
+        from .resolved_state import dose_threshold_inputs
+
+        dose_state = dose_threshold_inputs(pydicom_item, dose_config)
+        dose_state["effective_lower_bound"] = None
+        resolved_state["dose"] = dose_state
         dose_ref = str(dose_config.dose_ref)
         metadata["dose_reference_available"] = dose_ref in pydicom_item
         if dose_ref in pydicom_item:
@@ -145,6 +152,7 @@ def run_patient_grid_preprocessing_scientific_stage(
             )
             metadata["steps"].append("dose_grid_runtime_objects")
             metadata["lower_bound_dose_value"] = lower_bound_dose_value
+            dose_state["effective_lower_bound"] = lower_bound_dose_value
 
     if stage_config.mr_adc_input_normalization is not None:
         from preprocessing.mr_adc_input_checking import normalize_patient_mr_adc_input
@@ -159,6 +167,13 @@ def run_patient_grid_preprocessing_scientific_stage(
             live_display=None,
         )
         metadata["steps"].append("mr_adc_input_normalization")
+        resolved_state["mr_adc"] = {
+            "present": mr_input_result.has_mr_adc,
+            "selected_series_uid": mr_input_result.selected_series_uid,
+            "selected_units": mr_input_result.selected_units,
+            "series_count": mr_input_result.num_mr_adc_series,
+            "units_match_previous": mr_input_result.units_match_previous,
+        }
         metadata.update(
             {
                 "mr_adc_input_has_mr_adc": mr_input_result.has_mr_adc,

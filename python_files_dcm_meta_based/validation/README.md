@@ -10,6 +10,14 @@ It covers headless provenance preparation, the two-process `validate_patient_ana
 command, numerical checkpoint coverage, and why this input-migration gate does not
 replace independent scientific sidecars or full legacy/cohort comparisons.
 
+After that singleton gate, use
+[ANATOMICAL_INDEPENDENCE_RUNBOOK.md](../../docs/runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md)
+for exact forward/reverse/split qualification and input-byte verification.
+`validate_patient_independence.py` uses ordinary isolated workers; its numerical
+comparison runs after execution in a child process. `probe_legacy_dose_order.py`
+is a separate disposable legacy characterization tool. Neither enables later
+scientific pathways or replaces full-output/sidecar validation.
+
 ## Quick Start
 
 From the repository root:

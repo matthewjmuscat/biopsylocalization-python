@@ -8,6 +8,13 @@ Phase 2C provides validation preparation, standalone batch finalization, and a
 paired anatomical comparison. Phase 2D is the user-operated patient run. No
 real-patient parity is claimed by the synthetic tests.
 
+User-operated evidence at commit `0f2a6361bfb6dee8c27a0dc375c2297657b4e368`
+now passes exact 0/0 for 181 F1/F2, 184 F1/F2 and 194 F2 (including ADC).
+The first 194 F2 attempt failed in both input builders because ADC files were
+missing; its fresh retry passed. This establishes the captured singleton input
+migration gate only. Continue with [anatomical independence](ANATOMICAL_INDEPENDENCE_RUNBOOK.md)
+before exposing later standalone pathways.
+
 The paired lanes run in fresh, sequential child processes:
 
 1. **Standalone:** typed patient input bootstrap, then existing patient grid and

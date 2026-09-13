@@ -207,8 +207,25 @@ September 2026 Phase 2C checkpoint:
    followed by the same scientific adapters. It checks migration, not independent
    algorithm truth or full legacy-main parity.
 - The user-operated recipe and limitations are in
-   `../runtime/ANATOMICAL_VALIDATION_RUNBOOK.md`. No real-patient numerical parity
-   has yet been established; later scientific pathways remain gated.
+   `../runtime/ANATOMICAL_VALIDATION_RUNBOOK.md`.
+
+September 2026 qualification update:
+
+- At commit `0f2a6361bfb6dee8c27a0dc375c2297657b4e368`, retained user-operated
+  singleton pair reports pass exact 0/0 for 181 F1/F2, 184 F1/F2 and 194 F2.
+  The latter includes ADC; its first attempt failed identically in both input
+  builders due to missing ADC files, and its fresh retry passed. This validates
+  captured anatomical input-migration behavior, not whole-main or order parity.
+- Input content ledgers, worker before/after verification, resolved stage state,
+  and completed-patient compatibility/matching are reusable boundaries that do
+  not require a particular numerical checkpoint algorithm.
+- The anatomical qualification recipe and legacy dose-order probe are validation
+  tools. The probe streams singleton state through the unchanged legacy wrapper;
+  it is never a normal worker mode or a full-cohort runtime.
+- The new real-patient forward/reverse/split gate remains user-operated and
+  unvalidated until `../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` passes.
+- `PROJECT_NORTH_STARS.md` records continuing config, main, dictionary-state,
+  and composable-pathway migration tracks.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
