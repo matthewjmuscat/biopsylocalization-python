@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 import open3d as o3d
 
@@ -7,15 +5,23 @@ import biopsy_creator
 import centroid_finder
 import math_funcs as mf
 import misc_tools
-import pca
 import plotting_funcs
 import point_containment_tools
+from preprocessing.biopsy_processing.fitted_segment import fit_biopsy_segment
 
 
 def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zslice_list,
                                                                    biopsy_radius,
                                                                    pcd_color=None
                                                                    ):
+    """Reconstruct a cylinder over the PCA-projected slice-centroid segment.
+
+    All axial positions, reported length and fitted endpoints share one segment.
+    The legacy biopsy frame remains oriented from lower to higher patient Z;
+    no distal/proximal needle metadata is available at this boundary.
+    """
+    if not np.isfinite(biopsy_radius) or biopsy_radius <= 0:
+        raise ValueError("biopsy radius must be finite and positive")
     if pcd_color is None:
         pcd_color = np.array([0, 0, 0], dtype=float)
 
@@ -35,14 +41,13 @@ def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zs
 
     structure_global_centroid = centroid_finder.centeroidfinder_numpy_3D(structure_centroids_array)
 
-    centroid_line = pca.linear_fitter(structure_centroids_array.T)
-    centroid_line_length = np.linalg.norm(centroid_line[0, :] - centroid_line[1, :])
-    slice_reconstruction_max_distance = 0.1
-    num_centroid_line_intervals = int(math.ceil(centroid_line_length / slice_reconstruction_max_distance))
-    # Sample the closed fitted segment in mm: N intervals require N + 1 points.
-    # These are fitted-line samples, not independently measured physical tips.
-    centroid_line_sample = np.linspace(centroid_line[0], centroid_line[1], num_centroid_line_intervals + 1)
-    travel_vec = np.array([centroid_line[1] - centroid_line[0]]) * 1 / num_centroid_line_intervals
+    segment = fit_biopsy_segment(structure_centroids_array)
+    centroid_line = segment.endpoints
+    centroid_line_length = segment.length_mm
+    centroid_line_sample = segment.ring_centers
+    travel_vec = segment.travel_vector[np.newaxis, :]
+    if centroid_line[0, 2] == centroid_line[1, 2]:
+        raise ValueError("horizontal biopsy axis cannot be oriented by the retained patient-Z convention")
 
     line_start = centroid_line[0, :]
     line_end = centroid_line[1, :]
@@ -55,19 +60,18 @@ def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zs
     maximum_2d_distance_between_centroids = biopsy_creator.distance_of_most_distant_points_2d_projection(structure_centroids_array, travel_vec)
 
     list_travel_vec = np.squeeze(travel_vec).tolist()
-    list_centroid_line_first_point = np.squeeze(centroid_line[0]).tolist()
     biopsy_reconstructed_cyl_z_length_from_contour_data = centroid_line_length
-    drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(
+    # Retain the existing 20-point transverse ring and its angular convention.
+    # Place that ring at the shared N + 1 centers without repeated-addition drift.
+    ring_offsets = biopsy_creator.biopsy_points_creater_by_transport(
         list_travel_vec,
-        list_centroid_line_first_point,
-        # Preserve the existing N-ring cylinder (span L - L/N). Changing its
-        # endpoint coverage is a separate geometry change, not this sample fix.
-        num_centroid_line_intervals,
-        np.linalg.norm(travel_vec),
+        [0., 0., 0.],
+        1,
+        segment.spacing_mm,
         biopsy_radius,
         False,
-    )
-    drawn_biopsy_array = drawn_biopsy_array_transpose.T
+    ).T
+    drawn_biopsy_array = (segment.ring_centers[:, np.newaxis, :] + ring_offsets).reshape(-1, 3)
     reconstructed_biopsy_point_cloud = point_containment_tools.create_point_cloud(drawn_biopsy_array, pcd_color)
     reconstructed_bx_delaunay_global_convex_structure_obj = point_containment_tools.delaunay_obj(drawn_biopsy_array, pcd_color)
     reconstructed_bx_delaunay_global_convex_structure_obj.generate_lineset()
@@ -90,7 +94,7 @@ def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zs
     rotated_reconstructed_bx_arr = (centroid_line_to_z_axis_rotation_matrix_other @ drawn_biopsy_array.T).T
     rotated_reconstructed_bx_arr_rounded = np.copy(rotated_reconstructed_bx_arr)
 
-    distance_between_rings = np.linalg.norm(travel_vec)
+    distance_between_rings = segment.spacing_mm
     sci_not_dist_bet_rings = '%e' % distance_between_rings
     num_zeros_before_first_dig_after_decimal = int(sci_not_dist_bet_rings.partition('-')[2]) - 1
     num_decimals_for_rounding = num_zeros_before_first_dig_after_decimal + 2
